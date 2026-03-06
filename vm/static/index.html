@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Code VM &mdash; Monaco</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #1e1e1e;
+      color: #d4d4d4;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Header ── */
+    header {
+      background: #252526;
+      border-bottom: 1px solid #3c3c3c;
+      padding: 6px 14px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+    header h1 { font-size: 15px; color: #cccccc; font-weight: 600; white-space: nowrap; }
+
+    select {
+      padding: 5px 10px;
+      background: #3c3c3c;
+      color: #d4d4d4;
+      border: 1px solid #555;
+      border-radius: 4px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    select:focus { outline: none; border-color: #007acc; }
+
+    .spacer { flex: 1; }
+
+    button {
+      padding: 5px 14px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      transition: filter .15s;
+    }
+    button:hover { filter: brightness(1.15); }
+    button:active { filter: brightness(0.9); }
+    .btn-check  { background: #1a6ed8; color: #fff; }
+    .btn-run    { background: #107c10; color: #fff; }
+    .btn-clear  { background: #5a5a5a; color: #fff; }
+
+    kbd {
+      font-size: 10px;
+      background: rgba(255,255,255,.12);
+      border-radius: 3px;
+      padding: 1px 4px;
+      margin-left: 4px;
+      font-family: inherit;
+    }
+
+    /* ── Main layout ── */
+    .main {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    #editor-container {
+      flex: 1;
+      min-width: 0;
+    }
+
+    /* ── Right panel ── */
+    .right-panel {
+      width: 360px;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      border-left: 1px solid #3c3c3c;
+      overflow: hidden;
+    }
+
+    .panel {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      border-bottom: 1px solid #3c3c3c;
+    }
+    .panel:last-child { border-bottom: none; }
+    .panel-output      { flex: 1.3; }
+    .panel-issues      { flex: 0.9; }
+    .panel-instructions{ flex: 1.8; }
+
+    .panel-header {
+      padding: 5px 12px;
+      background: #252526;
+      font-size: 11px;
+      font-weight: 700;
+      color: #9d9d9d;
+      text-transform: uppercase;
+      letter-spacing: .6px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    .status-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #555;
+      flex-shrink: 0;
+    }
+    .status-dot.ok  { background: #4caf50; }
+    .status-dot.err { background: #f44336; }
+
+    .panel-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 10px 12px;
+    }
+
+    /* scrollbar */
+    .panel-body::-webkit-scrollbar { width: 6px; }
+    .panel-body::-webkit-scrollbar-track { background: #1e1e1e; }
+    .panel-body::-webkit-scrollbar-thumb { background: #555; border-radius: 3px; }
+
+    /* Output */
+    pre#output-text {
+      font-family: Consolas, 'Courier New', monospace;
+      font-size: 13px;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .out-stdout { color: #d4d4d4; }
+    .out-stderr { color: #f48771; }
+    .out-hint   { color: #6a9955; font-style: italic; }
+
+    /* Issues */
+    .issue {
+      padding: 4px 0;
+      border-bottom: 1px solid #2d2d2d;
+      font-size: 12px;
+      font-family: Consolas, monospace;
+    }
+    .issue:last-child { border-bottom: none; }
+    .issue-error   { color: #f48771; }
+    .issue-warning { color: #cca700; }
+    .issue-info    { color: #4fc3f7; }
+    .no-issues     { color: #4caf50; font-size: 13px; }
+
+    /* Self-improvement panel */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+    .stat-box {
+      background: #2d2d2d;
+      border-radius: 4px;
+      padding: 7px 10px;
+      text-align: center;
+    }
+    .stat-val   { font-size: 20px; font-weight: 700; color: #4fc3f7; }
+    .stat-label { font-size: 10px; color: #9d9d9d; text-transform: uppercase; letter-spacing: .4px; }
+
+    .instr-section { margin-bottom: 12px; }
+    .instr-title {
+      font-size: 10px;
+      font-weight: 700;
+      color: #9d9d9d;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      margin-bottom: 5px;
+    }
+    .instr-item {
+      font-size: 12px;
+      color: #d4d4d4;
+      padding: 2px 0 2px 8px;
+      border-left: 2px solid #107c10;
+      margin-bottom: 3px;
+    }
+    .instr-item-net { border-left-color: #1a6ed8; }
+
+    .loading { color: #6a9955; font-style: italic; font-size: 13px; }
+
+    /* Status bar */
+    .statusbar {
+      background: #007acc;
+      color: #fff;
+      font-size: 12px;
+      padding: 2px 12px;
+      display: flex;
+      gap: 16px;
+      flex-shrink: 0;
+    }
+    #status-msg { margin-left: auto; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>&#9889; Code VM</h1>
+  <select id="lang-select">
+    <option value="python">Python</option>
+    <option value="javascript">JavaScript</option>
+  </select>
+  <div class="spacer"></div>
+  <button class="btn-check" onclick="checkCode()" title="Ctrl+Shift+K">
+    &#128269; Check <kbd>Ctrl+Shift+K</kbd>
+  </button>
+  <button class="btn-run" onclick="runCode()" title="Ctrl+Enter">
+    &#9654; Run <kbd>Ctrl+Enter</kbd>
+  </button>
+  <button class="btn-clear" onclick="clearAll()">&#10005; Clear</button>
+</header>
+
+<div class="main">
+  <div id="editor-container"></div>
+
+  <div class="right-panel">
+
+    <!-- Output panel -->
+    <div class="panel panel-output">
+      <div class="panel-header">
+        <span class="status-dot" id="run-dot"></span>
+        Output
+      </div>
+      <div class="panel-body">
+        <pre id="output-text"><span class="out-hint">Ready — write code and press Run&#8230;</span></pre>
+      </div>
+    </div>
+
+    <!-- Issues panel -->
+    <div class="panel panel-issues">
+      <div class="panel-header">Issues</div>
+      <div class="panel-body" id="issues-panel"></div>
+    </div>
+
+    <!-- Self-improvement panel -->
+    <div class="panel panel-instructions">
+      <div class="panel-header">&#129504; Self-Improvement</div>
+      <div class="panel-body" id="instructions-panel">
+        <span class="loading">Loading&#8230;</span>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="statusbar">
+  <span id="status-lang">Python</span>
+  <span id="status-msg"></span>
+</div>
+
+<!-- Monaco Editor loader (CDN) -->
+<script src="https://unpkg.com/monaco-editor@0.44.0/min/vs/loader.js"></script>
+<script>
+'use strict';
+
+// ── Monaco init ──────────────────────────────────────────────────────────────
+let editor = null;
+
+require.config({ paths: { vs: 'https://unpkg.com/monaco-editor@0.44.0/min/vs' } });
+require(['vs/editor/editor.main'], function () {
+  editor = monaco.editor.create(document.getElementById('editor-container'), {
+    value: '# Welcome to Code VM\n# Write Python here, then press Run\n\nprint("Hello, World!")\n',
+    language: 'python',
+    theme: 'vs-dark',
+    fontSize: 14,
+    minimap: { enabled: false },
+    automaticLayout: true,
+    wordWrap: 'on',
+    scrollBeyondLastLine: false,
+    renderLineHighlight: 'all',
+    quickSuggestions: true,
+    suggestOnTriggerCharacters: true,
+    tabSize: 4,
+    insertSpaces: true,
+  });
+
+  // Keyboard shortcuts inside the editor
+  editor.addCommand(
+    monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter,
+    runCode
+  );
+  editor.addCommand(
+    monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyK,
+    checkCode
+  );
+});
+
+// ── Language selector ────────────────────────────────────────────────────────
+document.getElementById('lang-select').addEventListener('change', function () {
+  const lang = this.value;
+  document.getElementById('status-lang').textContent =
+    lang.charAt(0).toUpperCase() + lang.slice(1);
+
+  if (!editor) return;
+  monaco.editor.setModelLanguage(editor.getModel(), lang);
+
+  const defaults = {
+    python: '# Python code\nprint("Hello, World!")\n',
+    javascript: '// JavaScript code\nconsole.log("Hello, World!");\n',
+  };
+  editor.setValue(defaults[lang] || '');
+});
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+function esc(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function setStatus(msg) {
+  document.getElementById('status-msg').textContent = msg;
+}
+
+// ── Run code ─────────────────────────────────────────────────────────────────
+async function runCode() {
+  if (!editor) return;
+  const code = editor.getValue();
+  const language = document.getElementById('lang-select').value;
+
+  const outEl = document.getElementById('output-text');
+  const dot   = document.getElementById('run-dot');
+
+  outEl.innerHTML = '<span class="loading">Running&#8230;</span>';
+  dot.className = 'status-dot';
+  setStatus('Running…');
+
+  try {
+    const res = await fetch('/execute', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code, language }),
+    });
+    const data = await res.json();
+
+    let html = '';
+    if (data.output) html += '<span class="out-stdout">' + esc(data.output) + '</span>';
+    if (data.error)  html += '<span class="out-stderr">' + esc(data.error)  + '</span>';
+    if (!data.output && !data.error) html = '<span class="out-hint">No output.</span>';
+
+    outEl.innerHTML = html;
+    dot.className = 'status-dot ' + (data.success ? 'ok' : 'err');
+    setStatus(data.success ? 'Run succeeded' : 'Run failed');
+
+    loadInstructions();
+  } catch (err) {
+    outEl.innerHTML = '<span class="out-stderr">Network error: ' + esc(err.message) + '</span>';
+    dot.className = 'status-dot err';
+    setStatus('Network error');
+  }
+}
+
+// ── Check code ───────────────────────────────────────────────────────────────
+async function checkCode() {
+  if (!editor) return;
+  const code = editor.getValue();
+  const language = document.getElementById('lang-select').value;
+
+  const issuesEl = document.getElementById('issues-panel');
+  issuesEl.innerHTML = '<span class="loading">Checking&#8230;</span>';
+  setStatus('Checking…');
+
+  try {
+    const res = await fetch('/check', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code, language }),
+    });
+    const data = await res.json();
+
+    if (data.issues.length === 0) {
+      issuesEl.innerHTML = '<span class="no-issues">&#10003; No issues found</span>';
+    } else {
+      issuesEl.innerHTML = data.issues.map(function (i) {
+        return '<div class="issue issue-' + i.severity + '">' +
+          'Line&nbsp;' + (i.line || '?') + ': ' + esc(i.message) +
+          '</div>';
+      }).join('');
+    }
+
+    // Decorate editor gutter
+    if (monaco && editor) {
+      const markers = data.issues
+        .filter(function (i) { return i.severity !== 'info'; })
+        .map(function (i) {
+          return {
+            startLineNumber: i.line || 1,
+            endLineNumber:   i.line || 1,
+            startColumn: 1,
+            endColumn: 9999,
+            message: i.message,
+            severity: i.severity === 'error'
+              ? monaco.MarkerSeverity.Error
+              : monaco.MarkerSeverity.Warning,
+          };
+        });
+      monaco.editor.setModelMarkers(editor.getModel(), 'vm-check', markers);
+    }
+
+    const errors = data.issues.filter(function (i) { return i.severity === 'error'; }).length;
+    const warns  = data.issues.filter(function (i) { return i.severity === 'warning'; }).length;
+    setStatus('Check: ' + errors + ' error(s), ' + warns + ' warning(s)');
+
+    loadInstructions();
+  } catch (err) {
+    issuesEl.innerHTML = '<span class="out-stderr">Check failed: ' + esc(err.message) + '</span>';
+    setStatus('Check failed');
+  }
+}
+
+// ── Clear ────────────────────────────────────────────────────────────────────
+function clearAll() {
+  document.getElementById('output-text').innerHTML =
+    '<span class="out-hint">Output cleared.</span>';
+  document.getElementById('issues-panel').innerHTML = '';
+  document.getElementById('run-dot').className = 'status-dot';
+  setStatus('');
+  if (monaco && editor) {
+    monaco.editor.setModelMarkers(editor.getModel(), 'vm-check', []);
+  }
+}
+
+// ── Instructions ─────────────────────────────────────────────────────────────
+async function loadInstructions() {
+  try {
+    const res  = await fetch('/instructions');
+    const data = await res.json();
+    renderInstructions(data);
+  } catch (_) {
+    document.getElementById('instructions-panel').innerHTML =
+      '<span class="out-stderr">Failed to load instructions</span>';
+  }
+}
+
+function statBox(label, value) {
+  return '<div class="stat-box">' +
+    '<div class="stat-val">'   + esc(String(value)) + '</div>' +
+    '<div class="stat-label">' + esc(label)          + '</div>' +
+    '</div>';
+}
+
+function renderInstructions(data) {
+  const panel = document.getElementById('instructions-panel');
+  const stats = data.statistics || {};
+
+  let html = '<div class="instr-section">';
+  html += '<div class="stats-grid">';
+  html += statBox('Runs',    stats.total_runs      || 0);
+  html += statBox('Success', stats.successful_runs || 0);
+  html += statBox('Failed',  stats.failed_runs     || 0);
+  html += statBox('Checks',  stats.total_checks    || 0);
+  html += '</div></div>';
+
+  const train = data.training_instructions || [];
+  if (train.length) {
+    html += '<div class="instr-section"><div class="instr-title">Training Instructions</div>';
+    train.forEach(function (item) {
+      html += '<div class="instr-item">' + esc(item) + '</div>';
+    });
+    html += '</div>';
+  }
+
+  const net = data.internet_work_instructions || [];
+  if (net.length) {
+    html += '<div class="instr-section"><div class="instr-title">Internet Work</div>';
+    net.forEach(function (item) {
+      html += '<div class="instr-item instr-item-net">' + esc(item) + '</div>';
+    });
+    html += '</div>';
+  }
+
+  const history = data.improvement_history || [];
+  if (history.length) {
+    const latest = history[history.length - 1];
+    html += '<div class="instr-section"><div class="instr-title">Last Improvement</div>';
+    html += '<div class="instr-item">' +
+      'Run #' + esc(String(latest.total_runs)) +
+      ' &mdash; success rate: ' + esc(String(Math.round((latest.success_rate || 0) * 100))) + '%' +
+      '</div>';
+    html += '</div>';
+  }
+
+  panel.innerHTML = html;
+}
+
+// Load instructions on page load
+loadInstructions();
+
+// Global keyboard shortcuts (outside editor focus)
+document.addEventListener('keydown', function (e) {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+    e.preventDefault();
+    runCode();
+  }
+  if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'K') {
+    e.preventDefault();
+    checkCode();
+  }
+  if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+    e.preventDefault();
+    checkCode();
+  }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "last_updated": "2026-03-06T00:00:00+00:00",
+  "statistics": {
+    "total_runs": 0,
+    "successful_runs": 0,
+    "failed_runs": 0,
+    "total_checks": 0
+  },
+  "learned_patterns": {
+    "common_errors": {},
+    "frequently_used_imports": {}
+  },
+  "training_instructions": [
+    "Write clean, readable code with meaningful variable names",
+    "Always handle exceptions — never use bare except",
+    "Add docstrings to every function and class",
+    "Prefer list comprehensions over explicit for-loops where readable"
+  ],
+  "internet_work_instructions": [
+    "Use the requests library for HTTP calls",
+    "Always set timeouts for network requests",
+    "Handle HTTP errors and connection errors gracefully",
+    "Store API keys in environment variables, never hard-code them",
+    "Use aiohttp for async HTTP when performance matters"
+  ],
+  "improvement_history": []
+}

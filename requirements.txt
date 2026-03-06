@@ -4,3 +4,4 @@ moviepy
 requests
 python-dotenv
 aiofiles
+flask>=2.3.0
