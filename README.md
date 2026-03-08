@@ -6,17 +6,33 @@ A Telegram bot with a built-in **AI-powered code editor** (Code VM) and **Androi
 
 ## ⚡ Quick Start — запуск с ноутбука
 
-### Windows
+### Windows — PowerShell (Windows Terminal, Win 10/11 default)
 
-```bat
-REM 1. Clone the repo (once)
+```powershell
+# 1. Clone the repo (once)
 git clone https://github.com/ybiytsa1983-cpu/drgr-bot.git
 cd drgr-bot
 
-REM 2. First-time setup (installs Python deps + shows Ollama instructions)
-install.bat
+# 2. First-time setup (creates venv, installs Flask, shows Ollama instructions)
+.\install.ps1
 
-REM 3. Launch the VM (every time)
+# 3. Launch the VM (every time)
+.\vm.ps1
+```
+
+> **Note:** In PowerShell you must use `.\` before script/bat names.
+> If you get *"не распознан"* / *"not recognized"* — use `.\vm.ps1` not `vm.ps1`.
+
+> **If you get "running scripts is disabled"** — run this once in PowerShell, then retry:
+> ```powershell
+> Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+> ```
+
+### Windows — cmd.exe (old command prompt)
+
+```bat
+cd drgr-bot
+install.bat
 vm.bat
 ```
 
@@ -124,10 +140,12 @@ drgr-bot/
 │   ├── index.html         # Android PWA navigator
 │   ├── sw.js              # Service Worker (offline caching)
 │   └── manifest.json      # PWA manifest
+├── vm.ps1                 # Windows PowerShell launcher  ← NEW
 ├── vm.sh                  # Linux/macOS terminal launcher
-├── vm.bat                 # Windows terminal launcher
+├── vm.bat                 # Windows cmd.exe / Explorer launcher
+├── install.ps1            # First-time setup (PowerShell)  ← NEW
 ├── install.sh             # First-time setup (Linux/macOS)
-├── install.bat            # First-time setup (Windows)
+├── install.bat            # First-time setup (Windows cmd)
 └── requirements.txt
 ```
 
