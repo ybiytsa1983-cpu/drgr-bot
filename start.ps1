@@ -108,5 +108,10 @@ if (-not (Test-Path $venvPython)) {
     Write-Host ""
 }
 
-# ── Launch via the .bat launcher (handles server + browser open) ──────────────
-& "$PSScriptRoot\start.bat"
+# ── Launch the VM server in a new visible window ──────────────────────────────
+$vmBat = Join-Path $PSScriptRoot "vm\start_vm.bat"
+Write-Host "  [-->] Запуск Code VM..." -ForegroundColor Cyan
+Start-Process -FilePath "cmd.exe" -ArgumentList "/k `"$vmBat`"" -WorkingDirectory $PSScriptRoot
+Write-Host "  [OK] Code VM запускается — браузер откроется через несколько секунд." -ForegroundColor Green
+Write-Host "       Закройте окно 'Code VM - Monaco Editor' чтобы остановить сервер." -ForegroundColor Yellow
+Write-Host ""
