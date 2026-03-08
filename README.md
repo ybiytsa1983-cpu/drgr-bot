@@ -4,189 +4,123 @@ A Telegram bot with a built-in **AI-powered code editor** (Code VM) and **Androi
 
 ---
 
-## ⚡ Quick Start — запуск с ноутбука
+## ⚡ Быстрый старт — одна команда
 
-### Windows — PowerShell or cmd.exe
-
-**Step 1 — open a fresh terminal, go to your home folder, then clone:**
+### Windows — скачай и запусти
 
 ```powershell
-cd $HOME                                           # e.g. C:\Users\Drozd
 git clone -b copilot/create-monaco-code-generator https://github.com/ybiytsa1983-cpu/drgr-bot.git
 cd drgr-bot
+.\start.bat
 ```
 
-> ⚠️ If `git clone` says **"already exists"**, you have a previous clone.
-> Update it to the correct branch:
-> ```powershell
-> cd $HOME\drgr-bot
-> git fetch origin
-> git checkout copilot/create-monaco-code-generator
-> ```
+> **Первый раз:** установит всё нужное автоматически (~1-2 мин), потом откроет браузер.  
+> **Каждый следующий раз:** просто откроет браузер.
 
-**Step 2 — verify you have the launcher files:**
-
-```powershell
-dir install.bat
-```
-
-You should see `install.bat` listed. If it says *"File Not Found"* check two things:
-- Your prompt ends with `…\drgr-bot>` (not `…\drgr-bot\drgr-bot>` — that means you are one directory too deep).
-- You ran the `git checkout` step above — `git pull` alone won't work if you cloned `main` before this PR was merged.
-
-**Step 3 — first-time setup:**
-
-```powershell
-.\install.bat
-```
-
-**Step 4 — launch the VM (every time after that):**
-
-```powershell
-.\vm.bat
-```
-
-> **Note:** In PowerShell you must use `.\` before `.bat` names.
-> Typing `vm.bat` without `.\` gives *"not recognized"* — that is normal PowerShell behavior.
-
-> **Alternative — native PowerShell scripts** (optional, same result):
-> ```powershell
-> # If you get "running scripts is disabled", run this once first:
-> Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
->
-> .\install.ps1   # first time
-> .\vm.ps1        # every time
-> ```
-
-Or **double-click** `vm.bat` in File Explorer — browser opens automatically.
+Или **двойной клик по `start.bat`** в Проводнике — браузер откроется сам.
 
 ### macOS / Linux
 
 ```bash
-# 1. Clone the repo (once)
-git clone https://github.com/ybiytsa1983-cpu/drgr-bot.git
+git clone -b copilot/create-monaco-code-generator https://github.com/ybiytsa1983-cpu/drgr-bot.git
 cd drgr-bot
-
-# 2. First-time setup
-chmod +x install.sh vm.sh
-./install.sh
-
-# 3. Launch the VM (every time)
-./vm.sh
+chmod +x start.sh && ./start.sh
 ```
 
 ---
 
-## 🖥 What opens in the browser
+## 🤖 AI (Ollama) — ничего настраивать не нужно
 
-| URL | Description |
-|-----|-------------|
-| `http://localhost:5000/` | ⚡ Code VM — Monaco Editor with AI code generation |
-| `http://localhost:5000/navigator/` | 🧭 DRGRNav — Android PWA Navigator (online + offline) |
-| `http://localhost:5000/challenges` | 🚀 Hard challenge prompts (JSON) |
+Если Ollama уже запущена (на **любом** порту 11434-11444) — Code VM найдёт её **автоматически**.
+
+```
+# Просто запусти Ollama отдельно (если не запущена):
+ollama serve
+```
+
+Хочешь другой порт? Укажи явно перед запуском:
+```bat
+REM Windows cmd:
+set OLLAMA_HOST=http://localhost:11435
+.\start.bat
+```
+```powershell
+# PowerShell:
+$env:OLLAMA_HOST = "http://localhost:11435"
+.\start.bat
+```
 
 ---
 
-## 🤖 AI features (Ollama)
+## 🖥 Что откроется в браузере
 
-The VM uses **Ollama** for local AI code generation. Install it once:
+| URL | Описание |
+|-----|---------|
+| `http://localhost:5000/` | ⚡ Code VM — Monaco Editor с AI-генерацией кода |
+| `http://localhost:5000/navigator/` | 🧭 DRGRNav — PWA-навигатор для Android |
+| `http://localhost:5000/challenges` | 🚀 Сложные AI-задачи (JSON) |
 
-| Platform | Install |
-|----------|---------|
-| Windows | Download from [ollama.com/download](https://ollama.com/download) and run installer |
-| macOS | `brew install ollama` |
-| Linux | `curl -fsSL https://ollama.com/install.sh \| sh` |
+---
 
-Then pull the preferred model (runs in background, ~5 GB):
+## 🚀 Возможности VM
+
+| Функция | Горячая клавиша |
+|---------|----------------|
+| ⚡ Генерация кода с AI | Ctrl+G → ввод промпта → Code |
+| 🌐 Генерация HTML-страницы | Ctrl+G → HTML |
+| ▶ Запуск кода (Python / JS) | Ctrl+Enter |
+| 🔍 Линтинг / проверка | Ctrl+Shift+K |
+| 🚀 Сложные AI-задачи | вкладка Tasks |
+| 💬 AI-чат по коду | вкладка AI |
+
+---
+
+## 🧭 DRGRNav — навигатор для Android
+
+Открой `http://ТВОЙ_IP:5000/navigator/` в Chrome на Android → ⋮ → **Добавить на главный экран**.
 
 ```bash
-ollama pull qwen3-vl:8b
-ollama serve          # keep this running in a separate terminal
-```
-
-The VM auto-detects Ollama at `http://localhost:11434`. Override with:
-
-```bash
-OLLAMA_HOST=http://my-server:11434 ./vm.sh
+# Узнать свой IP:
+ipconfig | findstr IPv4     # Windows
+ip route get 1 | awk '{print $NF; exit}'  # Linux/macOS
 ```
 
 ---
 
-## 🧭 DRGRNav — Android Navigator
-
-Open `http://YOUR_LAPTOP_IP:5000/navigator/` in **Chrome on Android** → tap ⋮ → **Add to Home Screen** to install as a full-screen app.
-
-Features:
-- 🗺 Online: OpenStreetMap tiles, OSRM routing (car / bike / walk), Nominatim search
-- 📴 Offline: Service Worker caches 2 000 tiles + 200 routes, IndexedDB saved routes
-- 📍 GPS with accuracy circle, re-center button
-- 🌑 Dark theme, Russian UI, touch-friendly
-
-Find your laptop IP:
-
-```bash
-# Windows
-ipconfig | findstr IPv4
-
-# macOS / Linux
-ip route get 1 | awk '{print $NF; exit}'
-```
-
----
-
-## 🚀 VM Features
-
-| Feature | Shortcut |
-|---------|---------|
-| ⚡ Generate code with AI | Ctrl+G → type prompt → Code |
-| 🌐 Generate full HTML page | Ctrl+G → HTML, or open HTML tab |
-| ▶ Run code (Python / JS) | Ctrl+Enter |
-| 🔍 Lint / static check | Ctrl+Shift+K |
-| 🚀 Hard challenge tasks | Tasks tab |
-| 💬 AI chat about code | AI tab |
-| 📊 Stats & self-learning | Stats tab |
-
----
-
-## 🗂 Project layout
+## 🗂 Структура проекта
 
 ```
 drgr-bot/
+├── start.bat              # ← ОДНА КОМАНДА (Windows)
+├── start.sh               # ← ОДНА КОМАНДА (Linux/macOS)
 ├── vm/
 │   ├── server.py          # Flask backend
-│   ├── static/
-│   │   └── index.html     # Monaco Editor UI
-│   ├── start_vm.bat       # Windows double-click launcher
-│   └── create_shortcut.ps1 # Create Windows Desktop shortcut
-├── navigator/
-│   ├── index.html         # Android PWA navigator
-│   ├── sw.js              # Service Worker (offline caching)
-│   └── manifest.json      # PWA manifest
-├── vm.ps1                 # Windows PowerShell launcher  ← NEW
-├── vm.sh                  # Linux/macOS terminal launcher
-├── vm.bat                 # Windows cmd.exe / Explorer launcher
-├── install.ps1            # First-time setup (PowerShell)  ← NEW
-├── install.sh             # First-time setup (Linux/macOS)
-├── install.bat            # First-time setup (Windows cmd)
-└── requirements.txt
+│   ├── static/index.html  # Monaco Editor UI
+│   └── start_vm.bat       # Windows double-click launcher
+├── navigator/             # Android PWA
+├── vm.bat                 # Запуск без переустановки (Windows)
+├── vm.sh                  # Запуск без переустановки (Linux/macOS)
+├── install.bat            # Только установка (Windows)
+└── install.ps1            # Только установка (PowerShell)
 ```
 
 ---
 
-## 🛠 Environment variables
+## 🛠 Переменные окружения
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `VM_PORT` | `5000` | Port for the Code VM server |
-| `OLLAMA_HOST` | `http://localhost:11434` | Ollama API base URL |
-| `OLLAMA_TIMEOUT` | `120` | Seconds to wait for AI response |
-| `OLLAMA_DEFAULT_MODEL` | *(auto)* | Override the default AI model |
+| Переменная | По умолчанию | Описание |
+|-----------|-------------|---------|
+| `VM_PORT` | `5000` | Порт сервера Code VM |
+| `OLLAMA_HOST` | *(авто)* | URL Ollama, если нужен нестандартный порт |
+| `OLLAMA_TIMEOUT` | `120` | Таймаут AI-ответа (секунды) |
+| `OLLAMA_DEFAULT_MODEL` | *(авто)* | Принудительно выбрать модель |
 
 ---
 
-## 📋 Requirements
+## 📋 Требования
 
-- Python 3.8 or newer
-- pip (comes with Python)
-- Modern browser (Chrome, Edge, Firefox)
-- Ollama (optional, for AI features)
+- Python 3.8+
+- pip (идёт вместе с Python)
+- Современный браузер (Chrome, Edge, Firefox)
+- Ollama (опционально, для AI-функций — [ollama.com/download](https://ollama.com/download))
+

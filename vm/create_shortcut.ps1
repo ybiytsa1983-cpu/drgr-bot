@@ -19,7 +19,9 @@
 $ErrorActionPreference = "Stop"
 
 # -- Resolve paths -------------------------------------------------------------
-$scriptDir  = Split-Path -Parent $MyInvocation.MyCommand.Path
+# $PSScriptRoot is the directory containing this script — reliable when called
+# directly, via -File, dot-sourced, or from another script.
+$scriptDir  = $PSScriptRoot
 $batFile    = Join-Path $scriptDir "start_vm.bat"
 $repoDir    = Split-Path -Parent $scriptDir
 

@@ -211,18 +211,41 @@ Write-Host "   Desktop shortcut                           " -ForegroundColor Whi
 Write-Host "  =============================================" -ForegroundColor White
 Write-Host ""
 
-$shortcutScript = Join-Path $repoDir "vm\create_shortcut.ps1"
-if (Test-Path $shortcutScript) {
-    Info "Creating 'Code VM' shortcut on your Desktop..."
+Info "Creating 'Code VM' shortcut on your Desktop..."
+$desktopPath  = [Environment]::GetFolderPath("Desktop")
+$shortcutPath = Join-Path $desktopPath "Code VM.lnk"
+$batTarget    = Join-Path $repoDir "vm\start_vm.bat"
+
+$shortcutOk = $false
+try {
+    $shell    = New-Object -ComObject WScript.Shell
+    $shortcut = $shell.CreateShortcut($shortcutPath)
+    $shortcut.TargetPath       = $batTarget
+    $shortcut.WorkingDirectory = $repoDir
+    $shortcut.Description      = "Launch Code VM - Monaco Editor with Ollama AI"
+    $shortcut.WindowStyle      = 1   # Normal window
+    # Use python icon when available, else cmd.exe
+    $pyCmd = Get-Command python -ErrorAction SilentlyContinue
+    if (-not $pyCmd) { $pyCmd = Get-Command python3 -ErrorAction SilentlyContinue }
+    if ($pyCmd) {
+        $shortcut.IconLocation = "$($pyCmd.Source),0"
+    } else {
+        $shortcut.IconLocation = "%SystemRoot%\System32\cmd.exe,0"
+    }
+    $shortcut.Save()
+    $shortcutOk = $true
+    Ok "Desktop shortcut created — 'Code VM' icon is on your Desktop"
+} catch {
+    Warn "WScript.Shell shortcut failed ($_). Creating .bat fallback on Desktop..."
     try {
-        & powershell -NoProfile -ExecutionPolicy Bypass -File $shortcutScript
-        Ok "Desktop shortcut created — look for 'Code VM' on your Desktop"
+        $fallbackPath = Join-Path $desktopPath "Code VM.bat"
+        "@echo off`r`ncall `"$batTarget`"`r`n" | Out-File -FilePath $fallbackPath -Encoding ascii
+        $shortcutOk = $true
+        Ok "Desktop launcher created: '$fallbackPath' — double-click it to launch Code VM"
     } catch {
-        Warn "Shortcut creation failed: $_"
+        Warn "Could not create Desktop shortcut: $_"
         Warn "Run manually later: powershell -ExecutionPolicy Bypass -File vm\create_shortcut.ps1"
     }
-} else {
-    Warn "vm\create_shortcut.ps1 not found — skipping shortcut."
 }
 
 # ── 8. Done ───────────────────────────────────────────────────────────────────

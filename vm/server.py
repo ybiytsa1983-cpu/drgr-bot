@@ -22,6 +22,7 @@ import re
 import subprocess
 import tempfile
 import threading
+import urllib.parse
 from datetime import datetime, timezone
 
 import requests as _http
@@ -39,6 +40,42 @@ _lock = threading.Lock()
 
 # Ollama service base URL (override via OLLAMA_HOST env var)
 OLLAMA_BASE = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+
+# ---------------------------------------------------------------------------
+# Ollama port auto-discovery
+# ---------------------------------------------------------------------------
+# Runs once in a background thread at startup.  Scans localhost ports
+# 11434-11444 to find where Ollama is actually listening (handles users
+# who run Ollama on a non-default port, e.g. 11435).
+# If OLLAMA_HOST is explicitly set by the user we trust it and do nothing.
+_OLLAMA_SCANNED = False
+_OLLAMA_SCAN_LOCK = threading.Lock()
+
+
+def _autodiscover_ollama() -> None:
+    """Scan localhost ports 11434-11444 for an Ollama instance."""
+    global OLLAMA_BASE, _OLLAMA_SCANNED
+    if os.environ.get("OLLAMA_HOST"):
+        return  # user explicitly configured — trust it
+    with _OLLAMA_SCAN_LOCK:
+        if _OLLAMA_SCANNED:
+            return
+        _OLLAMA_SCANNED = True
+        parsed = urllib.parse.urlparse(OLLAMA_BASE)
+        scheme = parsed.scheme or "http"
+        host = parsed.hostname or "localhost"
+        for port in range(11434, 11445):
+            url = f"{scheme}://{host}:{port}"
+            try:
+                _http.get(f"{url}/api/tags", timeout=1)
+                OLLAMA_BASE = url   # update global for all subsequent requests
+                return
+            except Exception:  # pylint: disable=broad-except
+                continue
+
+
+# Kick off discovery immediately so it's done before the first browser request
+threading.Thread(target=_autodiscover_ollama, daemon=True).start()
 
 # Preferred model order for auto-selection (first match wins).
 # Override the default with OLLAMA_DEFAULT_MODEL env var.
