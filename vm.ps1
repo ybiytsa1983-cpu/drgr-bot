@@ -129,16 +129,15 @@ if ($ollamaInstalled) {
     Write-Host "           Install from https://ollama.com/download" -ForegroundColor DarkGray
 }
 
-# ── Use pythonw.exe (no-console Python) so server survives terminal closure ────
-$pythonw = $python -replace 'python\.exe$', 'pythonw.exe'
-if (-not (Test-Path $pythonw)) { $pythonw = $python }
-
-# ── Start Flask server as a detached background process ──────────────────────
+# ── Start Flask server without any console window ────────────────────────────
+# Start-Process -WindowStyle Hidden works on all Windows 7+ and does NOT
+# require pythonw.exe — no visible window, server survives closing this script.
 Write-Host "[Code VM] Starting server on port $Port ..." -ForegroundColor Cyan
 $env:VM_PORT = "$Port"
-Start-Process -FilePath $pythonw `
+Start-Process -FilePath $python `
     -ArgumentList "vm\server.py" `
-    -WorkingDirectory $repoDir
+    -WorkingDirectory $repoDir `
+    -WindowStyle Hidden
 
 # ── Wait until server responds (up to 20 s) ───────────────────────────────────
 Write-Host "[Code VM] Waiting for server to be ready..." -ForegroundColor Cyan
@@ -161,7 +160,7 @@ if (-not $ready) {
         Get-Content $logPath | ForEach-Object { Write-Host $_ }
         Write-Host "------------------" -ForegroundColor Yellow
     } else {
-        Write-Host "(no server.log found — pythonw.exe may be missing)" -ForegroundColor Yellow
+        Write-Host "(no server.log found — trying visible python.exe window)" -ForegroundColor Yellow
         Write-Host "Retrying with visible python.exe window..." -ForegroundColor Cyan
         Start-Process -FilePath $python -ArgumentList "vm\server.py" -WorkingDirectory $repoDir
         Start-Sleep -Seconds 5
@@ -229,6 +228,6 @@ if ($ollamaRunning) {
 }
 Write-Host ("  |  {0,-50}|" -f "Server runs in the background.") -ForegroundColor White
 Write-Host ("  |  {0,-50}|" -f "This window can be closed safely.") -ForegroundColor White
-Write-Host ("  |  {0,-50}|" -f "To stop: taskkill /f /im pythonw.exe") -ForegroundColor DarkGray
+Write-Host ("  |  {0,-50}|" -f "To stop: double-click stop.bat") -ForegroundColor DarkGray
 Write-Host $sep -ForegroundColor Green
 Write-Host ""

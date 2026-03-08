@@ -75,19 +75,13 @@ if not errorlevel 1 (
     )
 )
 
-REM --- Find pythonw.exe (no-console Python — server survives window close) ---
-set "PYTHONW=%PYTHON%"
-if exist ".venv\Scripts\pythonw.exe" (
-    set "PYTHONW=.venv\Scripts\pythonw.exe"
-) else (
-    for %%F in ("%PYTHON%") do (
-        if exist "%%~dpFpythonw.exe" set "PYTHONW=%%~dpFpythonw.exe"
-    )
-)
-
-REM --- Start the Flask server as a detached background process ---
+REM --- Start the Flask server without any console window ---
+REM     PowerShell Start-Process -WindowStyle Hidden works on all Windows 7+
+REM     and does NOT require pythonw.exe — no visible window, server survives
+REM     closing the launcher window.
 echo [Code VM] Starting server on port %VM_PORT%...
-start "" "%PYTHONW%" vm\server.py
+for %%F in ("%PYTHON%") do set "PYTHON_ABS=%%~fF"
+start "" powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "Start-Process '%PYTHON_ABS%' 'vm\server.py' -WorkingDirectory '%CD%' -WindowStyle Hidden"
 
 REM --- Wait until server responds (up to 20 seconds) ---
 echo [Code VM] Waiting for server to be ready...
@@ -154,7 +148,7 @@ echo  ^|    http://%LOCAL_IP%:%VM_PORT%/navigator/               ^|
 echo  +----------------------------------------------------+
 echo  ^|  Server runs in the background.                   ^|
 echo  ^|  This window can be closed safely.                ^|
-echo  ^|  To stop: taskkill /f /im pythonw.exe             ^|
+echo  ^|  To stop: double-click stop.bat                   ^|
 echo  +----------------------------------------------------+
 echo.
 popd
