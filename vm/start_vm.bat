@@ -1,8 +1,8 @@
 @echo off
 setlocal EnableDelayedExpansion
-title Code VM — Monaco Editor
+title Code VM - Monaco Editor
 
-REM ── Locate repo root (parent of this script's directory) ──────────────────
+REM --- Locate repo root (parent of this script's directory) ---
 set "SCRIPT_DIR=%~dp0"
 set "REPO_DIR=%SCRIPT_DIR%.."
 pushd "%REPO_DIR%"
