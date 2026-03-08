@@ -12,15 +12,16 @@ A Telegram bot with a built-in **AI-powered code editor** (Code VM) and **Androi
 
 ```powershell
 cd $HOME                                           # e.g. C:\Users\Drozd
-git clone https://github.com/ybiytsa1983-cpu/drgr-bot.git
+git clone -b copilot/create-monaco-code-generator https://github.com/ybiytsa1983-cpu/drgr-bot.git
 cd drgr-bot
 ```
 
-> ⚠️ If `git clone` says **"already exists"**, the folder is there from a previous attempt.
-> Just `cd` into it and pull the latest files:
+> ⚠️ If `git clone` says **"already exists"**, you have a previous clone.
+> Update it to the correct branch:
 > ```powershell
 > cd $HOME\drgr-bot
-> git pull
+> git fetch origin
+> git checkout copilot/create-monaco-code-generator
 > ```
 
 **Step 2 — verify you have the launcher files:**
@@ -29,8 +30,9 @@ cd drgr-bot
 dir install.bat
 ```
 
-You should see `install.bat` listed. If it still says *"File Not Found"* after `git pull`, check
-that your prompt ends with `…\drgr-bot>` (not `…\drgr-bot\drgr-bot>` — that means you changed into a nested subdirectory).
+You should see `install.bat` listed. If it says *"File Not Found"* check two things:
+- Your prompt ends with `…\drgr-bot>` (not `…\drgr-bot\drgr-bot>` — that means you are one directory too deep).
+- You ran the `git checkout` step above — `git pull` alone won't work if you cloned `main` before this PR was merged.
 
 **Step 3 — first-time setup:**
 
