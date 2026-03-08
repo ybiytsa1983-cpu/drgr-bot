@@ -509,46 +509,86 @@
   <span id="status-msg"></span>
 </div>
 
-<!-- Monaco Editor loader (CDN) -->
-<script src="https://unpkg.com/monaco-editor@0.44.0/min/vs/loader.js"></script>
+<!-- Monaco Editor: local bundle first (installed by install.bat), jsDelivr CDN as fallback -->
 <script>
 'use strict';
 
-// ── Monaco init ──────────────────────────────────────────────────────────────
 let editor = null;
 
-require.config({ paths: { vs: 'https://unpkg.com/monaco-editor@0.44.0/min/vs' } });
-require(['vs/editor/editor.main'], function () {
-  editor = monaco.editor.create(document.getElementById('editor-container'), {
-    value: '# Welcome to Code VM\n# Write Python here, then press Run\n\nprint("Hello, World!")\n',
-    language: 'python',
-    theme: 'vs-dark',
-    fontSize: 14,
-    minimap: { enabled: false },
-    automaticLayout: true,
-    wordWrap: 'on',
-    scrollBeyondLastLine: false,
-    renderLineHighlight: 'all',
-    quickSuggestions: true,
-    suggestOnTriggerCharacters: true,
-    tabSize: 4,
-    insertSpaces: true,
-  });
+(function () {
+  var LOCAL_VS = '/vendor/monaco/vs';
+  var CDN_VS   = 'https://cdn.jsdelivr.net/npm/monaco-editor@0.44.0/min/vs';
 
-  // Keyboard shortcuts inside the editor
-  editor.addCommand(
-    monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter,
-    runCode
+  function initMonaco(vsPath) {
+    require.config({ paths: { vs: vsPath } });
+    require(['vs/editor/editor.main'], function () {
+      editor = monaco.editor.create(document.getElementById('editor-container'), {
+        value: '# Welcome to Code VM\n# Write Python here, then press Run\n\nprint("Hello, World!")\n',
+        language: 'python',
+        theme: 'vs-dark',
+        fontSize: 14,
+        minimap: { enabled: false },
+        automaticLayout: true,
+        wordWrap: 'on',
+        scrollBeyondLastLine: false,
+        renderLineHighlight: 'all',
+        quickSuggestions: true,
+        suggestOnTriggerCharacters: true,
+        tabSize: 4,
+        insertSpaces: true,
+      });
+
+      editor.addCommand(
+        monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter,
+        runCode
+      );
+      editor.addCommand(
+        monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyK,
+        checkCode
+      );
+      editor.addCommand(
+        monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyG,
+        toggleGenerateDrawer
+      );
+    });
+  }
+
+  function loadScript(src, onok, onfail) {
+    var s = document.createElement('script');
+    s.onload = onok;
+    s.onerror = onfail;
+    s.src = src;
+    document.head.appendChild(s);
+  }
+
+  // Try local bundle first; if missing, fall back to CDN
+  loadScript(
+    LOCAL_VS + '/loader.js',
+    function () { initMonaco(LOCAL_VS); },
+    function () {
+      loadScript(
+        CDN_VS + '/loader.js',
+        function () { initMonaco(CDN_VS); },
+        function () {
+          var el = document.getElementById('editor-container');
+          var wrap = document.createElement('div');
+          wrap.style.cssText = 'padding:24px;color:#f66;font-family:sans-serif;font-size:14px';
+          var heading = document.createElement('b');
+          heading.textContent = 'Monaco Editor failed to load.';
+          var body = document.createElement('p');
+          body.style.marginTop = '12px';
+          body.textContent =
+            'The local bundle was not found and the CDN is unreachable. ' +
+            'Run install.bat again to download Monaco, then reload this page.';
+          wrap.appendChild(heading);
+          wrap.appendChild(body);
+          el.innerHTML = '';
+          el.appendChild(wrap);
+        }
+      );
+    }
   );
-  editor.addCommand(
-    monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyK,
-    checkCode
-  );
-  editor.addCommand(
-    monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyG,
-    toggleGenerateDrawer
-  );
-});
+}());
 
 // ── Language selector ────────────────────────────────────────────────────────
 document.getElementById('lang-select').addEventListener('change', function () {

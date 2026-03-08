@@ -18,7 +18,7 @@
 
 $ErrorActionPreference = "Stop"
 
-# ── Resolve paths ─────────────────────────────────────────────────────────────
+# -- Resolve paths -------------------------------------------------------------
 $scriptDir  = Split-Path -Parent $MyInvocation.MyCommand.Path
 $batFile    = Join-Path $scriptDir "start_vm.bat"
 $repoDir    = Split-Path -Parent $scriptDir
@@ -28,7 +28,7 @@ if (-not (Test-Path $batFile)) {
     exit 1
 }
 
-# ── Create the .lnk shortcut ──────────────────────────────────────────────────
+# -- Create the .lnk shortcut -------------------------------------------------
 $desktopPath  = [Environment]::GetFolderPath("Desktop")
 $shortcutPath = Join-Path $desktopPath "Code VM.lnk"
 
@@ -37,7 +37,7 @@ $shortcut = $shell.CreateShortcut($shortcutPath)
 
 $shortcut.TargetPath       = $batFile
 $shortcut.WorkingDirectory = $repoDir
-$shortcut.Description      = "Launch Code VM — Monaco Editor with Ollama AI"
+$shortcut.Description      = "Launch Code VM - Monaco Editor with Ollama AI"
 $shortcut.WindowStyle      = 1   # Normal window
 
 # Use Python icon when available (try python3 first, then python), otherwise fall back to cmd.exe icon
@@ -52,12 +52,11 @@ if ($pyCmd) {
 $shortcut.Save()
 
 Write-Host ""
-Write-Host "  ✓  Desktop shortcut created!" -ForegroundColor Green
-Write-Host "     $shortcutPath" -ForegroundColor DarkGray
+Write-Host "  [OK] Desktop shortcut created!" -ForegroundColor Green
+Write-Host "       $shortcutPath" -ForegroundColor DarkGray
 Write-Host ""
 Write-Host "  Double-click 'Code VM' on your Desktop to launch the editor." -ForegroundColor Cyan
 Write-Host "  The Monaco editor opens at http://localhost:5000" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "  Tip: right-click the shortcut → 'Pin to taskbar' to keep it" -ForegroundColor Yellow
-Write-Host "       in your taskbar as well." -ForegroundColor Yellow
+Write-Host "  Tip: right-click the shortcut -> 'Pin to taskbar'" -ForegroundColor Yellow
 Write-Host ""

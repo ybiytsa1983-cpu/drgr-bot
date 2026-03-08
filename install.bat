@@ -8,12 +8,15 @@ REM What it does:
 REM   1. Checks for Python 3.8+
 REM   2. Creates .venv virtual environment
 REM   3. Installs Python dependencies
-REM   4. Downloads and installs Ollama automatically
-REM   5. Starts downloading the AI model in the background
-REM   6. Creates a "Code VM" shortcut on your Desktop
+REM   4. Bundles Monaco Editor locally (editor works without internet)
+REM   5. Downloads and installs Ollama automatically
+REM   6. Starts downloading the AI model in the background
+REM   7. Creates a "Code VM" shortcut on your Desktop
 
 setlocal EnableDelayedExpansion
 cd /d "%~dp0"
+
+set MODEL_NAME=qwen3-vl:8b
 
 echo.
 echo  ============================================
@@ -70,7 +73,17 @@ if exist "requirements.txt" (
     echo  [OK] requirements.txt processed
 )
 
-REM --- 4. Install Ollama automatically ---
+REM --- 4. Bundle Monaco Editor locally ---
+echo.
+echo  [--] Bundling Monaco Editor (editor will work without internet)...
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0vm\bundle_monaco.ps1"
+if errorlevel 1 (
+    echo  [!] Monaco bundle failed -- CDN fallback will be used
+) else (
+    echo  [OK] Monaco ready
+)
+
+REM --- 5. Install Ollama automatically ---
 echo.
 echo  [--] Checking for Ollama...
 ollama --version >nul 2>&1
@@ -91,6 +104,10 @@ if errorlevel 1 (
 
 echo  [--] Installing Ollama...
 "%TEMP%\OllamaSetup.exe" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+if errorlevel 1 (
+    echo  [!] Ollama installation failed -- you can install manually: https://ollama.com/download
+    goto SHORTCUT
+)
 
 REM Add Ollama to PATH for the rest of this session
 set "PATH=%PATH%;%LOCALAPPDATA%\Programs\Ollama"
@@ -98,14 +115,14 @@ echo  [OK] Ollama installed
 
 :OLLAMA_DONE
 
-REM --- 5. Start AI model download in background ---
+REM --- 6. Start AI model download in background ---
 ollama --version >nul 2>&1
 if not errorlevel 1 (
-    ollama list 2>nul | findstr "qwen3-vl" >nul
+    ollama list 2>nul | findstr "%MODEL_NAME%" >nul
     if errorlevel 1 (
-        echo  [--] Starting AI model download in background (qwen3-vl:8b ~5 GB)
+        echo  [--] Starting AI model download in background (%MODEL_NAME% ~5 GB)
         echo       A small window will show download progress -- it can run while you work.
-        start "Ollama model pull" /min cmd /c "ollama pull qwen3-vl:8b && echo [OK] Model ready! && pause"
+        start "Ollama model pull" /min cmd /c "ollama pull %MODEL_NAME% && echo [OK] Model ready! && pause"
         echo  [OK] Model download started
     ) else (
         echo  [OK] AI model already downloaded
@@ -114,7 +131,7 @@ if not errorlevel 1 (
 
 :SHORTCUT
 
-REM --- 6. Create desktop shortcut ---
+REM --- 7. Create desktop shortcut ---
 echo.
 echo  [--] Creating "Code VM" shortcut on your Desktop...
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0vm\create_shortcut.ps1"
