@@ -140,10 +140,11 @@ Start-Process -FilePath $pythonw `
     -ArgumentList "vm\server.py" `
     -WorkingDirectory $repoDir
 
-# ── Wait until server responds (up to 15 s) ───────────────────────────────────
+# ── Wait until server responds (up to 20 s) ───────────────────────────────────
 Write-Host "[Code VM] Waiting for server to be ready..." -ForegroundColor Cyan
+$logPath = Join-Path $repoDir "server.log"
 $ready = $false
-for ($i = 0; $i -lt 15; $i++) {
+for ($i = 0; $i -lt 20; $i++) {
     Start-Sleep -Seconds 1
     try {
         $null = Invoke-WebRequest -Uri "http://localhost:$Port/" -UseBasicParsing -TimeoutSec 2
@@ -152,7 +153,24 @@ for ($i = 0; $i -lt 15; $i++) {
     } catch { }
 }
 if (-not $ready) {
-    Write-Host "[Code VM] Warning: server may not be ready yet — opening browser anyway." -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "[Code VM] ERROR: server did not start after 20 seconds!" -ForegroundColor Red
+    Write-Host ""
+    if (Test-Path $logPath) {
+        Write-Host "--- server.log ---" -ForegroundColor Yellow
+        Get-Content $logPath | ForEach-Object { Write-Host $_ }
+        Write-Host "------------------" -ForegroundColor Yellow
+    } else {
+        Write-Host "(no server.log found — pythonw.exe may be missing)" -ForegroundColor Yellow
+        Write-Host "Retrying with visible python.exe window..." -ForegroundColor Cyan
+        Start-Process -FilePath $python -ArgumentList "vm\server.py" -WorkingDirectory $repoDir
+        Start-Sleep -Seconds 5
+    }
+    Write-Host ""
+    Write-Host "Fix the error above then run .\start.ps1 again." -ForegroundColor Yellow
+    Write-Host "Tip: .venv\Scripts\pip install flask requests" -ForegroundColor Cyan
+    Read-Host "Press Enter to exit"
+    exit 1
 }
 
 # ── Find local LAN IP ─────────────────────────────────────────────────────────

@@ -89,7 +89,7 @@ REM --- Start the Flask server as a detached background process ---
 echo [Code VM] Starting server on port %VM_PORT%...
 start "" "%PYTHONW%" vm\server.py
 
-REM --- Wait until server responds (up to 15 seconds) ---
+REM --- Wait until server responds (up to 20 seconds) ---
 echo [Code VM] Waiting for server to be ready...
 set /a TRIES=0
 :WAIT_LOOP
@@ -97,10 +97,35 @@ timeout /t 1 /nobreak >nul
 %PYTHON% -c "import urllib.request; urllib.request.urlopen('http://localhost:%VM_PORT%/')" >nul 2>&1
 if not errorlevel 1 goto SERVER_READY
 set /a TRIES+=1
-if !TRIES! lss 15 goto WAIT_LOOP
-echo [Code VM] Warning: server may not be ready yet - opening browser anyway.
+if !TRIES! lss 20 goto WAIT_LOOP
+
+echo.
+echo  [ERROR] Server did not start after 20 seconds!
+echo.
+echo  --- server.log ---
+if exist "%REPO_DIR%\server.log" (
+    type "%REPO_DIR%\server.log"
+) else (
+    echo (no log found -- pythonw.exe may be missing, trying with python.exe)
+    REM Fallback: start with visible console so user can see the error
+    start "Code VM Server (debug)" "%PYTHON%" vm\server.py
+)
+echo  ------------------
+echo.
+echo  Fix the error above, then run start.bat again.
+echo  Tip: reinstall dependencies with:  .venv\Scripts\pip install -r requirements.txt
+echo.
+pause
+popd
+endlocal
+exit /b 1
 
 :SERVER_READY
+REM --- Record the server PID for stop.bat ---
+for /f "tokens=5" %%p in ('netstat -aon 2^>nul ^| findstr ":%VM_PORT%.*LISTEN"') do (
+    echo %%p > "%REPO_DIR%\server.pid"
+)
+
 REM --- Find local IP ---
 for /f "tokens=*" %%i in ('%PYTHON% -c "import socket; s=socket.socket(); s.connect((\"8.8.8.8\",80)); print(s.getsockname()[0]); s.close()" 2^>nul') do set LOCAL_IP=%%i
 if "%LOCAL_IP%"=="" set LOCAL_IP=YOUR_IP

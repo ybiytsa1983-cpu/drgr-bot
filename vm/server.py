@@ -751,7 +751,30 @@ def generate_html():
 # Entry point
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    port = int(os.environ.get("VM_PORT", 5000))
-    # Ensure instructions file is initialised before accepting requests
-    load_instructions()
-    app.run(host="0.0.0.0", port=port, debug=False)
+    import sys as _sys
+    import traceback as _tb
+
+    # When launched via pythonw.exe (no console) redirect all output to a log
+    # file in the repo root so startup errors are always visible to the user.
+    # The file handle is intentionally left open for the lifetime of the process
+    # so Flask's own logging continues to go to the file.
+    _repo_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    _log_path = os.path.join(_repo_dir, "server.log")
+    try:
+        _log_fh = open(_log_path, "w", buffering=1, encoding="utf-8")
+        _sys.stdout = _log_fh
+        _sys.stderr = _log_fh
+    except OSError as _e:
+        # Can't open log — warn on original stderr then continue without logging
+        print(f"[Code VM] Warning: cannot write server.log: {_e}", file=_sys.__stderr__)
+
+    try:
+        port = int(os.environ.get("VM_PORT", 5000))
+        print(f"[Code VM] Starting on port {port} ...", flush=True)
+        # Ensure instructions file is initialised before accepting requests
+        load_instructions()
+        print("[Code VM] Flask app starting.", flush=True)
+        app.run(host="0.0.0.0", port=port, debug=False)
+    except Exception:
+        print(_tb.format_exc(), flush=True)
+        raise

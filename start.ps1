@@ -31,6 +31,9 @@ $scriptRoot = if ($PSScriptRoot) {
 # ── Always run from the repository root ───────────────────────────────────────
 Set-Location $scriptRoot
 
+# ── Auto-update from remote (silent, best-effort) ────────────────────────────
+try { git pull --ff-only --quiet 2>$null } catch { }
+
 # ── First-time setup if .venv is missing ──────────────────────────────────────
 $venvPython = Join-Path $scriptRoot ".venv\Scripts\python.exe"
 

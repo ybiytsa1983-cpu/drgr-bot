@@ -11,6 +11,9 @@ REM   In PowerShell:  .\start.ps1   (recommended)
 
 cd /d "%~dp0"
 
+REM -- Auto-update from remote (silent, best-effort) ------------------------
+git pull --ff-only --quiet >nul 2>&1
+
 REM -- First-time setup if .venv is missing ---------------------------------
 if not exist ".venv\Scripts\python.exe" (
     echo.

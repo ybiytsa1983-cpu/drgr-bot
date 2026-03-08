@@ -3,5 +3,6 @@ __pycache__/
 *.pyo
 .env
 *.log
+server.pid
 .venv/
 venv/
