@@ -8,19 +8,44 @@ A Telegram bot with a built-in **AI-powered code editor** (Code VM) and **Androi
 
 ### Windows — PowerShell or cmd.exe
 
+**Step 1 — open a fresh terminal and go to your home (or any projects) folder:**
+
 ```powershell
-# 1. Clone the repo (once)
+cd $HOME          # e.g. C:\Users\Drozd
+```
+
+> ⚠️ **Do NOT run inside an existing `drgr-bot` folder.**
+> If `dir` already shows `install.bat`, skip to Step 3.
+
+**Step 2 — clone the repo (once):**
+
+```powershell
 git clone https://github.com/ybiytsa1983-cpu/drgr-bot.git
 cd drgr-bot
+```
 
-# 2. First-time setup (creates venv, installs Flask, shows Ollama instructions)
+After `cd drgr-bot` your prompt should end with `…\drgr-bot>`.
+Verify the files are there:
+
+```powershell
+dir install.bat
+```
+
+You should see `install.bat` listed. If you see *"File Not Found"*, you are in the wrong folder — check the path in your prompt.
+
+**Step 3 — first-time setup:**
+
+```powershell
 .\install.bat
+```
 
-# 3. Launch the VM (every time)
+**Step 4 — launch the VM (every time after that):**
+
+```powershell
 .\vm.bat
 ```
 
-> **Note:** In PowerShell you must use `.\` before `.bat` names (e.g. `.\vm.bat`).
+> **Note:** In PowerShell you must use `.\` before `.bat` names.
 > Typing `vm.bat` without `.\` gives *"not recognized"* — that is normal PowerShell behavior.
 
 > **Alternative — native PowerShell scripts** (optional, same result):
