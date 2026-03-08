@@ -79,6 +79,13 @@ if ($LASTEXITCODE -ne 0) {
     }
 }
 
+# ── Resolve Ollama host URL and port from OLLAMA_HOST env var ────────────────
+# server.py reads OLLAMA_HOST too — keep them in sync.
+# Default: http://localhost:11434  Override: set OLLAMA_HOST=http://localhost:11435
+if (-not $env:OLLAMA_HOST) { $env:OLLAMA_HOST = "http://localhost:11434" }
+$ollamaPort = 11434
+if ($env:OLLAMA_HOST -match ':(\d+)/?$') { $ollamaPort = [int]$Matches[1] }
+
 # ── Auto-start Ollama if installed but not yet running ────────────────────────
 $ollamaRunning  = $false
 $ollamaInstalled = $false
@@ -88,20 +95,21 @@ try {
 } catch { }
 
 if ($ollamaInstalled) {
-    $ollamaListening = netstat -an 2>$null | Select-String ":11434.*LISTEN"
+    $ollamaListening = netstat -an 2>$null | Select-String ":$ollamaPort.*LISTEN"
     if ($ollamaListening) {
-        Write-Host "[Code VM] Ollama already running on port 11434." -ForegroundColor Green
+        Write-Host "[Code VM] Ollama already running on port $ollamaPort." -ForegroundColor Green
         $ollamaRunning = $true
     } else {
-        Write-Host "[Code VM] Starting Ollama service..." -ForegroundColor Cyan
+        Write-Host "[Code VM] Starting Ollama service on port $ollamaPort..." -ForegroundColor Cyan
+        # OLLAMA_HOST is already set in the environment so ollama serve picks it up
         Start-Process -FilePath "ollama" -ArgumentList "serve" -WindowStyle Minimized
-        # Wait up to 10 s for Ollama to start listening on port 11434
+        # Wait up to 10 s for Ollama to start listening
         for ($i = 0; $i -lt 10; $i++) {
             Start-Sleep -Seconds 1
-            $ollamaListening = netstat -an 2>$null | Select-String ":11434.*LISTEN"
+            $ollamaListening = netstat -an 2>$null | Select-String ":$ollamaPort.*LISTEN"
             if ($ollamaListening) { break }
         }
-        if (netstat -an 2>$null | Select-String ":11434.*LISTEN") {
+        if (netstat -an 2>$null | Select-String ":$ollamaPort.*LISTEN") {
             $ollamaRunning = $true
         } else {
             Write-Host "[Code VM] Warning: Ollama may not have started yet." -ForegroundColor Yellow
@@ -172,7 +180,7 @@ if ($localIP) {
 }
 Write-Host ("  |{0}|" -f ("-" * 52)) -ForegroundColor DarkGreen
 if ($ollamaRunning) {
-    Write-Host ("  |  {0,-50}|" -f "Ollama AI:  running on port 11434  [OK]") -ForegroundColor Green
+    Write-Host ("  |  {0,-50}|" -f "Ollama AI:  running on port $ollamaPort  [OK]") -ForegroundColor Green
 } elseif ($ollamaInstalled) {
     Write-Host ("  |  {0,-50}|" -f "Ollama AI:  installed — run 'ollama serve'") -ForegroundColor Yellow
 } else {

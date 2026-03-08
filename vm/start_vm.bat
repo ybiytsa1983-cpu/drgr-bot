@@ -55,16 +55,23 @@ if errorlevel 1 (
     )
 )
 
+REM --- Determine Ollama port from OLLAMA_HOST env var (default 11434) ---
+REM server.py reads OLLAMA_HOST too; set it here if not already set.
+if "%OLLAMA_HOST%"=="" set "OLLAMA_HOST=http://localhost:11434"
+set "OLLAMA_PORT=11434"
+for /f "tokens=*" %%p in ('%PYTHON% -c "import urllib.parse,sys; u=sys.argv[1]; print(urllib.parse.urlparse(u).port or 11434)" "%OLLAMA_HOST%" 2^>nul') do set OLLAMA_PORT=%%p
+if "%OLLAMA_PORT%"=="" set OLLAMA_PORT=11434
+
 REM --- Auto-start Ollama if installed but not yet running ---
 ollama --version >nul 2>&1
 if not errorlevel 1 (
-    netstat -an 2>nul | findstr ":11434.*LISTEN" >nul
+    netstat -an 2>nul | findstr ":%OLLAMA_PORT%.*LISTEN" >nul
     if errorlevel 1 (
-        echo [Code VM] Starting Ollama service...
+        echo [Code VM] Starting Ollama service on port %OLLAMA_PORT%...
         start /min "Ollama" ollama serve
         timeout /t 2 /nobreak >nul
     ) else (
-        echo [Code VM] Ollama already running.
+        echo [Code VM] Ollama already running on port %OLLAMA_PORT%.
     )
 )
 
