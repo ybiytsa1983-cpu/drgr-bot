@@ -412,6 +412,40 @@ _CHALLENGES = [
         ),
         "demo_url": None,
     },
+    {
+        "id": "autonomous_browser_agent",
+        "title": "🤖 Автономный агент в браузере",
+        "difficulty": "⭐⭐⭐⭐⭐",
+        "language": "html",
+        "prompt": (
+            "Create a complete single-file HTML autonomous browser agent that works entirely offline "
+            "(no server, no CDN, zero external requests). Requirements:\n\n"
+            "1. TASK QUEUE — user types a task in natural language (e.g. 'summarise this text', "
+            "'sort this list', 'calculate fibonacci to N'), agent parses intent and executes it.\n\n"
+            "2. CODE GENERATION — agent generates and runs JavaScript code to fulfil the task "
+            "using Function() constructor in a try/catch sandbox, captures stdout via console.log override.\n\n"
+            "3. SELF-CORRECTION — if execution throws an error, agent rewrites the code and retries "
+            "up to 3 times, each attempt shown in the log with diff highlighting.\n\n"
+            "4. MEMORY — uses IndexedDB to persist task history and results across page reloads; "
+            "shows history panel with timestamps.\n\n"
+            "5. FILE I/O — can read dropped files (text, CSV, JSON) and use their content as task input; "
+            "can export results as a downloaded file.\n\n"
+            "6. OFFLINE AI (optional) — if window.ai (Chrome Built-in AI) or a local WebLLM is "
+            "available use it for intent parsing; otherwise use a deterministic rule-based parser.\n\n"
+            "7. UI — dark VS Code-like theme, split layout: left = task input + history, "
+            "right = live execution log with colour-coded lines (info/warn/error/result), "
+            "bottom = generated code viewer with syntax highlighting via a simple tokenizer.\n\n"
+            "All JavaScript must be inline. No import/export. No external scripts. "
+            "Must work by opening the .html file directly in a browser (file:// protocol)."
+        ),
+        "description": (
+            "Полностью автономный агент в одном HTML файле: принимает задачи на естественном языке, "
+            "генерирует и запускает JavaScript, самостоятельно исправляет ошибки (до 3 попыток), "
+            "сохраняет историю в IndexedDB, читает файлы drag-and-drop. "
+            "Работает без интернета, без сервера — только браузер."
+        ),
+        "demo_url": None,
+    },
 ]
 
 
