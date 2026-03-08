@@ -1,23 +1,45 @@
 # 🤖 drgr-bot + ⚡ Code VM
 
-A Telegram bot with a built-in **AI-powered code editor** (Code VM) and **Android navigator PWA** — all runnable from a laptop in a few commands.
+A Telegram bot with a built-in **AI-powered code editor** (Code VM) and **Android navigator PWA** — all runnable from a laptop.
 
 ---
 
 ## ⚡ Быстрый старт — одна команда
 
-### Windows — скачай и запусти
+### Windows
+
+**Шаг 1 — клонируй репозиторий** (один раз):
 
 ```powershell
 git clone -b copilot/create-monaco-code-generator https://github.com/ybiytsa1983-cpu/drgr-bot.git
 cd drgr-bot
-.\start.bat
 ```
 
-> **Первый раз:** установит всё нужное автоматически (~1-2 мин), потом откроет браузер.  
-> **Каждый следующий раз:** просто откроет браузер.
+**Шаг 2 — запусти** (каждый раз):
 
-Или **двойной клик по `start.bat`** в Проводнике — браузер откроется сам.
+```powershell
+.\start.ps1
+```
+
+> 💡 **Обязательно пишите `.\` перед командой** — это особенность PowerShell.
+> Просто `start.ps1` **не работает** в PowerShell. Нужно точно `.\start.ps1`.
+
+Первый запуск установит всё автоматически (~1-2 мин), потом откроет браузер.  
+Каждый следующий раз: просто откроет браузер.
+
+> ⚠️ Если PowerShell говорит **"running scripts is disabled"** — выполни это один раз:
+> ```powershell
+> Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+> ```
+> Потом снова запусти `.\start.ps1`.
+
+**Альтернатива — двойной клик** по `start.bat` в Проводнике (без PowerShell, просто мышкой).
+
+**Альтернатива — cmd.exe:**
+```cmd
+cd C:\Users\Drozd\drgr-bot
+.\start.bat
+```
 
 ### macOS / Linux
 
@@ -39,15 +61,10 @@ ollama serve
 ```
 
 Хочешь другой порт? Укажи явно перед запуском:
-```bat
-REM Windows cmd:
-set OLLAMA_HOST=http://localhost:11435
-.\start.bat
-```
 ```powershell
 # PowerShell:
 $env:OLLAMA_HOST = "http://localhost:11435"
-.\start.bat
+.\start.ps1
 ```
 
 ---

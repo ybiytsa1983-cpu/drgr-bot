@@ -214,7 +214,11 @@ Write-Host ""
 Info "Creating 'Code VM' shortcut on your Desktop..."
 $desktopPath  = [Environment]::GetFolderPath("Desktop")
 $shortcutPath = Join-Path $desktopPath "Code VM.lnk"
-$batTarget    = Join-Path $repoDir "vm\start_vm.bat"
+# Point to start.bat in the repo root (one-command launcher)
+$batTarget    = Join-Path $repoDir "start.bat"
+if (-not (Test-Path $batTarget)) {
+    $batTarget = Join-Path $repoDir "vm\start_vm.bat"  # fallback
+}
 
 $shortcutOk = $false
 try {
@@ -225,8 +229,9 @@ try {
     $shortcut.Description      = "Launch Code VM - Monaco Editor with Ollama AI"
     $shortcut.WindowStyle      = 1   # Normal window
     # Use python icon when available, else cmd.exe
-    $pyCmd = Get-Command python -ErrorAction SilentlyContinue
+    $pyCmd = Get-Command python  -ErrorAction SilentlyContinue
     if (-not $pyCmd) { $pyCmd = Get-Command python3 -ErrorAction SilentlyContinue }
+    if (-not $pyCmd) { $pyCmd = Get-Command py      -ErrorAction SilentlyContinue }
     if ($pyCmd) {
         $shortcut.IconLocation = "$($pyCmd.Source),0"
     } else {
