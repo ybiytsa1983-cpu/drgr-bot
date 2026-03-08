@@ -10,7 +10,10 @@
       1. Checks for Python 3.8+
       2. Creates a virtual environment (.venv)
       3. Installs Python dependencies (Flask, requests)
-      4. Prints Ollama installation instructions
+      4. Bundles Monaco Editor locally (works without internet after this)
+      5. Downloads and installs Ollama automatically
+      6. Starts downloading the AI model in the background
+      7. Creates a "Code VM" shortcut on your Desktop
 
 .NOTES
     If you see "script cannot be loaded because running scripts is disabled",
@@ -106,43 +109,134 @@ if (Test-Path $reqFile) {
     Ok "requirements.txt processed"
 }
 
-# ── 6. Ollama instructions ────────────────────────────────────────────────────
+# ── 4. Bundle Monaco Editor locally ──────────────────────────────────────────
 Write-Host ""
 Write-Host "  =============================================" -ForegroundColor White
-Write-Host "   Ollama (AI features — optional)            " -ForegroundColor White
+Write-Host "   Bundling Monaco Editor (offline support)   " -ForegroundColor White
 Write-Host "  =============================================" -ForegroundColor White
 Write-Host ""
 
-$ollamaOk = $null
-try { $ollamaOk = & ollama --version 2>&1 } catch { }
-
-if ($ollamaOk) {
-    Ok "Ollama already installed: $ollamaOk"
-    Write-Host ""
-    Write-Host "  Pull the recommended model (first time, ~5 GB):" -ForegroundColor Cyan
-    Write-Host "    ollama pull qwen3-vl:8b" -ForegroundColor White
-    Write-Host "    ollama serve           # run in a separate terminal" -ForegroundColor White
+$bundleScript = Join-Path $repoDir "vm\bundle_monaco.ps1"
+if (Test-Path $bundleScript) {
+    Info "Bundling Monaco Editor files locally..."
+    try {
+        & powershell -NoProfile -ExecutionPolicy Bypass -File $bundleScript
+        Ok "Monaco Editor bundled (editor works without internet)"
+    } catch {
+        Warn "Monaco bundle failed — CDN fallback will be used automatically."
+    }
 } else {
-    Warn "Ollama not found — AI code generation will not work until you install it."
-    Write-Host ""
-    Write-Host "  Download and install from:" -ForegroundColor Yellow
-    Write-Host "    https://ollama.com/download" -ForegroundColor Cyan
-    Write-Host ""
-    Write-Host "  After installing, run in a separate terminal:" -ForegroundColor Yellow
-    Write-Host "    ollama pull qwen3-vl:8b" -ForegroundColor White
-    Write-Host "    ollama serve" -ForegroundColor White
+    Warn "vm\bundle_monaco.ps1 not found — CDN fallback will be used."
 }
 
-# ── 7. Done ───────────────────────────────────────────────────────────────────
+# ── 5. Install Ollama automatically ──────────────────────────────────────────
+Write-Host ""
+Write-Host "  =============================================" -ForegroundColor White
+Write-Host "   Ollama (AI features)                       " -ForegroundColor White
+Write-Host "  =============================================" -ForegroundColor White
+Write-Host ""
+
+$ollamaInstalled = $false
+try {
+    $ollamaVer = & ollama --version 2>&1
+    if ($LASTEXITCODE -eq 0) { $ollamaInstalled = $true }
+} catch { }
+
+if ($ollamaInstalled) {
+    Ok "Ollama already installed: $ollamaVer"
+} else {
+    Info "Downloading Ollama installer (this may take a minute)..."
+    $ollamaInstaller = Join-Path $env:TEMP "OllamaSetup.exe"
+    try {
+        Invoke-WebRequest -Uri "https://ollama.com/download/OllamaSetup.exe" `
+            -OutFile $ollamaInstaller -UseBasicParsing
+        Info "Installing Ollama silently..."
+        $proc = Start-Process -FilePath $ollamaInstaller `
+            -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART" `
+            -Wait -PassThru
+        if ($proc.ExitCode -eq 0) {
+            # Make ollama visible in current session PATH
+            $ollamaDir = Join-Path $env:LOCALAPPDATA "Programs\Ollama"
+            if (Test-Path $ollamaDir) {
+                $env:PATH = "$ollamaDir;$env:PATH"
+            }
+            Ok "Ollama installed"
+            $ollamaInstalled = $true
+        } else {
+            Warn "Ollama installation returned exit code $($proc.ExitCode)."
+            Warn "Install manually later: https://ollama.com/download"
+        }
+    } catch {
+        Warn "Download or install failed: $_"
+        Warn "Install manually later: https://ollama.com/download"
+    }
+}
+
+# ── 6. Start AI model download in background ─────────────────────────────────
+$modelName = "qwen3-vl:8b"
+if ($ollamaInstalled) {
+    $modelPresent = $false
+    try {
+        $list = & ollama list 2>&1
+        # Check each line: model name should appear as the first token on a data line
+        foreach ($line in ($list -split "`n")) {
+            if ($line -match "^\s*$([regex]::Escape($modelName))\b") {
+                $modelPresent = $true
+                break
+            }
+        }
+    } catch { }
+
+    if ($modelPresent) {
+        Ok "AI model already downloaded ($modelName)"
+    } else {
+        Info "Starting AI model download in background ($modelName, ~5 GB)..."
+        Info "A small window will show download progress — it can run while you work."
+        Start-Process cmd -ArgumentList "/c ollama pull $modelName && echo [OK] Model ready! && pause" `
+            -WindowStyle Minimized
+        Ok "Model download started in background"
+    }
+} else {
+    Warn "Ollama not installed — skipping model download."
+    Write-Host "  To enable AI features later:" -ForegroundColor Yellow
+    Write-Host "    1. Install from https://ollama.com/download" -ForegroundColor Cyan
+    Write-Host "    2. Run: ollama pull $modelName" -ForegroundColor Cyan
+    Write-Host "    3. Run: ollama serve" -ForegroundColor Cyan
+}
+
+# ── 7. Create Desktop shortcut ────────────────────────────────────────────────
+Write-Host ""
+Write-Host "  =============================================" -ForegroundColor White
+Write-Host "   Desktop shortcut                           " -ForegroundColor White
+Write-Host "  =============================================" -ForegroundColor White
+Write-Host ""
+
+$shortcutScript = Join-Path $repoDir "vm\create_shortcut.ps1"
+if (Test-Path $shortcutScript) {
+    Info "Creating 'Code VM' shortcut on your Desktop..."
+    try {
+        & powershell -NoProfile -ExecutionPolicy Bypass -File $shortcutScript
+        Ok "Desktop shortcut created — look for 'Code VM' on your Desktop"
+    } catch {
+        Warn "Shortcut creation failed: $_"
+        Warn "Run manually later: powershell -ExecutionPolicy Bypass -File vm\create_shortcut.ps1"
+    }
+} else {
+    Warn "vm\create_shortcut.ps1 not found — skipping shortcut."
+}
+
+# ── 8. Done ───────────────────────────────────────────────────────────────────
 Write-Host ""
 Write-Host "  =============================================" -ForegroundColor Green
 Write-Host "   Setup complete!                            " -ForegroundColor Green
 Write-Host "  =============================================" -ForegroundColor Green
 Write-Host ""
-Write-Host "  Launch the VM:" -ForegroundColor White
-Write-Host "    .\vm.bat        (PowerShell or cmd.exe)" -ForegroundColor Cyan
-Write-Host "    .\vm.ps1        (PowerShell — native, optional)" -ForegroundColor Cyan
-Write-Host "    vm.bat          (cmd.exe / double-click in Explorer)" -ForegroundColor Cyan
+Write-Host "  A 'Code VM' shortcut is on your Desktop." -ForegroundColor White
+Write-Host "  Double-click it to launch the editor!" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "  Or launch from this terminal:" -ForegroundColor White
+Write-Host "    .\vm.bat        (cmd / PowerShell)" -ForegroundColor Cyan
+Write-Host "    .\vm.ps1        (PowerShell native)" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "  Then open in browser:" -ForegroundColor White
 Write-Host "    http://localhost:5000/            Code VM" -ForegroundColor Cyan

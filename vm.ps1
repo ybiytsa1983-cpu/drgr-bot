@@ -79,6 +79,39 @@ if ($LASTEXITCODE -ne 0) {
     }
 }
 
+# ── Auto-start Ollama if installed but not yet running ────────────────────────
+$ollamaRunning  = $false
+$ollamaInstalled = $false
+try {
+    $null = & ollama --version 2>&1
+    if ($LASTEXITCODE -eq 0) { $ollamaInstalled = $true }
+} catch { }
+
+if ($ollamaInstalled) {
+    $ollamaListening = netstat -an 2>$null | Select-String ":11434.*LISTEN"
+    if ($ollamaListening) {
+        Write-Host "[Code VM] Ollama already running on port 11434." -ForegroundColor Green
+        $ollamaRunning = $true
+    } else {
+        Write-Host "[Code VM] Starting Ollama service..." -ForegroundColor Cyan
+        Start-Process -FilePath "ollama" -ArgumentList "serve" -WindowStyle Minimized
+        # Wait up to 10 s for Ollama to start listening on port 11434
+        for ($i = 0; $i -lt 10; $i++) {
+            Start-Sleep -Seconds 1
+            $ollamaListening = netstat -an 2>$null | Select-String ":11434.*LISTEN"
+            if ($ollamaListening) { break }
+        }
+        if (netstat -an 2>$null | Select-String ":11434.*LISTEN") {
+            $ollamaRunning = $true
+        } else {
+            Write-Host "[Code VM] Warning: Ollama may not have started yet." -ForegroundColor Yellow
+        }
+    }
+} else {
+    Write-Host "[Code VM] Ollama not installed — AI features disabled." -ForegroundColor Yellow
+    Write-Host "           Install from https://ollama.com/download" -ForegroundColor DarkGray
+}
+
 # ── Start Flask server ────────────────────────────────────────────────────────
 Write-Host "[Code VM] Starting server on port $Port ..." -ForegroundColor Cyan
 $env:VM_PORT = "$Port"
@@ -138,7 +171,13 @@ if ($localIP) {
     Write-Host ("  |  {0,-50}|" -f "then open http://YOUR_IP:$Port/navigator/") -ForegroundColor Yellow
 }
 Write-Host ("  |{0}|" -f ("-" * 52)) -ForegroundColor DarkGreen
-Write-Host ("  |  {0,-50}|" -f "Ollama AI: run 'ollama serve' separately") -ForegroundColor White
+if ($ollamaRunning) {
+    Write-Host ("  |  {0,-50}|" -f "Ollama AI:  running on port 11434  [OK]") -ForegroundColor Green
+} elseif ($ollamaInstalled) {
+    Write-Host ("  |  {0,-50}|" -f "Ollama AI:  installed — run 'ollama serve'") -ForegroundColor Yellow
+} else {
+    Write-Host ("  |  {0,-50}|" -f "Ollama AI:  not installed (https://ollama.com)") -ForegroundColor DarkGray
+}
 Write-Host ("  |  {0,-50}|" -f "Press Ctrl+C or close this window to stop.") -ForegroundColor White
 Write-Host $sep -ForegroundColor Green
 Write-Host ""
