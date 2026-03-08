@@ -96,7 +96,8 @@ echo   [OK] Setup complete!
 echo  +++++++++++++++++++++++++++++++++++++++++++++
 echo.
 echo  Launch the VM:
-echo    vm.bat          (or double-click vm.bat in File Explorer)
+echo    .\vm.bat        (PowerShell or cmd.exe)
+echo    vm.bat          (double-click in File Explorer)
 echo.
 echo  Then open in browser:
 echo    http://localhost:5000/             Code VM

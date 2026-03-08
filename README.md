@@ -6,7 +6,7 @@ A Telegram bot with a built-in **AI-powered code editor** (Code VM) and **Androi
 
 ## ⚡ Quick Start — запуск с ноутбука
 
-### Windows — PowerShell (Windows Terminal, Win 10/11 default)
+### Windows — PowerShell or cmd.exe
 
 ```powershell
 # 1. Clone the repo (once)
@@ -14,27 +14,23 @@ git clone https://github.com/ybiytsa1983-cpu/drgr-bot.git
 cd drgr-bot
 
 # 2. First-time setup (creates venv, installs Flask, shows Ollama instructions)
-.\install.ps1
+.\install.bat
 
 # 3. Launch the VM (every time)
-.\vm.ps1
+.\vm.bat
 ```
 
-> **Note:** In PowerShell you must use `.\` before script/bat names.
-> If you get *"не распознан"* / *"not recognized"* — use `.\vm.ps1` not `vm.ps1`.
+> **Note:** In PowerShell you must use `.\` before `.bat` names (e.g. `.\vm.bat`).
+> Typing `vm.bat` without `.\` gives *"not recognized"* — that is normal PowerShell behavior.
 
-> **If you get "running scripts is disabled"** — run this once in PowerShell, then retry:
+> **Alternative — native PowerShell scripts** (optional, same result):
 > ```powershell
+> # If you get "running scripts is disabled", run this once first:
 > Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+>
+> .\install.ps1   # first time
+> .\vm.ps1        # every time
 > ```
-
-### Windows — cmd.exe (old command prompt)
-
-```bat
-cd drgr-bot
-install.bat
-vm.bat
-```
 
 Or **double-click** `vm.bat` in File Explorer — browser opens automatically.
 

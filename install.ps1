@@ -140,8 +140,9 @@ Write-Host "   Setup complete!                            " -ForegroundColor Gre
 Write-Host "  =============================================" -ForegroundColor Green
 Write-Host ""
 Write-Host "  Launch the VM:" -ForegroundColor White
-Write-Host "    .\vm.ps1        (PowerShell)" -ForegroundColor Cyan
-Write-Host "    vm.bat          (cmd.exe / double-click)" -ForegroundColor Cyan
+Write-Host "    .\vm.bat        (PowerShell or cmd.exe)" -ForegroundColor Cyan
+Write-Host "    .\vm.ps1        (PowerShell — native, optional)" -ForegroundColor Cyan
+Write-Host "    vm.bat          (cmd.exe / double-click in Explorer)" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "  Then open in browser:" -ForegroundColor White
 Write-Host "    http://localhost:5000/            Code VM" -ForegroundColor Cyan
