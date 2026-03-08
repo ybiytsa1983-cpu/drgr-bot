@@ -285,6 +285,48 @@
       min-height: 60px;
     }
 
+    /* ── Generate drawer ── */
+    .gen-drawer {
+      background: #252526;
+      border-bottom: 2px solid #8b3ce8;
+      padding: 8px 14px;
+      display: none;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: flex-end;
+      flex-shrink: 0;
+    }
+    .gen-drawer.open { display: flex; }
+    .gen-field { display: flex; flex-direction: column; gap: 3px; }
+    .gen-field.grow { flex: 1; min-width: 200px; }
+    .gen-field label { font-size: 10px; color: #9d9d9d; text-transform: uppercase; letter-spacing: .5px; }
+    .gen-prompt-input {
+      background: #3c3c3c;
+      border: 1px solid #555;
+      border-radius: 4px;
+      color: #d4d4d4;
+      font-size: 13px;
+      padding: 5px 9px;
+    }
+    .gen-prompt-input:focus { outline: none; border-color: #8b3ce8; }
+    .gen-prompt-input::placeholder { color: #6a9955; }
+    .btn-generate  { background: #8b3ce8; color: #fff; }
+    .btn-generate.active { background: #6a1fa8; }
+    .btn-gen-code  { background: #107c10; color: #fff; }
+    .btn-gen-html  { background: #b85c00; color: #fff; }
+
+    /* ── HTML preview pane ── */
+    .html-preview-container { flex: 1; display: flex; flex-direction: column; gap: 6px; min-height: 0; }
+    .btn-gen-html-panel { background: #b85c00; color: #fff; width: 100%; padding: 7px; }
+    .gen-status { font-size: 12px; color: #9d9d9d; font-style: italic; }
+    #html-preview-iframe {
+      flex: 1;
+      border: 1px solid #3c3c3c;
+      border-radius: 4px;
+      background: #fff;
+      min-height: 100px;
+    }
+
     /* Status bar */
     .statusbar {
       background: #007acc;
@@ -307,6 +349,9 @@
     <option value="javascript">JavaScript</option>
   </select>
   <div class="spacer"></div>
+  <button class="btn-generate" id="btn-gen-toggle" onclick="toggleGenerateDrawer()" title="Ctrl+G">
+    &#9889; Generate <kbd>Ctrl+G</kbd>
+  </button>
   <button class="btn-check" onclick="checkCode()" title="Ctrl+Shift+K">
     &#128269; Check <kbd>Ctrl+Shift+K</kbd>
   </button>
@@ -315,6 +360,31 @@
   </button>
   <button class="btn-clear" onclick="clearAll()">&#10005; Clear</button>
 </header>
+
+<!-- ── Generate drawer (toggle with ⚡ button or Ctrl+G) ── -->
+<div class="gen-drawer" id="gen-drawer">
+  <div class="gen-field">
+    <label>Model</label>
+    <select id="gen-model-select" title="Ollama model for generation">
+      <option value="">-- loading --</option>
+    </select>
+  </div>
+  <div class="gen-field">
+    <label>Language</label>
+    <select id="gen-lang-select">
+      <option value="python">Python</option>
+      <option value="javascript">JavaScript</option>
+    </select>
+  </div>
+  <div class="gen-field grow">
+    <label>Prompt — describe what to generate</label>
+    <input type="text" id="gen-prompt" class="gen-prompt-input"
+      placeholder="e.g. 'HTTP server with /health endpoint', 'CSV parser with pandas', 'sorting visualiser'"
+      onkeydown="if(event.key==='Enter')generateCode()">
+  </div>
+  <button class="btn-gen-code" onclick="generateCode()">&#9654; Code</button>
+  <button class="btn-gen-html" onclick="generateHtmlFromDrawer()">&#127760; HTML</button>
+</div>
 
 <div class="main">
   <div id="editor-container"></div>
@@ -336,6 +406,7 @@
     <div class="right-tabs">
       <div class="tab-bar">
         <button class="tab-btn active" id="tab-btn-issues" onclick="switchTab('issues')">&#9888; Issues</button>
+        <button class="tab-btn" id="tab-btn-html" onclick="switchToHtmlTab()">&#127760; HTML</button>
         <button class="tab-btn" id="tab-btn-ai" onclick="switchToAiTab()">&#129504; AI</button>
         <button class="tab-btn" id="tab-btn-instr" onclick="switchTab('instr')">&#128200; Stats</button>
       </div>
@@ -343,6 +414,22 @@
       <!-- Issues pane -->
       <div class="tab-pane active" id="tab-pane-issues">
         <div id="issues-panel"></div>
+      </div>
+
+      <!-- HTML Generator / Live Preview pane -->
+      <div class="tab-pane" id="tab-pane-html">
+        <div class="html-preview-container">
+          <div class="ai-controls">
+            <select id="html-model-select" title="Ollama model for HTML generation">
+              <option value="">-- Select model --</option>
+            </select>
+          </div>
+          <textarea id="html-gen-prompt" class="ai-prompt" style="min-height:56px;"
+            placeholder="Describe the HTML page&#8230;&#10;e.g. 'Landing page for a coffee shop with menu and contact form'&#10;e.g. 'Interactive to-do list with local storage'"></textarea>
+          <button class="btn-gen-html-panel" onclick="generateHtml()">&#127760; Generate HTML Page</button>
+          <div class="gen-status" id="html-gen-status">Enter a prompt above and click Generate</div>
+          <iframe id="html-preview-iframe" sandbox="allow-scripts" title="HTML Preview"></iframe>
+        </div>
       </div>
 
       <!-- AI (Ollama) pane -->
@@ -412,6 +499,10 @@ require(['vs/editor/editor.main'], function () {
   editor.addCommand(
     monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyK,
     checkCode
+  );
+  editor.addCommand(
+    monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyG,
+    toggleGenerateDrawer
   );
 });
 
@@ -570,8 +661,129 @@ function switchToAiTab() {
   loadOllamaModels();
 }
 
+function switchToHtmlTab() {
+  switchTab('html');
+  loadAllModels();
+}
+
+// ── Generate drawer ───────────────────────────────────────────────────────────
+function toggleGenerateDrawer() {
+  const drawer  = document.getElementById('gen-drawer');
+  const btn     = document.getElementById('btn-gen-toggle');
+  const isOpen  = drawer.classList.toggle('open');
+  btn.classList.toggle('active', isOpen);
+  if (isOpen) {
+    loadAllModels();
+    document.getElementById('gen-prompt').focus();
+  }
+}
+
+async function generateCode() {
+  const model    = document.getElementById('gen-model-select').value;
+  const prompt   = document.getElementById('gen-prompt').value.trim();
+  const language = document.getElementById('gen-lang-select').value;
+  const input    = document.getElementById('gen-prompt');
+
+  if (!model)  { setStatus('Select a model in the Generate drawer first'); return; }
+  if (!prompt) { setStatus('Enter a prompt in the Generate drawer'); return; }
+
+  input.disabled = true;
+  setStatus('Generating ' + language + ' code with ' + model + '\u2026');
+
+  try {
+    const res  = await fetch('/generate/code', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ model, prompt, language }),
+    });
+    const data = await res.json();
+    if (data.success && editor) {
+      // Sync main language selector
+      const langSel = document.getElementById('lang-select');
+      if (langSel.value !== language) {
+        langSel.value = language;
+        langSel.dispatchEvent(new Event('change'));
+      }
+      editor.setValue(data.code);
+      setStatus('\u2713 Code generated \u2014 review and run!');
+      loadInstructions();
+    } else {
+      setStatus('Generation failed: ' + (data.error || 'unknown'));
+    }
+  } catch (err) {
+    setStatus('Network error: ' + err.message);
+  } finally {
+    input.disabled = false;
+    input.focus();
+  }
+}
+
+async function generateHtmlFromDrawer() {
+  // Copy prompt/model from the drawer to the HTML pane, then generate
+  const drawerPrompt = document.getElementById('gen-prompt').value.trim();
+  const drawerModel  = document.getElementById('gen-model-select').value;
+  if (drawerPrompt) document.getElementById('html-gen-prompt').value = drawerPrompt;
+  if (drawerModel)  document.getElementById('html-model-select').value = drawerModel;
+  switchToHtmlTab();
+  await generateHtml();
+}
+
+async function generateHtml() {
+  const model    = document.getElementById('html-model-select').value;
+  const prompt   = document.getElementById('html-gen-prompt').value.trim();
+  const statusEl = document.getElementById('html-gen-status');
+  const iframe   = document.getElementById('html-preview-iframe');
+
+  if (!model)  { statusEl.textContent = 'Select a model first'; return; }
+  if (!prompt) { statusEl.textContent = 'Enter a prompt first'; return; }
+
+  statusEl.textContent = 'Generating with ' + model + '\u2026';
+  setStatus('Generating HTML\u2026');
+  iframe.srcdoc = '<p style="font-family:sans-serif;padding:16px;color:#555">Generating\u2026</p>';
+
+  try {
+    const res  = await fetch('/generate/html', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ model, prompt }),
+    });
+    const data = await res.json();
+    if (data.success) {
+      iframe.srcdoc = data.html;
+      statusEl.textContent = '\u2713 Generated \u2014 ' + data.html.length + ' chars';
+      setStatus('\u2713 HTML generated');
+      loadInstructions();
+    } else {
+      statusEl.textContent = 'Error: ' + (data.error || 'unknown');
+      setStatus('HTML generation failed');
+      iframe.srcdoc = '<p style="font-family:sans-serif;padding:16px;color:#c00">Error: ' +
+        esc(data.error || 'unknown') + '</p>';
+    }
+  } catch (err) {
+    statusEl.textContent = 'Network error: ' + err.message;
+    setStatus('Network error');
+  }
+}
+
 // ── Ollama integration ────────────────────────────────────────────────────────
 let _ollamaLoaded = false;
+
+// Populate every model <select> on the page and auto-select the preferred model.
+function _applyModels(models, preferred) {
+  const selIds = ['ollama-model-select', 'gen-model-select', 'html-model-select'];
+  selIds.forEach(function (id) {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    if (models.length === 0) {
+      sel.innerHTML = '<option value="">-- No Ollama models --</option>';
+    } else {
+      sel.innerHTML = models.map(function (m) {
+        return '<option value="' + esc(m) + '">' + esc(m) + '</option>';
+      }).join('');
+      if (preferred) sel.value = preferred;
+    }
+  });
+}
 
 async function loadOllamaModels() {
   if (_ollamaLoaded) return;
@@ -586,9 +798,7 @@ async function loadOllamaModels() {
     if (data.available && data.models.length > 0) {
       statusEl.textContent = '\u2713 Ollama connected \u2014 ' + data.models.length + ' model(s)';
       statusEl.className = 'ai-status ok';
-      modelSel.innerHTML = data.models.map(function (m) {
-        return '<option value="' + esc(m) + '">' + esc(m) + '</option>';
-      }).join('');
+      _applyModels(data.models, data.preferred || '');
       _ollamaLoaded = true;
     } else {
       statusEl.textContent = '\u2717 Ollama not running \u2014 start with: ollama serve';
@@ -599,6 +809,22 @@ async function loadOllamaModels() {
     statusEl.textContent = '\u2717 Could not reach Ollama service';
     statusEl.className = 'ai-status err';
   }
+}
+
+// Load all models eagerly (used by generate drawer and HTML tab).
+async function loadAllModels() {
+  if (_ollamaLoaded) return;
+  try {
+    const res  = await fetch('/ollama/models');
+    const data = await res.json();
+    if (data.available && data.models.length > 0) {
+      _applyModels(data.models, data.preferred || '');
+      const statusEl = document.getElementById('ai-status-bar');
+      statusEl.textContent = '\u2713 Ollama connected \u2014 ' + data.models.length + ' model(s)';
+      statusEl.className = 'ai-status ok';
+      _ollamaLoaded = true;
+    }
+  } catch (_) { /* silent — will show error when user opens AI tab */ }
 }
 
 async function askOllama() {
@@ -700,11 +926,33 @@ function renderInstructions(data) {
     html += '</div>';
   }
 
+  const gen = data.generation_stats || {};
+  if ((gen.total_generations || 0) > 0) {
+    html += '<div class="instr-section"><div class="instr-title">AI Generations</div>';
+    html += '<div class="stats-grid">';
+    html += statBox('Total',  gen.total_generations  || 0);
+    html += statBox('Code',   gen.code_generations   || 0);
+    html += statBox('HTML',   gen.html_generations   || 0);
+    const prompts = gen.successful_prompts || [];
+    html += statBox('Prompts', prompts.length);
+    html += '</div>';
+    if (prompts.length > 0) {
+      html += '<div class="instr-title" style="margin-top:6px">Recent prompts</div>';
+      prompts.slice(-5).reverse().forEach(function (p) {
+        html += '<div class="instr-item instr-item-net">' +
+          esc('[' + (p.language || '?') + '] ') + esc(p.prompt || '') + '</div>';
+      });
+    }
+    html += '</div>';
+  }
+
   panel.innerHTML = html;
 }
 
 // Load instructions on page load
 loadInstructions();
+// Eagerly probe Ollama so model selectors are ready when the user opens the drawer
+loadAllModels();
 
 // Global keyboard shortcuts (outside editor focus)
 document.addEventListener('keydown', function (e) {
@@ -719,6 +967,10 @@ document.addEventListener('keydown', function (e) {
   if ((e.ctrlKey || e.metaKey) && e.key === 's') {
     e.preventDefault();
     checkCode();
+  }
+  if ((e.ctrlKey || e.metaKey) && e.key === 'g') {
+    e.preventDefault();
+    toggleGenerateDrawer();
   }
 });
 </script>

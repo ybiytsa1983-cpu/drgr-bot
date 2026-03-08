@@ -7,6 +7,10 @@ Endpoints:
   POST /check          — static-check / lint code
   GET  /instructions   — return the current self-improvement JSON
   POST /instructions   — update training / internet-work instructions
+  GET  /ollama/models  — list models available in the local Ollama instance
+  POST /ollama/ask     — ask a free-form question to a model (AI chat)
+  POST /generate/code  — generate code from a prompt (returns extracted code block)
+  POST /generate/html  — generate a full HTML page from a prompt (live-preview ready)
 """
 
 import ast
@@ -32,6 +36,19 @@ _lock = threading.Lock()
 
 # Ollama service base URL (override via OLLAMA_HOST env var)
 OLLAMA_BASE = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+
+# Preferred model order for auto-selection (first match wins).
+# Override the default with OLLAMA_DEFAULT_MODEL env var.
+_PREFERRED_MODELS = [
+    m for m in [
+        os.environ.get("OLLAMA_DEFAULT_MODEL", ""),
+        "qwen3-vl:8b",
+        "qwen3-vl:235b-cloud",
+        "gemma3:12b",
+        "gemma3:latest",
+        "llama3.2:latest",
+    ] if m
+]
 
 # ---------------------------------------------------------------------------
 # Instruction helpers
@@ -63,6 +80,12 @@ _DEFAULT_INSTRUCTIONS: dict = {
         "Use aiohttp for async HTTP when performance matters",
     ],
     "improvement_history": [],
+    "generation_stats": {
+        "total_generations": 0,
+        "code_generations": 0,
+        "html_generations": 0,
+        "successful_prompts": [],
+    },
 }
 
 
@@ -241,6 +264,15 @@ def _regenerate_instructions(data: dict) -> None:
         lib_names = ", ".join(name for name, _ in top_libs)
         instructions.append(f"Frequently used libraries: {lib_names}")
 
+    # Note generation activity
+    gen_stats = data.get("generation_stats", {})
+    if gen_stats.get("total_generations", 0) > 0:
+        instructions.append(
+            f"AI generations so far: {gen_stats['total_generations']} "
+            f"({gen_stats.get('code_generations', 0)} code, "
+            f"{gen_stats.get('html_generations', 0)} HTML)"
+        )
+
     data["training_instructions"] = instructions
 
     # Append to improvement_history (keep last 20 entries)
@@ -348,9 +380,11 @@ def ollama_models():
         resp = _http.get(f"{OLLAMA_BASE}/api/tags", timeout=3)
         resp.raise_for_status()
         models = [m["name"] for m in resp.json().get("models", [])]
-        return jsonify({"models": models, "available": True})
+        # Pick the preferred default (first match from _PREFERRED_MODELS list)
+        preferred = next((m for m in _PREFERRED_MODELS if m in models), models[0] if models else "")
+        return jsonify({"models": models, "available": True, "preferred": preferred})
     except Exception:  # pylint: disable=broad-except
-        return jsonify({"models": [], "available": False})
+        return jsonify({"models": [], "available": False, "preferred": ""})
 
 
 @app.route("/ollama/ask", methods=["POST"])
@@ -390,6 +424,131 @@ def ollama_ask():
         return jsonify({"response": "", "error": "Cannot connect to Ollama — is 'ollama serve' running?", "success": False})
     except Exception as exc:  # pylint: disable=broad-except
         return jsonify({"response": "", "error": str(exc), "success": False})
+
+
+# ---------------------------------------------------------------------------
+# Code-block extraction helper
+# ---------------------------------------------------------------------------
+def _extract_code_block(text: str, language: str = "") -> str:
+    """Extract the first fenced code block from a Markdown-style LLM response.
+
+    Tries a language-specific fence (```python) first, then any fence, then
+    returns the raw stripped text if no fence is found.
+    """
+    if language:
+        m = re.search(rf"```{re.escape(language)}\s*\n(.*?)```", text, re.DOTALL | re.IGNORECASE)
+        if m:
+            return m.group(1).strip()
+    # Any fenced block
+    m = re.search(r"```(?:\w+)?\s*\n(.*?)```", text, re.DOTALL)
+    if m:
+        return m.group(1).strip()
+    return text.strip()
+
+
+def _record_generation(language: str, model: str, prompt: str) -> None:
+    """Persist a generation event in the self-learning store."""
+    data = load_instructions()
+    gen = data.setdefault("generation_stats", {
+        "total_generations": 0,
+        "code_generations": 0,
+        "html_generations": 0,
+        "successful_prompts": [],
+    })
+    gen["total_generations"] = gen.get("total_generations", 0) + 1
+    if language == "html":
+        gen["html_generations"] = gen.get("html_generations", 0) + 1
+    else:
+        gen["code_generations"] = gen.get("code_generations", 0) + 1
+    prompts = gen.setdefault("successful_prompts", [])
+    prompts.append({"prompt": prompt[:120], "language": language, "model": model, "ts": _now()})
+    # Keep only the last 50 prompts to limit file size and stay within display constraints
+    if len(prompts) > 50:
+        gen["successful_prompts"] = prompts[-50:]
+    _regenerate_instructions(data)
+    save_instructions(data)
+
+
+# ---------------------------------------------------------------------------
+# Generation endpoints (Qwen / any Ollama model)
+# ---------------------------------------------------------------------------
+@app.route("/generate/code", methods=["POST"])
+def generate_code():
+    """Generate code from a natural-language prompt using Ollama."""
+    body = request.get_json(silent=True) or {}
+    model = body.get("model", "").strip()
+    prompt = body.get("prompt", "").strip()
+    language = body.get("language", "python")
+
+    if not model:
+        return jsonify({"code": "", "error": "No model selected", "success": False})
+    if not prompt:
+        return jsonify({"code": "", "error": "No prompt provided", "success": False})
+
+    sys_prompt = (
+        f"You are an expert {language} programmer. "
+        f"Generate clean, well-commented {language} code for the following task. "
+        "Return ONLY the code inside a fenced code block — no explanations outside it.\n\n"
+        f"Task: {prompt}"
+    )
+
+    try:
+        resp = _http.post(
+            f"{OLLAMA_BASE}/api/generate",
+            json={"model": model, "prompt": sys_prompt, "stream": False},
+            timeout=int(os.environ.get("OLLAMA_TIMEOUT", 120)),
+        )
+        resp.raise_for_status()
+        raw = resp.json().get("response", "")
+        code = _extract_code_block(raw, language)
+        _record_generation(language, model, prompt)
+        return jsonify({"code": code, "success": True})
+    except _http.exceptions.Timeout:
+        return jsonify({"code": "", "error": "Request timed out", "success": False})
+    except _http.exceptions.ConnectionError:
+        return jsonify({"code": "", "error": "Cannot connect to Ollama — is 'ollama serve' running?", "success": False})
+    except Exception as exc:  # pylint: disable=broad-except
+        return jsonify({"code": "", "error": str(exc), "success": False})
+
+
+@app.route("/generate/html", methods=["POST"])
+def generate_html():
+    """Generate a complete HTML page from a natural-language description using Ollama."""
+    body = request.get_json(silent=True) or {}
+    model = body.get("model", "").strip()
+    prompt = body.get("prompt", "").strip()
+
+    if not model:
+        return jsonify({"html": "", "error": "No model selected", "success": False})
+    if not prompt:
+        return jsonify({"html": "", "error": "No prompt provided", "success": False})
+
+    sys_prompt = (
+        "You are an expert web developer. "
+        "Generate a complete, self-contained, responsive HTML page for the description below. "
+        "Use modern CSS (flexbox/grid), semantic HTML5, and inline JavaScript if needed. "
+        "Return ONLY the full HTML document inside a fenced ```html code block. "
+        "Do not write anything outside that block.\n\n"
+        f"Description: {prompt}"
+    )
+
+    try:
+        resp = _http.post(
+            f"{OLLAMA_BASE}/api/generate",
+            json={"model": model, "prompt": sys_prompt, "stream": False},
+            timeout=int(os.environ.get("OLLAMA_TIMEOUT", 180)),
+        )
+        resp.raise_for_status()
+        raw = resp.json().get("response", "")
+        html = _extract_code_block(raw, "html")
+        _record_generation("html", model, prompt)
+        return jsonify({"html": html, "success": True})
+    except _http.exceptions.Timeout:
+        return jsonify({"html": "", "error": "Request timed out", "success": False})
+    except _http.exceptions.ConnectionError:
+        return jsonify({"html": "", "error": "Cannot connect to Ollama — is 'ollama serve' running?", "success": False})
+    except Exception as exc:  # pylint: disable=broad-except
+        return jsonify({"html": "", "error": str(exc), "success": False})
 
 
 # ---------------------------------------------------------------------------
