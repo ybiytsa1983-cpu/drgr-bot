@@ -16,11 +16,23 @@
     You can also double-click start.bat in Windows Explorer (no .\  needed there).
 #>
 
+# ── Resolve the directory containing this script ──────────────────────────────
+# $PSScriptRoot is empty when PS is started without -File (e.g. some shortcuts
+# or "powershell start.ps1" instead of "powershell -File start.ps1").
+# Fall back to $MyInvocation, then to the current working directory.
+$scriptRoot = if ($PSScriptRoot) {
+    $PSScriptRoot
+} elseif ($MyInvocation.MyCommand.Path) {
+    Split-Path -Parent $MyInvocation.MyCommand.Path
+} else {
+    (Get-Location).Path
+}
+
 # ── Always run from the repository root ───────────────────────────────────────
-Set-Location $PSScriptRoot
+Set-Location $scriptRoot
 
 # ── First-time setup if .venv is missing ──────────────────────────────────────
-$venvPython = Join-Path $PSScriptRoot ".venv\Scripts\python.exe"
+$venvPython = Join-Path $scriptRoot ".venv\Scripts\python.exe"
 
 if (-not (Test-Path $venvPython)) {
     Write-Host ""
@@ -84,11 +96,11 @@ if (-not (Test-Path $venvPython)) {
     try {
         $desktopPath  = [Environment]::GetFolderPath("Desktop")
         $shortcutPath = Join-Path $desktopPath "Code VM.lnk"
-        $batTarget    = Join-Path $PSScriptRoot "start.bat"
+        $batTarget    = Join-Path $scriptRoot "start.bat"
         $shell        = New-Object -ComObject WScript.Shell
         $shortcut     = $shell.CreateShortcut($shortcutPath)
         $shortcut.TargetPath       = $batTarget
-        $shortcut.WorkingDirectory = $PSScriptRoot
+        $shortcut.WorkingDirectory = $scriptRoot
         $shortcut.Description      = "Launch Code VM - Monaco Editor with Ollama AI"
         $shortcut.WindowStyle      = 1
         $pyCmd = Get-Command python  -ErrorAction SilentlyContinue
@@ -109,9 +121,9 @@ if (-not (Test-Path $venvPython)) {
 }
 
 # ── Launch the VM server in a new visible window ──────────────────────────────
-$vmBat = Join-Path $PSScriptRoot "vm\start_vm.bat"
+$vmBat = Join-Path $scriptRoot "vm\start_vm.bat"
 Write-Host "  [-->] Запуск Code VM..." -ForegroundColor Cyan
-Start-Process -FilePath "cmd.exe" -ArgumentList "/k `"$vmBat`"" -WorkingDirectory $PSScriptRoot
+Start-Process -FilePath "cmd.exe" -ArgumentList "/k `"$vmBat`"" -WorkingDirectory $scriptRoot
 Write-Host "  [OK] Code VM запускается — браузер откроется через несколько секунд." -ForegroundColor Green
 Write-Host "       Закройте окно 'Code VM - Monaco Editor' чтобы остановить сервер." -ForegroundColor Yellow
 Write-Host ""
