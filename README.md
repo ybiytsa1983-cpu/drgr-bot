@@ -4,42 +4,57 @@ A Telegram bot with a built-in **AI-powered code editor** (Code VM) and **Androi
 
 ---
 
+## ⚠️ Уже клонировал раньше? Сначала обнови!
+
+Если папка `drgr-bot` у тебя **уже есть**, открой PowerShell, перейди в неё и обнови:
+
+```
+cd C:\путь\к\папке\drgr-bot
+git pull
+```
+
+После этого запусти:
+
+```
+.\start.ps1
+```
+
+---
+
 ## ⚡ Быстрый старт — одна команда
 
-### Windows
+### Windows (первый раз, свежая установка)
 
 **Шаг 1 — клонируй репозиторий** (один раз):
 
-```powershell
+```
 git clone -b copilot/create-monaco-code-generator https://github.com/ybiytsa1983-cpu/drgr-bot.git
 cd drgr-bot
 ```
 
-**Шаг 2 — запусти** (каждый раз):
+**Шаг 2 — запусти**:
 
-```powershell
+```
 .\start.ps1
 ```
 
-> 💡 **Обязательно пишите `.\` перед командой** — это особенность PowerShell.
-> Просто `start.ps1` **не работает** в PowerShell. Нужно точно `.\start.ps1`.
+> 💡 **Важно:** в PowerShell перед командой нужно писать `.\`
+> `start.ps1` (без точки и слэша) **не работает** — пишите `.\start.ps1`
+
+> ⚠️ **Не копируй строки с `PS C:\...>` из примеров!**  
+> Копируй только саму команду. Символы `PS C:\...>` — это приглашение терминала,
+> а `PS` в PowerShell — это псевдоним (alias) команды `Get-Process`, что вызовет ошибку.
 
 Первый запуск установит всё автоматически (~1-2 мин), потом откроет браузер.  
 Каждый следующий раз: просто откроет браузер.
 
 > ⚠️ Если PowerShell говорит **"running scripts is disabled"** — выполни это один раз:
-> ```powershell
+> ```
 > Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 > ```
 > Потом снова запусти `.\start.ps1`.
 
 **Альтернатива — двойной клик** по `start.bat` в Проводнике (без PowerShell, просто мышкой).
-
-**Альтернатива — cmd.exe:**
-```cmd
-cd C:\Users\Drozd\drgr-bot
-.\start.bat
-```
 
 ### macOS / Linux
 
@@ -61,8 +76,7 @@ ollama serve
 ```
 
 Хочешь другой порт? Укажи явно перед запуском:
-```powershell
-# PowerShell:
+```
 $env:OLLAMA_HOST = "http://localhost:11435"
 .\start.ps1
 ```
@@ -108,8 +122,9 @@ ip route get 1 | awk '{print $NF; exit}'  # Linux/macOS
 
 ```
 drgr-bot/
-├── start.bat              # ← ОДНА КОМАНДА (Windows)
-├── start.sh               # ← ОДНА КОМАНДА (Linux/macOS)
+├── start.ps1              # ← ЗАПУСК в PowerShell: .\start.ps1
+├── start.bat              # ← ЗАПУСК двойным кликом или из cmd.exe
+├── start.sh               # ← ЗАПУСК в Linux/macOS: ./start.sh
 ├── vm/
 │   ├── server.py          # Flask backend
 │   ├── static/index.html  # Monaco Editor UI
