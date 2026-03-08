@@ -327,6 +327,43 @@
       min-height: 100px;
     }
 
+    /* ── Challenges panel ── */
+    .challenge-card {
+      background: #252526;
+      border: 1px solid #3c3c3c;
+      border-radius: 6px;
+      padding: 10px 12px;
+      margin-bottom: 8px;
+      cursor: pointer;
+      transition: border-color .15s, background .15s;
+    }
+    .challenge-card:hover { border-color: #007acc; background: #2a2a2a; }
+    .challenge-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #e0e0e0;
+      margin-bottom: 4px;
+    }
+    .challenge-diff {
+      font-size: 11px;
+      color: #9d9d9d;
+      margin-bottom: 4px;
+    }
+    .challenge-desc {
+      font-size: 11px;
+      color: #9d9d9d;
+      line-height: 1.4;
+    }
+    .challenge-actions {
+      margin-top: 8px;
+      display: flex;
+      gap: 6px;
+    }
+    .btn-chal-code  { background: #107c10; color: #fff; font-size: 11px; padding: 4px 10px; }
+    .btn-chal-html  { background: #b85c00; color: #fff; font-size: 11px; padding: 4px 10px; }
+    .btn-chal-demo  { background: #007acc; color: #fff; font-size: 11px; padding: 4px 10px; }
+    #challenge-loading { font-size: 12px; color: #9d9d9d; padding: 8px 0; }
+
     /* Status bar */
     .statusbar {
       background: #007acc;
@@ -408,6 +445,7 @@
         <button class="tab-btn active" id="tab-btn-issues" onclick="switchTab('issues')">&#9888; Issues</button>
         <button class="tab-btn" id="tab-btn-html" onclick="switchToHtmlTab()">&#127760; HTML</button>
         <button class="tab-btn" id="tab-btn-ai" onclick="switchToAiTab()">&#129504; AI</button>
+        <button class="tab-btn" id="tab-btn-chal" onclick="switchToChallengesTab()">&#128640; Tasks</button>
         <button class="tab-btn" id="tab-btn-instr" onclick="switchTab('instr')">&#128200; Stats</button>
       </div>
 
@@ -454,6 +492,12 @@
         <div id="instructions-panel">
           <span class="loading">Loading&#8230;</span>
         </div>
+      </div>
+
+      <!-- Challenges pane -->
+      <div class="tab-pane" id="tab-pane-chal">
+        <div id="challenge-loading"><span class="loading">Loading challenges&#8230;</span></div>
+        <div id="challenges-panel"></div>
       </div>
     </div>
 
@@ -666,7 +710,73 @@ function switchToHtmlTab() {
   loadAllModels();
 }
 
-// ── Generate drawer ───────────────────────────────────────────────────────────
+function switchToChallengesTab() {
+  switchTab('chal');
+  loadChallenges();
+}
+
+// ── Challenges ────────────────────────────────────────────────────────────────
+let _challengesLoaded = false;
+
+async function loadChallenges() {
+  if (_challengesLoaded) return;
+  try {
+    const res  = await fetch('/challenges');
+    const data = await res.json();
+    renderChallenges(data.challenges || []);
+    _challengesLoaded = true;
+  } catch {
+    document.getElementById('challenge-loading').innerHTML =
+      '<span class="out-stderr">Failed to load challenges</span>';
+  }
+}
+
+function renderChallenges(challenges) {
+  document.getElementById('challenge-loading').style.display = 'none';
+  const panel = document.getElementById('challenges-panel');
+  panel.innerHTML = challenges.map(function (c) {
+    const demoBtn = c.demo_url
+      ? `<a href="${esc(c.demo_url)}" target="_blank" rel="noopener noreferrer" class="btn btn-chal-demo">&#128640; Demo</a>`
+      : '';
+    const codeBtn = c.language !== 'html'
+      ? `<button class="btn btn-chal-code" onclick="loadChallenge('${esc(c.id)}', 'code')">&#9654; Code</button>`
+      : '';
+    const htmlBtn = c.language === 'html'
+      ? `<button class="btn btn-chal-html" onclick="loadChallenge('${esc(c.id)}', 'html')">&#127760; HTML</button>`
+      : '';
+    return `
+      <div class="challenge-card">
+        <div class="challenge-title">${esc(c.title)}</div>
+        <div class="challenge-diff">${esc(c.difficulty)}</div>
+        <div class="challenge-desc">${esc(c.description)}</div>
+        <div class="challenge-actions">${codeBtn}${htmlBtn}${demoBtn}</div>
+      </div>`;
+  }).join('');
+  _challenges = challenges;
+}
+
+let _challenges = [];
+
+function loadChallenge(id, type) {
+  const c = _challenges.find(function (x) { return x.id === id; });
+  if (!c) return;
+  loadAllModels();
+
+  if (type === 'html') {
+    document.getElementById('html-gen-prompt').value = c.prompt;
+    document.getElementById('gen-lang-select').value = 'python'; // reset
+    switchToHtmlTab();
+    setStatus('\u2728 Challenge loaded \u2014 click Generate HTML Page');
+  } else {
+    // Open generate drawer and pre-fill
+    const drawer = document.getElementById('gen-drawer');
+    if (!drawer.classList.contains('open')) toggleGenerateDrawer();
+    document.getElementById('gen-prompt').value = c.prompt;
+    const langSel = document.getElementById('gen-lang-select');
+    if (c.language && c.language !== 'html') langSel.value = c.language;
+    setStatus('\u2728 Challenge loaded into Generate drawer \u2014 press Code or HTML');
+  }
+}
 function toggleGenerateDrawer() {
   const drawer  = document.getElementById('gen-drawer');
   const btn     = document.getElementById('btn-gen-toggle');

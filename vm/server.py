@@ -11,6 +11,8 @@ Endpoints:
   POST /ollama/ask     — ask a free-form question to a model (AI chat)
   POST /generate/code  — generate code from a prompt (returns extracted code block)
   POST /generate/html  — generate a full HTML page from a prompt (live-preview ready)
+  GET  /navigator/     — serve the DRGRNav PWA navigator app
+  GET  /challenges     — return pre-defined hard challenge prompts for the VM
 """
 
 import ast
@@ -32,6 +34,7 @@ app = Flask(__name__, static_folder="static")
 # ---------------------------------------------------------------------------
 _DIR = os.path.dirname(os.path.abspath(__file__))
 INSTRUCTIONS_FILE = os.path.join(_DIR, "instructions.json")
+NAVIGATOR_DIR     = os.path.join(os.path.dirname(_DIR), "navigator")
 _lock = threading.Lock()
 
 # Ollama service base URL (override via OLLAMA_HOST env var)
@@ -294,6 +297,128 @@ def _regenerate_instructions(data: dict) -> None:
 @app.route("/")
 def index():
     return send_from_directory(app.static_folder, "index.html")
+
+
+# ---------------------------------------------------------------------------
+# Navigator PWA
+# ---------------------------------------------------------------------------
+@app.route("/navigator/")
+@app.route("/navigator/index.html")
+def navigator_index():
+    """Serve the DRGRNav PWA navigator."""
+    return send_from_directory(NAVIGATOR_DIR, "index.html")
+
+
+@app.route("/navigator/<path:filename>")
+def navigator_static(filename):
+    """Serve navigator static files (manifest, sw.js, …)."""
+    return send_from_directory(NAVIGATOR_DIR, filename)
+
+
+# ---------------------------------------------------------------------------
+# Challenges
+# ---------------------------------------------------------------------------
+_CHALLENGES = [
+    {
+        "id": "android_navigator",
+        "title": "🧭 Android навигатор (онлайн + офлайн)",
+        "difficulty": "⭐⭐⭐⭐⭐",
+        "language": "html",
+        "prompt": (
+            "Create a complete, self-contained Android PWA navigator HTML page with: "
+            "Leaflet.js map using OpenStreetMap tiles, GPS watchPosition with accuracy circle, "
+            "address search with Nominatim autocomplete, OSRM turn-by-turn routing for "
+            "car/bike/walk modes, Service Worker for offline tile caching, "
+            "IndexedDB for saving/loading routes, dark theme, Russian language UI, "
+            "mobile-first design with touch support. All in a single HTML file."
+        ),
+        "description": (
+            "Полнофункциональный навигатор для Android как Progressive Web App. "
+            "Работает онлайн (OSM/OSRM) и офлайн (Service Worker + IndexedDB). "
+            "GPS, автодополнение адресов, пошаговая навигация, сохранение маршрутов."
+        ),
+        "demo_url": "/navigator/",
+    },
+    {
+        "id": "python_web_scraper",
+        "title": "🕷 Умный веб-скрапер с обходом защит",
+        "difficulty": "⭐⭐⭐⭐",
+        "language": "python",
+        "prompt": (
+            "Write a Python web scraper using requests and BeautifulSoup that: "
+            "handles JavaScript-rendered pages via Playwright, rotates User-Agent headers, "
+            "respects robots.txt, implements exponential backoff on 429 errors, "
+            "saves results to SQLite with deduplication, supports resuming interrupted scrapes, "
+            "extracts structured data (title, price, images) from e-commerce pages."
+        ),
+        "description": (
+            "Продвинутый скрапер с обходом защит, поддержкой JS-рендеринга, "
+            "ротацией заголовков и сохранением в SQLite с возможностью продолжения."
+        ),
+        "demo_url": None,
+    },
+    {
+        "id": "realtime_chat",
+        "title": "💬 Real-time чат с WebSocket",
+        "difficulty": "⭐⭐⭐⭐",
+        "language": "python",
+        "prompt": (
+            "Write a Python WebSocket chat server using asyncio and websockets library with: "
+            "rooms/channels, nickname registration, message history (last 50 per room) stored in memory, "
+            "private messages, online user list, typing indicators, "
+            "and a complete single-file HTML client with dark theme. "
+            "The server should be a single Python file."
+        ),
+        "description": (
+            "Сервер чата на asyncio WebSocket с комнатами, историей, личными сообщениями "
+            "и индикатором набора текста. Клиент — единый HTML файл."
+        ),
+        "demo_url": None,
+    },
+    {
+        "id": "neural_net",
+        "title": "🧠 Нейросеть с нуля (NumPy)",
+        "difficulty": "⭐⭐⭐⭐⭐",
+        "language": "python",
+        "prompt": (
+            "Write a complete neural network from scratch using only NumPy (no TensorFlow/PyTorch): "
+            "implement forward pass, backpropagation, Adam optimizer, batch normalization, "
+            "dropout regularisation, train on MNIST dataset loaded from CSV, "
+            "achieve >97% accuracy, plot training curves to PNG, "
+            "save/load model weights to npz file. Include full docstrings."
+        ),
+        "description": (
+            "Нейросеть на чистом NumPy: backprop, Adam, BatchNorm, Dropout, обучение на MNIST, "
+            "точность >97%, сохранение весов. Без фреймворков."
+        ),
+        "demo_url": None,
+    },
+    {
+        "id": "blockchain",
+        "title": "⛓ Мини-блокчейн с PoW",
+        "difficulty": "⭐⭐⭐⭐",
+        "language": "python",
+        "prompt": (
+            "Write a minimal but complete blockchain in Python with: "
+            "SHA-256 proof-of-work mining, adjustable difficulty, "
+            "transaction pool with UTXO model, digital signatures (ECDSA), "
+            "peer-to-peer sync via HTTP (Flask), chain validation, "
+            "REST API to submit transactions and mine blocks, "
+            "and a simple block explorer HTML page served by Flask."
+        ),
+        "description": (
+            "Блокчейн с PoW майнингом, UTXO-транзакциями, ECDSA подписями, "
+            "P2P синхронизацией и веб-обозревателем блоков."
+        ),
+        "demo_url": None,
+    },
+]
+
+
+@app.route("/challenges", methods=["GET"])
+def get_challenges():
+    """Return the list of pre-defined hard challenge prompts."""
+    return jsonify({"challenges": _CHALLENGES})
 
 
 @app.route("/execute", methods=["POST"])
