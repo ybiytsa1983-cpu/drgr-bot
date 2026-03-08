@@ -19,9 +19,17 @@
 $ErrorActionPreference = "Stop"
 
 # -- Resolve paths -------------------------------------------------------------
-# $PSScriptRoot is the directory containing this script — reliable when called
-# directly, via -File, dot-sourced, or from another script.
-$scriptDir  = $PSScriptRoot
+# $PSScriptRoot is empty when PS is invoked without -File (e.g.
+# "powershell vm\create_shortcut.ps1" instead of
+# "powershell -File vm\create_shortcut.ps1").
+# Fall back to $MyInvocation, then to the current working directory.
+$scriptDir = if ($PSScriptRoot) {
+    $PSScriptRoot
+} elseif ($MyInvocation.MyCommand.Path) {
+    Split-Path -Parent $MyInvocation.MyCommand.Path
+} else {
+    (Get-Location).Path
+}
 $repoDir    = Split-Path -Parent $scriptDir
 
 # Point the shortcut at start.bat in the repo root (the one-command launcher)

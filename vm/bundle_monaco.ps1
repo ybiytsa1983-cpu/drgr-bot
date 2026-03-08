@@ -10,9 +10,19 @@
 
 $ErrorActionPreference = 'Stop'
 
+# Resolve script directory robustly — $PSScriptRoot is empty when PS is invoked
+# without -File (e.g. "powershell bundle_monaco.ps1" vs "powershell -File ...").
+$scriptRoot = if ($PSScriptRoot) {
+    $PSScriptRoot
+} elseif ($MyInvocation.MyCommand.Path) {
+    Split-Path -Parent $MyInvocation.MyCommand.Path
+} else {
+    (Get-Location).Path
+}
+
 $version = '0.44.0'
 $base    = "https://cdn.jsdelivr.net/npm/monaco-editor@$version/min/vs"
-$dest    = Join-Path $PSScriptRoot "static\vendor\monaco\vs"
+$dest    = Join-Path $scriptRoot "static\vendor\monaco\vs"
 
 # Skip if already bundled
 if (Test-Path (Join-Path $dest 'loader.js')) {
