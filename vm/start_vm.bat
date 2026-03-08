@@ -75,9 +75,19 @@ if not errorlevel 1 (
     )
 )
 
-REM --- Start the Flask server in the background ---
+REM --- Find pythonw.exe (no-console Python — server survives window close) ---
+set "PYTHONW=%PYTHON%"
+if exist ".venv\Scripts\pythonw.exe" (
+    set "PYTHONW=.venv\Scripts\pythonw.exe"
+) else (
+    for %%F in ("%PYTHON%") do (
+        if exist "%%~dpFpythonw.exe" set "PYTHONW=%%~dpFpythonw.exe"
+    )
+)
+
+REM --- Start the Flask server as a detached background process ---
 echo [Code VM] Starting server on port %VM_PORT%...
-start /b "" "%PYTHON%" vm\server.py
+start "" "%PYTHONW%" vm\server.py
 
 REM --- Wait until server responds (up to 15 seconds) ---
 echo [Code VM] Waiting for server to be ready...
@@ -95,31 +105,32 @@ REM --- Find local IP ---
 for /f "tokens=*" %%i in ('%PYTHON% -c "import socket; s=socket.socket(); s.connect((\"8.8.8.8\",80)); print(s.getsockname()[0]); s.close()" 2^>nul') do set LOCAL_IP=%%i
 if "%LOCAL_IP%"=="" set LOCAL_IP=YOUR_IP
 
+REM --- Allow port through Windows Firewall (for access from other devices) ---
+netsh advfirewall firewall show rule name="Code VM (port %VM_PORT%)" >nul 2>&1
+if errorlevel 1 (
+    netsh advfirewall firewall add rule name="Code VM (port %VM_PORT%)" dir=in action=allow protocol=TCP localport=%VM_PORT% profile=any >nul 2>&1
+)
+
 REM --- Open the browser ---
 echo [Code VM] Opening browser...
 start "" "http://localhost:%VM_PORT%"
 
 echo.
-echo  +--------------------------------------------------+
-echo  ^|  Code VM is running!                            ^|
-echo  +--------------------------------------------------+
-echo  ^|  Code VM    -^>  http://localhost:%VM_PORT%/          ^|
-echo  ^|  Navigator  -^>  http://localhost:%VM_PORT%/navigator/^|
-echo  +--------------------------------------------------+
-echo  ^|  Android: open in Chrome on your phone:         ^|
-echo  ^|    http://%LOCAL_IP%:%VM_PORT%/navigator/         ^|
-echo  +--------------------------------------------------+
-echo  ^|  Keep this window open while using the editor.  ^|
-echo  ^|  Close this window to stop the server.          ^|
-echo  +--------------------------------------------------+
+echo  +----------------------------------------------------+
+echo  ^|  Code VM is running!                              ^|
+echo  +----------------------------------------------------+
+echo  ^|  This device:                                     ^|
+echo  ^|    http://localhost:%VM_PORT%/                         ^|
+echo  ^|    http://localhost:%VM_PORT%/navigator/               ^|
+echo  +----------------------------------------------------+
+echo  ^|  Other devices on the same network:               ^|
+echo  ^|    http://%LOCAL_IP%:%VM_PORT%/                         ^|
+echo  ^|    http://%LOCAL_IP%:%VM_PORT%/navigator/               ^|
+echo  +----------------------------------------------------+
+echo  ^|  Server runs in the background.                   ^|
+echo  ^|  This window can be closed safely.                ^|
+echo  ^|  To stop: taskkill /f /im pythonw.exe             ^|
+echo  +----------------------------------------------------+
 echo.
-pause >nul
-
-REM --- Stop server when window is closed ---
-echo [Code VM] Stopping server...
-for /f "tokens=5" %%p in ('netstat -aon 2^>nul ^| findstr ":%VM_PORT%.*LISTEN"') do (
-    taskkill /f /pid %%p >nul 2>&1
-)
-echo [Code VM] Done.
 popd
 endlocal

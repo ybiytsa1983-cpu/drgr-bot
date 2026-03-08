@@ -129,14 +129,16 @@ if ($ollamaInstalled) {
     Write-Host "           Install from https://ollama.com/download" -ForegroundColor DarkGray
 }
 
-# ── Start Flask server ────────────────────────────────────────────────────────
+# ── Use pythonw.exe (no-console Python) so server survives terminal closure ────
+$pythonw = $python -replace 'python\.exe$', 'pythonw.exe'
+if (-not (Test-Path $pythonw)) { $pythonw = $python }
+
+# ── Start Flask server as a detached background process ──────────────────────
 Write-Host "[Code VM] Starting server on port $Port ..." -ForegroundColor Cyan
 $env:VM_PORT = "$Port"
-$serverJob = Start-Process -FilePath $python `
+Start-Process -FilePath $pythonw `
     -ArgumentList "vm\server.py" `
-    -WorkingDirectory $repoDir `
-    -PassThru `
-    -WindowStyle Hidden
+    -WorkingDirectory $repoDir
 
 # ── Wait until server responds (up to 15 s) ───────────────────────────────────
 Write-Host "[Code VM] Waiting for server to be ready..." -ForegroundColor Cyan
@@ -168,6 +170,16 @@ finally:
 } catch { }
 if (-not $localIP) { $localIP = $null }
 
+# ── Add Windows Firewall rule (silent, best-effort) ──────────────────────────
+try {
+    $existing = Get-NetFirewallRule -DisplayName "Code VM (port $Port)" -ErrorAction SilentlyContinue
+    if (-not $existing) {
+        New-NetFirewallRule -DisplayName "Code VM (port $Port)" `
+            -Direction Inbound -Protocol TCP -LocalPort $Port `
+            -Action Allow -Profile Any -ErrorAction SilentlyContinue | Out-Null
+    }
+} catch { }
+
 # ── Open browser ──────────────────────────────────────────────────────────────
 Write-Host "[Code VM] Opening browser..." -ForegroundColor Cyan
 Start-Process "http://localhost:$Port"
@@ -177,15 +189,17 @@ Write-Host ""
 Write-Host $sep -ForegroundColor Green
 Write-Host ("  |  {0,-50}|" -f "Code VM is running!") -ForegroundColor Green
 Write-Host ("  |{0}|" -f ("-" * 52)) -ForegroundColor DarkGreen
-Write-Host ("  |  {0,-50}|" -f "Code VM    ->  http://localhost:$Port/") -ForegroundColor Cyan
-Write-Host ("  |  {0,-50}|" -f "Navigator  ->  http://localhost:$Port/navigator/") -ForegroundColor Cyan
+Write-Host ("  |  {0,-50}|" -f "This device:") -ForegroundColor Cyan
+Write-Host ("  |    {0,-48}|" -f "http://localhost:$Port/") -ForegroundColor Cyan
+Write-Host ("  |    {0,-48}|" -f "http://localhost:$Port/navigator/") -ForegroundColor Cyan
 Write-Host ("  |{0}|" -f ("-" * 52)) -ForegroundColor DarkGreen
 if ($localIP) {
-    Write-Host ("  |  {0,-50}|" -f "Android: open in Chrome on your phone:") -ForegroundColor Yellow
+    Write-Host ("  |  {0,-50}|" -f "Other devices on the same network:") -ForegroundColor Yellow
+    Write-Host ("  |    {0,-48}|" -f "http://${localIP}:${Port}/") -ForegroundColor Yellow
     Write-Host ("  |    {0,-48}|" -f "http://${localIP}:${Port}/navigator/") -ForegroundColor Yellow
 } else {
-    Write-Host ("  |  {0,-50}|" -f "Android: run 'ipconfig' to find your IP,") -ForegroundColor Yellow
-    Write-Host ("  |  {0,-50}|" -f "then open http://YOUR_IP:$Port/navigator/") -ForegroundColor Yellow
+    Write-Host ("  |  {0,-50}|" -f "Other devices: run 'ipconfig' to find your IP,") -ForegroundColor Yellow
+    Write-Host ("  |  {0,-50}|" -f "then open http://YOUR_IP:$Port/") -ForegroundColor Yellow
 }
 Write-Host ("  |{0}|" -f ("-" * 52)) -ForegroundColor DarkGreen
 if ($ollamaRunning) {
@@ -195,19 +209,8 @@ if ($ollamaRunning) {
 } else {
     Write-Host ("  |  {0,-50}|" -f "Ollama AI:  not installed (https://ollama.com)") -ForegroundColor DarkGray
 }
-Write-Host ("  |  {0,-50}|" -f "Press Ctrl+C or close this window to stop.") -ForegroundColor White
+Write-Host ("  |  {0,-50}|" -f "Server runs in the background.") -ForegroundColor White
+Write-Host ("  |  {0,-50}|" -f "This window can be closed safely.") -ForegroundColor White
+Write-Host ("  |  {0,-50}|" -f "To stop: taskkill /f /im pythonw.exe") -ForegroundColor DarkGray
 Write-Host $sep -ForegroundColor Green
 Write-Host ""
-
-# ── Wait for server process ───────────────────────────────────────────────────
-try {
-    $serverJob.WaitForExit()
-} catch {
-    # Ctrl+C — stop the server
-    Write-Host ""
-    Write-Host "[Code VM] Stopping server..." -ForegroundColor Yellow
-    if (-not $serverJob.HasExited) {
-        $serverJob.Kill()
-    }
-    Write-Host "[Code VM] Done." -ForegroundColor Green
-}
