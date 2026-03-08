@@ -24,7 +24,16 @@
 
 $ErrorActionPreference = "Stop"
 
-$repoDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+# $PSScriptRoot is empty when PS is invoked without -File (e.g. some shortcuts
+# or "powershell install.ps1" instead of "powershell -File install.ps1").
+# Fall back to $MyInvocation, then to the current working directory.
+$repoDir = if ($PSScriptRoot) {
+    $PSScriptRoot
+} elseif ($MyInvocation.MyCommand.Path) {
+    Split-Path -Parent $MyInvocation.MyCommand.Path
+} else {
+    (Get-Location).Path
+}
 Set-Location $repoDir
 
 $venvDir = Join-Path $repoDir ".venv"
