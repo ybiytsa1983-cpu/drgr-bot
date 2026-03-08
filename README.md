@@ -56,6 +56,11 @@ cd drgr-bot
 
 **Альтернатива — двойной клик** по `start.bat` в Проводнике (без PowerShell, просто мышкой).
 
+Если скрипты отключены, можно создать ярлык на Рабочем столе **и сразу запустить редактор** одной командой:
+```
+powershell -ExecutionPolicy Bypass -File vm\create_shortcut.ps1
+```
+
 ### macOS / Linux
 
 ```bash

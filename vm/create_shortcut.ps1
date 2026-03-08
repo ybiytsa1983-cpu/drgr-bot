@@ -77,3 +77,10 @@ Write-Host "  The Monaco editor opens at http://localhost:5000" -ForegroundColor
 Write-Host ""
 Write-Host "  Tip: right-click the shortcut -> 'Pin to taskbar'" -ForegroundColor Yellow
 Write-Host ""
+
+# -- Launch the server now so localhost:5000 is immediately reachable ---------
+Write-Host "  [-->] Starting Code VM now..." -ForegroundColor Cyan
+Start-Process -FilePath "cmd.exe" -ArgumentList "/k `"$batFile`"" -WorkingDirectory $repoDir
+Write-Host "  [OK] Code VM is starting — browser will open in a few seconds." -ForegroundColor Green
+Write-Host "       http://localhost:5000" -ForegroundColor Cyan
+Write-Host ""
