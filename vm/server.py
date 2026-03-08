@@ -18,6 +18,7 @@ import tempfile
 import threading
 from datetime import datetime, timezone
 
+import requests as _http
 from flask import Flask, jsonify, request, send_from_directory
 
 app = Flask(__name__, static_folder="static")
@@ -28,6 +29,9 @@ app = Flask(__name__, static_folder="static")
 _DIR = os.path.dirname(os.path.abspath(__file__))
 INSTRUCTIONS_FILE = os.path.join(_DIR, "instructions.json")
 _lock = threading.Lock()
+
+# Ollama service base URL (override via OLLAMA_HOST env var)
+OLLAMA_BASE = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 
 # ---------------------------------------------------------------------------
 # Instruction helpers
@@ -332,6 +336,60 @@ def update_instructions():
         data["internet_work_instructions"] = body["internet_work_instructions"]
     save_instructions(data)
     return jsonify({"success": True, "data": data})
+
+
+# ---------------------------------------------------------------------------
+# Ollama integration
+# ---------------------------------------------------------------------------
+@app.route("/ollama/models", methods=["GET"])
+def ollama_models():
+    """Return the list of models available in the local Ollama instance."""
+    try:
+        resp = _http.get(f"{OLLAMA_BASE}/api/tags", timeout=3)
+        resp.raise_for_status()
+        models = [m["name"] for m in resp.json().get("models", [])]
+        return jsonify({"models": models, "available": True})
+    except Exception:  # pylint: disable=broad-except
+        return jsonify({"models": [], "available": False})
+
+
+@app.route("/ollama/ask", methods=["POST"])
+def ollama_ask():
+    """Forward a code + prompt to an Ollama model and return the response."""
+    body = request.get_json(silent=True) or {}
+    model = body.get("model", "").strip()
+    prompt = body.get("prompt", "").strip()
+    code = body.get("code", "").strip()
+
+    if not model:
+        return jsonify({"response": "", "error": "No model selected", "success": False})
+    if not prompt and not code:
+        return jsonify({"response": "", "error": "No prompt provided", "success": False})
+
+    if code:
+        # Include the language name in the code fence for better AI understanding
+        lang_hint = body.get("language", "python")
+        full_prompt = f"Here is some code:\n```{lang_hint}\n{code}\n```\n\n{prompt}" if prompt else code
+    else:
+        full_prompt = prompt
+
+    try:
+        resp = _http.post(
+            f"{OLLAMA_BASE}/api/generate",
+            json={"model": model, "prompt": full_prompt, "stream": False},
+            # 120 s allows large models (70B+) enough time to generate a response;
+            # configurable via OLLAMA_TIMEOUT env var for faster/slower hardware.
+            timeout=int(os.environ.get("OLLAMA_TIMEOUT", 120)),
+        )
+        resp.raise_for_status()
+        response_text = resp.json().get("response", "")
+        return jsonify({"response": response_text, "success": True})
+    except _http.exceptions.Timeout:
+        return jsonify({"response": "", "error": "Ollama request timed out (120 s)", "success": False})
+    except _http.exceptions.ConnectionError:
+        return jsonify({"response": "", "error": "Cannot connect to Ollama — is 'ollama serve' running?", "success": False})
+    except Exception as exc:  # pylint: disable=broad-except
+        return jsonify({"response": "", "error": str(exc), "success": False})
 
 
 # ---------------------------------------------------------------------------

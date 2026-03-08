@@ -193,6 +193,98 @@
 
     .loading { color: #6a9955; font-style: italic; font-size: 13px; }
 
+    /* ── Tab system (lower right panel) ── */
+    .right-tabs {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .tab-bar {
+      display: flex;
+      background: #2d2d2d;
+      border-bottom: 1px solid #3c3c3c;
+      flex-shrink: 0;
+    }
+    .tab-btn {
+      flex: 1;
+      padding: 7px 4px;
+      background: transparent;
+      border: none;
+      border-bottom: 2px solid transparent;
+      border-radius: 0;
+      color: #9d9d9d;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      text-transform: uppercase;
+      letter-spacing: .4px;
+      transition: color .15s, border-color .15s;
+      filter: none;
+      white-space: nowrap;
+    }
+    .tab-btn:hover  { color: #d4d4d4; filter: none; }
+    .tab-btn.active { color: #fff; border-bottom-color: #007acc; }
+
+    .tab-pane { display: none; flex: 1; overflow-y: auto; padding: 10px 12px; }
+    .tab-pane.active { display: flex; flex-direction: column; }
+    .tab-pane::-webkit-scrollbar { width: 6px; }
+    .tab-pane::-webkit-scrollbar-track { background: #1e1e1e; }
+    .tab-pane::-webkit-scrollbar-thumb { background: #555; border-radius: 3px; }
+
+    /* ── Ollama AI panel ── */
+    .ai-status {
+      font-size: 12px;
+      margin-bottom: 8px;
+      padding: 4px 8px;
+      border-radius: 3px;
+    }
+    .ai-status.ok  { background: #1a3a1a; color: #4caf50; }
+    .ai-status.err { background: #3a1a1a; color: #f48771; }
+
+    .ai-controls {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .ai-controls select { flex: 1; min-width: 0; }
+    .ai-controls label  { font-size: 12px; color: #9d9d9d; cursor: pointer; display: flex; align-items: center; gap: 4px; }
+    #ollama-use-code { accent-color: #007acc; cursor: pointer; }
+
+    .ai-prompt {
+      width: 100%;
+      min-height: 68px;
+      background: #2d2d2d;
+      border: 1px solid #555;
+      border-radius: 4px;
+      color: #d4d4d4;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      font-size: 12px;
+      padding: 7px 9px;
+      resize: vertical;
+      margin-bottom: 7px;
+    }
+    .ai-prompt:focus       { outline: none; border-color: #007acc; }
+    .ai-prompt::placeholder { color: #6a9955; }
+
+    .btn-ask { background: #8b3ce8; color: #fff; width: 100%; margin-bottom: 8px; padding: 7px; }
+
+    #ollama-response {
+      flex: 1;
+      font-size: 13px;
+      font-family: Consolas, 'Courier New', monospace;
+      white-space: pre-wrap;
+      word-break: break-word;
+      color: #d4d4d4;
+      background: #1a1a1a;
+      border-radius: 4px;
+      padding: 8px 10px;
+      overflow-y: auto;
+      min-height: 60px;
+    }
+
     /* Status bar */
     .statusbar {
       background: #007acc;
@@ -229,7 +321,7 @@
 
   <div class="right-panel">
 
-    <!-- Output panel -->
+    <!-- Output panel — always visible at top -->
     <div class="panel panel-output">
       <div class="panel-header">
         <span class="status-dot" id="run-dot"></span>
@@ -240,17 +332,41 @@
       </div>
     </div>
 
-    <!-- Issues panel -->
-    <div class="panel panel-issues">
-      <div class="panel-header">Issues</div>
-      <div class="panel-body" id="issues-panel"></div>
-    </div>
+    <!-- Tabbed lower area: Issues | AI | Instructions -->
+    <div class="right-tabs">
+      <div class="tab-bar">
+        <button class="tab-btn active" id="tab-btn-issues" onclick="switchTab('issues')">&#9888; Issues</button>
+        <button class="tab-btn" id="tab-btn-ai" onclick="switchToAiTab()">&#129504; AI</button>
+        <button class="tab-btn" id="tab-btn-instr" onclick="switchTab('instr')">&#128200; Stats</button>
+      </div>
 
-    <!-- Self-improvement panel -->
-    <div class="panel panel-instructions">
-      <div class="panel-header">&#129504; Self-Improvement</div>
-      <div class="panel-body" id="instructions-panel">
-        <span class="loading">Loading&#8230;</span>
+      <!-- Issues pane -->
+      <div class="tab-pane active" id="tab-pane-issues">
+        <div id="issues-panel"></div>
+      </div>
+
+      <!-- AI (Ollama) pane -->
+      <div class="tab-pane" id="tab-pane-ai">
+        <div id="ai-status-bar" class="ai-status err">Ollama not connected</div>
+        <div class="ai-controls">
+          <select id="ollama-model-select" title="Select Ollama model">
+            <option value="">-- Select model --</option>
+          </select>
+          <label title="Include current editor code in the prompt">
+            <input type="checkbox" id="ollama-use-code" checked> With code
+          </label>
+        </div>
+        <textarea id="ollama-prompt" class="ai-prompt"
+          placeholder="Ask anything about the code&#8230;&#10;e.g. 'Explain this', 'Fix the bug', 'Optimise this function'"></textarea>
+        <button class="btn-ask" onclick="askOllama()">&#129504; Ask AI</button>
+        <div id="ollama-response"><span class="out-hint">Response will appear here&#8230;</span></div>
+      </div>
+
+      <!-- Instructions/Stats pane -->
+      <div class="tab-pane" id="tab-pane-instr">
+        <div id="instructions-panel">
+          <span class="loading">Loading&#8230;</span>
+        </div>
       </div>
     </div>
 
@@ -417,6 +533,7 @@ async function checkCode() {
     const warns  = data.issues.filter(function (i) { return i.severity === 'warning'; }).length;
     setStatus('Check: ' + errors + ' error(s), ' + warns + ' warning(s)');
 
+    switchTab('issues');
     loadInstructions();
   } catch (err) {
     issuesEl.innerHTML = '<span class="out-stderr">Check failed: ' + esc(err.message) + '</span>';
@@ -433,6 +550,93 @@ function clearAll() {
   setStatus('');
   if (monaco && editor) {
     monaco.editor.setModelMarkers(editor.getModel(), 'vm-check', []);
+  }
+}
+
+// ── Tab switching ─────────────────────────────────────────────────────────────
+function switchTab(tabId) {
+  document.querySelectorAll('.tab-btn').forEach(function (btn) {
+    btn.classList.remove('active');
+  });
+  document.querySelectorAll('.tab-pane').forEach(function (pane) {
+    pane.classList.remove('active');
+  });
+  document.getElementById('tab-btn-' + tabId).classList.add('active');
+  document.getElementById('tab-pane-' + tabId).classList.add('active');
+}
+
+function switchToAiTab() {
+  switchTab('ai');
+  loadOllamaModels();
+}
+
+// ── Ollama integration ────────────────────────────────────────────────────────
+let _ollamaLoaded = false;
+
+async function loadOllamaModels() {
+  if (_ollamaLoaded) return;
+  const statusEl = document.getElementById('ai-status-bar');
+  const modelSel = document.getElementById('ollama-model-select');
+  statusEl.textContent = 'Connecting to Ollama\u2026';
+  statusEl.className = 'ai-status';
+
+  try {
+    const res  = await fetch('/ollama/models');
+    const data = await res.json();
+    if (data.available && data.models.length > 0) {
+      statusEl.textContent = '\u2713 Ollama connected \u2014 ' + data.models.length + ' model(s)';
+      statusEl.className = 'ai-status ok';
+      modelSel.innerHTML = data.models.map(function (m) {
+        return '<option value="' + esc(m) + '">' + esc(m) + '</option>';
+      }).join('');
+      _ollamaLoaded = true;
+    } else {
+      statusEl.textContent = '\u2717 Ollama not running \u2014 start with: ollama serve';
+      statusEl.className = 'ai-status err';
+      modelSel.innerHTML = '<option value="">-- No models found --</option>';
+    }
+  } catch (_) {
+    statusEl.textContent = '\u2717 Could not reach Ollama service';
+    statusEl.className = 'ai-status err';
+  }
+}
+
+async function askOllama() {
+  const model    = document.getElementById('ollama-model-select').value;
+  const prompt   = document.getElementById('ollama-prompt').value.trim();
+  const useCode  = document.getElementById('ollama-use-code').checked;
+  const respEl   = document.getElementById('ollama-response');
+
+  if (!model) {
+    respEl.innerHTML = '<span class="out-stderr">Please select an Ollama model first.</span>';
+    return;
+  }
+  if (!prompt) {
+    respEl.innerHTML = '<span class="out-stderr">Please enter a question or prompt.</span>';
+    return;
+  }
+
+  const code = (useCode && editor) ? editor.getValue() : '';
+  respEl.innerHTML = '<span class="loading">Asking ' + esc(model) + '\u2026</span>';
+  setStatus('Asking AI\u2026');
+
+  try {
+    const res  = await fetch('/ollama/ask', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ model, prompt, code }),
+    });
+    const data = await res.json();
+    if (data.success) {
+      respEl.textContent = data.response;
+      setStatus('AI response received');
+    } else {
+      respEl.innerHTML = '<span class="out-stderr">' + esc(data.error || 'Unknown error') + '</span>';
+      setStatus('AI request failed');
+    }
+  } catch (err) {
+    respEl.innerHTML = '<span class="out-stderr">Network error: ' + esc(err.message) + '</span>';
+    setStatus('AI request failed');
   }
 }
 
