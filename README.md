@@ -8,30 +8,29 @@ A Telegram bot with a built-in **AI-powered code editor** (Code VM) and **Androi
 
 ### Windows — PowerShell or cmd.exe
 
-**Step 1 — open a fresh terminal and go to your home (or any projects) folder:**
+**Step 1 — open a fresh terminal, go to your home folder, then clone:**
 
 ```powershell
-cd $HOME          # e.g. C:\Users\Drozd
-```
-
-> ⚠️ **Do NOT run inside an existing `drgr-bot` folder.**
-> If `dir` already shows `install.bat`, skip to Step 3.
-
-**Step 2 — clone the repo (once):**
-
-```powershell
+cd $HOME                                           # e.g. C:\Users\Drozd
 git clone https://github.com/ybiytsa1983-cpu/drgr-bot.git
 cd drgr-bot
 ```
 
-After `cd drgr-bot` your prompt should end with `…\drgr-bot>`.
-Verify the files are there:
+> ⚠️ If `git clone` says **"already exists"**, the folder is there from a previous attempt.
+> Just `cd` into it and pull the latest files:
+> ```powershell
+> cd $HOME\drgr-bot
+> git pull
+> ```
+
+**Step 2 — verify you have the launcher files:**
 
 ```powershell
 dir install.bat
 ```
 
-You should see `install.bat` listed. If you see *"File Not Found"*, you are in the wrong folder — check the path in your prompt.
+You should see `install.bat` listed. If it still says *"File Not Found"* after `git pull`, check
+that your prompt ends with `…\drgr-bot>` (not `…\drgr-bot\drgr-bot>` — that means you changed into a nested subdirectory).
 
 **Step 3 — first-time setup:**
 
