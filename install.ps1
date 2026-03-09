@@ -254,18 +254,30 @@ try {
     }
 }
 
-# ── 8. Done ───────────────────────────────────────────────────────────────────
+# ── 8. Copy self-discovering launcher to Desktop ──────────────────────────────
+$launcherSrc  = Join-Path $repoDir "ЗАПУСТИТЬ.bat"
+$launcherDest = Join-Path ([Environment]::GetFolderPath("Desktop")) "ЗАПУСТИТЬ.bat"
+if (Test-Path $launcherSrc) {
+    try {
+        Copy-Item -Path $launcherSrc -Destination $launcherDest -Force
+        Ok "Backup launcher copied: 'ЗАПУСТИТЬ.bat' on Desktop (double-click if main shortcut fails)"
+    } catch {
+        Warn "Could not copy ЗАПУСТИТЬ.bat to Desktop: $_"
+    }
+}
+
+# ── 9. Done ───────────────────────────────────────────────────────────────────
 Write-Host ""
 Write-Host "  =============================================" -ForegroundColor Green
 Write-Host "   Setup complete!                            " -ForegroundColor Green
 Write-Host "  =============================================" -ForegroundColor Green
 Write-Host ""
-Write-Host "  A 'Code VM' shortcut is on your Desktop." -ForegroundColor White
-Write-Host "  Double-click it to launch the editor!" -ForegroundColor Cyan
+Write-Host "  Two launchers are on your Desktop:" -ForegroundColor White
+Write-Host "    'Code VM'        — main shortcut (PowerShell)" -ForegroundColor Cyan
+Write-Host "    'ЗАПУСТИТЬ.bat'  — backup launcher (double-click)" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "  Or launch from this terminal:" -ForegroundColor White
-Write-Host "    .\vm.bat        (cmd / PowerShell)" -ForegroundColor Cyan
-Write-Host "    .\vm.ps1        (PowerShell native)" -ForegroundColor Cyan
+Write-Host "  Or launch directly from PowerShell (paste this):" -ForegroundColor White
+Write-Host "    powershell -ExecutionPolicy Bypass -File `"$repoDir\start.ps1`"" -ForegroundColor Yellow
 Write-Host ""
 Write-Host "  Then open in browser:" -ForegroundColor White
 Write-Host "    http://localhost:5000/            Code VM" -ForegroundColor Cyan
