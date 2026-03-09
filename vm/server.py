@@ -26,7 +26,7 @@ import urllib.parse
 from datetime import datetime, timezone
 
 import requests as _http
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, Response, jsonify, request, send_from_directory, stream_with_context
 
 app = Flask(__name__, static_folder="static")
 
@@ -634,8 +634,135 @@ def ollama_ask():
 
 
 # ---------------------------------------------------------------------------
-# Code-block extraction helper
+# Model Workshop endpoints  (create / pull / delete models in Ollama)
 # ---------------------------------------------------------------------------
+
+@app.route("/ollama/pull", methods=["POST"])
+def ollama_pull():
+    """Pull a model from the Ollama library.
+
+    Body: {"model": "qwen:latest"}
+    Returns a streaming text/event-stream response with lines like:
+        data: {"status": "...", "percent": 0-100}\n\n
+    so the browser can show live download progress.
+    """
+    body = request.get_json(silent=True) or {}
+    model = body.get("model", "").strip()
+    if not model:
+        return jsonify({"error": "model name required"}), 400
+
+    def _stream():
+        try:
+            with _http.post(
+                f"{OLLAMA_BASE}/api/pull",
+                json={"name": model, "stream": True},
+                stream=True,
+                timeout=3600,
+            ) as r:
+                for raw_line in r.iter_lines():
+                    if not raw_line:
+                        continue
+                    try:
+                        obj = json.loads(raw_line)
+                    except ValueError:
+                        continue
+                    # Calculate progress percentage when total is available
+                    total     = obj.get("total", 0)
+                    completed = obj.get("completed", 0)
+                    percent   = min(100, int(completed * 100 / total)) if total else 0
+                    payload = json.dumps({
+                        "status":    obj.get("status", ""),
+                        "digest":    obj.get("digest", ""),
+                        "percent":   percent,
+                        "error":     obj.get("error", ""),
+                    })
+                    yield f"data: {payload}\n\n"
+            yield "data: {\"status\":\"done\",\"percent\":100}\n\n"
+        except _http.exceptions.ConnectionError:
+            yield "data: {\"error\":\"Cannot connect to Ollama\"}\n\n"
+        except Exception as exc:  # pylint: disable=broad-except
+            yield f"data: {{\"error\":{json.dumps(str(exc))}}}\n\n"
+
+    return Response(
+        stream_with_context(_stream()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.route("/ollama/create", methods=["POST"])
+def ollama_create():
+    """Create a custom Ollama model from a Modelfile string.
+
+    Body: {"name": "my-coder", "modelfile": "FROM qwen:latest\\nSYSTEM ..."}
+    Returns a streaming text/event-stream response with progress lines.
+    """
+    body = request.get_json(silent=True) or {}
+    name      = body.get("name", "").strip()
+    modelfile = body.get("modelfile", "").strip()
+    if not name:
+        return jsonify({"error": "model name required"}), 400
+    if not modelfile:
+        return jsonify({"error": "modelfile content required"}), 400
+
+    def _stream():
+        try:
+            with _http.post(
+                f"{OLLAMA_BASE}/api/create",
+                json={"name": name, "modelfile": modelfile, "stream": True},
+                stream=True,
+                timeout=3600,
+            ) as r:
+                for raw_line in r.iter_lines():
+                    if not raw_line:
+                        continue
+                    try:
+                        obj = json.loads(raw_line)
+                    except ValueError:
+                        continue
+                    payload = json.dumps({
+                        "status": obj.get("status", ""),
+                        "error":  obj.get("error", ""),
+                    })
+                    yield f"data: {payload}\n\n"
+            yield f"data: {{\"status\":\"Model '{name}' created successfully!\",\"done\":true}}\n\n"
+        except _http.exceptions.ConnectionError:
+            yield "data: {\"error\":\"Cannot connect to Ollama\"}\n\n"
+        except Exception as exc:  # pylint: disable=broad-except
+            yield f"data: {{\"error\":{json.dumps(str(exc))}}}\n\n"
+
+    return Response(
+        stream_with_context(_stream()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.route("/ollama/delete", methods=["POST"])
+def ollama_delete():
+    """Delete a model from Ollama.
+
+    Body: {"model": "my-coder"}
+    """
+    body = request.get_json(silent=True) or {}
+    model = body.get("model", "").strip()
+    if not model:
+        return jsonify({"error": "model name required"}), 400
+    try:
+        resp = _http.delete(
+            f"{OLLAMA_BASE}/api/delete",
+            json={"name": model},
+            timeout=30,
+        )
+        if resp.status_code in (200, 204):
+            return jsonify({"success": True, "message": f"Model '{model}' deleted."})
+        return jsonify({"success": False, "error": resp.text}), resp.status_code
+    except _http.exceptions.ConnectionError:
+        return jsonify({"success": False, "error": "Cannot connect to Ollama"}), 503
+    except Exception as exc:  # pylint: disable=broad-except
+        return jsonify({"success": False, "error": str(exc)}), 500
+
+
 def _extract_code_block(text: str, language: str = "") -> str:
     """Extract the first fenced code block from a Markdown-style LLM response.
 

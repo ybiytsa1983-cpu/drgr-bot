@@ -271,6 +271,30 @@
 
     .btn-ask { background: #8b3ce8; color: #fff; width: 100%; margin-bottom: 8px; padding: 7px; }
 
+    /* ── Workshop tab ── */
+    .workshop-section { padding: 8px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; height: 100%; }
+    .workshop-title   { font-size: 14px; font-weight: 700; color: #e9b213; margin-bottom: 2px; }
+    .workshop-hint    { font-size: 12px; color: #9d9d9d; line-height: 1.5; }
+    .workshop-group   { display: flex; flex-direction: column; gap: 5px; }
+    .workshop-group-label { font-size: 11px; font-weight: 600; color: #c586c0; text-transform: uppercase; letter-spacing: .5px; }
+    .workshop-row     { display: flex; gap: 6px; align-items: center; }
+    .ws-input         { flex: 1; background: #3c3c3c; border: 1px solid #555; color: #d4d4d4; border-radius: 4px; padding: 5px 8px; font-size: 12px; min-width: 0; }
+    .ws-input:focus   { outline: none; border-color: #007acc; }
+    .ws-select        { cursor: pointer; }
+    .ws-btn           { padding: 5px 11px; font-size: 12px; border-radius: 4px; border: none; cursor: pointer; white-space: nowrap; font-weight: 600; }
+    .ws-btn-pull      { background: #007acc; color: #fff; }
+    .ws-btn-pull:hover { background: #005fa3; }
+    .ws-btn-create    { background: #4caf50; color: #fff; }
+    .ws-btn-create:hover { background: #388e3c; }
+    .ws-btn-delete    { background: #c0392b; color: #fff; }
+    .ws-btn-delete:hover { background: #962d22; }
+    .ws-modelfile     { width: 100%; min-height: 160px; resize: vertical; background: #1e1e1e; border: 1px solid #555; color: #d4d4d4; border-radius: 4px; padding: 8px; font-family: Consolas,'Courier New',monospace; font-size: 12px; line-height: 1.5; box-sizing: border-box; }
+    .ws-modelfile:focus { outline: none; border-color: #007acc; }
+    .ws-log           { background: #1a1a1a; border-radius: 4px; padding: 8px 10px; font-family: Consolas,'Courier New',monospace; font-size: 12px; color: #d4d4d4; white-space: pre-wrap; word-break: break-word; min-height: 60px; max-height: 180px; overflow-y: auto; }
+    .ws-log .log-ok   { color: #4caf50; }
+    .ws-log .log-err  { color: #f48771; }
+    .ws-log .log-info { color: #9cdcfe; }
+
     #ollama-response {
       flex: 1;
       font-size: 13px;
@@ -447,6 +471,7 @@
         <button class="tab-btn" id="tab-btn-ai" onclick="switchToAiTab()">&#129504; AI</button>
         <button class="tab-btn" id="tab-btn-chal" onclick="switchToChallengesTab()">&#128640; Tasks</button>
         <button class="tab-btn" id="tab-btn-instr" onclick="switchTab('instr')">&#128200; Stats</button>
+        <button class="tab-btn" id="tab-btn-workshop" onclick="switchToWorkshopTab()">&#128295; Workshop</button>
       </div>
 
       <!-- Issues pane -->
@@ -499,7 +524,67 @@
         <div id="challenge-loading"><span class="loading">Loading challenges&#8230;</span></div>
         <div id="challenges-panel"></div>
       </div>
-    </div>
+
+      <!-- Workshop pane — create/pull/delete Ollama models -->
+      <div class="tab-pane" id="tab-pane-workshop">
+        <div class="workshop-section">
+          <div class="workshop-title">&#128295; Model Workshop</div>
+          <div class="workshop-hint">
+            Create your own <strong>custom coding model</strong> based on qwen (or any installed model).<br>
+            Edit the system prompt below, give it a name, hit <em>Create</em>.
+          </div>
+
+          <!-- Pull model -->
+          <div class="workshop-group">
+            <div class="workshop-group-label">&#11015; Pull model from Ollama library</div>
+            <div class="workshop-row">
+              <input id="ws-pull-name" class="ws-input" type="text" value="qwen:latest"
+                placeholder="e.g. qwen:latest, qwen2.5-coder:7b, llama3:8b" />
+              <button class="ws-btn ws-btn-pull" onclick="wsPullModel()" aria-label="Pull model from Ollama library">&#11015; Pull</button>
+            </div>
+          </div>
+
+          <!-- Create model from Modelfile -->
+          <div class="workshop-group">
+            <div class="workshop-group-label">&#128736; Create custom model from Modelfile</div>
+            <div class="workshop-row">
+              <input id="ws-create-name" class="ws-input" type="text" value="my-coder"
+                placeholder="New model name (e.g. my-coder)" />
+              <button class="ws-btn ws-btn-create" onclick="wsCreateModel()" aria-label="Create custom Ollama model from Modelfile">&#128736; Create</button>
+            </div>
+            <textarea id="ws-modelfile" class="ws-modelfile" spellcheck="false">FROM qwen:latest
+
+SYSTEM """You are an expert software engineer and AI researcher.
+You write clean, efficient, well-documented code.
+You always provide complete, working examples with no placeholders.
+When asked to write code, output only the code with brief inline comments.
+Specialise in: Python, JavaScript, machine learning, and system design.
+"""
+
+PARAMETER temperature 0.4
+PARAMETER top_p 0.9
+PARAMETER num_ctx 8192
+PARAMETER repeat_penalty 1.1</textarea>
+          </div>
+
+          <!-- Delete model -->
+          <div class="workshop-group">
+            <div class="workshop-group-label">&#128465; Delete model</div>
+            <div class="workshop-row">
+              <select id="ws-delete-select" class="ws-input ws-select">
+                <option value="">-- select model to delete --</option>
+              </select>
+              <button class="ws-btn ws-btn-delete" onclick="wsDeleteModel()" aria-label="Delete selected Ollama model">&#128465; Delete</button>
+            </div>
+          </div>
+
+          <!-- Progress log -->
+          <div class="workshop-group">
+            <div class="workshop-group-label">&#128221; Progress</div>
+            <div id="ws-log" class="ws-log"><span class="out-hint">Output will appear here&#8230;</span></div>
+          </div>
+        </div>
+      </div>
 
   </div>
 </div>
@@ -753,6 +838,144 @@ function switchToHtmlTab() {
 function switchToChallengesTab() {
   switchTab('chal');
   loadChallenges();
+}
+
+function switchToWorkshopTab() {
+  switchTab('workshop');
+  wsRefreshDeleteList();
+}
+
+// ── Workshop (Model create / pull / delete) ────────────────────────────────
+
+function wsLog(msg, cls) {
+  const log = document.getElementById('ws-log');
+  const line = document.createElement('div');
+  if (cls) line.className = cls;
+  line.textContent = msg;
+  log.appendChild(line);
+  log.scrollTop = log.scrollHeight;
+}
+
+function wsClearLog() {
+  document.getElementById('ws-log').innerHTML = '';
+}
+
+async function wsRefreshDeleteList() {
+  const sel = document.getElementById('ws-delete-select');
+  try {
+    const r = await fetch('/ollama/models');
+    const d = await r.json();
+    const models = d.models || [];
+    sel.innerHTML = '<option value="">-- select model to delete --</option>' +
+      models.map(m => `<option value="${esc(m)}">${esc(m)}</option>`).join('');
+  } catch { /* offline */ }
+}
+
+function wsPullModel() {
+  const name = document.getElementById('ws-pull-name').value.trim();
+  if (!name) { wsLog('Enter a model name first.', 'log-err'); return; }
+  wsClearLog();
+  wsLog(`Pulling "${name}" from Ollama library…`, 'log-info');
+
+  fetch('/ollama/pull', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({model: name})
+  }).then(async function(resp) {
+    const reader = resp.body.getReader();
+    const dec    = new TextDecoder();
+    let buf = '';
+    let stopped = false;
+    while (!stopped) {
+      const {done, value} = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, {stream: true});
+      const lines = buf.split('\n');
+      buf = lines.pop();
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        try {
+          const obj = JSON.parse(line.slice(6));
+          if (obj.error) { wsLog('Error: ' + obj.error, 'log-err'); stopped = true; break; }
+          if (obj.status) {
+            const pct = obj.percent ? ` [${obj.percent}%]` : '';
+            wsLog(obj.status + pct + (obj.digest ? '  ' + obj.digest.slice(0,14) : ''));
+          }
+        } catch { /* skip */ }
+      }
+    }
+    if (!stopped) {
+      wsLog(`✓ Done — "${name}" is ready to use!`, 'log-ok');
+      wsRefreshDeleteList();
+      loadAllModels();
+      loadOllamaModels();
+    }
+  }).catch(e => wsLog('Connection error: ' + e, 'log-err'));
+}
+
+function wsCreateModel() {
+  const name      = document.getElementById('ws-create-name').value.trim();
+  const modelfile = document.getElementById('ws-modelfile').value.trim();
+  if (!name)      { wsLog('Enter a name for the new model.', 'log-err'); return; }
+  if (!modelfile) { wsLog('Modelfile is empty.', 'log-err'); return; }
+  wsClearLog();
+  wsLog(`Creating model "${name}"…`, 'log-info');
+
+  fetch('/ollama/create', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({name: name, modelfile: modelfile})
+  }).then(async function(resp) {
+    const reader = resp.body.getReader();
+    const dec    = new TextDecoder();
+    let buf = '';
+    let stopped = false;
+    while (!stopped) {
+      const {done, value} = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, {stream: true});
+      const lines = buf.split('\n');
+      buf = lines.pop();
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        try {
+          const obj = JSON.parse(line.slice(6));
+          if (obj.error)  { wsLog('Error: ' + obj.error, 'log-err'); stopped = true; break; }
+          if (obj.done)   { wsLog(obj.status, 'log-ok'); stopped = true; break; }
+          if (obj.status) { wsLog(obj.status); }
+        } catch { /* skip */ }
+      }
+    }
+    wsLog(`✓ Model "${name}" created! Select it in the AI or Generate tabs.`, 'log-ok');
+    wsRefreshDeleteList();
+    loadAllModels();
+    loadOllamaModels();
+  }).catch(e => wsLog('Connection error: ' + e, 'log-err'));
+}
+
+async function wsDeleteModel() {
+  const sel   = document.getElementById('ws-delete-select');
+  const model = sel.value;
+  if (!model) { wsLog('Select a model to delete first.', 'log-err'); return; }
+  if (!confirm(`Delete model "${model}"? This cannot be undone.`)) return;
+  wsClearLog();
+  wsLog(`Deleting "${model}"…`, 'log-info');
+  try {
+    const r = await fetch('/ollama/delete', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({model: model})
+    });
+    const d = await r.json();
+    if (d.success) {
+      wsLog('✓ ' + d.message, 'log-ok');
+      wsRefreshDeleteList();
+      loadAllModels();
+      loadOllamaModels();
+    } else {
+      wsLog('Error: ' + (d.error || 'unknown'), 'log-err');
+    }
+  } catch (e) { wsLog('Connection error: ' + e, 'log-err'); }
 }
 
 // ── Challenges ────────────────────────────────────────────────────────────────
