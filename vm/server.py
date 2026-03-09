@@ -47,12 +47,15 @@ INSTRUCTIONS_FILE = os.path.join(_DIR, "instructions.json")
 NAVIGATOR_DIR     = os.path.join(os.path.dirname(_DIR), "navigator")
 
 # Training-data directory — stores per-action JSONL logs from the bot
-TRAINING_DATA_DIR = os.path.join(_DIR, "training_data")
-ACTIONS_LOG_FILE  = os.path.join(TRAINING_DATA_DIR, "actions.jsonl")
+TRAINING_DATA_DIR         = os.path.join(_DIR, "training_data")
+ACTIONS_LOG_FILE          = os.path.join(TRAINING_DATA_DIR, "actions.jsonl")
+# Dedicated JSON file for image descriptions (for VM self-learning / fine-tuning)
+IMAGE_DESCRIPTIONS_FILE   = os.path.join(TRAINING_DATA_DIR, "image_descriptions.jsonl")
 os.makedirs(TRAINING_DATA_DIR, exist_ok=True)
 
-_lock = threading.Lock()
-_actions_lock = threading.Lock()
+_lock             = threading.Lock()
+_actions_lock     = threading.Lock()
+_img_desc_lock    = threading.Lock()
 
 # Ollama service base URL (override via OLLAMA_HOST env var)
 OLLAMA_BASE = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
@@ -336,6 +339,29 @@ _VISION_MODELS = [
 ]
 
 
+def _save_image_description(summary: dict, full_description: str) -> None:
+    """Append a full image description to IMAGE_DESCRIPTIONS_FILE (JSON Lines).
+
+    Each line is a self-contained training sample::
+
+        {"image_path": "...", "description": "...", "ts": "..."}
+
+    The file is in JSON Lines format so it can be streamed into a fine-tuning
+    pipeline without loading the whole file into memory.
+    """
+    entry = {
+        "image_path":   summary.get("path", ""),
+        "description":  full_description,
+        "ts":           summary.get("ts", ""),
+    }
+    with _img_desc_lock:
+        try:
+            with open(IMAGE_DESCRIPTIONS_FILE, "a", encoding="utf-8") as fh:
+                fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        except OSError as exc:
+            _log.debug("Failed to write image description: %s", exc)
+
+
 def _record_agent_action(record: dict) -> None:
     """
     Persist one agent action record:
@@ -415,13 +441,19 @@ def _record_agent_action(record: dict) -> None:
             desc = record.get("output", {}).get("description", "")
             if desc:
                 descs = aa.setdefault("image_descriptions", [])
-                descs.append({
+                img_entry = {
                     "path": record.get("input", {}).get("image_path", ""),
                     "description": desc[:400],
                     "ts": record.get("timestamp", ""),
-                })
+                }
+                descs.append(img_entry)
                 if len(descs) > 50:
                     aa["image_descriptions"] = descs[-50:]
+                # Also write to dedicated image_descriptions.json for training
+                _save_image_description(
+                    {"path": img_entry["path"], "ts": img_entry["ts"]},
+                    desc,
+                )
         else:
             aa["failed_actions"] = aa.get("failed_actions", 0) + 1
 
@@ -1274,6 +1306,53 @@ def agent_describe_image():
     except _http.exceptions.ConnectionError:
         return jsonify({"error": "Cannot connect to Ollama"}), 503
     except Exception as exc:  # pylint: disable=broad-except
+        return jsonify({"error": str(exc)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Agent training data endpoint
+# ---------------------------------------------------------------------------
+
+@app.route("/agent/training_data", methods=["GET"])
+def agent_training_data():
+    """Return the image descriptions training dataset (JSON Lines → JSON array).
+
+    Query params:
+      ?limit=N   — return only the last N entries (default: all)
+      ?format=jsonl — return raw JSONL text instead of JSON array
+    """
+    limit = request.args.get("limit", "")
+    fmt   = request.args.get("format", "json")
+
+    try:
+        entries = []
+        if os.path.exists(IMAGE_DESCRIPTIONS_FILE):
+            with _img_desc_lock:
+                with open(IMAGE_DESCRIPTIONS_FILE, "r", encoding="utf-8") as fh:
+                    for line in fh:
+                        line = line.strip()
+                        if line:
+                            try:
+                                entries.append(json.loads(line))
+                            except json.JSONDecodeError:
+                                pass
+
+        if limit:
+            try:
+                entries = entries[-int(limit):]
+            except ValueError:
+                pass
+
+        if fmt == "jsonl":
+            text = "\n".join(json.dumps(e, ensure_ascii=False) for e in entries)
+            return app.response_class(text, mimetype="application/x-ndjson")
+
+        return jsonify({
+            "total": len(entries),
+            "file":  IMAGE_DESCRIPTIONS_FILE,
+            "entries": entries,
+        })
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
         return jsonify({"error": str(exc)}), 500
 
 

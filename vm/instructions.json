@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "last_updated": "",
+  "last_updated": "2026-03-09T17:31:55.206072+00:00",
   "statistics": {
     "total_runs": 0,
     "successful_runs": 0,
@@ -35,7 +35,7 @@
     "total_searches": 0,
     "total_screenshots": 0,
     "total_articles": 0,
-    "total_image_descriptions": 0,
+    "total_image_descriptions": 1,
     "total_generate_html": 0,
     "failed_actions": 0,
     "retrain_cycles": 0,
@@ -43,8 +43,14 @@
     "screenshot_failed_domains": {},
     "avg_sources_per_query": 0.0,
     "screenshot_success_rate": 1.0,
-    "image_descriptions": [],
+    "image_descriptions": [
+      {
+        "path": "/tmp/photo.jpg",
+        "description": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "ts": "2026-03-09T17:00:00"
+      }
+    ],
     "article_topics": [],
-    "actions_since_last_retrain": 0
+    "actions_since_last_retrain": 1
   }
 }
