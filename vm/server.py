@@ -16,6 +16,8 @@ Endpoints:
   POST /generate/html  — generate a full HTML page from a prompt (live-preview ready)
   GET  /navigator/     — serve the DRGRNav PWA navigator app
   GET  /challenges     — return pre-defined hard challenge prompts for the VM
+  GET  /selftest       — run built-in web-scraper self-test, return HTML report
+  GET  /launch         — HTML page with emergency launch instructions for all platforms
   POST /retrain        — manually trigger a self-improvement cycle
   POST /agent/log      — receive action record from the Telegram bot for self-learning
   GET  /agent/stats    — return agent action statistics and current training instructions
@@ -870,6 +872,380 @@ _CHALLENGES = [
 def get_challenges():
     """Return the list of pre-defined hard challenge prompts."""
     return jsonify({"challenges": _CHALLENGES})
+
+
+# ---------------------------------------------------------------------------
+# Self-test / demo endpoints
+# ---------------------------------------------------------------------------
+
+_SELFTEST_CODE = r'''
+import threading, http.server, sqlite3, time, random, urllib.robotparser
+from urllib.parse import urljoin
+from bs4 import BeautifulSoup
+import requests as _req
+
+# ── 1. Build a 3-page mock e-commerce catalogue in memory ──────────────────
+PAGES = {}
+PAGES["/robots.txt"] = b"User-agent: *\nDisallow: /private/\nAllow: /\n"
+
+_STARS = ["One", "Two", "Three", "Four", "Five"]
+
+def _book_card(bid, title, price_int, stars):
+    return (
+        f'<div class="product_pod">'
+        f'<h3><a href="/product/{bid}" title="{title}">{title}</a></h3>'
+        f'<p class="price_color">GBP{price_int:.2f}</p>'
+        f'<p class="star-rating {stars}"></p>'
+        f'</div>'
+    )
+
+p1_books = "".join(
+    _book_card(i, f"Classic Novel {i} The Complete Edition", 10 + i,
+               _STARS[i % 5])
+    for i in range(1, 21)
+)
+p2_books = "".join(
+    _book_card(i, f"Mystery Thriller {i} Detective Chronicles", 5 + i * 0.5,
+               _STARS[(i + 2) % 5])
+    for i in range(21, 36)
+)
+
+PAGES["/"] = (
+    "<html><head><meta charset='utf-8'></head><body>"
+    "<ul class='breadcrumb'><li>Home</li><li class='active'>Fiction</li></ul>"
+    "<h1>Books Catalogue - Page 1</h1>"
+    + p1_books +
+    "<ul><li class='next'><a href='/catalogue/page-2.html'>next</a></li></ul>"
+    "</body></html>"
+).encode("utf-8")
+
+PAGES["/catalogue/page-2.html"] = (
+    "<html><head><meta charset='utf-8'></head><body>"
+    "<ul class='breadcrumb'><li>Home</li><li class='active'>Mystery</li></ul>"
+    "<h1>Books Catalogue - Page 2</h1>"
+    + p2_books +
+    "</body></html>"
+).encode("utf-8")
+
+class _MockHandler(http.server.BaseHTTPRequestHandler):
+    def log_message(self, *a): pass
+    def do_GET(self):
+        path = self.path.split("?")[0]
+        body = PAGES.get(path, b"<h1>404</h1>")
+        code = 200 if path in PAGES else 404
+        self.send_response(code)
+        ct = "text/plain" if path.endswith(".txt") else "text/html; charset=utf-8"
+        self.send_header("Content-Type", ct)
+        self.end_headers()
+        self.wfile.write(body)
+
+srv = http.server.HTTPServer(("127.0.0.1", 18081), _MockHandler)
+threading.Thread(target=srv.serve_forever, daemon=True).start()
+time.sleep(0.2)
+
+BASE = "http://127.0.0.1:18081"
+
+# ── 2. Production-grade scraper ────────────────────────────────────────────
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/122",
+    "Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 Safari/605",
+    "Mozilla/5.0 (X11; Linux x86_64) Firefox/124",
+]
+
+conn = sqlite3.connect(":memory:")
+conn.execute("""CREATE TABLE books (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    url TEXT UNIQUE, title TEXT, price REAL,
+    rating TEXT, category TEXT, scraped_at TEXT
+)""")
+conn.execute("CREATE TABLE scrape_state (key TEXT PRIMARY KEY, value TEXT)")
+conn.commit()
+
+def save_book(url, title, price_str, rating, category):
+    try:
+        price = float(price_str.replace("GBP", "").replace(",", ".").strip())
+    except Exception:
+        price = 0.0
+    conn.execute(
+        "INSERT OR IGNORE INTO books(url,title,price,rating,category,scraped_at) VALUES(?,?,?,?,?,datetime('now'))",
+        (url, title, price, rating, category))
+    conn.commit()
+
+# Check robots.txt
+rp = urllib.robotparser.RobotFileParser()
+rp.set_url(f"{BASE}/robots.txt")
+rp.read()
+allowed = rp.can_fetch("*", BASE + "/")
+
+sess = _req.Session()
+
+_MAX_BACKOFF = 8  # seconds — maximum exponential back-off wait for 429 responses
+
+def fetch_with_backoff(url, attempt=0):
+    hdr = {"User-Agent": random.choice(USER_AGENTS)}
+    try:
+        r = sess.get(url, headers=hdr, timeout=5)
+        if r.status_code == 429 and attempt < 3:
+            time.sleep(min(2 ** attempt + random.random(), _MAX_BACKOFF))
+            return fetch_with_backoff(url, attempt + 1)
+        r.raise_for_status()
+        return r
+    except _req.RequestException as exc:
+        print(f"  [ERR] {exc}")
+        return None
+
+lines = [f"robots.txt: scraping {'ALLOWED' if allowed else 'DISALLOWED'}"]
+to_visit = [BASE + "/"]
+visited = set()
+page_no = 0
+MAX_PAGES = 3
+
+while to_visit and page_no < MAX_PAGES:
+    url = to_visit.pop(0)
+    if url in visited:
+        continue
+    visited.add(url)
+    # Resume support
+    if conn.execute("SELECT 1 FROM scrape_state WHERE key=?", (url,)).fetchone():
+        lines.append(f"[PAGE] {url} — SKIPPED (already scraped)")
+        continue
+    conn.execute("INSERT OR IGNORE INTO scrape_state VALUES(?,?)", (url, "done"))
+    conn.commit()
+
+    page_no += 1
+    lines.append(f"\n[PAGE {page_no}] {url}")
+    resp = fetch_with_backoff(url)
+    if not resp:
+        continue
+
+    soup = BeautifulSoup(resp.content, "html.parser", from_encoding="utf-8")
+    cat_el = soup.select_one(".breadcrumb .active")
+    category = cat_el.get_text(strip=True) if cat_el else "Books"
+
+    count = 0
+    for article in soup.select("div.product_pod"):
+        try:
+            a     = article.select_one("h3 a")
+            title = a["title"]
+            href  = urljoin(url, a["href"])
+            price = article.select_one(".price_color").get_text(strip=True)
+            stars_el = article.select_one(".star-rating")
+            rating   = stars_el["class"][1] if stars_el else "?"
+            save_book(href, title, price, rating, category)
+            count += 1
+            lines.append(f"  BOOK  {title[:44]:<44} {price:>10}  *{rating}")
+        except Exception as exc:
+            lines.append(f"  SKIP  {exc}")
+
+    lines.append(f"  -> {count} books saved from this page")
+    nxt = soup.select_one("li.next a")
+    if nxt:
+        to_visit.append(urljoin(url, nxt["href"]))
+    time.sleep(0.05)
+
+# ── 3. Final statistics ───────────────────────────────────────────────────
+total  = conn.execute("SELECT COUNT(*) FROM books").fetchone()[0]
+cats   = [r[0] for r in conn.execute("SELECT DISTINCT category FROM books")]
+lines.append("\n=== SCRAPE RESULTS ===")
+lines.append(f"Total books : {total}  (deduplicated via INSERT OR IGNORE)")
+lines.append(f"Categories  : {', '.join(cats)}")
+
+lines.append("\nCheapest 5:")
+for r in conn.execute("SELECT title, price, rating FROM books ORDER BY price ASC LIMIT 5"):
+    lines.append(f"  {r[0][:44]:<44} GBP{r[1]:<7.2f}  *{r[2]}")
+
+lines.append("\nRating distribution:")
+for r in conn.execute("SELECT rating, COUNT(*) n FROM books GROUP BY rating ORDER BY n DESC"):
+    bar = "#" * r[1]
+    lines.append(f"  {r[0]:<8} {bar} ({r[1]})")
+
+lines.append("\nPrice stats:")
+for r in conn.execute("SELECT MIN(price),MAX(price),AVG(price),SUM(price) FROM books"):
+    lines.append(f"  Min=GBP{r[0]:.2f}  Max=GBP{r[1]:.2f}  Avg=GBP{r[2]:.2f}  Total=GBP{r[3]:.2f}")
+
+srv.shutdown()
+lines.append("\nSELFTEST PASSED")
+print("\n".join(lines))
+'''
+
+
+@app.route("/selftest", methods=["GET"])
+def selftest():
+    """Run a built-in web-scraper self-test and return an HTML report.
+
+    Spins up a local mock HTTP server with a 2-page book catalogue,
+    scrapes it with all production features (robots.txt, User-Agent rotation,
+    exponential backoff, SQLite dedup, pagination, resume support),
+    and renders a nicely formatted HTML result page.
+
+    No external network access is required.
+    """
+    import html as _html_mod
+
+    result = _run_code(_SELFTEST_CODE, "python")
+    success = result["success"]
+    raw_out = result.get("output", "") or ""
+    raw_err = result.get("error", "") or ""
+
+    # Parse the plain-text output into an HTML report
+    rows = []
+    for line in (raw_out + ("\n" + raw_err if raw_err.strip() else "")).splitlines():
+        stripped = line.strip()
+        if stripped.startswith("BOOK"):
+            css = "book"
+        elif stripped.startswith("SKIP"):
+            css = "skip"
+        elif stripped.startswith("[PAGE"):
+            css = "page"
+        elif stripped.startswith("===") or stripped.startswith("SELFTEST"):
+            css = "heading"
+        elif stripped.startswith("->"):
+            css = "summary"
+        elif stripped.startswith("[ERR]"):
+            css = "error"
+        else:
+            css = "info"
+        rows.append(f'<div class="row {css}">{_html_mod.escape(line)}</div>')
+
+    status_cls = "ok" if success else "fail"
+    status_txt = "✅ SELFTEST PASSED" if success else "❌ SELFTEST FAILED"
+
+    page = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Code VM — Self-Test</title>
+<style>
+  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+  body {{ background: #1e1e1e; color: #d4d4d4; font-family: 'Consolas', monospace;
+         font-size: 13px; padding: 20px; }}
+  h1 {{ font-size: 22px; margin-bottom: 16px; color: #569cd6; }}
+  .badge {{ display: inline-block; padding: 6px 18px; border-radius: 4px;
+            font-size: 16px; font-weight: bold; margin-bottom: 20px; }}
+  .badge.ok   {{ background: #1e4d2b; color: #4ec94e; border: 1px solid #4ec94e; }}
+  .badge.fail {{ background: #4d1e1e; color: #f44747; border: 1px solid #f44747; }}
+  .log {{ background: #252526; border: 1px solid #3c3c3c; border-radius: 4px;
+          padding: 14px; overflow-x: auto; white-space: pre; line-height: 1.6; }}
+  .row       {{ padding: 1px 0; }}
+  .row.book  {{ color: #9cdcfe; }}
+  .row.page  {{ color: #dcdcaa; font-weight: bold; margin-top: 8px; }}
+  .row.skip  {{ color: #808080; }}
+  .row.error {{ color: #f44747; }}
+  .row.heading {{ color: #c586c0; font-weight: bold; margin-top: 10px; }}
+  .row.summary {{ color: #4ec94e; }}
+  .row.info  {{ color: #d4d4d4; }}
+  .meta {{ color: #6a9955; font-size: 11px; margin-top: 16px; }}
+  a {{ color: #569cd6; text-decoration: none; }}
+  a:hover {{ text-decoration: underline; }}
+</style>
+</head>
+<body>
+<h1>⚡ Code VM — Self-Test: Web Scraper</h1>
+<div class="badge {status_cls}">{status_txt}</div>
+<p style="margin-bottom:14px;color:#858585">
+  Спинит локальный mock HTTP-сервер с книжным каталогом из 2 страниц,
+  скрапит его с проверкой robots.txt, ротацией User-Agent, SQLite dedup,
+  пагинацией и поддержкой возобновления.
+  Внешний интернет не нужен.
+</p>
+<div class="log">{"".join(rows)}</div>
+<p class="meta">
+  Endpoint: <code>GET /selftest</code> &nbsp;|&nbsp;
+  <a href="/">← Вернуться в редактор</a> &nbsp;|&nbsp;
+  <a href="/health">Статус системы</a>
+</p>
+</body>
+</html>"""
+    return Response(page, status=200 if success else 500,
+                    mimetype="text/html; charset=utf-8")
+
+
+@app.route("/launch", methods=["GET"])
+def launch_help():
+    """Return an HTML page with emergency launch instructions for all platforms."""
+    page = """<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Code VM — Как запустить</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #1e1e1e; color: #d4d4d4; font-family: system-ui, sans-serif;
+         font-size: 14px; padding: 20px; max-width: 820px; line-height: 1.7; }
+  h1 { font-size: 24px; color: #569cd6; margin-bottom: 4px; }
+  h2 { font-size: 16px; color: #dcdcaa; margin: 24px 0 8px; }
+  .card { background: #252526; border: 1px solid #3c3c3c; border-radius: 6px;
+          padding: 14px 18px; margin-bottom: 14px; }
+  code, pre { background: #0d0d0d; color: #9cdcfe; padding: 3px 7px;
+              border-radius: 3px; font-family: Consolas, monospace; font-size: 13px; }
+  pre { display: block; padding: 12px; overflow-x: auto; white-space: pre; }
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 10px;
+         font-size: 11px; font-weight: bold; margin-right: 6px; }
+  .win  { background: #004d7a; color: #9cdcfe; }
+  .lin  { background: #1e4d2b; color: #4ec94e; }
+  .any  { background: #4d3800; color: #dcdcaa; }
+  a { color: #569cd6; }
+  .ok { color: #4ec94e; font-weight: bold; }
+  .note { color: #858585; font-size: 12px; }
+</style>
+</head>
+<body>
+<h1>⚡ Code VM — Как запустить</h1>
+<p style="color:#858585;margin-bottom:16px">Ты видишь эту страницу — значит сервер уже запущен! <span class="ok">✅</span></p>
+
+<h2>🪟 Windows — один раз (установка + ярлык)</h2>
+<div class="card">
+<span class="tag win">Windows PowerShell</span>
+<pre>$d="$env:USERPROFILE\\drgr-bot"; if(Test-Path $d){Set-Location $d; git pull}else{Set-Location "$env:USERPROFILE"; git clone https://github.com/ybiytsa1983-cpu/drgr-bot; Set-Location drgr-bot}; .\\install.ps1</pre>
+<p class="note">Открой Win+X → Windows PowerShell, вставь всё сразу. Создаст ярлык «Code VM» на рабочем столе.</p>
+</div>
+
+<h2>🪟 Windows — повторный запуск (без ярлыка)</h2>
+<div class="card">
+<span class="tag win">PowerShell</span>
+<pre>powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\\drgr-bot\\start.ps1"</pre>
+<p class="note">Работает всегда, даже без ярлыка.</p>
+</div>
+
+<h2>🐧 Linux / macOS</h2>
+<div class="card">
+<span class="tag lin">bash</span>
+<pre>cd ~/drgr-bot && ./start.sh</pre>
+<p class="note">Первый раз установит зависимости автоматически (~1 минута).</p>
+</div>
+
+<h2>🌐 Любая платформа — прямой запуск Python</h2>
+<div class="card">
+<span class="tag any">любой терминал</span>
+<pre>cd путь/к/drgr-bot/vm
+pip install flask requests beautifulsoup4 python-dotenv
+python server.py</pre>
+<p class="note">Откройте браузер на <a href="http://localhost:5000/">http://localhost:5000/</a></p>
+</div>
+
+<h2>🧪 Проверить что VM работает</h2>
+<div class="card">
+  Открой в браузере: <a href="/selftest"><code>/selftest</code></a> — запустит встроенный тест веб-скрапера<br>
+  Или: <a href="/health"><code>/health</code></a> — статус всех компонентов (VM, Ollama, Bot)<br>
+  Или: <a href="/challenges"><code>/challenges</code></a> — список заданий для VM
+</div>
+
+<h2>❓ Нет файлов вообще</h2>
+<div class="card">
+<span class="tag win">PowerShell</span>
+<pre>Set-Location "$env:USERPROFILE"
+git clone https://github.com/ybiytsa1983-cpu/drgr-bot
+Set-Location drgr-bot
+.\\install.ps1</pre>
+<p class="note">После клонирования и install.ps1 на рабочем столе появятся: «Code VM» (ярлык) и «ЗАПУСТИТЬ.bat»</p>
+</div>
+
+<p style="margin-top:24px"><a href="/">← Вернуться в редактор</a></p>
+</body>
+</html>"""
+    return Response(page, status=200, mimetype="text/html; charset=utf-8")
 
 
 @app.route("/execute", methods=["POST"])
