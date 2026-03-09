@@ -44,23 +44,31 @@ OLLAMA_BASE = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 # ---------------------------------------------------------------------------
 # Ollama port auto-discovery
 # ---------------------------------------------------------------------------
-# Runs once in a background thread at startup.  Scans localhost ports
-# 11434-11444 to find where Ollama is actually listening (handles users
-# who run Ollama on a non-default port, e.g. 11435).
-# If OLLAMA_HOST is explicitly set by the user we trust it and do nothing.
+# Runs once in a background thread at startup.  First tries the configured
+# OLLAMA_BASE URL; if unreachable, scans localhost ports 11434-11444 to
+# find where Ollama is actually listening.  This handles users who run
+# Ollama on a non-default port (e.g. 11435) even when the launcher has
+# set OLLAMA_HOST=http://localhost:11434 as a default.
 _OLLAMA_SCANNED = False
 _OLLAMA_SCAN_LOCK = threading.Lock()
 
 
 def _autodiscover_ollama() -> None:
-    """Scan localhost ports 11434-11444 for an Ollama instance."""
+    """Verify OLLAMA_BASE is reachable; if not, scan ports 11434-11444."""
     global OLLAMA_BASE, _OLLAMA_SCANNED
-    if os.environ.get("OLLAMA_HOST"):
-        return  # user explicitly configured — trust it
     with _OLLAMA_SCAN_LOCK:
         if _OLLAMA_SCANNED:
             return
         _OLLAMA_SCANNED = True
+        # 1. Try the already-configured base URL first.
+        try:
+            _http.get(f"{OLLAMA_BASE}/api/tags", timeout=1)
+            return  # configured URL is reachable — done
+        except Exception:  # pylint: disable=broad-except
+            pass
+        # 2. Fall back: scan localhost ports 11434-11444.
+        #    Covers cases where the launcher set a default of 11434 but
+        #    Ollama is actually listening on a different port (e.g. 11435).
         parsed = urllib.parse.urlparse(OLLAMA_BASE)
         scheme = parsed.scheme or "http"
         host = parsed.hostname or "localhost"
