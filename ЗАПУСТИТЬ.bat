@@ -95,6 +95,9 @@ if not errorlevel 1 (
 )
 
 REM --- Нормализуем CRLF в .bat файлах (git хранит LF, cmd.exe требует CRLF) --
+REM  1) git checkout re-applies .gitattributes eol=crlf rule to all .bat files
+git -C "%FOUND%" checkout HEAD -- vm/start_vm.bat install.bat start.bat stop.bat vm.bat >nul 2>&1
+REM  2) PowerShell fallback to normalize any remaining .bat files
 echo  [CRLF] Нормализуем окончания строк...
 powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-ChildItem '%FOUND%' -Recurse -Filter *.bat | ForEach-Object { $f=$_.FullName; $t=[IO.File]::ReadAllText($f); $t2=($t -replace [char]13,'') -replace [char]10,([char]13+[char]10); if($t -ne $t2){[IO.File]::WriteAllText($f,$t2)} }" >nul 2>&1
 

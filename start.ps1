@@ -34,6 +34,20 @@ Set-Location $scriptRoot
 # -- Auto-update from remote (silent, best-effort) ----------------------------
 try { git pull --ff-only --quiet 2>$null } catch { }
 
+# -- Normalize .bat files to CRLF (cmd.exe requires CRLF; git may checkout as LF
+#    on machines that cloned before the .gitattributes eol=crlf rule was active) -
+@('start.bat', 'vm.bat', 'install.bat', 'stop.bat',
+  'vm\start_vm.bat', "ЗАПУСТИТЬ.bat") | ForEach-Object {
+    $f = Join-Path $scriptRoot $_
+    try {
+        if (Test-Path $f) {
+            $t = [IO.File]::ReadAllText($f)
+            $n = ($t -replace "`r`n", "`n" -replace "`r", "`n") -replace "`n", "`r`n"
+            if ($t -ne $n) { [IO.File]::WriteAllText($f, $n) }
+        }
+    } catch { }
+}
+
 # -- First-time setup if .venv is missing --------------------------------------
 $venvPython = Join-Path $scriptRoot ".venv\Scripts\python.exe"
 
@@ -124,9 +138,11 @@ if (-not (Test-Path $venvPython)) {
 }
 
 # -- Launch the VM server in a new visible window ------------------------------
-$vmBat = Join-Path $scriptRoot "vm\start_vm.bat"
+$vmPs1 = Join-Path $scriptRoot "vm.ps1"
 Write-Host "  [-->] Запуск Code VM..." -ForegroundColor Cyan
-Start-Process -FilePath "cmd.exe" -ArgumentList "/k `"$vmBat`"" -WorkingDirectory $scriptRoot
+Start-Process -FilePath "powershell.exe" `
+    -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$vmPs1`"" `
+    -WorkingDirectory $scriptRoot
 Write-Host "  [OK] Code VM запускается - браузер откроется через несколько секунд." -ForegroundColor Green
 Write-Host "       Закройте окно 'Code VM - Monaco Editor' чтобы остановить сервер." -ForegroundColor Yellow
 Write-Host ""
