@@ -634,6 +634,19 @@ def health():
     except Exception:  # pylint: disable=broad-except
         pass
 
+    if not ollama_ok:
+        # Ollama is unreachable on the current OLLAMA_BASE — allow the
+        # auto-discovery thread to re-scan ports (in case Ollama started
+        # after the VM did or moved to a different port).
+        # Only reset the flag when no scan is already in flight.
+        _should_rescan = False
+        with _OLLAMA_SCAN_LOCK:
+            if _OLLAMA_SCANNED:   # True = last scan finished; safe to retry
+                _OLLAMA_SCANNED = False
+                _should_rescan = True
+        if _should_rescan:
+            threading.Thread(target=_autodiscover_ollama, daemon=True).start()
+
     # --- Telegram BOT_TOKEN (read from .env in repo root, non-fatal) ---
     bot_token_set = False
     try:

@@ -1453,6 +1453,10 @@ setInterval(function () {
   if (!_ollamaLoaded) loadAllModels();
 }, 30000);
 
+// Auto-refresh the status/health panel every 30 s so Ollama heartbeat stays alive
+// and the user always sees up-to-date connectivity info without clicking Refresh.
+setInterval(loadStatus, 30000);
+
 // Global keyboard shortcuts (outside editor focus)
 document.addEventListener('keydown', function (e) {
   if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
