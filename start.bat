@@ -14,6 +14,11 @@ cd /d "%~dp0"
 REM -- Auto-update from remote (silent, best-effort) ------------------------
 git pull --ff-only --quiet >nul 2>&1
 
+REM -- Normalize bat file line endings to CRLF after git pull ---------------
+REM    git stores text files as LF; if the working tree wasn't freshly checked
+REM    out the files can have LF endings which cmd.exe misparses on Windows.
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$d='%~dp0'; 'vm\start_vm.bat','install.bat','stop.bat','vm.bat' | ForEach-Object { $f=$d+$_; if(Test-Path $f){ $t=[IO.File]::ReadAllText($f); $t2=($t -replace [char]13,'') -replace [char]10,([char]13+[char]10); if($t -ne $t2){[IO.File]::WriteAllText($f,$t2)} } }" >nul 2>&1
+
 REM -- First-time setup if .venv is missing ---------------------------------
 if not exist ".venv\Scripts\python.exe" (
     echo.

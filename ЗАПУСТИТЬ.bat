@@ -94,7 +94,11 @@ if not errorlevel 1 (
     echo  [OK] Обновление пропущено (нет подключения или нет изменений).
 )
 
-REM --- Пересоздаём ярлык на Рабочем столе (прямая ссылка на start.bat) --------
+REM --- Нормализуем CRLF в .bat файлах (git хранит LF, cmd.exe требует CRLF) --
+echo  [CRLF] Нормализуем окончания строк...
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-ChildItem '%FOUND%' -Recurse -Filter *.bat | ForEach-Object { $f=$_.FullName; $t=[IO.File]::ReadAllText($f); $t2=($t -replace [char]13,'') -replace [char]10,([char]13+[char]10); if($t -ne $t2){[IO.File]::WriteAllText($f,$t2)} }" >nul 2>&1
+
+REM --- Пересоздаём ярлык на Рабочем столе(прямая ссылка на start.bat) --------
 echo  [Ярлык] Создаём/обновляем ярлык на Рабочем столе...
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "$bat='%FOUND%\start.bat'; $s=(New-Object -COM WScript.Shell).CreateShortcut([Environment]::GetFolderPath('Desktop')+'\Code VM.lnk'); $s.TargetPath=$bat; $s.Arguments=''; $s.WorkingDirectory='%FOUND%'; $s.Description='Launch Code VM - Monaco Editor with Ollama AI'; $s.IconLocation=$env:SystemRoot+'\System32\cmd.exe,0'; $s.Save()" ^
