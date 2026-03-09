@@ -38,13 +38,26 @@ Set-Location $repoDir
 
 # -- 0. Auto-update repo -------------------------------------------------------
 # If this is a git repo, pull latest changes so old installs get fixes.
+# If install.ps1 itself changed, re-exec the new version immediately so the
+# user doesn't have to run the script twice to benefit from the latest fixes.
+$selfPath = Join-Path $repoDir "install.ps1"
 if (Test-Path (Join-Path $repoDir ".git")) {
+    $hashBefore = if (Test-Path $selfPath) { (Get-FileHash $selfPath -Algorithm MD5).Hash } else { "" }
     try {
         $gitLines = & git pull 2>&1
         foreach ($line in $gitLines) {
             Write-Host "  [GIT] $line" -ForegroundColor DarkGray
         }
     } catch { }
+    if ($hashBefore -ne "" -and (Test-Path $selfPath)) {
+        $hashAfter = (Get-FileHash $selfPath -Algorithm MD5).Hash
+        if ($hashBefore -ne $hashAfter) {
+            Write-Host "  [UPDATED] install.ps1 was updated - restarting with the new version..." -ForegroundColor Cyan
+            $psExe = try { (Get-Process -Id $PID).Path } catch { "powershell.exe" }
+            & $psExe -ExecutionPolicy Bypass -File $selfPath
+            exit
+        }
+    }
 }
 
 $venvDir = Join-Path $repoDir ".venv"
