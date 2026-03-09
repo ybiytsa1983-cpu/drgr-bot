@@ -278,6 +278,16 @@ if (Test-Path $launcherSrc) {
         Warn "Could not copy ЗАПУСТИТЬ.bat to Desktop: $_"
     }
 }
+# Also copy the PS1 helper script that ЗАПУСТИТЬ.bat delegates to
+$zapustitPsSrc  = Join-Path $repoDir "zapustit.ps1"
+$zapustitPsDest = Join-Path ([Environment]::GetFolderPath("Desktop")) "zapustit.ps1"
+if (Test-Path $zapustitPsSrc) {
+    try {
+        Copy-Item -Path $zapustitPsSrc -Destination $zapustitPsDest -Force
+    } catch {
+        Warn "Could not copy zapustit.ps1 to Desktop: $_"
+    }
+}
 
 # -- 9. Done -------------------------------------------------------------------
 Write-Host ""
