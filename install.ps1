@@ -36,6 +36,15 @@ $repoDir = if ($PSScriptRoot) {
 }
 Set-Location $repoDir
 
+# ── 0. Auto-update repo ───────────────────────────────────────────────────────
+# If this is a git repo, pull latest changes so old installs get fixes.
+if (Test-Path (Join-Path $repoDir ".git")) {
+    try {
+        $gitOut = & git pull 2>&1
+        Write-Host "  [GIT] $gitOut" -ForegroundColor DarkGray
+    } catch { }
+}
+
 $venvDir = Join-Path $repoDir ".venv"
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -201,8 +210,12 @@ if ($ollamaInstalled) {
     } else {
         Info "Starting AI model download in background ($modelName, ~5 GB)..."
         Info "A small window will show download progress — it can run while you work."
-        Start-Process cmd -ArgumentList "/c ollama pull $modelName && echo [OK] Model ready! && pause" `
-            -WindowStyle Minimized
+        # Write a temp batch file instead of embedding && in ArgumentList
+        # (avoids HTML-entity corruption when the script is downloaded via a browser)
+        $pullBat = Join-Path $env:TEMP "ollama_pull_model.bat"
+        "@echo off`r`necho Downloading $modelName ...`r`nollama pull $modelName`r`necho [OK] Model ready!`r`npause`r`n" |
+            Out-File -FilePath $pullBat -Encoding ascii
+        Start-Process cmd -ArgumentList "/c `"$pullBat`"" -WindowStyle Minimized
         Ok "Model download started in background"
     }
 } else {

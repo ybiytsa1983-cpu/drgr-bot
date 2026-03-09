@@ -10,8 +10,10 @@ Monaco Editor + Flask + Ollama. Пишешь промпт — получаешь
 Открой **PowerShell** (Win+X → Windows PowerShell) и вставь всё сразу:
 
 ```powershell
-cd "$env:USERPROFILE"; git clone https://github.com/ybiytsa1983-cpu/drgr-bot.git; cd drgr-bot; powershell -ExecutionPolicy Bypass -File install.ps1
+$d="$env:USERPROFILE\drgr-bot"; if(Test-Path $d){cd $d; git pull}else{cd "$env:USERPROFILE"; git clone https://github.com/ybiytsa1983-cpu/drgr-bot.git; cd drgr-bot}; powershell -ExecutionPolicy Bypass -File install.ps1
 ```
+
+> **Папка уже есть?** Команда автоматически сделает `git pull` и обновит файлы вместо повторного клонирования.
 
 > **Git не установлен?** Скачай: https://git-scm.com/download/win — установи с настройками по умолчанию, потом снова вставь команду выше.
 
@@ -130,6 +132,11 @@ ollama serve
 **«running scripts is disabled»** → выполни в PowerShell:
 ```powershell
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+```
+
+**«fatal: destination path already exists»** → папка уже есть, нужно обновить:
+```powershell
+cd "$env:USERPROFILE\drgr-bot"; git pull; powershell -ExecutionPolicy Bypass -File install.ps1
 ```
 
 **Страница не открывается (ERR_CONNECTION_REFUSED)** → сервер не запущен. Запусти снова:
