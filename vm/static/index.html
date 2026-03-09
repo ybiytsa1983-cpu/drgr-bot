@@ -1,1481 +1,370 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Code VM &mdash; Monaco</title>
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-    body {
-      font-family: 'Segoe UI', system-ui, sans-serif;
-      background: #1e1e1e;
-      color: #d4d4d4;
-      height: 100vh;
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-    }
-
-    /* ── Header ── */
-    header {
-      background: #252526;
-      border-bottom: 1px solid #3c3c3c;
-      padding: 6px 14px;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      flex-shrink: 0;
-    }
-    header h1 { font-size: 15px; color: #cccccc; font-weight: 600; white-space: nowrap; }
-
-    select {
-      padding: 5px 10px;
-      background: #3c3c3c;
-      color: #d4d4d4;
-      border: 1px solid #555;
-      border-radius: 4px;
-      font-size: 13px;
-      cursor: pointer;
-    }
-    select:focus { outline: none; border-color: #007acc; }
-
-    .spacer { flex: 1; }
-
-    button {
-      padding: 5px 14px;
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
-      font-size: 13px;
-      font-weight: 500;
-      transition: filter .15s;
-    }
-    button:hover { filter: brightness(1.15); }
-    button:active { filter: brightness(0.9); }
-    .btn-check  { background: #1a6ed8; color: #fff; }
-    .btn-run    { background: #107c10; color: #fff; }
-    .btn-clear  { background: #5a5a5a; color: #fff; }
-
-    kbd {
-      font-size: 10px;
-      background: rgba(255,255,255,.12);
-      border-radius: 3px;
-      padding: 1px 4px;
-      margin-left: 4px;
-      font-family: inherit;
-    }
-
-    /* ── Main layout ── */
-    .main {
-      display: flex;
-      flex: 1;
-      overflow: hidden;
-    }
-
-    #editor-container {
-      flex: 1;
-      min-width: 0;
-    }
-
-    /* ── Right panel ── */
-    .right-panel {
-      width: 360px;
-      flex-shrink: 0;
-      display: flex;
-      flex-direction: column;
-      border-left: 1px solid #3c3c3c;
-      overflow: hidden;
-    }
-
-    .panel {
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-      border-bottom: 1px solid #3c3c3c;
-    }
-    .panel:last-child { border-bottom: none; }
-    .panel-output      { flex: 1.3; }
-    .panel-issues      { flex: 0.9; }
-    .panel-instructions{ flex: 1.8; }
-
-    .panel-header {
-      padding: 5px 12px;
-      background: #252526;
-      font-size: 11px;
-      font-weight: 700;
-      color: #9d9d9d;
-      text-transform: uppercase;
-      letter-spacing: .6px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      flex-shrink: 0;
-    }
-
-    .status-dot {
-      width: 8px; height: 8px;
-      border-radius: 50%;
-      background: #555;
-      flex-shrink: 0;
-    }
-    .status-dot.ok  { background: #4caf50; }
-    .status-dot.err { background: #f44336; }
-
-    .panel-body {
-      flex: 1;
-      overflow-y: auto;
-      padding: 10px 12px;
-    }
-
-    /* scrollbar */
-    .panel-body::-webkit-scrollbar { width: 6px; }
-    .panel-body::-webkit-scrollbar-track { background: #1e1e1e; }
-    .panel-body::-webkit-scrollbar-thumb { background: #555; border-radius: 3px; }
-
-    /* Output */
-    pre#output-text {
-      font-family: Consolas, 'Courier New', monospace;
-      font-size: 13px;
-      white-space: pre-wrap;
-      word-break: break-all;
-    }
-    .out-stdout { color: #d4d4d4; }
-    .out-stderr { color: #f48771; }
-    .out-hint   { color: #6a9955; font-style: italic; }
-
-    /* Issues */
-    .issue {
-      padding: 4px 0;
-      border-bottom: 1px solid #2d2d2d;
-      font-size: 12px;
-      font-family: Consolas, monospace;
-    }
-    .issue:last-child { border-bottom: none; }
-    .issue-error   { color: #f48771; }
-    .issue-warning { color: #cca700; }
-    .issue-info    { color: #4fc3f7; }
-    .no-issues     { color: #4caf50; font-size: 13px; }
-
-    /* Self-improvement panel */
-    .stats-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 6px;
-      margin-bottom: 12px;
-    }
-    .stat-box {
-      background: #2d2d2d;
-      border-radius: 4px;
-      padding: 7px 10px;
-      text-align: center;
-    }
-    .stat-val   { font-size: 20px; font-weight: 700; color: #4fc3f7; }
-    .stat-label { font-size: 10px; color: #9d9d9d; text-transform: uppercase; letter-spacing: .4px; }
-
-    .instr-section { margin-bottom: 12px; }
-    .instr-title {
-      font-size: 10px;
-      font-weight: 700;
-      color: #9d9d9d;
-      text-transform: uppercase;
-      letter-spacing: .5px;
-      margin-bottom: 5px;
-    }
-    .instr-item {
-      font-size: 12px;
-      color: #d4d4d4;
-      padding: 2px 0 2px 8px;
-      border-left: 2px solid #107c10;
-      margin-bottom: 3px;
-    }
-    .instr-item-net { border-left-color: #1a6ed8; }
-
-    .loading { color: #6a9955; font-style: italic; font-size: 13px; }
-
-    /* ── Tab system (lower right panel) ── */
-    .right-tabs {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-    }
-    .tab-bar {
-      display: flex;
-      background: #2d2d2d;
-      border-bottom: 1px solid #3c3c3c;
-      flex-shrink: 0;
-    }
-    .tab-btn {
-      flex: 1;
-      padding: 7px 4px;
-      background: transparent;
-      border: none;
-      border-bottom: 2px solid transparent;
-      border-radius: 0;
-      color: #9d9d9d;
-      font-size: 11px;
-      font-weight: 600;
-      cursor: pointer;
-      text-transform: uppercase;
-      letter-spacing: .4px;
-      transition: color .15s, border-color .15s;
-      filter: none;
-      white-space: nowrap;
-    }
-    .tab-btn:hover  { color: #d4d4d4; filter: none; }
-    .tab-btn.active { color: #fff; border-bottom-color: #007acc; }
-
-    .tab-pane { display: none; flex: 1; overflow-y: auto; padding: 10px 12px; }
-    .tab-pane.active { display: flex; flex-direction: column; }
-    .tab-pane::-webkit-scrollbar { width: 6px; }
-    .tab-pane::-webkit-scrollbar-track { background: #1e1e1e; }
-    .tab-pane::-webkit-scrollbar-thumb { background: #555; border-radius: 3px; }
-
-    /* ── Ollama AI panel ── */
-    .ai-status {
-      font-size: 12px;
-      margin-bottom: 8px;
-      padding: 4px 8px;
-      border-radius: 3px;
-    }
-    .ai-status.ok  { background: #1a3a1a; color: #4caf50; }
-    .ai-status.err { background: #3a1a1a; color: #f48771; }
-
-    .ai-controls {
-      display: flex;
-      gap: 6px;
-      margin-bottom: 8px;
-      flex-wrap: wrap;
-      align-items: center;
-    }
-    .ai-controls select { flex: 1; min-width: 0; }
-    .ai-controls label  { font-size: 12px; color: #9d9d9d; cursor: pointer; display: flex; align-items: center; gap: 4px; }
-    #ollama-use-code { accent-color: #007acc; cursor: pointer; }
-
-    .ai-prompt {
-      width: 100%;
-      min-height: 68px;
-      background: #2d2d2d;
-      border: 1px solid #555;
-      border-radius: 4px;
-      color: #d4d4d4;
-      font-family: 'Segoe UI', system-ui, sans-serif;
-      font-size: 12px;
-      padding: 7px 9px;
-      resize: vertical;
-      margin-bottom: 7px;
-    }
-    .ai-prompt:focus       { outline: none; border-color: #007acc; }
-    .ai-prompt::placeholder { color: #6a9955; }
-
-    .btn-ask { background: #8b3ce8; color: #fff; width: 100%; margin-bottom: 8px; padding: 7px; }
-
-    /* ── Status health panel ── */
-    .health-row   { display:flex; align-items:center; gap:8px; padding:7px 10px; background:#252526; border-radius:5px; margin-bottom:6px; font-size:13px; }
-    .health-icon  { font-size:16px; flex-shrink:0; }
-    .health-label { color:#9d9d9d; font-size:11px; text-transform:uppercase; letter-spacing:.5px; min-width:80px; flex-shrink:0; }
-    .health-val   { color:#d4d4d4; flex:1; word-break:break-all; }
-    .health-ok    { color:#4caf50; }
-    .health-err   { color:#f48771; }
-    .health-warn  { color:#e9b213; }
-
-    /* ── Workshop tab ── */
-    .workshop-section { padding: 8px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; height: 100%; }
-    .workshop-title   { font-size: 14px; font-weight: 700; color: #e9b213; margin-bottom: 2px; }
-    .workshop-hint    { font-size: 12px; color: #9d9d9d; line-height: 1.5; }
-    .workshop-group   { display: flex; flex-direction: column; gap: 5px; }
-    .workshop-group-label { font-size: 11px; font-weight: 600; color: #c586c0; text-transform: uppercase; letter-spacing: .5px; }
-    .workshop-row     { display: flex; gap: 6px; align-items: center; }
-    .ws-input         { flex: 1; background: #3c3c3c; border: 1px solid #555; color: #d4d4d4; border-radius: 4px; padding: 5px 8px; font-size: 12px; min-width: 0; }
-    .ws-input:focus   { outline: none; border-color: #007acc; }
-    .ws-select        { cursor: pointer; }
-    .ws-btn           { padding: 5px 11px; font-size: 12px; border-radius: 4px; border: none; cursor: pointer; white-space: nowrap; font-weight: 600; }
-    .ws-btn-pull      { background: #007acc; color: #fff; }
-    .ws-btn-pull:hover { background: #005fa3; }
-    .ws-btn-create    { background: #4caf50; color: #fff; }
-    .ws-btn-create:hover { background: #388e3c; }
-    .ws-btn-delete    { background: #c0392b; color: #fff; }
-    .ws-btn-delete:hover { background: #962d22; }
-    .ws-modelfile     { width: 100%; min-height: 160px; resize: vertical; background: #1e1e1e; border: 1px solid #555; color: #d4d4d4; border-radius: 4px; padding: 8px; font-family: Consolas,'Courier New',monospace; font-size: 12px; line-height: 1.5; box-sizing: border-box; }
-    .ws-modelfile:focus { outline: none; border-color: #007acc; }
-    .ws-log           { background: #1a1a1a; border-radius: 4px; padding: 8px 10px; font-family: Consolas,'Courier New',monospace; font-size: 12px; color: #d4d4d4; white-space: pre-wrap; word-break: break-word; min-height: 60px; max-height: 180px; overflow-y: auto; }
-    .ws-log .log-ok   { color: #4caf50; }
-    .ws-log .log-err  { color: #f48771; }
-    .ws-log .log-info { color: #9cdcfe; }
-
-    #ollama-response {
-      flex: 1;
-      font-size: 13px;
-      font-family: Consolas, 'Courier New', monospace;
-      white-space: pre-wrap;
-      word-break: break-word;
-      color: #d4d4d4;
-      background: #1a1a1a;
-      border-radius: 4px;
-      padding: 8px 10px;
-      overflow-y: auto;
-      min-height: 60px;
-    }
-
-    /* ── Generate drawer ── */
-    .gen-drawer {
-      background: #252526;
-      border-bottom: 2px solid #8b3ce8;
-      padding: 8px 14px;
-      display: none;
-      flex-wrap: wrap;
-      gap: 8px;
-      align-items: flex-end;
-      flex-shrink: 0;
-    }
-    .gen-drawer.open { display: flex; }
-    .gen-field { display: flex; flex-direction: column; gap: 3px; }
-    .gen-field.grow { flex: 1; min-width: 200px; }
-    .gen-field label { font-size: 10px; color: #9d9d9d; text-transform: uppercase; letter-spacing: .5px; }
-    .gen-prompt-input {
-      background: #3c3c3c;
-      border: 1px solid #555;
-      border-radius: 4px;
-      color: #d4d4d4;
-      font-size: 13px;
-      padding: 5px 9px;
-    }
-    .gen-prompt-input:focus { outline: none; border-color: #8b3ce8; }
-    .gen-prompt-input::placeholder { color: #6a9955; }
-    .btn-generate  { background: #8b3ce8; color: #fff; }
-    .btn-generate.active { background: #6a1fa8; }
-    .btn-gen-code  { background: #107c10; color: #fff; }
-    .btn-gen-html  { background: #b85c00; color: #fff; }
-
-    /* ── HTML preview pane ── */
-    .html-preview-container { flex: 1; display: flex; flex-direction: column; gap: 6px; min-height: 0; }
-    .btn-gen-html-panel { background: #b85c00; color: #fff; width: 100%; padding: 7px; }
-    .gen-status { font-size: 12px; color: #9d9d9d; font-style: italic; }
-    #html-preview-iframe {
-      flex: 1;
-      border: 1px solid #3c3c3c;
-      border-radius: 4px;
-      background: #fff;
-      min-height: 100px;
-    }
-
-    /* ── Challenges panel ── */
-    .challenge-card {
-      background: #252526;
-      border: 1px solid #3c3c3c;
-      border-radius: 6px;
-      padding: 10px 12px;
-      margin-bottom: 8px;
-      cursor: pointer;
-      transition: border-color .15s, background .15s;
-    }
-    .challenge-card:hover { border-color: #007acc; background: #2a2a2a; }
-    .challenge-title {
-      font-size: 13px;
-      font-weight: 700;
-      color: #e0e0e0;
-      margin-bottom: 4px;
-    }
-    .challenge-diff {
-      font-size: 11px;
-      color: #9d9d9d;
-      margin-bottom: 4px;
-    }
-    .challenge-desc {
-      font-size: 11px;
-      color: #9d9d9d;
-      line-height: 1.4;
-    }
-    .challenge-actions {
-      margin-top: 8px;
-      display: flex;
-      gap: 6px;
-    }
-    .btn-chal-code  { background: #107c10; color: #fff; font-size: 11px; padding: 4px 10px; }
-    .btn-chal-html  { background: #b85c00; color: #fff; font-size: 11px; padding: 4px 10px; }
-    .btn-chal-demo  { background: #007acc; color: #fff; font-size: 11px; padding: 4px 10px; }
-    #challenge-loading { font-size: 12px; color: #9d9d9d; padding: 8px 0; }
-
-    /* Status bar */
-    .statusbar {
-      background: #007acc;
-      color: #fff;
-      font-size: 12px;
-      padding: 2px 12px;
-      display: flex;
-      gap: 16px;
-      flex-shrink: 0;
-    }
-    #status-msg { margin-left: auto; }
-  </style>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>DRGR VM</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d0d0d;--bg2:#161616;--bg3:#1e1e1e;--bg4:#252525;
+  --border:#2a2a2a;--accent:#0e84d4;--accent2:#1aad5a;
+  --text:#e0e0e0;--text2:#999;--danger:#d94040;
+  --panel-w:340px;
+}
+html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-family:"Segoe UI",system-ui,sans-serif}
+#panel{position:fixed;top:0;left:0;height:100%;width:var(--panel-w);background:var(--bg2);border-right:1px solid var(--border);transform:translateX(calc(-1 * var(--panel-w)));transition:transform .25s ease;z-index:100;display:flex;flex-direction:column;overflow:hidden}
+#panel.open{transform:translateX(0)}
+#panel-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:99;display:none}
+#panel-overlay.show{display:block}
+.panel-header{display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--border);flex-shrink:0}
+.panel-header h2{font-size:14px;font-weight:700;color:var(--accent);letter-spacing:.5px;flex:1}
+#btn-close-panel{background:none;border:none;color:var(--text2);cursor:pointer;font-size:18px;padding:2px 6px}
+#btn-close-panel:hover{color:var(--text)}
+.panel-scroll{flex:1;overflow-y:auto;padding:12px 16px;display:flex;flex-direction:column;gap:16px}
+.panel-scroll::-webkit-scrollbar{width:4px}
+.panel-scroll::-webkit-scrollbar-thumb{background:#333;border-radius:2px}
+.p-label{font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px}
+.p-row{display:flex;gap:8px;align-items:center;margin-bottom:6px}
+select,input[type=text],textarea{width:100%;padding:7px 10px;background:var(--bg4);color:var(--text);border:1px solid var(--border);border-radius:6px;font-size:13px;outline:none;transition:border-color .15s}
+select:focus,input[type=text]:focus,textarea:focus{border-color:var(--accent)}
+textarea{resize:vertical;min-height:80px}
+.pbtn{padding:7px 14px;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;transition:filter .15s;white-space:nowrap}
+.pbtn:hover{filter:brightness(1.15)}
+.pbtn-primary{background:var(--accent);color:#fff}
+.pbtn-success{background:var(--accent2);color:#fff}
+.pbtn-danger{background:var(--danger);color:#fff}
+.pbtn-muted{background:var(--bg4);color:var(--text);border:1px solid var(--border)}
+.pbtn-full{width:100%;margin-bottom:6px}
+#health-box{background:var(--bg3);border-radius:6px;padding:10px;font-size:12px;display:flex;flex-direction:column;gap:5px}
+.h-row{display:flex;justify-content:space-between;align-items:center}
+.h-key{color:var(--text2)}
+.h-val{font-weight:600}
+.ok{color:var(--accent2)}.fail{color:var(--danger)}.warn{color:#e8a020}
+#workshop-log{background:var(--bg3);border-radius:6px;padding:8px;font-size:11px;font-family:monospace;color:var(--text2);max-height:120px;overflow-y:auto;white-space:pre-wrap;word-break:break-all}
+#app{height:100%;display:flex;flex-direction:column}
+#topbar{display:flex;align-items:center;gap:10px;padding:8px 14px;background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0}
+#btn-menu{background:none;border:none;color:var(--text2);cursor:pointer;font-size:20px;padding:4px 8px;line-height:1}
+#btn-menu:hover{color:var(--text)}
+#topbar-title{font-size:14px;font-weight:700;color:var(--accent);flex:1}
+#model-badge{font-size:11px;background:var(--bg4);border:1px solid var(--border);color:var(--text2);padding:3px 10px;border-radius:12px;cursor:default;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#status-dot{width:8px;height:8px;border-radius:50%;background:var(--danger);flex-shrink:0}
+#status-dot.ok{background:var(--accent2)}
+#chat-area{flex:1;overflow-y:auto;padding:16px 20px;display:flex;flex-direction:column;gap:12px}
+#chat-area::-webkit-scrollbar{width:6px}
+#chat-area::-webkit-scrollbar-thumb{background:#2a2a2a;border-radius:3px}
+.msg{max-width:100%;animation:fadein .2s ease}
+@keyframes fadein{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.msg-user{align-self:flex-end;background:var(--accent);color:#fff;padding:10px 14px;border-radius:12px 12px 2px 12px;font-size:14px;max-width:70%}
+.msg-bot{align-self:flex-start;background:var(--bg3);border:1px solid var(--border);border-radius:2px 12px 12px 12px;padding:12px 16px;font-size:14px;line-height:1.6;width:100%;max-width:100%}
+.msg-bot img{max-width:100%;border-radius:6px;margin:6px 0}
+.msg-bot pre{background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:10px;overflow-x:auto;font-size:12px;margin:8px 0}
+.msg-bot code{background:var(--bg);padding:1px 5px;border-radius:3px;font-size:12px}
+.msg-bot a{color:var(--accent);text-decoration:underline}
+.msg-bot table{border-collapse:collapse;width:100%;margin:8px 0}
+.msg-bot th,.msg-bot td{border:1px solid var(--border);padding:6px 10px;font-size:13px}
+.msg-bot th{background:var(--bg4)}
+.msg-html-frame{width:100%;border-radius:6px;overflow:hidden;border:1px solid var(--border);margin-top:6px;background:#fff}
+.msg-html-frame iframe{width:100%;border:none;min-height:300px}
+.typing{display:flex;gap:5px;align-items:center;padding:10px 14px}
+.typing span{width:7px;height:7px;border-radius:50%;background:var(--text2);animation:bounce .9s infinite}
+.typing span:nth-child(2){animation-delay:.15s}
+.typing span:nth-child(3){animation-delay:.3s}
+@keyframes bounce{0%,80%,100%{transform:none}40%{transform:translateY(-6px)}}
+#chat-area.dragover{outline:3px dashed var(--accent);outline-offset:-4px}
+#web-preview{position:fixed;inset:0;z-index:200;background:var(--bg);display:none;flex-direction:column}
+#web-preview.show{display:flex}
+#web-preview-bar{display:flex;align-items:center;gap:10px;padding:8px 14px;background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0}
+#web-preview-url{flex:1;font-size:12px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#btn-close-web{background:var(--danger);border:none;color:#fff;padding:5px 12px;border-radius:4px;cursor:pointer;font-size:12px}
+#web-preview iframe{flex:1;border:none;width:100%}
+#input-bar{padding:12px 16px;background:var(--bg2);border-top:1px solid var(--border);flex-shrink:0}
+.input-wrap{display:flex;align-items:flex-end;gap:8px;background:var(--bg3);border:1px solid var(--border);border-radius:12px;padding:6px 6px 6px 14px;transition:border-color .15s}
+.input-wrap:focus-within{border-color:var(--accent)}
+#user-input{flex:1;background:none;border:none;color:var(--text);font-size:14px;resize:none;outline:none;min-height:22px;max-height:150px;line-height:1.5;font-family:inherit;overflow-y:auto}
+#user-input::placeholder{color:var(--text2)}
+#btn-send{background:var(--accent);border:none;color:#fff;width:36px;height:36px;border-radius:8px;cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:filter .15s}
+#btn-send:hover{filter:brightness(1.15)}
+#btn-send:disabled{background:#333;cursor:not-allowed;filter:none}
+#input-hint{font-size:11px;color:var(--text2);margin-top:5px;padding:0 4px}
+</style>
 </head>
 <body>
-
-<header>
-  <h1>&#9889; Code VM</h1>
-  <select id="lang-select">
-    <option value="python">Python</option>
-    <option value="javascript">JavaScript</option>
-  </select>
-  <div class="spacer"></div>
-  <button class="btn-generate" id="btn-gen-toggle" onclick="toggleGenerateDrawer()" title="Ctrl+G">
-    &#9889; Generate <kbd>Ctrl+G</kbd>
-  </button>
-  <button class="btn-check" onclick="checkCode()" title="Ctrl+Shift+K">
-    &#128269; Check <kbd>Ctrl+Shift+K</kbd>
-  </button>
-  <button class="btn-run" onclick="runCode()" title="Ctrl+Enter">
-    &#9654; Run <kbd>Ctrl+Enter</kbd>
-  </button>
-  <button class="btn-clear" onclick="clearAll()">&#10005; Clear</button>
-</header>
-
-<!-- ── Generate drawer (toggle with ⚡ button or Ctrl+G) ── -->
-<div class="gen-drawer" id="gen-drawer">
-  <div class="gen-field">
-    <label>Model</label>
-    <select id="gen-model-select" title="Ollama model for generation">
-      <option value="">-- loading --</option>
-    </select>
+<div id="panel-overlay" onclick="closePanel()"></div>
+<div id="panel">
+  <div class="panel-header">
+    <h2>&#9881; DRGR VM</h2>
+    <button id="btn-close-panel" onclick="closePanel()">&#10005;</button>
   </div>
-  <div class="gen-field">
-    <label>Language</label>
-    <select id="gen-lang-select">
-      <option value="python">Python</option>
-      <option value="javascript">JavaScript</option>
-    </select>
-  </div>
-  <div class="gen-field grow">
-    <label>Prompt — describe what to generate</label>
-    <input type="text" id="gen-prompt" class="gen-prompt-input"
-      placeholder="e.g. 'HTTP server with /health endpoint', 'CSV parser with pandas', 'sorting visualiser'"
-      onkeydown="if(event.key==='Enter')generateCode()">
-  </div>
-  <button class="btn-gen-code" onclick="generateCode()">&#9654; Code</button>
-  <button class="btn-gen-html" onclick="generateHtmlFromDrawer()">&#127760; HTML</button>
-</div>
-
-<div class="main">
-  <div id="editor-container"></div>
-
-  <div class="right-panel">
-
-    <!-- Output panel — always visible at top -->
-    <div class="panel panel-output">
-      <div class="panel-header">
-        <span class="status-dot" id="run-dot"></span>
-        Output
+  <div class="panel-scroll">
+    <div>
+      <div class="p-label">&#128312; Статус</div>
+      <div id="health-box">
+        <div class="h-row"><span class="h-key">VM</span><span id="h-vm" class="h-val">&#8212;</span></div>
+        <div class="h-row"><span class="h-key">Ollama</span><span id="h-ollama" class="h-val">&#8212;</span></div>
+        <div class="h-row"><span class="h-key">URL</span><span id="h-url" class="h-val" style="font-size:10px">&#8212;</span></div>
+        <div class="h-row"><span class="h-key">&#128241; TG Bot</span><span id="h-bot" class="h-val">&#8212;</span></div>
       </div>
-      <div class="panel-body">
-        <pre id="output-text"><span class="out-hint">Ready — write code and press Run&#8230;</span></pre>
+      <div style="margin-top:8px">
+        <button class="pbtn pbtn-muted pbtn-full" onclick="loadHealth()">&#8635; Обновить</button>
       </div>
     </div>
-
-    <!-- Tabbed lower area: Issues | AI | Instructions -->
-    <div class="right-tabs">
-      <div class="tab-bar">
-        <button class="tab-btn active" id="tab-btn-issues" onclick="switchTab('issues')">&#9888; Issues</button>
-        <button class="tab-btn" id="tab-btn-html" onclick="switchToHtmlTab()">&#127760; HTML</button>
-        <button class="tab-btn" id="tab-btn-ai" onclick="switchToAiTab()">&#129504; AI</button>
-        <button class="tab-btn" id="tab-btn-chal" onclick="switchToChallengesTab()">&#128640; Tasks</button>
-        <button class="tab-btn" id="tab-btn-instr" onclick="switchTab('instr')">&#128200; Stats</button>
-        <button class="tab-btn" id="tab-btn-workshop" onclick="switchToWorkshopTab()">&#128295; Workshop</button>
-        <button class="tab-btn" id="tab-btn-status" onclick="switchToStatusTab()">&#128268; Status</button>
+    <div>
+      <div class="p-label">&#129302; Модель</div>
+      <div class="p-row">
+        <select id="sel-model" onchange="updateModelBadge()"><option value="">загрузка...</option></select>
+        <button class="pbtn pbtn-muted" onclick="loadModels()">&#8635;</button>
       </div>
-
-      <!-- Issues pane -->
-      <div class="tab-pane active" id="tab-pane-issues">
-        <div id="issues-panel"></div>
+    </div>
+    <div>
+      <div class="p-label">&#128196; Режим</div>
+      <select id="sel-mode">
+        <option value="chat">&#128172; Чат / ИИ</option>
+        <option value="code">&#128187; Генерация кода</option>
+        <option value="html">&#127760; Генерация HTML</option>
+        <option value="exec">&#9654; Выполнить код</option>
+      </select>
+    </div>
+    <div>
+      <div class="p-label">&#128221; Инструкции</div>
+      <textarea id="ta-instructions" rows="4" placeholder="Загрузка..."></textarea>
+      <button class="pbtn pbtn-success pbtn-full" style="margin-top:6px" onclick="saveInstructions()">&#128190; Сохранить</button>
+    </div>
+    <div>
+      <div class="p-label">&#128736; Мастерская</div>
+      <div class="p-row">
+        <input type="text" id="wk-model-name" placeholder="llama3:8b" style="flex:1"/>
+        <button class="pbtn pbtn-primary" onclick="pullModel()">&#8595; Pull</button>
       </div>
-
-      <!-- HTML Generator / Live Preview pane -->
-      <div class="tab-pane" id="tab-pane-html">
-        <div class="html-preview-container">
-          <div class="ai-controls">
-            <select id="html-model-select" title="Ollama model for HTML generation">
-              <option value="">-- Select model --</option>
-            </select>
-          </div>
-          <textarea id="html-gen-prompt" class="ai-prompt" style="min-height:56px;"
-            placeholder="Describe the HTML page&#8230;&#10;e.g. 'Landing page for a coffee shop with menu and contact form'&#10;e.g. 'Interactive to-do list with local storage'"></textarea>
-          <button class="btn-gen-html-panel" onclick="generateHtml()">&#127760; Generate HTML Page</button>
-          <div class="gen-status" id="html-gen-status">Enter a prompt above and click Generate</div>
-          <iframe id="html-preview-iframe" sandbox="allow-scripts" title="HTML Preview"></iframe>
-        </div>
+      <div class="p-row">
+        <input type="text" id="wk-del-name" placeholder="model:tag" style="flex:1"/>
+        <button class="pbtn pbtn-danger" onclick="deleteModel()">&#10005; Del</button>
       </div>
-
-      <!-- AI (Ollama) pane -->
-      <div class="tab-pane" id="tab-pane-ai">
-        <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
-          <div id="ai-status-bar" class="ai-status err" style="flex:1;">Ollama not connected</div>
-          <button onclick="retryOllamaConnection();" title="Retry Ollama connection"
-            style="padding:2px 8px;font-size:11px;background:#3c3c3c;color:#ccc;border:1px solid #555;border-radius:4px;cursor:pointer;flex-shrink:0;">&#8635;</button>
-        </div>
-        <div class="ai-controls">
-          <select id="ollama-model-select" title="Select Ollama model">
-            <option value="">-- Select model --</option>
-          </select>
-          <label title="Include current editor code in the prompt">
-            <input type="checkbox" id="ollama-use-code" checked> With code
-          </label>
-        </div>
-        <textarea id="ollama-prompt" class="ai-prompt"
-          placeholder="Ask anything about the code&#8230;&#10;e.g. 'Explain this', 'Fix the bug', 'Optimise this function'"></textarea>
-        <button class="btn-ask" onclick="askOllama()">&#129504; Ask AI</button>
-        <div id="ollama-response"><span class="out-hint">Response will appear here&#8230;</span></div>
-      </div>
-
-      <!-- Instructions/Stats pane -->
-      <div class="tab-pane" id="tab-pane-instr">
-        <div id="instructions-panel">
-          <span class="loading">Loading&#8230;</span>
-        </div>
-      </div>
-
-      <!-- Challenges pane -->
-      <div class="tab-pane" id="tab-pane-chal">
-        <div id="challenge-loading"><span class="loading">Loading challenges&#8230;</span></div>
-        <div id="challenges-panel"></div>
-      </div>
-
-      <!-- Workshop pane — create/pull/delete Ollama models -->
-      <div class="tab-pane" id="tab-pane-workshop">
-        <div class="workshop-section">
-          <div class="workshop-title">&#128295; Model Workshop</div>
-          <div class="workshop-hint">
-            Create your own <strong>custom coding model</strong> based on qwen (or any installed model).<br>
-            Edit the system prompt below, give it a name, hit <em>Create</em>.
-          </div>
-
-          <!-- Pull model -->
-          <div class="workshop-group">
-            <div class="workshop-group-label">&#11015; Pull model from Ollama library</div>
-            <div class="workshop-row">
-              <input id="ws-pull-name" class="ws-input" type="text" value="qwen:latest"
-                placeholder="e.g. qwen:latest, qwen2.5-coder:7b, llama3:8b" />
-              <button class="ws-btn ws-btn-pull" onclick="wsPullModel()" aria-label="Pull model from Ollama library">&#11015; Pull</button>
-            </div>
-          </div>
-
-          <!-- Create model from Modelfile -->
-          <div class="workshop-group">
-            <div class="workshop-group-label">&#128736; Create custom model from Modelfile</div>
-            <div class="workshop-row">
-              <input id="ws-create-name" class="ws-input" type="text" value="my-coder"
-                placeholder="New model name (e.g. my-coder)" />
-              <button class="ws-btn ws-btn-create" onclick="wsCreateModel()" aria-label="Create custom Ollama model from Modelfile">&#128736; Create</button>
-            </div>
-            <textarea id="ws-modelfile" class="ws-modelfile" spellcheck="false">FROM qwen:latest
-
-SYSTEM """You are an expert software engineer and AI researcher.
-You write clean, efficient, well-documented code.
-You always provide complete, working examples with no placeholders.
-When asked to write code, output only the code with brief inline comments.
-Specialise in: Python, JavaScript, machine learning, and system design.
-"""
-
-PARAMETER temperature 0.4
-PARAMETER top_p 0.9
-PARAMETER num_ctx 8192
-PARAMETER repeat_penalty 1.1</textarea>
-          </div>
-
-          <!-- Delete model -->
-          <div class="workshop-group">
-            <div class="workshop-group-label">&#128465; Delete model</div>
-            <div class="workshop-row">
-              <select id="ws-delete-select" class="ws-input ws-select">
-                <option value="">-- select model to delete --</option>
-              </select>
-              <button class="ws-btn ws-btn-delete" onclick="wsDeleteModel()" aria-label="Delete selected Ollama model">&#128465; Delete</button>
-            </div>
-          </div>
-
-          <!-- Progress log -->
-          <div class="workshop-group">
-            <div class="workshop-group-label">&#128221; Progress</div>
-            <div id="ws-log" class="ws-log"><span class="out-hint">Output will appear here&#8230;</span></div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Status pane — live health check for VM, Ollama, Telegram bot -->
-      <div class="tab-pane" id="tab-pane-status">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
-          <strong style="color:#ccc;font-size:13px;">&#128268; System Status</strong>
-          <button onclick="loadStatus()" style="padding:3px 10px;font-size:12px;background:#3c3c3c;color:#ccc;border:1px solid #555;border-radius:4px;cursor:pointer;">&#8635; Refresh</button>
-        </div>
-        <div id="status-panel">
-          <span class="loading">Checking&#8230;</span>
-        </div>
-        <div style="margin-top:14px;border-top:1px solid #333;padding-top:10px;font-size:12px;color:#777;">
-          <div style="margin-bottom:5px;"><strong style="color:#aaa;">&#9654; Launch from PowerShell:</strong></div>
-          <code style="background:#2d2d2d;padding:3px 7px;border-radius:3px;color:#9cdcfe;">powershell -ExecutionPolicy Bypass -File start.ps1</code>
-          <div style="margin-top:8px;margin-bottom:5px;"><strong style="color:#aaa;">&#9654; Telegram bot (.env):</strong></div>
-          <code style="background:#2d2d2d;padding:3px 7px;border-radius:3px;color:#9cdcfe;">BOT_TOKEN=your_token  &nbsp;  python bot.py</code>
-          <div style="margin-top:8px;margin-bottom:5px;"><strong style="color:#aaa;">&#9654; Start Ollama + pull model:</strong></div>
-          <code style="background:#2d2d2d;padding:3px 7px;border-radius:3px;color:#9cdcfe;">ollama serve &nbsp;&amp;&amp;&nbsp; ollama pull qwen3-vl:8b</code>
-        </div>
-      </div>
-
+      <div id="workshop-log">Лог операций...</div>
+    </div>
+    <div>
+      <button class="pbtn pbtn-muted pbtn-full" onclick="retrain()">&#128260; Retrain</button>
+    </div>
+    <div>
+      <button class="pbtn pbtn-danger pbtn-full" onclick="clearChat()">&#128465; Очистить чат</button>
+    </div>
   </div>
 </div>
-
-<div class="statusbar">
-  <span id="status-lang">Python</span>
-  <span id="status-msg"></span>
+<div id="web-preview">
+  <div id="web-preview-bar">
+    <span id="web-preview-url"></span>
+    <button id="btn-close-web" onclick="closeWebPreview()">&#10005; Закрыть</button>
+  </div>
+  <iframe id="web-preview-iframe" sandbox="allow-scripts allow-forms allow-popups"></iframe>
 </div>
-
-<!-- Monaco Editor: local bundle first (installed by install.bat), jsDelivr CDN as fallback -->
+<div id="app">
+  <div id="topbar">
+    <button id="btn-menu" onclick="openPanel()">&#9776;</button>
+    <span id="topbar-title">DRGR VM</span>
+    <span id="model-badge">загрузка...</span>
+    <div id="status-dot" title="Ollama"></div>
+  </div>
+  <div id="chat-area">
+    <div class="msg msg-bot">
+      &#128075; Привет! Введите вопрос или команду.<br><br>
+      <b>Возможности:</b><br>
+      &#8226; Любой вопрос &rarr; ИИ отвечает<br>
+      &#8226; <code>открой https://site.ru</code> &rarr; открывает сайт во встроенном браузере<br>
+      &#8226; <code>сгенерируй html...</code> &rarr; живой HTML-превью<br>
+      &#8226; Перетащите файл/картинку &rarr; анализ ИИ<br>
+      &#8226; <b>Enter</b> &mdash; отправить, <b>Shift+Enter</b> &mdash; новая строка<br>
+      &#8226; <b>&#9776;</b> &mdash; настройки, модели, статус
+    </div>
+  </div>
+  <div id="input-bar">
+    <div class="input-wrap">
+      <textarea id="user-input" rows="1" placeholder="Сообщение... (Enter - отправить)" oninput="autoResize(this)" onkeydown="onInputKey(event)"></textarea>
+      <button id="btn-send" onclick="sendMessage()">&#10148;</button>
+    </div>
+    <div id="input-hint">Enter &mdash; отправить &nbsp;|&nbsp; Shift+Enter &mdash; новая строка &nbsp;|&nbsp; &#128196; перетащите файл в чат</div>
+  </div>
+</div>
 <script>
-'use strict';
-
-let editor = null;
-
-(function () {
-  var LOCAL_VS = '/vendor/monaco/vs';
-  var CDN_VS   = 'https://cdn.jsdelivr.net/npm/monaco-editor@0.44.0/min/vs';
-
-  function initMonaco(vsPath) {
-    require.config({ paths: { vs: vsPath } });
-    require(['vs/editor/editor.main'], function () {
-      editor = monaco.editor.create(document.getElementById('editor-container'), {
-        value: '# Welcome to Code VM\n# Write Python here, then press Run\n\nprint("Hello, World!")\n',
-        language: 'python',
-        theme: 'vs-dark',
-        fontSize: 14,
-        minimap: { enabled: false },
-        automaticLayout: true,
-        wordWrap: 'on',
-        scrollBeyondLastLine: false,
-        renderLineHighlight: 'all',
-        quickSuggestions: true,
-        suggestOnTriggerCharacters: true,
-        tabSize: 4,
-        insertSpaces: true,
-      });
-
-      editor.addCommand(
-        monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter,
-        runCode
-      );
-      editor.addCommand(
-        monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyK,
-        checkCode
-      );
-      editor.addCommand(
-        monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyG,
-        toggleGenerateDrawer
-      );
-    });
+var currentModel='';
+var busy=false;
+function openPanel(){document.getElementById('panel').classList.add('open');document.getElementById('panel-overlay').classList.add('show');loadHealth();loadModels();loadInstructions();}
+function closePanel(){document.getElementById('panel').classList.remove('open');document.getElementById('panel-overlay').classList.remove('show');}
+function autoResize(el){el.style.height='auto';el.style.height=Math.min(el.scrollHeight,150)+'px';}
+function onInputKey(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage();}}
+function scrollBottom(){var c=document.getElementById('chat-area');c.scrollTop=c.scrollHeight;}
+function addUserMsg(text){var d=document.createElement('div');d.className='msg msg-user';d.textContent=text;document.getElementById('chat-area').appendChild(d);scrollBottom();}
+function addTyping(){var d=document.createElement('div');d.className='msg msg-bot typing';d.id='typing-indicator';d.innerHTML='<span></span><span></span><span></span>';document.getElementById('chat-area').appendChild(d);scrollBottom();return d;}
+function removeTyping(){var t=document.getElementById('typing-indicator');if(t)t.remove();}
+function _esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+function formatText(t){
+  // Extract code blocks before escaping to preserve literal content
+  var blocks=[];
+  t=t.replace(/```[\w]*\n?([\s\S]*?)```/g,function(_,c){var i=blocks.length;blocks.push(c);return '\x00CODE'+i+'\x00';});
+  t=_esc(t);
+  // Restore code blocks (their content is escaped separately)
+  t=t.replace(/\x00CODE(\d+)\x00/g,function(_,i){return '<pre><code>'+_esc(blocks[+i])+'</code></pre>';});
+  t=t.replace(/`([^`]+)`/g,'<code>$1</code>');
+  t=t.replace(/\*\*(.+?)\*\*/g,'<b>$1</b>');
+  t=t.replace(/\*(.+?)\*/g,'<em>$1</em>');
+  t=t.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g,'<a href="$2" target="_blank">$1</a>');
+  t=t.replace(/(https?:\/\/[^\s<>"]+)/g,function(url){var safe=_esc(url);return '<a href="'+safe+'" target="_blank" data-u="'+safe+'" onclick="openWebPreview(this.dataset.u);return false;">'+safe+'</a>';});
+  t=t.replace(/\n/g,'<br>');
+  return t;
+}
+function addBotMsg(content,isHtml){
+  removeTyping();
+  var d=document.createElement('div');d.className='msg msg-bot';
+  if(isHtml==='raw'){
+    // raw innerHTML — caller is responsible for safe content
+    d.innerHTML=content;
+  } else if(isHtml){
+    var wrap=document.createElement('div');wrap.className='msg-html-frame';
+    var fr=document.createElement('iframe');fr.sandbox='allow-scripts';
+    var blob=new Blob([content],{type:'text/html'});fr.src=URL.createObjectURL(blob);
+    fr.onload=function(){try{fr.style.height=fr.contentDocument.body.scrollHeight+20+'px';}catch{}};
+    wrap.appendChild(fr);d.appendChild(wrap);
+    var btn=document.createElement('button');btn.className='pbtn pbtn-muted';
+    btn.style='margin-top:8px;font-size:11px;padding:4px 10px';btn.textContent='Копировать HTML';
+    btn.onclick=function(){navigator.clipboard.writeText(content);};d.appendChild(btn);
+  } else {d.innerHTML=formatText(content);}
+  document.getElementById('chat-area').appendChild(d);scrollBottom();
+}
+function addErrMsg(msg){removeTyping();var d=document.createElement('div');d.className='msg msg-bot';d.innerHTML='<span style="color:var(--danger)">&#9888; '+msg+'</span>';document.getElementById('chat-area').appendChild(d);scrollBottom();}
+function clearChat(){document.getElementById('chat-area').innerHTML='';}
+function openWebPreview(url){document.getElementById('web-preview-url').textContent=url;document.getElementById('web-preview-iframe').src=url;document.getElementById('web-preview').classList.add('show');}
+function closeWebPreview(){document.getElementById('web-preview').classList.remove('show');document.getElementById('web-preview-iframe').src='about:blank';}
+function detectOpenCmd(text){
+  var m=text.match(/(?:открой|open|перейди|go to|зайди на|show)\s+(https?:\/\/\S+)/i);
+  if(m)return m[1];
+  if(/^https?:\/\/\S+$/.test(text.trim()))return text.trim();
+  return null;
+}
+function updateModelBadge(){var sel=document.getElementById('sel-model');currentModel=sel.value;document.getElementById('model-badge').textContent=currentModel||'нет модели';}
+async function sendMessage(){
+  var inp=document.getElementById('user-input');var text=inp.value.trim();
+  if(!text||busy)return;
+  inp.value='';inp.style.height='auto';
+  var openUrl=detectOpenCmd(text);
+  if(openUrl){
+    addUserMsg(text);
+    var safeUrl=_esc(openUrl);
+    var msgEl=document.createElement('div');msgEl.className='msg msg-bot';
+    var a=document.createElement('a');a.href=openUrl;a.target='_blank';a.textContent=openUrl;
+    a.dataset.u=openUrl;a.onclick=function(){openWebPreview(this.dataset.u);return false;};
+    msgEl.appendChild(document.createTextNode('\uD83C\uDF10 Открываю: '));
+    msgEl.appendChild(a);
+    document.getElementById('chat-area').appendChild(msgEl);scrollBottom();
+    openWebPreview(openUrl);return;
   }
-
-  function loadScript(src, onok, onfail) {
-    var s = document.createElement('script');
-    s.onload = onok;
-    s.onerror = onfail;
-    s.src = src;
-    document.head.appendChild(s);
-  }
-
-  // Try local bundle first; if missing, fall back to CDN
-  loadScript(
-    LOCAL_VS + '/loader.js',
-    function () { initMonaco(LOCAL_VS); },
-    function () {
-      loadScript(
-        CDN_VS + '/loader.js',
-        function () { initMonaco(CDN_VS); },
-        function () {
-          var el = document.getElementById('editor-container');
-          var wrap = document.createElement('div');
-          wrap.style.cssText = 'padding:24px;color:#f66;font-family:sans-serif;font-size:14px';
-          var heading = document.createElement('b');
-          heading.textContent = 'Monaco Editor failed to load.';
-          var body = document.createElement('p');
-          body.style.marginTop = '12px';
-          body.textContent =
-            'The local bundle was not found and the CDN is unreachable. ' +
-            'Run install.bat again to download Monaco, then reload this page.';
-          wrap.appendChild(heading);
-          wrap.appendChild(body);
-          el.innerHTML = '';
-          el.appendChild(wrap);
-        }
-      );
+  addUserMsg(text);var mode=document.getElementById('sel-mode').value;setBusy(true);addTyping();
+  try{
+    if(mode==='chat'){
+      var r=await fetch('/ollama/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:text,model:currentModel||undefined})});
+      var d=await r.json();if(d.error)addErrMsg(d.error);else addBotMsg(d.response||'(нет ответа)');
+    } else if(mode==='code'){
+      var r=await fetch('/generate/code',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:text,model:currentModel||undefined})});
+      var d=await r.json();addBotMsg(d.code||d.error||'(нет ответа)');
+    } else if(mode==='html'){
+      var r=await fetch('/generate/html',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:text,model:currentModel||undefined})});
+      var d=await r.json();if(d.html)addBotMsg(d.html,true);else addErrMsg(d.error||'Ошибка генерации HTML');
+    } else if(mode==='exec'){
+      var r=await fetch('/execute',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:text,language:'python'})});
+      var d=await r.json();var out=d.stdout||d.output||'';var err=d.stderr||d.error||'';
+      addBotMsg((out?'<pre>'+out+'</pre>':'')+(err?'<pre style="color:var(--danger)">'+err+'</pre>':'')+((!out&&!err)?'(выполнено)':''));
     }
-  );
-}());
-
-// ── Language selector ────────────────────────────────────────────────────────
-document.getElementById('lang-select').addEventListener('change', function () {
-  const lang = this.value;
-  document.getElementById('status-lang').textContent =
-    lang.charAt(0).toUpperCase() + lang.slice(1);
-
-  if (!editor) return;
-  monaco.editor.setModelLanguage(editor.getModel(), lang);
-
-  const defaults = {
-    python: '# Python code\nprint("Hello, World!")\n',
-    javascript: '// JavaScript code\nconsole.log("Hello, World!");\n',
-  };
-  editor.setValue(defaults[lang] || '');
+  } catch(e){addErrMsg('Ошибка сети: '+e.message);}
+  setBusy(false);
+}
+function setBusy(v){busy=v;document.getElementById('btn-send').disabled=v;}
+var chatArea=document.getElementById('chat-area');
+chatArea.addEventListener('dragover',function(e){e.preventDefault();chatArea.classList.add('dragover');});
+chatArea.addEventListener('dragleave',function(){chatArea.classList.remove('dragover');});
+chatArea.addEventListener('drop',function(e){
+  e.preventDefault();chatArea.classList.remove('dragover');
+  var files=Array.from(e.dataTransfer.files);if(!files.length)return;
+  files.forEach(function(f){handleFile(f);});
 });
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
-function esc(str) {
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
-function setStatus(msg) {
-  document.getElementById('status-msg').textContent = msg;
-}
-
-// ── Run code ─────────────────────────────────────────────────────────────────
-async function runCode() {
-  if (!editor) return;
-  const code = editor.getValue();
-  const language = document.getElementById('lang-select').value;
-
-  const outEl = document.getElementById('output-text');
-  const dot   = document.getElementById('run-dot');
-
-  outEl.innerHTML = '<span class="loading">Running&#8230;</span>';
-  dot.className = 'status-dot';
-  setStatus('Running…');
-
-  try {
-    const res = await fetch('/execute', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code, language }),
-    });
-    const data = await res.json();
-
-    let html = '';
-    if (data.output) html += '<span class="out-stdout">' + esc(data.output) + '</span>';
-    if (data.error)  html += '<span class="out-stderr">' + esc(data.error)  + '</span>';
-    if (!data.output && !data.error) html = '<span class="out-hint">No output.</span>';
-
-    outEl.innerHTML = html;
-    dot.className = 'status-dot ' + (data.success ? 'ok' : 'err');
-    setStatus(data.success ? 'Run succeeded' : 'Run failed');
-
-    loadInstructions();
-  } catch (err) {
-    outEl.innerHTML = '<span class="out-stderr">Network error: ' + esc(err.message) + '</span>';
-    dot.className = 'status-dot err';
-    setStatus('Network error');
-  }
-}
-
-// ── Check code ───────────────────────────────────────────────────────────────
-async function checkCode() {
-  if (!editor) return;
-  const code = editor.getValue();
-  const language = document.getElementById('lang-select').value;
-
-  const issuesEl = document.getElementById('issues-panel');
-  issuesEl.innerHTML = '<span class="loading">Checking&#8230;</span>';
-  setStatus('Checking…');
-
-  try {
-    const res = await fetch('/check', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code, language }),
-    });
-    const data = await res.json();
-
-    if (data.issues.length === 0) {
-      issuesEl.innerHTML = '<span class="no-issues">&#10003; No issues found</span>';
-    } else {
-      issuesEl.innerHTML = data.issues.map(function (i) {
-        return '<div class="issue issue-' + i.severity + '">' +
-          'Line&nbsp;' + (i.line || '?') + ': ' + esc(i.message) +
-          '</div>';
-      }).join('');
-    }
-
-    // Decorate editor gutter
-    if (monaco && editor) {
-      const markers = data.issues
-        .filter(function (i) { return i.severity !== 'info'; })
-        .map(function (i) {
-          return {
-            startLineNumber: i.line || 1,
-            endLineNumber:   i.line || 1,
-            startColumn: 1,
-            endColumn: 9999,
-            message: i.message,
-            severity: i.severity === 'error'
-              ? monaco.MarkerSeverity.Error
-              : monaco.MarkerSeverity.Warning,
-          };
-        });
-      monaco.editor.setModelMarkers(editor.getModel(), 'vm-check', markers);
-    }
-
-    const errors = data.issues.filter(function (i) { return i.severity === 'error'; }).length;
-    const warns  = data.issues.filter(function (i) { return i.severity === 'warning'; }).length;
-    setStatus('Check: ' + errors + ' error(s), ' + warns + ' warning(s)');
-
-    switchTab('issues');
-    loadInstructions();
-  } catch (err) {
-    issuesEl.innerHTML = '<span class="out-stderr">Check failed: ' + esc(err.message) + '</span>';
-    setStatus('Check failed');
-  }
-}
-
-// ── Clear ────────────────────────────────────────────────────────────────────
-function clearAll() {
-  document.getElementById('output-text').innerHTML =
-    '<span class="out-hint">Output cleared.</span>';
-  document.getElementById('issues-panel').innerHTML = '';
-  document.getElementById('run-dot').className = 'status-dot';
-  setStatus('');
-  if (monaco && editor) {
-    monaco.editor.setModelMarkers(editor.getModel(), 'vm-check', []);
-  }
-}
-
-// ── Tab switching ─────────────────────────────────────────────────────────────
-function switchTab(tabId) {
-  document.querySelectorAll('.tab-btn').forEach(function (btn) {
-    btn.classList.remove('active');
-  });
-  document.querySelectorAll('.tab-pane').forEach(function (pane) {
-    pane.classList.remove('active');
-  });
-  document.getElementById('tab-btn-' + tabId).classList.add('active');
-  document.getElementById('tab-pane-' + tabId).classList.add('active');
-}
-
-function switchToAiTab() {
-  switchTab('ai');
-  loadOllamaModels();
-}
-
-function switchToHtmlTab() {
-  switchTab('html');
-  loadAllModels();
-}
-
-function switchToChallengesTab() {
-  switchTab('chal');
-  loadChallenges();
-}
-
-function switchToWorkshopTab() {
-  switchTab('workshop');
-  wsRefreshDeleteList();
-}
-
-// ── Workshop (Model create / pull / delete) ────────────────────────────────
-
-function wsLog(msg, cls) {
-  const log = document.getElementById('ws-log');
-  const line = document.createElement('div');
-  if (cls) line.className = cls;
-  line.textContent = msg;
-  log.appendChild(line);
-  log.scrollTop = log.scrollHeight;
-}
-
-function wsClearLog() {
-  document.getElementById('ws-log').innerHTML = '';
-}
-
-async function wsRefreshDeleteList() {
-  const sel = document.getElementById('ws-delete-select');
-  try {
-    const r = await fetch('/ollama/models');
-    const d = await r.json();
-    const models = d.models || [];
-    sel.innerHTML = '<option value="">-- select model to delete --</option>' +
-      models.map(m => `<option value="${esc(m)}">${esc(m)}</option>`).join('');
-  } catch { /* offline */ }
-}
-
-function wsPullModel() {
-  const name = document.getElementById('ws-pull-name').value.trim();
-  if (!name) { wsLog('Enter a model name first.', 'log-err'); return; }
-  wsClearLog();
-  wsLog(`Pulling "${name}" from Ollama library…`, 'log-info');
-
-  fetch('/ollama/pull', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({model: name})
-  }).then(async function(resp) {
-    const reader = resp.body.getReader();
-    const dec    = new TextDecoder();
-    let buf = '';
-    let stopped = false;
-    while (!stopped) {
-      const {done, value} = await reader.read();
-      if (done) break;
-      buf += dec.decode(value, {stream: true});
-      const lines = buf.split('\n');
-      buf = lines.pop();
-      for (const line of lines) {
-        if (!line.startsWith('data: ')) continue;
-        try {
-          const obj = JSON.parse(line.slice(6));
-          if (obj.error) { wsLog('Error: ' + obj.error, 'log-err'); stopped = true; break; }
-          if (obj.status) {
-            const pct = obj.percent ? ` [${obj.percent}%]` : '';
-            wsLog(obj.status + pct + (obj.digest ? '  ' + obj.digest.slice(0,14) : ''));
-          }
-        } catch { /* skip */ }
-      }
-    }
-    if (!stopped) {
-      wsLog(`✓ Done — "${name}" is ready to use!`, 'log-ok');
-      wsRefreshDeleteList();
-      loadAllModels();
-      loadOllamaModels();
-    }
-  }).catch(e => wsLog('Connection error: ' + e, 'log-err'));
-}
-
-function wsCreateModel() {
-  const name      = document.getElementById('ws-create-name').value.trim();
-  const modelfile = document.getElementById('ws-modelfile').value.trim();
-  if (!name)      { wsLog('Enter a name for the new model.', 'log-err'); return; }
-  if (!modelfile) { wsLog('Modelfile is empty.', 'log-err'); return; }
-  wsClearLog();
-  wsLog(`Creating model "${name}"…`, 'log-info');
-
-  fetch('/ollama/create', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({name: name, modelfile: modelfile})
-  }).then(async function(resp) {
-    const reader = resp.body.getReader();
-    const dec    = new TextDecoder();
-    let buf = '';
-    let stopped = false;
-    while (!stopped) {
-      const {done, value} = await reader.read();
-      if (done) break;
-      buf += dec.decode(value, {stream: true});
-      const lines = buf.split('\n');
-      buf = lines.pop();
-      for (const line of lines) {
-        if (!line.startsWith('data: ')) continue;
-        try {
-          const obj = JSON.parse(line.slice(6));
-          if (obj.error)  { wsLog('Error: ' + obj.error, 'log-err'); stopped = true; break; }
-          if (obj.done)   { wsLog(obj.status, 'log-ok'); stopped = true; break; }
-          if (obj.status) { wsLog(obj.status); }
-        } catch { /* skip */ }
-      }
-    }
-    wsLog(`✓ Model "${name}" created! Select it in the AI or Generate tabs.`, 'log-ok');
-    wsRefreshDeleteList();
-    loadAllModels();
-    loadOllamaModels();
-  }).catch(e => wsLog('Connection error: ' + e, 'log-err'));
-}
-
-async function wsDeleteModel() {
-  const sel   = document.getElementById('ws-delete-select');
-  const model = sel.value;
-  if (!model) { wsLog('Select a model to delete first.', 'log-err'); return; }
-  if (!confirm(`Delete model "${model}"? This cannot be undone.`)) return;
-  wsClearLog();
-  wsLog(`Deleting "${model}"…`, 'log-info');
-  try {
-    const r = await fetch('/ollama/delete', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({model: model})
-    });
-    const d = await r.json();
-    if (d.success) {
-      wsLog('✓ ' + d.message, 'log-ok');
-      wsRefreshDeleteList();
-      loadAllModels();
-      loadOllamaModels();
-    } else {
-      wsLog('Error: ' + (d.error || 'unknown'), 'log-err');
-    }
-  } catch (e) { wsLog('Connection error: ' + e, 'log-err'); }
-}
-
-// ── Challenges ────────────────────────────────────────────────────────────────
-let _challengesLoaded = false;
-
-async function loadChallenges() {
-  if (_challengesLoaded) return;
-  try {
-    const res  = await fetch('/challenges');
-    const data = await res.json();
-    renderChallenges(data.challenges || []);
-    _challengesLoaded = true;
-  } catch {
-    document.getElementById('challenge-loading').innerHTML =
-      '<span class="out-stderr">Failed to load challenges</span>';
-  }
-}
-
-function renderChallenges(challenges) {
-  document.getElementById('challenge-loading').style.display = 'none';
-  const panel = document.getElementById('challenges-panel');
-  panel.innerHTML = challenges.map(function (c) {
-    const demoBtn = c.demo_url
-      ? `<a href="${esc(c.demo_url)}" target="_blank" rel="noopener noreferrer" class="btn btn-chal-demo">&#128640; Demo</a>`
-      : '';
-    const codeBtn = c.language !== 'html'
-      ? `<button class="btn btn-chal-code" onclick="loadChallenge('${esc(c.id)}', 'code')">&#9654; Code</button>`
-      : '';
-    const htmlBtn = c.language === 'html'
-      ? `<button class="btn btn-chal-html" onclick="loadChallenge('${esc(c.id)}', 'html')">&#127760; HTML</button>`
-      : '';
-    return `
-      <div class="challenge-card">
-        <div class="challenge-title">${esc(c.title)}</div>
-        <div class="challenge-diff">${esc(c.difficulty)}</div>
-        <div class="challenge-desc">${esc(c.description)}</div>
-        <div class="challenge-actions">${codeBtn}${htmlBtn}${demoBtn}</div>
-      </div>`;
-  }).join('');
-  _challenges = challenges;
-}
-
-let _challenges = [];
-
-function loadChallenge(id, type) {
-  const c = _challenges.find(function (x) { return x.id === id; });
-  if (!c) return;
-  loadAllModels();
-
-  if (type === 'html') {
-    document.getElementById('html-gen-prompt').value = c.prompt;
-    document.getElementById('gen-lang-select').value = 'python'; // reset
-    switchToHtmlTab();
-    setStatus('\u2728 Challenge loaded \u2014 click Generate HTML Page');
+async function handleFile(f){
+  addUserMsg('\uD83D\uDCCE '+f.name+' ('+(f.size/1024).toFixed(1)+' KB)');
+  setBusy(true);addTyping();
+  var isImg=f.type.startsWith('image/');
+  // Sanitize filename for use in prompts
+  var safeName=f.name.replace(/[^\w.\-\s]/g,'_').slice(0,80);
+  if(isImg){
+    var b64=await fileToBase64(f);
+    var imgDiv=document.createElement('div');imgDiv.className='msg msg-bot';
+    var imgEl=document.createElement('img');imgEl.style.maxHeight='300px';imgEl.alt=safeName;imgEl.src=b64;
+    imgDiv.appendChild(imgEl);document.getElementById('chat-area').appendChild(imgDiv);scrollBottom();
+    try{
+      // b64 is a data URL like "data:image/png;base64,<data>"
+      var commaIdx=b64.indexOf(',');
+      var b64data=commaIdx>=0?b64.slice(commaIdx+1):b64;
+      var r=await fetch('/agent/describe_image',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image_base64:b64data,filename:safeName})});
+      var d=await r.json();removeTyping();addBotMsg(d.description||d.error||'(описание недоступно)');
+    }catch(ex){addErrMsg('Ошибка: '+ex.message);}
   } else {
-    // Open generate drawer and pre-fill
-    const drawer = document.getElementById('gen-drawer');
-    if (!drawer.classList.contains('open')) toggleGenerateDrawer();
-    document.getElementById('gen-prompt').value = c.prompt;
-    const langSel = document.getElementById('gen-lang-select');
-    if (c.language && c.language !== 'html') langSel.value = c.language;
-    setStatus('\u2728 Challenge loaded into Generate drawer \u2014 press Code or HTML');
+    try{
+      var txt=await f.text();
+      var r=await fetch('/ollama/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:'Проанализируй файл "'+safeName+'":\n\n'+txt.slice(0,4000),model:currentModel||undefined})});
+      var d=await r.json();removeTyping();addBotMsg(d.response||d.error||'(нет ответа)');
+    }catch(ex){addErrMsg('Ошибка: '+ex.message);}
   }
+  setBusy(false);
 }
-function toggleGenerateDrawer() {
-  const drawer  = document.getElementById('gen-drawer');
-  const btn     = document.getElementById('btn-gen-toggle');
-  const isOpen  = drawer.classList.toggle('open');
-  btn.classList.toggle('active', isOpen);
-  if (isOpen) {
-    loadAllModels();
-    document.getElementById('gen-prompt').focus();
-  }
+function fileToBase64(file){return new Promise(function(res,rej){var r=new FileReader();r.onload=function(){res(r.result);};r.onerror=rej;r.readAsDataURL(file);});}
+async function loadHealth(){
+  try{
+    var r=await fetch('/health');var d=await r.json();
+    var vm=d.vm&&d.vm.status==='ok';var ol=d.ollama&&d.ollama.status==='ok';var bot=d.bot&&d.bot.token_set;
+    document.getElementById('h-vm').innerHTML=vm?'&#10003; OK':'&#10007; Ошибка';
+    document.getElementById('h-vm').className='h-val '+(vm?'ok':'fail');
+    document.getElementById('h-ollama').innerHTML=ol?'&#10003; OK':'&#10007; Недоступна';
+    document.getElementById('h-ollama').className='h-val '+(ol?'ok':'fail');
+    document.getElementById('h-url').textContent=(d.ollama&&d.ollama.url)||'—';
+    document.getElementById('h-bot').innerHTML=bot?'&#10003; Токен есть':'&#10007; Нет токена';
+    document.getElementById('h-bot').className='h-val '+(bot?'ok':'warn');
+    document.getElementById('status-dot').className='status-dot'+(ol?' ok':'');
+  }catch{}
 }
-
-async function generateCode() {
-  const model    = document.getElementById('gen-model-select').value;
-  const prompt   = document.getElementById('gen-prompt').value.trim();
-  const language = document.getElementById('gen-lang-select').value;
-  const input    = document.getElementById('gen-prompt');
-
-  if (!model)  { setStatus('Select a model in the Generate drawer first'); return; }
-  if (!prompt) { setStatus('Enter a prompt in the Generate drawer'); return; }
-
-  input.disabled = true;
-  setStatus('Generating ' + language + ' code with ' + model + '\u2026');
-
-  try {
-    const res  = await fetch('/generate/code', {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ model, prompt, language }),
-    });
-    const data = await res.json();
-    if (data.success && editor) {
-      // Sync main language selector
-      const langSel = document.getElementById('lang-select');
-      if (langSel.value !== language) {
-        langSel.value = language;
-        langSel.dispatchEvent(new Event('change'));
-      }
-      editor.setValue(data.code);
-      setStatus('\u2713 Code generated \u2014 review and run!');
-      loadInstructions();
-    } else {
-      setStatus('Generation failed: ' + (data.error || 'unknown'));
-    }
-  } catch (err) {
-    setStatus('Network error: ' + err.message);
-  } finally {
-    input.disabled = false;
-    input.focus();
-  }
+async function loadModels(){
+  try{
+    var r=await fetch('/ollama/models');var d=await r.json();
+    var models=d.models||[];var sel=document.getElementById('sel-model');var prev=sel.value;
+    sel.innerHTML='';
+    if(!models.length){sel.innerHTML='<option value="">Нет моделей</option>';}
+    else{models.forEach(function(m){var o=document.createElement('option');o.value=m;o.textContent=m;if(m===prev)o.selected=true;sel.appendChild(o);});if(!sel.value)sel.selectedIndex=0;}
+    updateModelBadge();
+  }catch{}
 }
-
-async function generateHtmlFromDrawer() {
-  // Copy prompt/model from the drawer to the HTML pane, then generate
-  const drawerPrompt = document.getElementById('gen-prompt').value.trim();
-  const drawerModel  = document.getElementById('gen-model-select').value;
-  if (drawerPrompt) document.getElementById('html-gen-prompt').value = drawerPrompt;
-  if (drawerModel)  document.getElementById('html-model-select').value = drawerModel;
-  switchToHtmlTab();
-  await generateHtml();
+async function loadInstructions(){
+  try{var r=await fetch('/instructions');var d=await r.json();document.getElementById('ta-instructions').value=typeof d==='string'?d:(d.system_prompt||JSON.stringify(d,null,2));}catch{}
 }
-
-async function generateHtml() {
-  const model    = document.getElementById('html-model-select').value;
-  const prompt   = document.getElementById('html-gen-prompt').value.trim();
-  const statusEl = document.getElementById('html-gen-status');
-  const iframe   = document.getElementById('html-preview-iframe');
-
-  if (!model)  { statusEl.textContent = 'Select a model first'; return; }
-  if (!prompt) { statusEl.textContent = 'Enter a prompt first'; return; }
-
-  statusEl.textContent = 'Generating with ' + model + '\u2026';
-  setStatus('Generating HTML\u2026');
-  iframe.srcdoc = '<p style="font-family:sans-serif;padding:16px;color:#555">Generating\u2026</p>';
-
-  try {
-    const res  = await fetch('/generate/html', {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ model, prompt }),
-    });
-    const data = await res.json();
-    if (data.success) {
-      iframe.srcdoc = data.html;
-      statusEl.textContent = '\u2713 Generated \u2014 ' + data.html.length + ' chars';
-      setStatus('\u2713 HTML generated');
-      loadInstructions();
-    } else {
-      statusEl.textContent = 'Error: ' + (data.error || 'unknown');
-      setStatus('HTML generation failed');
-      iframe.srcdoc = '<p style="font-family:sans-serif;padding:16px;color:#c00">Error: ' +
-        esc(data.error || 'unknown') + '</p>';
-    }
-  } catch (err) {
-    statusEl.textContent = 'Network error: ' + err.message;
-    setStatus('Network error');
-  }
+async function saveInstructions(){
+  var val=document.getElementById('ta-instructions').value;var body;
+  try{body=JSON.parse(val);}catch{body={system_prompt:val};}
+  await fetch('/instructions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  showToast('Сохранено');
 }
-
-// ── Ollama integration ────────────────────────────────────────────────────────
-let _ollamaLoaded = false;
-
-// Populate every model <select> on the page and auto-select the preferred model.
-function _applyModels(models, preferred) {
-  const selIds = ['ollama-model-select', 'gen-model-select', 'html-model-select'];
-  selIds.forEach(function (id) {
-    const sel = document.getElementById(id);
-    if (!sel) return;
-    if (models.length === 0) {
-      sel.innerHTML = '<option value="">-- No Ollama models --</option>';
-    } else {
-      sel.innerHTML = models.map(function (m) {
-        return '<option value="' + esc(m) + '">' + esc(m) + '</option>';
-      }).join('');
-      if (preferred) sel.value = preferred;
-    }
-  });
+async function pullModel(){
+  var name=document.getElementById('wk-model-name').value.trim();if(!name)return;
+  var log=document.getElementById('workshop-log');log.textContent='Pulling '+name+'...\n';
+  try{
+    var r=await fetch('/ollama/pull',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name})});
+    var reader=r.body.getReader();var dec=new TextDecoder();
+    while(true){var result=await reader.read();if(result.done)break;var lines=dec.decode(result.value).split('\n').filter(Boolean);lines.forEach(function(l){try{var j=JSON.parse(l);log.textContent+=j.status+(j.completed?' '+j.completed+'/'+j.total:'')+' \n';log.scrollTop=9999;}catch{}});}
+    loadModels();
+  }catch(e){log.textContent+='Ошибка: '+e.message;}
 }
-
-async function loadOllamaModels() {
-  if (_ollamaLoaded) return;
-  const statusEl = document.getElementById('ai-status-bar');
-  const modelSel = document.getElementById('ollama-model-select');
-  statusEl.textContent = 'Connecting to Ollama\u2026';
-  statusEl.className = 'ai-status';
-
-  try {
-    const res  = await fetch('/ollama/models');
-    const data = await res.json();
-    if (data.available && data.models.length > 0) {
-      statusEl.textContent = '\u2713 Ollama connected \u2014 ' + data.models.length + ' model(s)';
-      statusEl.className = 'ai-status ok';
-      _applyModels(data.models, data.preferred || '');
-      _ollamaLoaded = true;
-    } else if (data.available) {
-      statusEl.textContent = '\u2717 Ollama running but no models \u2014 pull one in the \u128295 Workshop tab';
-      statusEl.className = 'ai-status err';
-      modelSel.innerHTML = '<option value="">-- Pull a model in Workshop --</option>';
-    } else {
-      statusEl.textContent = '\u2717 Ollama not running \u2014 start with: ollama serve';
-      statusEl.className = 'ai-status err';
-      modelSel.innerHTML = '<option value="">-- No models found --</option>';
-    }
-  } catch (_) {
-    statusEl.textContent = '\u2717 Could not reach Ollama service';
-    statusEl.className = 'ai-status err';
-  }
+async function deleteModel(){
+  var name=document.getElementById('wk-del-name').value.trim();if(!name)return;
+  if(!confirm('Удалить '+name+'?'))return;
+  var r=await fetch('/ollama/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name})});
+  var d=await r.json();document.getElementById('workshop-log').textContent=d.ok?'Удалено':'Ошибка: '+d.error;
+  loadModels();
 }
-
-// Load all models eagerly (used by generate drawer and HTML tab).
-async function loadAllModels() {
-  if (_ollamaLoaded) return;
-  try {
-    const res  = await fetch('/ollama/models');
-    const data = await res.json();
-    if (data.available && data.models.length > 0) {
-      _applyModels(data.models, data.preferred || '');
-      const statusEl = document.getElementById('ai-status-bar');
-      statusEl.textContent = '\u2713 Ollama connected \u2014 ' + data.models.length + ' model(s)';
-      statusEl.className = 'ai-status ok';
-      _ollamaLoaded = true;
-    }
-  } catch (_) { /* silent — will show error when user opens AI tab */ }
-}
-
-async function askOllama() {
-  const model    = document.getElementById('ollama-model-select').value;
-  const prompt   = document.getElementById('ollama-prompt').value.trim();
-  const useCode  = document.getElementById('ollama-use-code').checked;
-  const respEl   = document.getElementById('ollama-response');
-
-  if (!model) {
-    respEl.innerHTML = '<span class="out-stderr">Please select an Ollama model first.</span>';
-    return;
-  }
-  if (!prompt) {
-    respEl.innerHTML = '<span class="out-stderr">Please enter a question or prompt.</span>';
-    return;
-  }
-
-  const code = (useCode && editor) ? editor.getValue() : '';
-  respEl.innerHTML = '<span class="loading">Asking ' + esc(model) + '\u2026</span>';
-  setStatus('Asking AI\u2026');
-
-  try {
-    const res  = await fetch('/ollama/ask', {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ model, prompt, code }),
-    });
-    const data = await res.json();
-    if (data.success) {
-      respEl.textContent = data.response;
-      setStatus('AI response received');
-    } else {
-      respEl.innerHTML = '<span class="out-stderr">' + esc(data.error || 'Unknown error') + '</span>';
-      setStatus('AI request failed');
-    }
-  } catch (err) {
-    respEl.innerHTML = '<span class="out-stderr">Network error: ' + esc(err.message) + '</span>';
-    setStatus('AI request failed');
-  }
-}
-
-// ── Instructions ─────────────────────────────────────────────────────────────
-async function loadInstructions() {
-  try {
-    const res  = await fetch('/instructions');
-    const data = await res.json();
-    renderInstructions(data);
-  } catch (_) {
-    document.getElementById('instructions-panel').innerHTML =
-      '<span class="out-stderr">Failed to load instructions</span>';
-  }
-}
-
-function statBox(label, value) {
-  return '<div class="stat-box">' +
-    '<div class="stat-val">'   + esc(String(value)) + '</div>' +
-    '<div class="stat-label">' + esc(label)          + '</div>' +
-    '</div>';
-}
-
-function renderInstructions(data) {
-  const panel = document.getElementById('instructions-panel');
-  const stats = data.statistics || {};
-
-  let html = '<div class="instr-section">';
-  html += '<div class="stats-grid">';
-  html += statBox('Runs',    stats.total_runs      || 0);
-  html += statBox('Success', stats.successful_runs || 0);
-  html += statBox('Failed',  stats.failed_runs     || 0);
-  html += statBox('Checks',  stats.total_checks    || 0);
-  html += '</div></div>';
-
-  const train = data.training_instructions || [];
-  if (train.length) {
-    html += '<div class="instr-section"><div class="instr-title">Training Instructions</div>';
-    train.forEach(function (item) {
-      html += '<div class="instr-item">' + esc(item) + '</div>';
-    });
-    html += '</div>';
-  }
-
-  const net = data.internet_work_instructions || [];
-  if (net.length) {
-    html += '<div class="instr-section"><div class="instr-title">Internet Work</div>';
-    net.forEach(function (item) {
-      html += '<div class="instr-item instr-item-net">' + esc(item) + '</div>';
-    });
-    html += '</div>';
-  }
-
-  const history = data.improvement_history || [];
-  if (history.length) {
-    const latest = history[history.length - 1];
-    html += '<div class="instr-section"><div class="instr-title">Last Improvement</div>';
-    html += '<div class="instr-item">' +
-      'Run #' + esc(String(latest.total_runs)) +
-      ' &mdash; success rate: ' + esc(String(Math.round((latest.success_rate || 0) * 100))) + '%' +
-      '</div>';
-    html += '</div>';
-  }
-
-  const gen = data.generation_stats || {};
-  if ((gen.total_generations || 0) > 0) {
-    html += '<div class="instr-section"><div class="instr-title">AI Generations</div>';
-    html += '<div class="stats-grid">';
-    html += statBox('Total',  gen.total_generations  || 0);
-    html += statBox('Code',   gen.code_generations   || 0);
-    html += statBox('HTML',   gen.html_generations   || 0);
-    const prompts = gen.successful_prompts || [];
-    html += statBox('Prompts', prompts.length);
-    html += '</div>';
-    if (prompts.length > 0) {
-      html += '<div class="instr-title" style="margin-top:6px">Recent prompts</div>';
-      prompts.slice(-5).reverse().forEach(function (p) {
-        html += '<div class="instr-item instr-item-net">' +
-          esc('[' + (p.language || '?') + '] ') + esc(p.prompt || '') + '</div>';
-      });
-    }
-    html += '</div>';
-  }
-
-  panel.innerHTML = html;
-}
-
-// Load instructions on page load
-loadInstructions();
-// Eagerly probe Ollama so model selectors are ready when the user opens the drawer
-loadAllModels();
-
-// ── Status / Health tab ──────────────────────────────────────────────────────
-function switchToStatusTab() {
-  switchTab('status');
-  loadStatus();
-}
-
-// Dedicated retry function for the AI tab ↻ button
-function retryOllamaConnection() {
-  _ollamaLoaded = false;
-  loadOllamaModels();
-}
-
-let _statusLoading = false;
-
-async function loadStatus() {
-  if (_statusLoading) return;
-  const panel = document.getElementById('status-panel');
-  if (!panel) return;
-  _statusLoading = true;
-  panel.innerHTML = '<span class="loading">Checking&#8230;</span>';
-
-  try {
-    const res  = await fetch('/health');
-    const data = await res.json();
-
-    const vm      = data.vm     || {};
-    const ollama  = data.ollama || {};
-    const bot     = data.bot    || {};
-
-    const ollamaOk  = ollama.status === 'ok';
-    const botOk     = bot.token_set === true;
-    const modelList = (ollama.models || []);
-
-    let html = '';
-
-    // VM row
-    html += `<div class="health-row">
-      <span class="health-icon">&#9889;</span>
-      <span class="health-label">VM Server</span>
-      <span class="health-val health-ok">&#10003; Running</span>
-    </div>`;
-
-    // Ollama row
-    html += `<div class="health-row">
-      <span class="health-icon">&#129504;</span>
-      <span class="health-label">Ollama AI</span>
-      <span class="health-val ${ollamaOk ? 'health-ok' : 'health-err'}">
-        ${ollamaOk
-          ? '&#10003; Connected &mdash; ' + modelList.length + ' model(s): ' + esc(modelList.join(', ') || '(none pulled yet)')
-          : '&#10007; Not reachable &mdash; run: <code style="background:#2d2d2d;padding:1px 4px;border-radius:2px;">ollama serve</code>'}
-      </span>
-    </div>`;
-
-    // Telegram bot token row
-    html += `<div class="health-row">
-      <span class="health-icon">&#128268;</span>
-      <span class="health-label">Telegram Bot</span>
-      <span class="health-val ${botOk ? 'health-ok' : 'health-warn'}">
-        ${botOk
-          ? '&#10003; BOT_TOKEN configured in .env'
-          : '&#9888; BOT_TOKEN not set &mdash; edit <code style="background:#2d2d2d;padding:1px 4px;border-radius:2px;">.env</code> (copy from .env.example)'}
-      </span>
-    </div>`;
-
-    // Ollama URL info
-    html += `<div class="health-row" style="font-size:11px;">
-      <span class="health-icon">&#128279;</span>
-      <span class="health-label">Ollama URL</span>
-      <span class="health-val" style="color:#9cdcfe;">${esc(ollama.url || '')}</span>
-    </div>`;
-
-    panel.innerHTML = html;
-
-    // If Ollama is up and models not yet loaded into selects, trigger load
-    if (ollamaOk && !_ollamaLoaded) {
-      loadAllModels();
-    }
-  } catch (err) {
-    panel.innerHTML = '<span class="health-err">&#10007; Could not reach VM server: ' + esc(String(err)) + '</span>';
-  } finally {
-    _statusLoading = false;
-  }
-}
-
-// Auto-retry Ollama model load every 30 s if not yet loaded
-setInterval(function () {
-  if (!_ollamaLoaded) loadAllModels();
-}, 30000);
-
-// Auto-refresh the status/health panel every 30 s so Ollama heartbeat stays alive
-// and the user always sees up-to-date connectivity info without clicking Refresh.
-setInterval(loadStatus, 30000);
-
-// Global keyboard shortcuts (outside editor focus)
-document.addEventListener('keydown', function (e) {
-  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-    e.preventDefault();
-    runCode();
-  }
-  if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'K') {
-    e.preventDefault();
-    checkCode();
-  }
-  if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-    e.preventDefault();
-    checkCode();
-  }
-  if ((e.ctrlKey || e.metaKey) && e.key === 'g') {
-    e.preventDefault();
-    toggleGenerateDrawer();
-  }
-});
+async function retrain(){var r=await fetch('/retrain',{method:'POST'});var d=await r.json();showToast(d.message||'Retrain запущен');}
+function showToast(msg){var t=document.getElementById('_toast');if(!t){t=document.createElement('div');t.id='_toast';t.style='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:8px 18px;border-radius:8px;font-size:13px;z-index:999;pointer-events:none;transition:opacity .3s';document.body.appendChild(t);}t.textContent=msg;t.style.opacity='1';clearTimeout(t._to);t._to=setTimeout(function(){t.style.opacity='0';},2000);}
+loadHealth();loadModels();
 </script>
 </body>
 </html>

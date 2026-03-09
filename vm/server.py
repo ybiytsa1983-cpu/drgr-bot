@@ -34,6 +34,15 @@ import time
 import urllib.parse
 from datetime import datetime, timezone
 
+# Load .env from project root (parent of vm/) so OLLAMA_HOST / BOT_TOKEN etc.
+# are available even when server.py is started directly with `python server.py`.
+try:
+    from dotenv import load_dotenv as _load_dotenv
+    _env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".env")
+    _load_dotenv(dotenv_path=_env_path, override=False)
+except ImportError:
+    pass  # python-dotenv not installed — rely on environment variables
+
 import requests as _http
 from flask import Flask, Response, jsonify, request, send_from_directory, stream_with_context
 
@@ -59,7 +68,7 @@ _actions_lock     = threading.Lock()
 _img_desc_lock    = threading.Lock()
 
 # Ollama service base URL (override via OLLAMA_HOST env var)
-OLLAMA_BASE = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+OLLAMA_BASE = os.environ.get("OLLAMA_HOST", "http://localhost:11435")
 
 # Heartbeat configuration
 _OLLAMA_HEARTBEAT_INTERVAL = 60   # seconds between liveness pings
@@ -1325,22 +1334,32 @@ def agent_stats():
 
 @app.route("/agent/describe_image", methods=["POST"])
 def agent_describe_image():
-    """Describe an image file using the best available Ollama vision model.
+    """Describe an image using the best available Ollama vision model.
 
-    Body: {"image_path": "/absolute/path/to/image.png"}
+    Body (one of):
+      {"image_path": "/absolute/path/to/image.png"}
+      {"image_base64": "<base64 string>", "filename": "photo.jpg"}
     Returns: {"description": "...", "model": "llava:latest", "success": true}
     """
     import base64 as _b64
 
-    body       = request.get_json(silent=True) or {}
-    image_path = body.get("image_path", "").strip()
+    body           = request.get_json(silent=True) or {}
+    image_path     = body.get("image_path", "").strip()
+    image_base64   = body.get("image_base64", "").strip()
+    filename       = body.get("filename", "image")
 
-    if not image_path:
-        return jsonify({"error": "image_path required"}), 400
-    if not os.path.isabs(image_path):
-        return jsonify({"error": "image_path must be absolute"}), 400
-    if not os.path.exists(image_path):
-        return jsonify({"error": f"File not found: {image_path}"}), 404
+    # Resolve image data — accept either a file path OR inline base64
+    if image_base64:
+        img_b64 = image_base64  # already base64 from browser
+    elif image_path:
+        if not os.path.isabs(image_path):
+            return jsonify({"error": "image_path must be absolute"}), 400
+        if not os.path.exists(image_path):
+            return jsonify({"error": f"File not found: {image_path}"}), 404
+        with open(image_path, "rb") as fh:
+            img_b64 = _b64.b64encode(fh.read()).decode()
+    else:
+        return jsonify({"error": "Provide image_path or image_base64"}), 400
 
     # Select the first available vision model
     selected_model = None
@@ -1361,8 +1380,6 @@ def agent_describe_image():
                         "error": "No vision model available. Run: ollama pull llava"})
 
     try:
-        with open(image_path, "rb") as fh:
-            img_b64 = _b64.b64encode(fh.read()).decode()
 
         resp = _http.post(
             f"{OLLAMA_BASE}/api/generate",

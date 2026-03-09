@@ -49,7 +49,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 if not BOT_TOKEN:
     raise ValueError("Set BOT_TOKEN in your .env file.")
 
-OLLAMA_BASE        = os.getenv("OLLAMA_HOST",        "http://localhost:11434")
+OLLAMA_BASE        = os.getenv("OLLAMA_HOST",        "http://localhost:11435")
 VM_BASE            = os.getenv("VM_BASE",            "http://localhost:5000")
 OLLAMA_MODEL       = os.getenv("OLLAMA_MODEL",       "llama2")
 MAX_SEARCH_RESULTS = int(os.getenv("MAX_SEARCH_RESULTS", "5"))
