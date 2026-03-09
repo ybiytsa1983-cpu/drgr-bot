@@ -13,6 +13,8 @@
   --panel-w:340px;
 }
 html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-family:"Segoe UI",system-ui,sans-serif}
+
+/* ── Side panel ─────────────────────────────────────────────────────────── */
 #panel{position:fixed;top:0;left:0;height:100%;width:var(--panel-w);background:var(--bg2);border-right:1px solid var(--border);transform:translateX(calc(-1 * var(--panel-w)));transition:transform .25s ease;z-index:100;display:flex;flex-direction:column;overflow:hidden}
 #panel.open{transform:translateX(0)}
 #panel-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:99;display:none}
@@ -42,6 +44,8 @@ textarea{resize:vertical;min-height:80px}
 .h-val{font-weight:600}
 .ok{color:var(--accent2)}.fail{color:var(--danger)}.warn{color:#e8a020}
 #workshop-log{background:var(--bg3);border-radius:6px;padding:8px;font-size:11px;font-family:monospace;color:var(--text2);max-height:120px;overflow-y:auto;white-space:pre-wrap;word-break:break-all}
+
+/* ── Main app layout ─────────────────────────────────────────────────────── */
 #app{height:100%;display:flex;flex-direction:column}
 #topbar{display:flex;align-items:center;gap:10px;padding:8px 14px;background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0}
 #btn-menu{background:none;border:none;color:var(--text2);cursor:pointer;font-size:20px;padding:4px 8px;line-height:1}
@@ -50,6 +54,8 @@ textarea{resize:vertical;min-height:80px}
 #model-badge{font-size:11px;background:var(--bg4);border:1px solid var(--border);color:var(--text2);padding:3px 10px;border-radius:12px;cursor:default;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #status-dot{width:8px;height:8px;border-radius:50%;background:var(--danger);flex-shrink:0}
 #status-dot.ok{background:var(--accent2)}
+
+/* ── Chat area ──────────────────────────────────────────────────────────── */
 #chat-area{flex:1;overflow-y:auto;padding:16px 20px;display:flex;flex-direction:column;gap:12px}
 #chat-area::-webkit-scrollbar{width:6px}
 #chat-area::-webkit-scrollbar-thumb{background:#2a2a2a;border-radius:3px}
@@ -66,18 +72,27 @@ textarea{resize:vertical;min-height:80px}
 .msg-bot th{background:var(--bg4)}
 .msg-html-frame{width:100%;border-radius:6px;overflow:hidden;border:1px solid var(--border);margin-top:6px;background:#fff}
 .msg-html-frame iframe{width:100%;border:none;min-height:300px}
+
+/* streaming cursor blink */
+.streaming-cursor::after{content:'▌';animation:blink .7s step-end infinite;color:var(--accent)}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+
 .typing{display:flex;gap:5px;align-items:center;padding:10px 14px}
 .typing span{width:7px;height:7px;border-radius:50%;background:var(--text2);animation:bounce .9s infinite}
 .typing span:nth-child(2){animation-delay:.15s}
 .typing span:nth-child(3){animation-delay:.3s}
 @keyframes bounce{0%,80%,100%{transform:none}40%{transform:translateY(-6px)}}
-#chat-area.dragover{outline:3px dashed var(--accent);outline-offset:-4px}
+#chat-area.dragover{outline:3px dashed var(--accent);outline-offset:-4px;background:color-mix(in srgb,var(--accent) 6%,transparent)}
+
+/* ── Web preview overlay ─────────────────────────────────────────────────── */
 #web-preview{position:fixed;inset:0;z-index:200;background:var(--bg);display:none;flex-direction:column}
 #web-preview.show{display:flex}
 #web-preview-bar{display:flex;align-items:center;gap:10px;padding:8px 14px;background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0}
 #web-preview-url{flex:1;font-size:12px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #btn-close-web{background:var(--danger);border:none;color:#fff;padding:5px 12px;border-radius:4px;cursor:pointer;font-size:12px}
 #web-preview iframe{flex:1;border:none;width:100%}
+
+/* ── Input bar ──────────────────────────────────────────────────────────── */
 #input-bar{padding:12px 16px;background:var(--bg2);border-top:1px solid var(--border);flex-shrink:0}
 .input-wrap{display:flex;align-items:flex-end;gap:8px;background:var(--bg3);border:1px solid var(--border);border-radius:12px;padding:6px 6px 6px 14px;transition:border-color .15s}
 .input-wrap:focus-within{border-color:var(--accent)}
@@ -90,13 +105,18 @@ textarea{resize:vertical;min-height:80px}
 </style>
 </head>
 <body>
+
+<!-- Side panel overlay -->
 <div id="panel-overlay" onclick="closePanel()"></div>
+
+<!-- Side panel (slide-in) -->
 <div id="panel">
   <div class="panel-header">
     <h2>&#9881; DRGR VM</h2>
     <button id="btn-close-panel" onclick="closePanel()">&#10005;</button>
   </div>
   <div class="panel-scroll">
+    <!-- Status -->
     <div>
       <div class="p-label">&#128312; Статус</div>
       <div id="health-box">
@@ -109,6 +129,7 @@ textarea{resize:vertical;min-height:80px}
         <button class="pbtn pbtn-muted pbtn-full" onclick="loadHealth()">&#8635; Обновить</button>
       </div>
     </div>
+    <!-- Model -->
     <div>
       <div class="p-label">&#129302; Модель</div>
       <div class="p-row">
@@ -116,6 +137,7 @@ textarea{resize:vertical;min-height:80px}
         <button class="pbtn pbtn-muted" onclick="loadModels()">&#8635;</button>
       </div>
     </div>
+    <!-- Mode -->
     <div>
       <div class="p-label">&#128196; Режим</div>
       <select id="sel-mode">
@@ -125,11 +147,13 @@ textarea{resize:vertical;min-height:80px}
         <option value="exec">&#9654; Выполнить код</option>
       </select>
     </div>
+    <!-- Instructions -->
     <div>
       <div class="p-label">&#128221; Инструкции</div>
       <textarea id="ta-instructions" rows="4" placeholder="Загрузка..."></textarea>
       <button class="pbtn pbtn-success pbtn-full" style="margin-top:6px" onclick="saveInstructions()">&#128190; Сохранить</button>
     </div>
+    <!-- Workshop -->
     <div>
       <div class="p-label">&#128736; Мастерская</div>
       <div class="p-row">
@@ -150,6 +174,8 @@ textarea{resize:vertical;min-height:80px}
     </div>
   </div>
 </div>
+
+<!-- Full-screen web preview -->
 <div id="web-preview">
   <div id="web-preview-bar">
     <span id="web-preview-url"></span>
@@ -157,6 +183,8 @@ textarea{resize:vertical;min-height:80px}
   </div>
   <iframe id="web-preview-iframe" sandbox="allow-scripts allow-forms allow-popups"></iframe>
 </div>
+
+<!-- Main app -->
 <div id="app">
   <div id="topbar">
     <button id="btn-menu" onclick="openPanel()">&#9776;</button>
@@ -164,11 +192,13 @@ textarea{resize:vertical;min-height:80px}
     <span id="model-badge">загрузка...</span>
     <div id="status-dot" title="Ollama"></div>
   </div>
+
+  <!-- Chat / answer area -->
   <div id="chat-area">
     <div class="msg msg-bot">
       &#128075; Привет! Введите вопрос или команду.<br><br>
       <b>Возможности:</b><br>
-      &#8226; Любой вопрос &rarr; ИИ отвечает<br>
+      &#8226; Любой вопрос &rarr; ИИ отвечает (потоковый вывод)<br>
       &#8226; <code>открой https://site.ru</code> &rarr; открывает сайт во встроенном браузере<br>
       &#8226; <code>сгенерируй html...</code> &rarr; живой HTML-превью<br>
       &#8226; Перетащите файл/картинку &rarr; анализ ИИ<br>
@@ -176,195 +206,466 @@ textarea{resize:vertical;min-height:80px}
       &#8226; <b>&#9776;</b> &mdash; настройки, модели, статус
     </div>
   </div>
+
+  <!-- Input bar -->
   <div id="input-bar">
     <div class="input-wrap">
-      <textarea id="user-input" rows="1" placeholder="Сообщение... (Enter - отправить)" oninput="autoResize(this)" onkeydown="onInputKey(event)"></textarea>
+      <textarea id="user-input" rows="1"
+        placeholder="Сообщение... (Enter — отправить)"
+        oninput="autoResize(this)"
+        onkeydown="onInputKey(event)"></textarea>
       <button id="btn-send" onclick="sendMessage()">&#10148;</button>
     </div>
     <div id="input-hint">Enter &mdash; отправить &nbsp;|&nbsp; Shift+Enter &mdash; новая строка &nbsp;|&nbsp; &#128196; перетащите файл в чат</div>
   </div>
 </div>
+
 <script>
-var currentModel='';
-var busy=false;
-function openPanel(){document.getElementById('panel').classList.add('open');document.getElementById('panel-overlay').classList.add('show');loadHealth();loadModels();loadInstructions();}
-function closePanel(){document.getElementById('panel').classList.remove('open');document.getElementById('panel-overlay').classList.remove('show');}
-function autoResize(el){el.style.height='auto';el.style.height=Math.min(el.scrollHeight,150)+'px';}
-function onInputKey(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage();}}
-function scrollBottom(){var c=document.getElementById('chat-area');c.scrollTop=c.scrollHeight;}
-function addUserMsg(text){var d=document.createElement('div');d.className='msg msg-user';d.textContent=text;document.getElementById('chat-area').appendChild(d);scrollBottom();}
-function addTyping(){var d=document.createElement('div');d.className='msg msg-bot typing';d.id='typing-indicator';d.innerHTML='<span></span><span></span><span></span>';document.getElementById('chat-area').appendChild(d);scrollBottom();return d;}
-function removeTyping(){var t=document.getElementById('typing-indicator');if(t)t.remove();}
-function _esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+// ── State ──────────────────────────────────────────────────────────────────
+var currentModel = '';
+var busy = false;
+
+// ── Panel ──────────────────────────────────────────────────────────────────
+function openPanel(){
+  document.getElementById('panel').classList.add('open');
+  document.getElementById('panel-overlay').classList.add('show');
+  loadHealth(); loadModels(); loadInstructions();
+}
+function closePanel(){
+  document.getElementById('panel').classList.remove('open');
+  document.getElementById('panel-overlay').classList.remove('show');
+}
+
+// ── Input helpers ──────────────────────────────────────────────────────────
+function autoResize(el){
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 150) + 'px';
+}
+function onInputKey(e){
+  if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); sendMessage(); }
+}
+
+// ── Scroll ─────────────────────────────────────────────────────────────────
+function scrollBottom(){
+  var c = document.getElementById('chat-area');
+  c.scrollTop = c.scrollHeight;
+}
+
+// ── Message builders ───────────────────────────────────────────────────────
+function addUserMsg(text){
+  var d = document.createElement('div');
+  d.className = 'msg msg-user';
+  d.textContent = text;
+  document.getElementById('chat-area').appendChild(d);
+  scrollBottom();
+}
+
+function addTyping(){
+  var d = document.createElement('div');
+  d.className = 'msg msg-bot typing';
+  d.id = 'typing-indicator';
+  d.innerHTML = '<span></span><span></span><span></span>';
+  document.getElementById('chat-area').appendChild(d);
+  scrollBottom();
+  return d;
+}
+function removeTyping(){
+  var t = document.getElementById('typing-indicator');
+  if(t) t.remove();
+}
+
+// Create an empty streaming bot bubble and return it
+function addStreamingBubble(){
+  removeTyping();
+  var d = document.createElement('div');
+  d.className = 'msg msg-bot streaming-cursor';
+  document.getElementById('chat-area').appendChild(d);
+  scrollBottom();
+  return d;
+}
+
+function _esc(s){
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+          .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
 function formatText(t){
-  // Extract code blocks before escaping to preserve literal content
-  var blocks=[];
-  t=t.replace(/```[\w]*\n?([\s\S]*?)```/g,function(_,c){var i=blocks.length;blocks.push(c);return '\x00CODE'+i+'\x00';});
-  t=_esc(t);
-  // Restore code blocks (their content is escaped separately)
-  t=t.replace(/\x00CODE(\d+)\x00/g,function(_,i){return '<pre><code>'+_esc(blocks[+i])+'</code></pre>';});
-  t=t.replace(/`([^`]+)`/g,'<code>$1</code>');
-  t=t.replace(/\*\*(.+?)\*\*/g,'<b>$1</b>');
-  t=t.replace(/\*(.+?)\*/g,'<em>$1</em>');
-  t=t.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g,'<a href="$2" target="_blank">$1</a>');
-  t=t.replace(/(https?:\/\/[^\s<>"]+)/g,function(url){var safe=_esc(url);return '<a href="'+safe+'" target="_blank" data-u="'+safe+'" onclick="openWebPreview(this.dataset.u);return false;">'+safe+'</a>';});
-  t=t.replace(/\n/g,'<br>');
+  var blocks = [];
+  t = t.replace(/```[\w]*\n?([\s\S]*?)```/g, function(_, c){
+    var i = blocks.length; blocks.push(c); return '\x00CODE' + i + '\x00';
+  });
+  t = _esc(t);
+  t = t.replace(/\x00CODE(\d+)\x00/g, function(_, i){
+    return '<pre><code>' + _esc(blocks[+i]) + '</code></pre>';
+  });
+  t = t.replace(/`([^`]+)`/g, '<code>$1</code>');
+  t = t.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+  t = t.replace(/\*(.+?)\*/g, '<em>$1</em>');
+  t = t.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g,
+    '<a href="$2" target="_blank">$1</a>');
+  t = t.replace(/(https?:\/\/[^\s<>"]+)/g, function(url){
+    var safe = _esc(url);
+    return '<a href="' + safe + '" target="_blank" data-u="' + safe +
+           '" onclick="openWebPreview(this.dataset.u);return false;">' + safe + '</a>';
+  });
+  t = t.replace(/\n/g, '<br>');
   return t;
 }
-function addBotMsg(content,isHtml){
+
+function addBotMsg(content, isHtml){
   removeTyping();
-  var d=document.createElement('div');d.className='msg msg-bot';
-  if(isHtml==='raw'){
-    // raw innerHTML — caller is responsible for safe content
-    d.innerHTML=content;
+  var d = document.createElement('div');
+  d.className = 'msg msg-bot';
+  if(isHtml === 'raw'){
+    d.innerHTML = content;
   } else if(isHtml){
-    var wrap=document.createElement('div');wrap.className='msg-html-frame';
-    var fr=document.createElement('iframe');fr.sandbox='allow-scripts';
-    var blob=new Blob([content],{type:'text/html'});fr.src=URL.createObjectURL(blob);
-    fr.onload=function(){try{fr.style.height=fr.contentDocument.body.scrollHeight+20+'px';}catch{}};
-    wrap.appendChild(fr);d.appendChild(wrap);
-    var btn=document.createElement('button');btn.className='pbtn pbtn-muted';
-    btn.style='margin-top:8px;font-size:11px;padding:4px 10px';btn.textContent='Копировать HTML';
-    btn.onclick=function(){navigator.clipboard.writeText(content);};d.appendChild(btn);
-  } else {d.innerHTML=formatText(content);}
-  document.getElementById('chat-area').appendChild(d);scrollBottom();
+    var wrap = document.createElement('div');
+    wrap.className = 'msg-html-frame';
+    var fr = document.createElement('iframe');
+    fr.sandbox = 'allow-scripts';
+    var blob = new Blob([content], {type:'text/html'});
+    fr.src = URL.createObjectURL(blob);
+    fr.onload = function(){ try{ fr.style.height = fr.contentDocument.body.scrollHeight + 20 + 'px'; }catch{} };
+    wrap.appendChild(fr);
+    d.appendChild(wrap);
+    var btn = document.createElement('button');
+    btn.className = 'pbtn pbtn-muted';
+    btn.style = 'margin-top:8px;font-size:11px;padding:4px 10px';
+    btn.textContent = 'Копировать HTML';
+    btn.onclick = function(){ navigator.clipboard.writeText(content); };
+    d.appendChild(btn);
+  } else {
+    d.innerHTML = formatText(content);
+  }
+  document.getElementById('chat-area').appendChild(d);
+  scrollBottom();
 }
-function addErrMsg(msg){removeTyping();var d=document.createElement('div');d.className='msg msg-bot';d.innerHTML='<span style="color:var(--danger)">&#9888; '+msg+'</span>';document.getElementById('chat-area').appendChild(d);scrollBottom();}
-function clearChat(){document.getElementById('chat-area').innerHTML='';}
-function openWebPreview(url){document.getElementById('web-preview-url').textContent=url;document.getElementById('web-preview-iframe').src=url;document.getElementById('web-preview').classList.add('show');}
-function closeWebPreview(){document.getElementById('web-preview').classList.remove('show');document.getElementById('web-preview-iframe').src='about:blank';}
+
+function addErrMsg(msg){
+  removeTyping();
+  var d = document.createElement('div');
+  d.className = 'msg msg-bot';
+  d.innerHTML = '<span style="color:var(--danger)">&#9888; ' + msg + '</span>';
+  document.getElementById('chat-area').appendChild(d);
+  scrollBottom();
+}
+
+function clearChat(){ document.getElementById('chat-area').innerHTML = ''; }
+
+// ── Web preview ────────────────────────────────────────────────────────────
+function openWebPreview(url){
+  document.getElementById('web-preview-url').textContent = url;
+  document.getElementById('web-preview-iframe').src = url;
+  document.getElementById('web-preview').classList.add('show');
+}
+function closeWebPreview(){
+  document.getElementById('web-preview').classList.remove('show');
+  document.getElementById('web-preview-iframe').src = 'about:blank';
+}
 function detectOpenCmd(text){
-  var m=text.match(/(?:открой|open|перейди|go to|зайди на|show)\s+(https?:\/\/\S+)/i);
-  if(m)return m[1];
-  if(/^https?:\/\/\S+$/.test(text.trim()))return text.trim();
+  var m = text.match(/(?:открой|open|перейди|go to|зайди на|show)\s+(https?:\/\/\S+)/i);
+  if(m) return m[1];
+  if(/^https?:\/\/\S+$/.test(text.trim())) return text.trim();
   return null;
 }
-function updateModelBadge(){var sel=document.getElementById('sel-model');currentModel=sel.value;document.getElementById('model-badge').textContent=currentModel||'нет модели';}
+
+// ── Model badge ────────────────────────────────────────────────────────────
+function updateModelBadge(){
+  var sel = document.getElementById('sel-model');
+  currentModel = sel.value;
+  document.getElementById('model-badge').textContent = currentModel || 'нет модели';
+}
+
+// ── setBusy ────────────────────────────────────────────────────────────────
+function setBusy(v){
+  busy = v;
+  document.getElementById('btn-send').disabled = v;
+}
+
+// ── Streaming chat ─────────────────────────────────────────────────────────
+function streamChat(prompt){
+  return new Promise(function(resolve){
+    var bubble = addStreamingBubble();
+    var accumulated = '';
+    var done = false; // guard against double-resolve
+
+    function finish(){
+      if(done) return; done = true;
+      bubble.classList.remove('streaming-cursor');
+      bubble.innerHTML = formatText(accumulated);
+      scrollBottom();
+      resolve();
+    }
+    function finishErr(msg){
+      if(done) return; done = true;
+      bubble.classList.remove('streaming-cursor');
+      bubble.remove(); // remove empty streaming bubble
+      addErrMsg(msg);
+      resolve();
+    }
+
+    var body = JSON.stringify({prompt: prompt, model: currentModel || undefined});
+
+    // Use fetch + ReadableStream instead of EventSource (POST support)
+    fetch('/ollama/ask/stream', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: body
+    }).then(function(resp){
+      if(!resp.ok){ finishErr('HTTP ' + resp.status); return; }
+      var reader = resp.body.getReader();
+      var dec = new TextDecoder();
+      var buf = '';
+
+      function pump(){
+        if(done) return;
+        reader.read().then(function(result){
+          if(result.done){ finish(); return; }
+          buf += dec.decode(result.value, {stream: true});
+          var lines = buf.split('\n');
+          buf = lines.pop(); // keep incomplete line
+          for(var i = 0; i < lines.length; i++){
+            if(done) break;
+            var line = lines[i];
+            if(!line.startsWith('data: ')) continue;
+            var payload = line.slice(6).trim();
+            if(payload === '[DONE]'){ finish(); return; }
+            try{
+              var obj = JSON.parse(payload);
+              if(obj.error){ finishErr(obj.error); return; }
+              if(obj.token){
+                accumulated += obj.token;
+                bubble.textContent = accumulated;
+                bubble.classList.add('streaming-cursor');
+                scrollBottom();
+              }
+            } catch(e){}
+          }
+          pump();
+        }).catch(function(e){ finishErr('Ошибка чтения потока: ' + e.message); });
+      }
+      pump();
+    }).catch(function(e){ finishErr('Ошибка сети: ' + e.message); });
+  });
+}
+
+// ── Send message ───────────────────────────────────────────────────────────
 async function sendMessage(){
-  var inp=document.getElementById('user-input');var text=inp.value.trim();
-  if(!text||busy)return;
-  inp.value='';inp.style.height='auto';
-  var openUrl=detectOpenCmd(text);
+  var inp = document.getElementById('user-input');
+  var text = inp.value.trim();
+  if(!text || busy) return;
+  inp.value = ''; inp.style.height = 'auto';
+
+  // Detect URL-open commands
+  var openUrl = detectOpenCmd(text);
   if(openUrl){
     addUserMsg(text);
-    var safeUrl=_esc(openUrl);
-    var msgEl=document.createElement('div');msgEl.className='msg msg-bot';
-    var a=document.createElement('a');a.href=openUrl;a.target='_blank';a.textContent=openUrl;
-    a.dataset.u=openUrl;a.onclick=function(){openWebPreview(this.dataset.u);return false;};
+    var msgEl = document.createElement('div');
+    msgEl.className = 'msg msg-bot';
+    var a = document.createElement('a');
+    a.href = openUrl; a.target = '_blank'; a.textContent = openUrl;
+    a.dataset.u = openUrl;
+    a.onclick = function(){ openWebPreview(this.dataset.u); return false; };
     msgEl.appendChild(document.createTextNode('\uD83C\uDF10 Открываю: '));
     msgEl.appendChild(a);
-    document.getElementById('chat-area').appendChild(msgEl);scrollBottom();
-    openWebPreview(openUrl);return;
+    document.getElementById('chat-area').appendChild(msgEl);
+    scrollBottom();
+    openWebPreview(openUrl);
+    return;
   }
-  addUserMsg(text);var mode=document.getElementById('sel-mode').value;setBusy(true);addTyping();
+
+  addUserMsg(text);
+  var mode = document.getElementById('sel-mode').value;
+  setBusy(true);
+
   try{
-    if(mode==='chat'){
-      var r=await fetch('/ollama/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:text,model:currentModel||undefined})});
-      var d=await r.json();if(d.error)addErrMsg(d.error);else addBotMsg(d.response||'(нет ответа)');
-    } else if(mode==='code'){
-      var r=await fetch('/generate/code',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:text,model:currentModel||undefined})});
-      var d=await r.json();addBotMsg(d.code||d.error||'(нет ответа)');
-    } else if(mode==='html'){
-      var r=await fetch('/generate/html',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:text,model:currentModel||undefined})});
-      var d=await r.json();if(d.html)addBotMsg(d.html,true);else addErrMsg(d.error||'Ошибка генерации HTML');
-    } else if(mode==='exec'){
-      var r=await fetch('/execute',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:text,language:'python'})});
-      var d=await r.json();var out=d.stdout||d.output||'';var err=d.stderr||d.error||'';
-      addBotMsg((out?'<pre>'+out+'</pre>':'')+(err?'<pre style="color:var(--danger)">'+err+'</pre>':'')+((!out&&!err)?'(выполнено)':''));
+    if(mode === 'chat'){
+      // Streaming chat
+      if(!currentModel){ addErrMsg('Выберите модель Ollama в настройках (☰)'); }
+      else { await streamChat(text); }
+    } else if(mode === 'code'){
+      addTyping();
+      var r = await fetch('/generate/code', {method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({prompt:text, model:currentModel||undefined})});
+      var d = await r.json(); addBotMsg(d.code || d.error || '(нет ответа)');
+    } else if(mode === 'html'){
+      addTyping();
+      var r = await fetch('/generate/html', {method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({prompt:text, model:currentModel||undefined})});
+      var d = await r.json();
+      if(d.html) addBotMsg(d.html, true);
+      else addErrMsg(d.error || 'Ошибка генерации HTML');
+    } else if(mode === 'exec'){
+      addTyping();
+      var r = await fetch('/execute', {method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({code:text, language:'python'})});
+      var d = await r.json();
+      var out = d.stdout || d.output || '';
+      var err = d.stderr || d.error || '';
+      addBotMsg(
+        (out ? '<pre>' + out + '</pre>' : '') +
+        (err ? '<pre style="color:var(--danger)">' + err + '</pre>' : '') +
+        ((!out && !err) ? '(выполнено)' : ''),
+        'raw'
+      );
     }
-  } catch(e){addErrMsg('Ошибка сети: '+e.message);}
+  } catch(e){ addErrMsg('Ошибка: ' + e.message); }
+
   setBusy(false);
 }
-function setBusy(v){busy=v;document.getElementById('btn-send').disabled=v;}
-var chatArea=document.getElementById('chat-area');
-chatArea.addEventListener('dragover',function(e){e.preventDefault();chatArea.classList.add('dragover');});
-chatArea.addEventListener('dragleave',function(){chatArea.classList.remove('dragover');});
-chatArea.addEventListener('drop',function(e){
-  e.preventDefault();chatArea.classList.remove('dragover');
-  var files=Array.from(e.dataTransfer.files);if(!files.length)return;
-  files.forEach(function(f){handleFile(f);});
+
+// ── Drag-and-drop file handling ────────────────────────────────────────────
+var chatArea = document.getElementById('chat-area');
+chatArea.addEventListener('dragover', function(e){
+  e.preventDefault(); chatArea.classList.add('dragover');
 });
+chatArea.addEventListener('dragleave', function(){
+  chatArea.classList.remove('dragover');
+});
+chatArea.addEventListener('drop', function(e){
+  e.preventDefault(); chatArea.classList.remove('dragover');
+  var files = Array.from(e.dataTransfer.files);
+  if(!files.length) return;
+  files.forEach(function(f){ handleFile(f); });
+});
+
 async function handleFile(f){
-  addUserMsg('\uD83D\uDCCE '+f.name+' ('+(f.size/1024).toFixed(1)+' KB)');
-  setBusy(true);addTyping();
-  var isImg=f.type.startsWith('image/');
-  // Sanitize filename for use in prompts
-  var safeName=f.name.replace(/[^\w.\-\s]/g,'_').slice(0,80);
+  addUserMsg('\uD83D\uDCCE ' + f.name + ' (' + (f.size/1024).toFixed(1) + ' KB)');
+  setBusy(true); addTyping();
+  var isImg = f.type.startsWith('image/');
+  var safeName = f.name.replace(/[^\w.\-\s]/g,'_').slice(0,80);
   if(isImg){
-    var b64=await fileToBase64(f);
-    var imgDiv=document.createElement('div');imgDiv.className='msg msg-bot';
-    var imgEl=document.createElement('img');imgEl.style.maxHeight='300px';imgEl.alt=safeName;imgEl.src=b64;
-    imgDiv.appendChild(imgEl);document.getElementById('chat-area').appendChild(imgDiv);scrollBottom();
+    var b64 = await fileToBase64(f);
+    var imgDiv = document.createElement('div'); imgDiv.className = 'msg msg-bot';
+    var imgEl = document.createElement('img'); imgEl.style.maxHeight = '300px';
+    imgEl.alt = safeName; imgEl.src = b64;
+    imgDiv.appendChild(imgEl);
+    document.getElementById('chat-area').appendChild(imgDiv);
+    scrollBottom();
     try{
-      // b64 is a data URL like "data:image/png;base64,<data>"
-      var commaIdx=b64.indexOf(',');
-      var b64data=commaIdx>=0?b64.slice(commaIdx+1):b64;
-      var r=await fetch('/agent/describe_image',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image_base64:b64data,filename:safeName})});
-      var d=await r.json();removeTyping();addBotMsg(d.description||d.error||'(описание недоступно)');
-    }catch(ex){addErrMsg('Ошибка: '+ex.message);}
+      var commaIdx = b64.indexOf(',');
+      var b64data = commaIdx >= 0 ? b64.slice(commaIdx+1) : b64;
+      var r = await fetch('/agent/describe_image', {method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({image_base64:b64data, filename:safeName})});
+      var d = await r.json();
+      removeTyping(); addBotMsg(d.description || d.error || '(описание недоступно)');
+    } catch(ex){ addErrMsg('Ошибка: ' + ex.message); }
   } else {
     try{
-      var txt=await f.text();
-      var r=await fetch('/ollama/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:'Проанализируй файл "'+safeName+'":\n\n'+txt.slice(0,4000),model:currentModel||undefined})});
-      var d=await r.json();removeTyping();addBotMsg(d.response||d.error||'(нет ответа)');
-    }catch(ex){addErrMsg('Ошибка: '+ex.message);}
+      var txt = await f.text();
+      var r = await fetch('/ollama/ask', {method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({prompt:'Проанализируй файл "'+safeName+'":\n\n'+txt.slice(0,4000),
+          model:currentModel||undefined})});
+      var d = await r.json();
+      removeTyping(); addBotMsg(d.response || d.error || '(нет ответа)');
+    } catch(ex){ addErrMsg('Ошибка: ' + ex.message); }
   }
   setBusy(false);
 }
-function fileToBase64(file){return new Promise(function(res,rej){var r=new FileReader();r.onload=function(){res(r.result);};r.onerror=rej;r.readAsDataURL(file);});}
+
+function fileToBase64(file){
+  return new Promise(function(res, rej){
+    var r = new FileReader(); r.onload = function(){ res(r.result); }; r.onerror = rej;
+    r.readAsDataURL(file);
+  });
+}
+
+// ── API helpers ────────────────────────────────────────────────────────────
 async function loadHealth(){
   try{
-    var r=await fetch('/health');var d=await r.json();
-    var vm=d.vm&&d.vm.status==='ok';var ol=d.ollama&&d.ollama.status==='ok';var bot=d.bot&&d.bot.token_set;
-    document.getElementById('h-vm').innerHTML=vm?'&#10003; OK':'&#10007; Ошибка';
-    document.getElementById('h-vm').className='h-val '+(vm?'ok':'fail');
-    document.getElementById('h-ollama').innerHTML=ol?'&#10003; OK':'&#10007; Недоступна';
-    document.getElementById('h-ollama').className='h-val '+(ol?'ok':'fail');
-    document.getElementById('h-url').textContent=(d.ollama&&d.ollama.url)||'—';
-    document.getElementById('h-bot').innerHTML=bot?'&#10003; Токен есть':'&#10007; Нет токена';
-    document.getElementById('h-bot').className='h-val '+(bot?'ok':'warn');
-    document.getElementById('status-dot').className='status-dot'+(ol?' ok':'');
-  }catch{}
+    var r = await fetch('/health'); var d = await r.json();
+    var vm = d.vm && d.vm.status === 'ok';
+    var ol = d.ollama && d.ollama.status === 'ok';
+    var bot = d.bot && d.bot.token_set;
+    document.getElementById('h-vm').innerHTML = vm ? '&#10003; OK' : '&#10007; Ошибка';
+    document.getElementById('h-vm').className = 'h-val ' + (vm ? 'ok' : 'fail');
+    document.getElementById('h-ollama').innerHTML = ol ? '&#10003; OK' : '&#10007; Недоступна';
+    document.getElementById('h-ollama').className = 'h-val ' + (ol ? 'ok' : 'fail');
+    document.getElementById('h-url').textContent = (d.ollama && d.ollama.url) || '—';
+    document.getElementById('h-bot').innerHTML = bot ? '&#10003; Токен есть' : '&#10007; Нет токена';
+    document.getElementById('h-bot').className = 'h-val ' + (bot ? 'ok' : 'warn');
+    document.getElementById('status-dot').className = 'status-dot' + (ol ? ' ok' : '');
+  } catch(e){}
 }
+
 async function loadModels(){
   try{
-    var r=await fetch('/ollama/models');var d=await r.json();
-    var models=d.models||[];var sel=document.getElementById('sel-model');var prev=sel.value;
-    sel.innerHTML='';
-    if(!models.length){sel.innerHTML='<option value="">Нет моделей</option>';}
-    else{models.forEach(function(m){var o=document.createElement('option');o.value=m;o.textContent=m;if(m===prev)o.selected=true;sel.appendChild(o);});if(!sel.value)sel.selectedIndex=0;}
+    var r = await fetch('/ollama/models'); var d = await r.json();
+    var models = d.models || []; var sel = document.getElementById('sel-model'); var prev = sel.value;
+    sel.innerHTML = '';
+    if(!models.length){ sel.innerHTML = '<option value="">Нет моделей</option>'; }
+    else{
+      models.forEach(function(m){
+        var o = document.createElement('option'); o.value = m; o.textContent = m;
+        if(m === prev) o.selected = true; sel.appendChild(o);
+      });
+      if(!sel.value) sel.selectedIndex = 0;
+    }
     updateModelBadge();
-  }catch{}
+  } catch(e){}
 }
+
 async function loadInstructions(){
-  try{var r=await fetch('/instructions');var d=await r.json();document.getElementById('ta-instructions').value=typeof d==='string'?d:(d.system_prompt||JSON.stringify(d,null,2));}catch{}
+  try{
+    var r = await fetch('/instructions'); var d = await r.json();
+    document.getElementById('ta-instructions').value =
+      typeof d === 'string' ? d : (d.system_prompt || JSON.stringify(d,null,2));
+  } catch(e){}
 }
+
 async function saveInstructions(){
-  var val=document.getElementById('ta-instructions').value;var body;
-  try{body=JSON.parse(val);}catch{body={system_prompt:val};}
-  await fetch('/instructions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  var val = document.getElementById('ta-instructions').value; var body;
+  try{ body = JSON.parse(val); } catch{ body = {system_prompt:val}; }
+  await fetch('/instructions', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
   showToast('Сохранено');
 }
+
 async function pullModel(){
-  var name=document.getElementById('wk-model-name').value.trim();if(!name)return;
-  var log=document.getElementById('workshop-log');log.textContent='Pulling '+name+'...\n';
+  var name = document.getElementById('wk-model-name').value.trim(); if(!name) return;
+  var log = document.getElementById('workshop-log'); log.textContent = 'Pulling ' + name + '...\n';
   try{
-    var r=await fetch('/ollama/pull',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name})});
-    var reader=r.body.getReader();var dec=new TextDecoder();
-    while(true){var result=await reader.read();if(result.done)break;var lines=dec.decode(result.value).split('\n').filter(Boolean);lines.forEach(function(l){try{var j=JSON.parse(l);log.textContent+=j.status+(j.completed?' '+j.completed+'/'+j.total:'')+' \n';log.scrollTop=9999;}catch{}});}
+    var r = await fetch('/ollama/pull', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({name:name})});
+    var reader = r.body.getReader(); var dec = new TextDecoder();
+    while(true){
+      var result = await reader.read(); if(result.done) break;
+      var lines = dec.decode(result.value).split('\n').filter(Boolean);
+      lines.forEach(function(l){
+        try{ var j = JSON.parse(l); log.textContent += j.status + (j.completed ? ' '+j.completed+'/'+j.total : '') + '\n'; log.scrollTop = 9999; }catch{}
+      });
+    }
     loadModels();
-  }catch(e){log.textContent+='Ошибка: '+e.message;}
+  } catch(e){ log.textContent += 'Ошибка: ' + e.message; }
 }
+
 async function deleteModel(){
-  var name=document.getElementById('wk-del-name').value.trim();if(!name)return;
-  if(!confirm('Удалить '+name+'?'))return;
-  var r=await fetch('/ollama/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name})});
-  var d=await r.json();document.getElementById('workshop-log').textContent=d.ok?'Удалено':'Ошибка: '+d.error;
+  var name = document.getElementById('wk-del-name').value.trim(); if(!name) return;
+  if(!confirm('Удалить ' + name + '?')) return;
+  var r = await fetch('/ollama/delete', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({name:name})});
+  var d = await r.json();
+  document.getElementById('workshop-log').textContent = d.ok ? 'Удалено' : 'Ошибка: ' + d.error;
   loadModels();
 }
-async function retrain(){var r=await fetch('/retrain',{method:'POST'});var d=await r.json();showToast(d.message||'Retrain запущен');}
-function showToast(msg){var t=document.getElementById('_toast');if(!t){t=document.createElement('div');t.id='_toast';t.style='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:8px 18px;border-radius:8px;font-size:13px;z-index:999;pointer-events:none;transition:opacity .3s';document.body.appendChild(t);}t.textContent=msg;t.style.opacity='1';clearTimeout(t._to);t._to=setTimeout(function(){t.style.opacity='0';},2000);}
-loadHealth();loadModels();
+
+async function retrain(){
+  var r = await fetch('/retrain', {method:'POST'}); var d = await r.json();
+  showToast(d.message || 'Retrain запущен');
+}
+
+function showToast(msg){
+  var t = document.getElementById('_toast');
+  if(!t){
+    t = document.createElement('div'); t.id = '_toast';
+    t.style = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:8px 18px;border-radius:8px;font-size:13px;z-index:999;pointer-events:none;transition:opacity .3s';
+    document.body.appendChild(t);
+  }
+  t.textContent = msg; t.style.opacity = '1';
+  clearTimeout(t._to); t._to = setTimeout(function(){ t.style.opacity = '0'; }, 2000);
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────
+loadHealth(); loadModels();
 </script>
 </body>
 </html>

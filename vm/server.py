@@ -1001,6 +1001,64 @@ def ollama_ask():
         return jsonify({"response": "", "error": str(exc), "success": False})
 
 
+@app.route("/ollama/ask/stream", methods=["POST"])
+def ollama_ask_stream():
+    """Stream tokens from Ollama as SSE events.
+
+    Body: {"prompt": "...", "model": "...", "code": "...", "language": "..."}
+    Streams ``data: {"token": "..."}\n\n`` lines; ends with ``data: [DONE]\n\n``.
+    On error streams ``data: {"error": "..."}\n\n``.
+    """
+    body = request.get_json(silent=True) or {}
+    model = body.get("model", "").strip()
+    prompt = body.get("prompt", "").strip()
+    code = body.get("code", "").strip()
+
+    if not model:
+        def _err_no_model():
+            yield 'data: {"error":"No model selected"}\n\n'
+        return Response(stream_with_context(_err_no_model()), mimetype="text/event-stream")
+
+    if code:
+        lang_hint = body.get("language", "python")
+        full_prompt = f"Here is some code:\n```{lang_hint}\n{code}\n```\n\n{prompt}" if prompt else code
+    else:
+        full_prompt = prompt or ""
+
+    def _stream():
+        try:
+            resp = _http.post(
+                f"{OLLAMA_BASE}/api/generate",
+                json={"model": model, "prompt": full_prompt, "stream": True},
+                stream=True,
+                timeout=int(os.environ.get("OLLAMA_TIMEOUT", 120)),
+            )
+            resp.raise_for_status()
+            for raw_line in resp.iter_lines():
+                if not raw_line:
+                    continue
+                try:
+                    chunk = json.loads(raw_line)
+                except ValueError:
+                    continue
+                token = chunk.get("response", "")
+                if token:
+                    yield f"data: {json.dumps({'token': token})}\n\n"
+                if chunk.get("done"):
+                    yield "data: [DONE]\n\n"
+                    return
+        except _http.exceptions.ConnectionError:
+            yield 'data: {"error":"Cannot connect to Ollama — is \'ollama serve\' running?"}\n\n'
+        except Exception as exc:  # pylint: disable=broad-except
+            yield f"data: {json.dumps({'error': str(exc)})}\n\n"
+
+    return Response(
+        stream_with_context(_stream()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 # ---------------------------------------------------------------------------
 # Model Workshop endpoints  (create / pull / delete models in Ollama)
 # ---------------------------------------------------------------------------
