@@ -55,6 +55,7 @@ _log = logging.getLogger("CodeVM")
 _DIR = os.path.dirname(os.path.abspath(__file__))
 INSTRUCTIONS_FILE = os.path.join(_DIR, "instructions.json")
 NAVIGATOR_DIR     = os.path.join(os.path.dirname(_DIR), "navigator")
+PROJECTS_DIR      = os.path.join(_DIR, "projects")
 
 # Training-data directory — stores per-action JSONL logs from the bot
 TRAINING_DATA_DIR         = os.path.join(_DIR, "training_data")
@@ -1523,6 +1524,152 @@ def agent_training_data():
         })
     except (OSError, json.JSONDecodeError, ValueError) as exc:
         return jsonify({"error": str(exc)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Project Generator — autonomous project creation, storage and serving
+# ---------------------------------------------------------------------------
+
+def _ensure_projects_dir() -> None:
+    os.makedirs(PROJECTS_DIR, exist_ok=True)
+
+
+def _slugify(text: str) -> str:
+    """Convert arbitrary text to a safe directory name."""
+    slug = re.sub(r"[^\w\s-]", "", text.lower())
+    slug = re.sub(r"[\s_-]+", "_", slug).strip("_")
+    return slug[:48] or "project"
+
+
+def _save_project(project_id: str, name: str, description: str, files: dict) -> str:
+    """Persist project files to disk; return the project directory path."""
+    _ensure_projects_dir()
+    project_dir = os.path.join(PROJECTS_DIR, project_id)
+    os.makedirs(project_dir, exist_ok=True)
+    for filename, content in files.items():
+        file_path = os.path.join(project_dir, filename)
+        with open(file_path, "w", encoding="utf-8") as fh:
+            fh.write(content)
+    # Save project metadata
+    meta = {
+        "id": project_id,
+        "name": name,
+        "description": description,
+        "files": list(files.keys()),
+        "created": _now(),
+    }
+    with open(os.path.join(project_dir, "project.json"), "w", encoding="utf-8") as fh:
+        json.dump(meta, fh, ensure_ascii=False, indent=2)
+    return project_dir
+
+
+@app.route("/project/generate", methods=["POST"])
+def project_generate():
+    """Generate a complete web project from a task description using Ollama.
+
+    Body: {"model": "...", "prompt": "...", "name": "optional project name"}
+    Returns: {"project_id": "...", "files": {"index.html": "...", ...}, "success": true}
+    """
+    body    = request.get_json(silent=True) or {}
+    model   = body.get("model", "").strip()
+    prompt  = body.get("prompt", "").strip()
+    name    = body.get("name", "").strip() or prompt[:60]
+
+    if not model:
+        return jsonify({"error": "No model selected", "success": False})
+    if not prompt:
+        return jsonify({"error": "No prompt provided", "success": False})
+
+    sys_prompt = (
+        "You are an expert full-stack web developer. "
+        "Generate a complete, self-contained, production-ready web application "
+        "for the task described below. "
+        "The application MUST be a single HTML file with all CSS and JavaScript inline. "
+        "Use a dark, modern design with CSS variables, responsive layout (flexbox/grid), "
+        "and smooth animations. Include all functionality described in the task. "
+        "Return ONLY the complete HTML document inside a fenced ```html code block. "
+        "Do not write anything outside that block.\n\n"
+        f"Task: {prompt}"
+    )
+
+    try:
+        resp = _http.post(
+            f"{OLLAMA_BASE}/api/generate",
+            json={"model": model, "prompt": sys_prompt, "stream": False},
+            timeout=int(os.environ.get("OLLAMA_TIMEOUT", 240)),
+        )
+        resp.raise_for_status()
+        raw  = resp.json().get("response", "")
+        html = _extract_code_block(raw, "html")
+        if not html:
+            return jsonify({"error": "Model returned no HTML", "success": False})
+
+        # Build file set
+        files = {
+            "index.html": html,
+            "README.md": (
+                f"# {name}\n\n"
+                f"**Описание задачи:**\n\n{prompt}\n\n"
+                f"**Сгенерировано:** {_now()}\n\n"
+                f"**Модель:** {model}\n\n"
+                "## Запуск\n\nОткройте `index.html` в браузере.\n"
+            ),
+        }
+
+        project_id = f"{_slugify(name)}_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
+        _save_project(project_id, name, prompt, files)
+        _record_generation("html", model, prompt)
+
+        return jsonify({
+            "project_id": project_id,
+            "name": name,
+            "files": files,
+            "success": True,
+        })
+    except _http.exceptions.Timeout:
+        return jsonify({"error": "Request timed out", "success": False})
+    except _http.exceptions.ConnectionError:
+        return jsonify({"error": "Cannot connect to Ollama — is 'ollama serve' running?", "success": False})
+    except Exception as exc:  # pylint: disable=broad-except
+        return jsonify({"error": str(exc), "success": False})
+
+
+@app.route("/project/list", methods=["GET"])
+def project_list():
+    """Return metadata for all saved projects (most recent first)."""
+    _ensure_projects_dir()
+    projects = []
+    try:
+        for entry in os.scandir(PROJECTS_DIR):
+            if not entry.is_dir():
+                continue
+            meta_path = os.path.join(entry.path, "project.json")
+            if not os.path.exists(meta_path):
+                continue
+            try:
+                with open(meta_path, "r", encoding="utf-8") as fh:
+                    meta = json.load(fh)
+                projects.append(meta)
+            except (OSError, json.JSONDecodeError):
+                pass
+    except OSError:
+        pass
+
+    projects.sort(key=lambda p: p.get("created", ""), reverse=True)
+    return jsonify({"projects": projects, "total": len(projects)})
+
+
+@app.route("/project/<project_id>/<path:filename>", methods=["GET"])
+def project_file(project_id: str, filename: str):
+    """Serve a file from a saved project directory."""
+    # Sanitise: only allow lowercase alphanumeric characters, underscores and hyphens
+    if not re.match(r'^[a-z0-9_\-]+$', project_id):
+        return jsonify({"error": "Invalid project ID. Only lowercase letters, digits, underscores and hyphens are allowed."}), 400
+    project_dir = os.path.join(PROJECTS_DIR, project_id)
+    if not os.path.isdir(project_dir):
+        return jsonify({"error": "Project not found"}), 404
+    # send_from_directory handles path traversal protection
+    return send_from_directory(project_dir, filename)
 
 
 # ---------------------------------------------------------------------------

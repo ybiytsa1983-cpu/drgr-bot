@@ -11,3 +11,7 @@ vm/training_data/actions.jsonl
 vm/training_data/image_descriptions.jsonl
 screenshots/
 articles/
+# Generated projects (runtime output, not source code)
+vm/projects/*
+!vm/projects/.gitkeep
+!vm/projects/.gitignore

@@ -144,6 +144,7 @@ textarea{resize:vertical;min-height:80px}
         <option value="chat">&#128172; Чат / ИИ</option>
         <option value="code">&#128187; Генерация кода</option>
         <option value="html">&#127760; Генерация HTML</option>
+        <option value="project">&#127959; Генерация проекта</option>
         <option value="exec">&#9654; Выполнить код</option>
       </select>
     </div>
@@ -168,6 +169,12 @@ textarea{resize:vertical;min-height:80px}
     </div>
     <div>
       <button class="pbtn pbtn-muted pbtn-full" onclick="retrain()">&#128260; Retrain</button>
+    </div>
+    <!-- Projects -->
+    <div>
+      <div class="p-label">&#127959; Проекты</div>
+      <button class="pbtn pbtn-muted pbtn-full" onclick="loadProjectsList()">&#128196; Список проектов</button>
+      <div id="projects-list" style="margin-top:6px;font-size:12px;color:var(--text2)"></div>
     </div>
     <div>
       <button class="pbtn pbtn-danger pbtn-full" onclick="clearChat()">&#128465; Очистить чат</button>
@@ -201,6 +208,7 @@ textarea{resize:vertical;min-height:80px}
       &#8226; Любой вопрос &rarr; ИИ отвечает (потоковый вывод)<br>
       &#8226; <code>открой https://site.ru</code> &rarr; открывает сайт во встроенном браузере<br>
       &#8226; <code>сгенерируй html...</code> &rarr; живой HTML-превью<br>
+      &#8226; <b>Режим «Генерация проекта»</b> &rarr; создаёт полный веб-проект и сохраняет файлы<br>
       &#8226; Перетащите файл/картинку &rarr; анализ ИИ<br>
       &#8226; <b>Enter</b> &mdash; отправить, <b>Shift+Enter</b> &mdash; новая строка<br>
       &#8226; <b>&#9776;</b> &mdash; настройки, модели, статус
@@ -211,7 +219,7 @@ textarea{resize:vertical;min-height:80px}
   <div id="input-bar">
     <div class="input-wrap">
       <textarea id="user-input" rows="1"
-        placeholder="Сообщение... (Enter — отправить)"
+        placeholder="Сообщение... (Enter — отправить; режим «Проект» — описание задачи)"
         oninput="autoResize(this)"
         onkeydown="onInputKey(event)"></textarea>
       <button id="btn-send" onclick="sendMessage()">&#10148;</button>
@@ -358,9 +366,48 @@ function openWebPreview(url){
   document.getElementById('web-preview-iframe').src = url;
   document.getElementById('web-preview').classList.add('show');
 }
+function openHtmlPreview(html){
+  document.getElementById('web-preview-url').textContent = '(локальный HTML-проект)';
+  var iframe = document.getElementById('web-preview-iframe');
+  iframe.src = 'about:blank';
+  iframe.removeAttribute('src');
+  iframe.srcdoc = html;
+  document.getElementById('web-preview').classList.add('show');
+}
 function closeWebPreview(){
   document.getElementById('web-preview').classList.remove('show');
-  document.getElementById('web-preview-iframe').src = 'about:blank';
+  var iframe = document.getElementById('web-preview-iframe');
+  iframe.src = 'about:blank';
+  iframe.removeAttribute('srcdoc');
+}
+async function loadProjectsList(){
+  var box = document.getElementById('projects-list');
+  box.textContent = 'Загрузка...';
+  try{
+    var r = await fetch('/project/list'); var d = await r.json();
+    if(!d.projects || !d.projects.length){ box.textContent = 'Проектов ещё нет.'; return; }
+    box.innerHTML = '';
+    d.projects.slice(0,10).forEach(function(p){
+      var row = document.createElement('div');
+      row.style.cssText = 'background:var(--bg3);border-radius:5px;padding:6px 8px;margin-bottom:5px;cursor:pointer';
+      var name = document.createElement('div');
+      name.style.cssText = 'font-weight:700;color:var(--text);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+      var fullName = p.name || p.id;
+      name.textContent = fullName.slice(0,50) + (fullName.length > 50 ? '…' : '');
+      name.title = fullName;
+      var meta = document.createElement('div');
+      meta.style.cssText = 'font-size:10px;color:var(--text2);margin-top:2px';
+      meta.textContent = (p.created||'').slice(0,16) + ' · ' + (p.files||[]).join(', ');
+      var previewBtn = document.createElement('a');
+      previewBtn.href = '/project/' + p.id + '/index.html';
+      previewBtn.target = '_blank';
+      previewBtn.className = 'pbtn pbtn-primary';
+      previewBtn.style.cssText = 'font-size:10px;padding:3px 8px;margin-top:4px;display:inline-block;text-decoration:none';
+      previewBtn.textContent = '▶ Открыть';
+      row.appendChild(name); row.appendChild(meta); row.appendChild(previewBtn);
+      box.appendChild(row);
+    });
+  } catch(e){ box.textContent = 'Ошибка: ' + e.message; }
 }
 function detectOpenCmd(text){
   var m = text.match(/(?:открой|open|перейди|go to|зайди на|show)\s+(https?:\/\/\S+)/i);
@@ -495,6 +542,40 @@ async function sendMessage(){
       var d = await r.json();
       if(d.html) addBotMsg(d.html, true);
       else addErrMsg(d.error || 'Ошибка генерации HTML');
+    } else if(mode === 'project'){
+      addTyping();
+      var r = await fetch('/project/generate', {method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({prompt:text, model:currentModel||undefined, name:text.slice(0,60)})});
+      var d = await r.json();
+      removeTyping();
+      if(d.success){
+        var pid = d.project_id;
+        var html = d.files && d.files['index.html'] ? d.files['index.html'] : '';
+        var msgEl = document.createElement('div'); msgEl.className = 'msg msg-bot';
+        msgEl.innerHTML = '<b>&#127959; Проект создан:</b> <code>' + pid + '</code><br><small style="color:var(--text2)">Файлы: ' + Object.keys(d.files||{}).join(', ') + '</small>';
+        if(html){
+          var fr = document.createElement('div'); fr.className = 'msg-html-frame';
+          var iframe = document.createElement('iframe');
+          iframe.srcdoc = html; iframe.sandbox = 'allow-scripts allow-same-origin';
+          var openBtn = document.createElement('button');
+          openBtn.className='pbtn pbtn-primary'; openBtn.style.cssText='margin:6px 0 4px;font-size:12px';
+          openBtn.textContent='Открыть на весь экран';
+          openBtn.onclick = (function(h){ return function(){ openHtmlPreview(h); }; })(html);
+          var dlBtn = document.createElement('a');
+          dlBtn.className='pbtn pbtn-muted'; dlBtn.style.cssText='margin:6px 0 4px 6px;font-size:12px;text-decoration:none;display:inline-block';
+          dlBtn.textContent='Скачать index.html';
+          dlBtn.href = '/project/' + pid + '/index.html';
+          dlBtn.download = 'index.html';
+          fr.appendChild(iframe);
+          msgEl.appendChild(document.createElement('br'));
+          msgEl.appendChild(openBtn); msgEl.appendChild(dlBtn);
+          msgEl.appendChild(fr);
+        }
+        document.getElementById('chat-area').appendChild(msgEl);
+        scrollBottom();
+      } else {
+        addErrMsg(d.error || 'Ошибка генерации проекта');
+      }
     } else if(mode === 'exec'){
       addTyping();
       var r = await fetch('/execute', {method:'POST', headers:{'Content-Type':'application/json'},
