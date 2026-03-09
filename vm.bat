@@ -1,5 +1,5 @@
 @echo off
-REM vm.bat — launch Code VM from the repository root in Windows Terminal / cmd.
+REM vm.bat - launch Code VM from the repository root in Windows Terminal / cmd.
 REM Usage:  .\vm.bat  (PowerShell)  or  vm.bat  (cmd.exe / double-click)
 cd /d "%~dp0"
 
