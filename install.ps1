@@ -261,9 +261,17 @@ try {
 } catch {
     Warn "WScript.Shell shortcut failed ($_). Creating .bat fallback on Desktop..."
     try {
-        $batFallback  = Join-Path $repoDir "start.bat"
         $fallbackPath = Join-Path $desktopPath "Code VM.bat"
-        "@echo off`r`n powershell -NoProfile -ExecutionPolicy Bypass -File `"$startPs1`"`r`n" | Out-File -FilePath $fallbackPath -Encoding ascii
+        # Polyglot: works in both cmd.exe and PowerShell (Windows Terminal may open
+        # .bat shortcuts in a PS profile on Windows 11, causing @echo off to fail).
+        $polyglot  = "<# 2>nul`r`n"
+        $polyglot += "@echo off`r`n"
+        $polyglot += "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$startPs1`"`r`n"
+        $polyglot += "exit /b`r`n"
+        $polyglot += "#>`r`n"
+        $polyglot += "`$f = if (`$PSScriptRoot) { `$PSScriptRoot } else { (Get-Location).Path }`r`n"
+        $polyglot += "& (Join-Path `$f 'start.ps1') @args`r`n"
+        [System.IO.File]::WriteAllText($fallbackPath, $polyglot, [System.Text.Encoding]::ASCII)
         $shortcutOk = $true
         Ok "Desktop launcher created: '$fallbackPath' - double-click it to launch Code VM"
     } catch {
