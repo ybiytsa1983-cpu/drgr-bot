@@ -110,21 +110,23 @@ if (-not (Test-Path $venvPython)) {
     }
 
     # -- Create Desktop shortcut (so user has icon next time) -----------------
+    # Target powershell.exe directly to avoid .bat-file association issues on
+    # Windows 11 (Windows Terminal can open .bat shortcuts in a PS profile,
+    # causing PowerShell to parse batch syntax and fail with %~dp0 errors).
     try {
         $desktopPath  = [Environment]::GetFolderPath("Desktop")
         $shortcutPath = Join-Path $desktopPath "Code VM.lnk"
-        $batTarget    = Join-Path $scriptRoot "start.bat"
+        $startPs1     = Join-Path $scriptRoot "start.ps1"
+        $psExe        = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
+        if (-not (Test-Path $psExe)) { $psExe = "powershell.exe" }
         $shell        = New-Object -ComObject WScript.Shell
         $shortcut     = $shell.CreateShortcut($shortcutPath)
-        $shortcut.TargetPath       = $batTarget
+        $shortcut.TargetPath       = $psExe
+        $shortcut.Arguments        = "-NoProfile -ExecutionPolicy Bypass -File `"$startPs1`""
         $shortcut.WorkingDirectory = $scriptRoot
         $shortcut.Description      = "Launch Code VM - Monaco Editor with Ollama AI"
         $shortcut.WindowStyle      = 1
-        $pyCmd = Get-Command python  -ErrorAction SilentlyContinue
-        if (-not $pyCmd) { $pyCmd = Get-Command python3 -ErrorAction SilentlyContinue }
-        if (-not $pyCmd) { $pyCmd = Get-Command py      -ErrorAction SilentlyContinue }
-        if ($pyCmd) { $shortcut.IconLocation = "$($pyCmd.Source),0" }
-        else        { $shortcut.IconLocation = "%SystemRoot%\System32\cmd.exe,0" }
+        $shortcut.IconLocation     = "$psExe,0"
         $shortcut.Save()
         Write-Host "  [OK] Ярлык 'Code VM' создан на Рабочем столе" -ForegroundColor Green
     } catch {
