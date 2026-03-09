@@ -94,11 +94,30 @@ if ($LASTEXITCODE -ne 0) {
 $ollamaRunning   = $false
 $ollamaInstalled = $false
 $ollamaPort      = 11434
+$ollamaExePath   = $null   # full path to ollama.exe (or 'ollama' if in PATH)
 
-try {
-    $null = & ollama --version 2>&1
-    if ($LASTEXITCODE -eq 0) { $ollamaInstalled = $true }
-} catch { }
+$ollamaCmd = Get-Command ollama -ErrorAction SilentlyContinue
+if ($ollamaCmd) {
+    $ollamaInstalled = $true
+    $ollamaExePath   = $ollamaCmd.Source
+}
+
+# If not in PATH, check common Windows install locations
+if (-not $ollamaInstalled) {
+    $ollamaCandidates = @(
+        "$env:LOCALAPPDATA\Programs\Ollama\ollama.exe",
+        "$env:USERPROFILE\AppData\Local\Programs\Ollama\ollama.exe",
+        "C:\Program Files\Ollama\ollama.exe",
+        "C:\Program Files (x86)\Ollama\ollama.exe"
+    )
+    foreach ($c in $ollamaCandidates) {
+        if (Test-Path $c) {
+            $ollamaInstalled = $true
+            $ollamaExePath   = $c
+            break
+        }
+    }
+}
 
 # Probe ports 11434-11444 to find an already-running Ollama instance
 $detectedPort = $null
@@ -123,7 +142,7 @@ if ($detectedPort) {
     if ($ollamaInstalled) {
         Write-Host "[Code VM] Starting Ollama service on port $ollamaPort..." -ForegroundColor Cyan
         # OLLAMA_HOST is already set so ollama serve listens on the correct port
-        Start-Process -FilePath "ollama" -ArgumentList "serve" -WindowStyle Minimized
+        Start-Process -FilePath $ollamaExePath -ArgumentList "serve" -WindowStyle Minimized
         # Wait up to 10 s for Ollama to respond
         for ($i = 0; $i -lt 10; $i++) {
             Start-Sleep -Seconds 1

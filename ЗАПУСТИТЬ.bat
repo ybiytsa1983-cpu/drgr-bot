@@ -12,10 +12,22 @@ for %%D in (
     "%USERPROFILE%\Desktop\drgr-bot"
     "%USERPROFILE%\Downloads\drgr-bot"
     "%USERPROFILE%\projects\drgr-bot"
+    "%USERPROFILE%\Projects\drgr-bot"
+    "%USERPROFILE%\code\drgr-bot"
+    "%USERPROFILE%\Code\drgr-bot"
+    "%USERPROFILE%\repos\drgr-bot"
+    "%USERPROFILE%\Repos\drgr-bot"
     "C:\drgr-bot"
     "C:\projects\drgr-bot"
+    "C:\Projects\drgr-bot"
+    "C:\code\drgr-bot"
+    "C:\Code\drgr-bot"
+    "C:\Users\%USERNAME%\drgr-bot"
     "D:\drgr-bot"
     "D:\projects\drgr-bot"
+    "D:\Projects\drgr-bot"
+    "D:\code\drgr-bot"
+    "D:\Code\drgr-bot"
 ) do (
     if exist "%%~D\zapustit.ps1" (
         powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%%~D\zapustit.ps1" %*
@@ -38,10 +50,22 @@ foreach ($d in @(
     "$env:USERPROFILE\Desktop\drgr-bot",
     "$env:USERPROFILE\Downloads\drgr-bot",
     "$env:USERPROFILE\projects\drgr-bot",
+    "$env:USERPROFILE\Projects\drgr-bot",
+    "$env:USERPROFILE\code\drgr-bot",
+    "$env:USERPROFILE\Code\drgr-bot",
+    "$env:USERPROFILE\repos\drgr-bot",
+    "$env:USERPROFILE\Repos\drgr-bot",
     "C:\drgr-bot",
     "C:\projects\drgr-bot",
+    "C:\Projects\drgr-bot",
+    "C:\code\drgr-bot",
+    "C:\Code\drgr-bot",
+    "C:\Users\$env:USERNAME\drgr-bot",
     "D:\drgr-bot",
-    "D:\projects\drgr-bot"
+    "D:\projects\drgr-bot",
+    "D:\Projects\drgr-bot",
+    "D:\code\drgr-bot",
+    "D:\Code\drgr-bot"
 )) {
     $zap = Join-Path $d 'zapustit.ps1'
     if (Test-Path $zap) { & $zap @args; exit }

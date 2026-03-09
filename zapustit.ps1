@@ -106,6 +106,47 @@ try {
     Write-Host "  [!] Shortcut not created: $_" -ForegroundColor Yellow
 }
 
+# ── Start Ollama early so it is ready when the VM server connects ─────────────
+Write-Host '  [Ollama] Checking Ollama...' -ForegroundColor Cyan
+$ollamaExe = $null
+# Try PATH first
+$ollamaCmd = Get-Command ollama -ErrorAction SilentlyContinue
+if ($ollamaCmd) { $ollamaExe = $ollamaCmd.Source }
+# Fall back to common install locations
+if (-not $ollamaExe) {
+    foreach ($c in @(
+        "$env:LOCALAPPDATA\Programs\Ollama\ollama.exe",
+        "$env:USERPROFILE\AppData\Local\Programs\Ollama\ollama.exe",
+        "C:\Program Files\Ollama\ollama.exe",
+        "C:\Program Files (x86)\Ollama\ollama.exe"
+    )) {
+        if (Test-Path $c) { $ollamaExe = $c; break }
+    }
+}
+if ($ollamaExe) {
+    # Check if already running
+    $ollamaUp = $false
+    foreach ($tryPort in (11434..11444)) {
+        try {
+            $r = Invoke-WebRequest -Uri "http://localhost:$tryPort/api/tags" `
+                    -UseBasicParsing -TimeoutSec 1 -ErrorAction SilentlyContinue
+            if ($r -and $r.StatusCode -eq 200) { $ollamaUp = $true; break }
+        } catch {}
+    }
+    if (-not $ollamaUp) {
+        Write-Host '  [Ollama] Starting ollama serve...' -ForegroundColor Cyan
+        Start-Process -FilePath $ollamaExe -ArgumentList 'serve' -WindowStyle Minimized -ErrorAction SilentlyContinue
+        # Brief wait — vm.ps1 will wait longer if needed
+        Start-Sleep -Seconds 2
+        Write-Host '  [OK] Ollama service starting in background.' -ForegroundColor Green
+    } else {
+        Write-Host '  [OK] Ollama already running.' -ForegroundColor Green
+    }
+} else {
+    Write-Host '  [~] Ollama not found — AI features will be disabled.' -ForegroundColor Yellow
+    Write-Host '      Download from https://ollama.com/download' -ForegroundColor DarkGray
+}
+
 Write-Host '' 
 Write-Host '  [Launch] Starting Code VM...' -ForegroundColor Green
 Write-Host '' 
