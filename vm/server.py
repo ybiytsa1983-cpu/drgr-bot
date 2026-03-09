@@ -9,10 +9,14 @@ Endpoints:
   POST /instructions   — update training / internet-work instructions
   GET  /ollama/models  — list models available in the local Ollama instance
   POST /ollama/ask     — ask a free-form question to a model (AI chat)
+  POST /ollama/pull    — pull / download an Ollama model (streaming NDJSON)
+  POST /ollama/create  — create a custom model from a Modelfile
+  POST /ollama/delete  — delete an Ollama model
   POST /generate/code  — generate code from a prompt (returns extracted code block)
   POST /generate/html  — generate a full HTML page from a prompt (live-preview ready)
   GET  /navigator/     — serve the DRGRNav PWA navigator app
   GET  /challenges     — return pre-defined hard challenge prompts for the VM
+  POST /retrain        — manually trigger a self-improvement cycle
 """
 
 import ast
