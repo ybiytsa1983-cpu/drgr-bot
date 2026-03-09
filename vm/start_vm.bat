@@ -75,13 +75,19 @@ if not errorlevel 1 (
     )
 )
 
-REM --- Start the Flask server without any console window ---
-REM     PowerShell Start-Process -WindowStyle Hidden works on all Windows 7+
-REM     and does NOT require pythonw.exe — no visible window, server survives
-REM     closing the launcher window.
+REM --- Resolve the absolute path of the Python executable -----------------
+REM     %%~fF only works for file paths, NOT bare command names like "python".
+REM     Ask Python itself for sys.executable — always returns the full path.
+set "PYTHON_ABS=%PYTHON%"
+for /f "usebackq tokens=*" %%p in (`"%PYTHON%" -c "import sys; print(sys.executable)" 2^>nul`) do set "PYTHON_ABS=%%p"
+set "WORK_DIR=%CD%"
+
+REM --- Start the Flask server without any console window -------------------
+REM     powershell Start-Process -WindowStyle Hidden works on all Windows 7+
+REM     without requiring pythonw.exe.  Run powershell synchronously (no
+REM     outer "start") — it launches python in the background and exits fast.
 echo [Code VM] Starting server on port %VM_PORT%...
-for %%F in ("%PYTHON%") do set "PYTHON_ABS=%%~fF"
-start "" powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "Start-Process '%PYTHON_ABS%' 'vm\server.py' -WorkingDirectory '%CD%' -WindowStyle Hidden"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process '!PYTHON_ABS!' 'vm\server.py' -WorkingDirectory '!WORK_DIR!' -WindowStyle Hidden"
 
 REM --- Wait until server responds (up to 20 seconds) ---
 echo [Code VM] Waiting for server to be ready...
