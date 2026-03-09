@@ -13,6 +13,8 @@ $locations = @(
     "$env:USERPROFILE\Projects\drgr-bot",
     "$env:USERPROFILE\code\drgr-bot",
     "$env:USERPROFILE\Code\drgr-bot",
+    "$env:USERPROFILE\repos\drgr-bot",
+    "$env:USERPROFILE\Repos\drgr-bot",
     "C:\drgr-bot",
     "C:\projects\drgr-bot",
     "C:\Projects\drgr-bot",
@@ -20,10 +22,13 @@ $locations = @(
     "C:\Code\drgr-bot",
     "C:\Users\$env:USERNAME\drgr-bot",
     "D:\drgr-bot",
-    "D:\projects\drgr-bot"
+    "D:\projects\drgr-bot",
+    "D:\Projects\drgr-bot",
+    "D:\code\drgr-bot",
+    "D:\Code\drgr-bot"
 )
 foreach ($d in $locations) {
-    if (Test-Path (Join-Path $d 'start.bat')) {
+    if ((Test-Path (Join-Path $d 'start.ps1')) -or (Test-Path (Join-Path $d 'start.bat'))) {
         $FOUND = $d; break
     }
 }
@@ -32,16 +37,16 @@ if (-not $FOUND) {
     if (Get-Command git -ErrorAction SilentlyContinue) {
         try {
             $top = & git -C $env:USERPROFILE rev-parse --show-toplevel 2>$null
-            if ($top -and (Test-Path (Join-Path $top 'start.bat'))) { $FOUND = $top }
+            if ($top -and ((Test-Path (Join-Path $top 'start.ps1')) -or (Test-Path (Join-Path $top 'start.bat')))) { $FOUND = $top }
         } catch {}
     }
 }
 
 if (-not $FOUND) {
-    Write-Host '  [Poisk] Ishchem drgr-bot na C:...' -ForegroundColor Cyan
+    Write-Host '  [Поиск] Ищем drgr-bot на C: и D:...' -ForegroundColor Cyan
     foreach ($root in @('C:\', 'D:\')) {
         Get-ChildItem $root -Filter 'drgr-bot' -Directory -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
-            if (-not $FOUND -and (Test-Path (Join-Path $_.FullName 'start.bat'))) {
+            if (-not $FOUND -and ((Test-Path (Join-Path $_.FullName 'start.ps1')) -or (Test-Path (Join-Path $_.FullName 'start.bat')))) {
                 $FOUND = $_.FullName
             }
         }
@@ -50,13 +55,49 @@ if (-not $FOUND) {
 }
 
 if (-not $FOUND) {
-    Write-Host '' 
-    Write-Host '  ERROR: drgr-bot folder not found.' -ForegroundColor Red
-    Write-Host '' 
-    Write-Host '  Open PowerShell (Win+X) and run:' -ForegroundColor White
-    Write-Host "    cd `"$env:USERPROFILE`"; git clone https://github.com/ybiytsa1983-cpu/drgr-bot; cd drgr-bot; .\install.ps1" -ForegroundColor Yellow
-    Write-Host '' 
-    Read-Host 'Press Enter to exit'
+    # Repo not found anywhere — try auto-clone
+    Write-Host ''
+    Write-Host '  Репозиторий drgr-bot не найден. Попытка клонирования...' -ForegroundColor Yellow
+    $dest = "$env:USERPROFILE\drgr-bot"
+    if (Get-Command git -ErrorAction SilentlyContinue) {
+        if (Test-Path (Join-Path $dest '.git')) {
+            Write-Host "  Папка уже есть — обновляем (git pull)..." -ForegroundColor Cyan
+            Push-Location $dest; git pull; Pop-Location
+        } elseif (Test-Path $dest) {
+            Write-Host "  Папка $dest существует без .git — клонируем заново..." -ForegroundColor Cyan
+            Remove-Item $dest -Recurse -Force -ErrorAction SilentlyContinue
+            git clone https://github.com/ybiytsa1983-cpu/drgr-bot $dest
+        } else {
+            Write-Host "  git clone -> $dest" -ForegroundColor Cyan
+            git clone https://github.com/ybiytsa1983-cpu/drgr-bot $dest
+        }
+        $installPs = Join-Path $dest 'install.ps1'
+        $startPs   = Join-Path $dest 'start.ps1'
+        if (Test-Path $installPs) {
+            Write-Host '  Установка зависимостей...' -ForegroundColor Cyan
+            Push-Location $dest; & $installPs; Pop-Location
+        }
+        if (Test-Path $startPs) {
+            Write-Host '  Запуск Code VM...' -ForegroundColor Green
+            Push-Location $dest; & $startPs; exit
+        } else {
+            Write-Host "  ОШИБКА: start.ps1 не найден в $dest" -ForegroundColor Red
+        }
+    } else {
+        Write-Host ''
+        Write-Host '  ╔══════════════════════════════════════════════════════════════╗' -ForegroundColor Red
+        Write-Host '  ║  ПАПКА drgr-bot НЕ НАЙДЕНА и git не установлен              ║' -ForegroundColor Red
+        Write-Host '  ╠══════════════════════════════════════════════════════════════╣' -ForegroundColor Red
+        Write-Host '  ║  1. Установи Git: https://git-scm.com/download/win          ║' -ForegroundColor Yellow
+        Write-Host '  ║  2. После установки запусти этот файл снова                 ║' -ForegroundColor Yellow
+        Write-Host '  ╚══════════════════════════════════════════════════════════════╝' -ForegroundColor Red
+        Write-Host ''
+        Write-Host '  ИЛИ вставь в PowerShell (Win+X → Windows PowerShell):' -ForegroundColor Cyan
+        $iwr = 'irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/ZAPУСТИТЬ.bat" -OutFile "$env:USERPROFILE\Desktop\ЗАПУСТИТЬ.bat"; & "$env:USERPROFILE\Desktop\ЗАПУСТИТЬ.bat"'
+        Write-Host "  $iwr" -ForegroundColor White
+    }
+    Write-Host ''
+    Read-Host '  Нажмите Enter для выхода'
     exit 1
 }
 

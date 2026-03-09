@@ -5,6 +5,21 @@ Monaco Editor + Flask + Ollama. Пишешь промпт — получаешь
 
 ---
 
+## 🆘 НЕТ НИЧЕГО? НЕТ ЯРЛЫКА? НЕТ ФАЙЛОВ? НАЧНИ ЗДЕСЬ
+
+**Нажми Win+X → «Windows PowerShell» и вставь одну строку:**
+
+```powershell
+irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/ЗАПУСТИТЬ.bat" -OutFile "$env:USERPROFILE\Desktop\ЗАПУСТИТЬ.bat"; & "$env:USERPROFILE\Desktop\ЗАПУСТИТЬ.bat"
+```
+
+> Это скачает батник **ЗАПУСТИТЬ.bat** прямо на Рабочий стол и запустит его.  
+> Батник сам склонирует репозиторий, установит зависимости и создаст ярлык.  
+> **Git не установлен?** → Сначала: https://git-scm.com/download/win — потом повтори команду выше.  
+> ⚠️ Перед запуском убедись что URL ведёт именно на `github.com/ybiytsa1983-cpu/drgr-bot`.
+
+---
+
 ## 🖥 ЧТО ВСТАВИТЬ В ТЕРМИНАЛ — ОДИН РАЗ
 
 Открой **PowerShell** (Win+X → Windows PowerShell) и вставь всё сразу:

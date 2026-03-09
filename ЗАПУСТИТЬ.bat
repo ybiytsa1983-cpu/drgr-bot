@@ -57,8 +57,14 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
   "  if (Test-Path $st) { Write-Host '  Запуск Code VM...' -ForegroundColor Green; Push-Location $dest; & $st } " ^
   "  else { Write-Host '  ОШИБКА: файлы не найдены после клонирования в $dest' -ForegroundColor Red; Read-Host '  Нажмите Enter для выхода' } " ^
   "} else { " ^
-  "  Write-Host '  git не найден. Скачайте: https://git-scm.com/download/win' -ForegroundColor Red; " ^
-  "  Write-Host '  После установки Git запустите этот файл снова.' -ForegroundColor Yellow; " ^
+  "  Write-Host '' -ForegroundColor Red; " ^
+  "  Write-Host '  ╔══════════════════════════════════════════════════════════╗' -ForegroundColor Red; " ^
+  "  Write-Host '  ║  git НЕ УСТАНОВЛЕН — установи его ПЕРВЫМ                ║' -ForegroundColor Red; " ^
+  "  Write-Host '  ╠══════════════════════════════════════════════════════════╣' -ForegroundColor Red; " ^
+  "  Write-Host '  ║  1. Скачай Git: https://git-scm.com/download/win        ║' -ForegroundColor Yellow; " ^
+  "  Write-Host '  ║  2. Установи (настройки по умолчанию — просто Next)     ║' -ForegroundColor Yellow; " ^
+  "  Write-Host '  ║  3. Запусти этот файл снова                             ║' -ForegroundColor Yellow; " ^
+  "  Write-Host '  ╚══════════════════════════════════════════════════════════╝' -ForegroundColor Red; " ^
   "  Write-Host ''; Read-Host '  Нажмите Enter для выхода' " ^
   "}"
 exit /b
@@ -131,9 +137,14 @@ if (Get-Command git -ErrorAction SilentlyContinue) {
         Write-Host "  ОШИБКА: start.ps1 не найден в $dest" -ForegroundColor Red
     }
 } else {
-    Write-Host '  git не найден.' -ForegroundColor Red
-    Write-Host '  1. Скачайте Git: https://git-scm.com/download/win' -ForegroundColor Yellow
-    Write-Host '  2. После установки запустите этот файл снова.' -ForegroundColor Yellow
+    Write-Host ''
+    Write-Host '  ╔══════════════════════════════════════════════════════════╗' -ForegroundColor Red
+    Write-Host '  ║  git НЕ УСТАНОВЛЕН — установи его ПЕРВЫМ                ║' -ForegroundColor Red
+    Write-Host '  ╠══════════════════════════════════════════════════════════╣' -ForegroundColor Red
+    Write-Host '  ║  1. Скачай Git: https://git-scm.com/download/win        ║' -ForegroundColor Yellow
+    Write-Host '  ║  2. Установи (настройки по умолчанию — просто Next)     ║' -ForegroundColor Yellow
+    Write-Host '  ║  3. Запусти этот файл снова                             ║' -ForegroundColor Yellow
+    Write-Host '  ╚══════════════════════════════════════════════════════════╝' -ForegroundColor Red
 }
 Write-Host ''
 Read-Host '  Нажмите Enter для выхода'

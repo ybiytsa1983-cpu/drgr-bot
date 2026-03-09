@@ -49,11 +49,11 @@ try { git pull --ff-only --quiet 2>$null } catch { }
 }
 
 # -- Copy ЗАПУСТИТЬ.bat to Desktop as self-discovering backup launcher ---------
-# This ensures the user always has a recovery tool even if Code VM.lnk breaks.
+# Always overwrite so the Desktop copy stays up-to-date with the repo version.
 try {
     $batSrc  = Join-Path $scriptRoot 'ЗАПУСТИТЬ.bat'
     $batDest = Join-Path ([Environment]::GetFolderPath('Desktop')) 'ЗАПУСТИТЬ.bat'
-    if ((Test-Path $batSrc) -and (-not (Test-Path $batDest))) {
+    if (Test-Path $batSrc) {
         Copy-Item -Path $batSrc -Destination $batDest -Force -ErrorAction SilentlyContinue
     }
 } catch { }
