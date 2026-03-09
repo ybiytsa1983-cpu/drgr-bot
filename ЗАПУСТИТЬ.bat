@@ -38,19 +38,30 @@ for %%D in (
 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
   "$dest = \"$env:USERPROFILE\drgr-bot\"; " ^
   "Write-Host ''; " ^
-  "Write-Host '  Репозиторий drgr-bot не найден. Пробуем клонировать...' -ForegroundColor Yellow; " ^
+  "Write-Host '  Репозиторий drgr-bot не найден нигде. Цель: $dest' -ForegroundColor Yellow; " ^
   "if (Get-Command git -ErrorAction SilentlyContinue) { " ^
-  "  git clone https://github.com/ybiytsa1983-cpu/drgr-bot \"$dest\"; " ^
+  "  if (Test-Path (Join-Path $dest '.git')) { " ^
+  "    Write-Host '  Папка уже есть — обновляем (git pull)...' -ForegroundColor Cyan; " ^
+  "    Push-Location $dest; git pull; Pop-Location " ^
+  "  } elseif (Test-Path $dest) { " ^
+  "    Write-Host '  Папка $dest существует без .git — клонируем заново...' -ForegroundColor Cyan; " ^
+  "    Remove-Item $dest -Recurse -Force -ErrorAction SilentlyContinue; " ^
+  "    git clone https://github.com/ybiytsa1983-cpu/drgr-bot \"$dest\" " ^
+  "  } else { " ^
+  "    Write-Host '  Клонируем репозиторий...' -ForegroundColor Cyan; " ^
+  "    git clone https://github.com/ybiytsa1983-cpu/drgr-bot \"$dest\" " ^
+  "  }; " ^
   "  $inst = Join-Path $dest 'install.ps1'; " ^
   "  $st   = Join-Path $dest 'start.ps1'; " ^
-  "  if (Test-Path $inst) { Write-Host '  Установка...' -ForegroundColor Cyan; & $inst }; " ^
-  "  if (Test-Path $st)   { Write-Host '  Запуск Code VM...' -ForegroundColor Green; & $st; exit } " ^
+  "  if (Test-Path $inst) { Write-Host '  Установка зависимостей...' -ForegroundColor Cyan; Push-Location $dest; & $inst; Pop-Location }; " ^
+  "  if (Test-Path $st) { Write-Host '  Запуск Code VM...' -ForegroundColor Green; Push-Location $dest; & $st } " ^
+  "  else { Write-Host '  ОШИБКА: файлы не найдены после клонирования в $dest' -ForegroundColor Red; Read-Host '  Нажмите Enter для выхода' } " ^
   "} else { " ^
   "  Write-Host '  git не найден. Скачайте: https://git-scm.com/download/win' -ForegroundColor Red; " ^
-  "  Write-Host '  После установки запустите этот файл снова.' -ForegroundColor Yellow; " ^
+  "  Write-Host '  После установки Git запустите этот файл снова.' -ForegroundColor Yellow; " ^
   "  Write-Host ''; Read-Host '  Нажмите Enter для выхода' " ^
   "}"
-exit /b 1
+exit /b
 #>
 # PowerShell fallback — runs when .bat is invoked directly from PS
 $here = if ($PSScriptRoot) { $PSScriptRoot } `
@@ -87,21 +98,37 @@ foreach ($d in @(
 }
 # Repo not found anywhere — try auto-clone
 Write-Host ''
-Write-Host '  Репозиторий drgr-bot не найден. Пробуем клонировать...' -ForegroundColor Yellow
+Write-Host '  Репозиторий drgr-bot не найден нигде. Попытка клонирования...' -ForegroundColor Yellow
 $dest = "$env:USERPROFILE\drgr-bot"
 if (Get-Command git -ErrorAction SilentlyContinue) {
-    Write-Host "  git clone -> $dest" -ForegroundColor Cyan
-    git clone https://github.com/ybiytsa1983-cpu/drgr-bot $dest
+    if (Test-Path (Join-Path $dest '.git')) {
+        Write-Host "  Папка уже есть — обновляем (git pull)..." -ForegroundColor Cyan
+        Push-Location $dest
+        git pull
+        Pop-Location
+    } elseif (Test-Path $dest) {
+        Write-Host "  Папка $dest существует без .git — клонируем заново..." -ForegroundColor Cyan
+        Remove-Item $dest -Recurse -Force -ErrorAction SilentlyContinue
+        git clone https://github.com/ybiytsa1983-cpu/drgr-bot $dest
+    } else {
+        Write-Host "  git clone -> $dest" -ForegroundColor Cyan
+        git clone https://github.com/ybiytsa1983-cpu/drgr-bot $dest
+    }
     $installPs = Join-Path $dest 'install.ps1'
     $startPs   = Join-Path $dest 'start.ps1'
     if (Test-Path $installPs) {
         Write-Host '  Установка зависимостей...' -ForegroundColor Cyan
+        Push-Location $dest
         & $installPs
+        Pop-Location
     }
     if (Test-Path $startPs) {
         Write-Host '  Запуск Code VM...' -ForegroundColor Green
+        Push-Location $dest
         & $startPs
         exit
+    } else {
+        Write-Host "  ОШИБКА: start.ps1 не найден в $dest" -ForegroundColor Red
     }
 } else {
     Write-Host '  git не найден.' -ForegroundColor Red

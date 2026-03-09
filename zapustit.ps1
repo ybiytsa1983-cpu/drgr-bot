@@ -54,7 +54,7 @@ if (-not $FOUND) {
     Write-Host '  ERROR: drgr-bot folder not found.' -ForegroundColor Red
     Write-Host '' 
     Write-Host '  Open PowerShell (Win+X) and run:' -ForegroundColor White
-    Write-Host "    cd `"$env:USERPROFILE`"; git clone https://github.com/ybiytsa1983-cpu/drgr-bot; cd drgr-bot; powershell -ExecutionPolicy Bypass -File install.ps1" -ForegroundColor Yellow
+    Write-Host "    cd `"$env:USERPROFILE`"; git clone https://github.com/ybiytsa1983-cpu/drgr-bot; cd drgr-bot; .\install.ps1" -ForegroundColor Yellow
     Write-Host '' 
     Read-Host 'Press Enter to exit'
     exit 1

@@ -10,7 +10,7 @@ Monaco Editor + Flask + Ollama. Пишешь промпт — получаешь
 Открой **PowerShell** (Win+X → Windows PowerShell) и вставь всё сразу:
 
 ```powershell
-$d="$env:USERPROFILE\drgr-bot"; if(Test-Path $d){cd $d; git pull}else{cd "$env:USERPROFILE"; git clone https://github.com/ybiytsa1983-cpu/drgr-bot.git; cd drgr-bot}; powershell -ExecutionPolicy Bypass -File install.ps1
+$d="$env:USERPROFILE\drgr-bot"; if(Test-Path $d){Set-Location $d; git pull}else{Set-Location "$env:USERPROFILE"; git clone https://github.com/ybiytsa1983-cpu/drgr-bot; Set-Location drgr-bot}; .\install.ps1
 ```
 
 > **Папка уже есть?** Команда автоматически сделает `git pull` и обновит файлы вместо повторного клонирования.
@@ -179,7 +179,22 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 
 **«fatal: destination path already exists»** → папка уже есть, нужно обновить:
 ```powershell
-cd "$env:USERPROFILE\drgr-bot"; git pull; powershell -ExecutionPolicy Bypass -File install.ps1
+Set-Location "$env:USERPROFILE\drgr-bot"; git pull; .\install.ps1
+```
+
+**«install.ps1: The term 'install.ps1' is not recognized»** → PowerShell требует `.\` перед именем скрипта. Используй:
+```powershell
+Set-Location "$env:USERPROFILE\drgr-bot"; .\install.ps1
+```
+Или используй однострочник из раздела [«ЧТО ВСТАВИТЬ В ТЕРМИНАЛ»](#-что-вставить-в-терминал--один-раз) — он правильный.
+
+**Клонировал в неправильную папку** (например, случайно включил лишний символ в путь) → удали неправильную папку и склонируй заново:
+```powershell
+# Правильный способ клонирования:
+Set-Location "$env:USERPROFILE"
+git clone https://github.com/ybiytsa1983-cpu/drgr-bot
+Set-Location drgr-bot
+.\install.ps1
 ```
 
 **Страница не открывается (ERR_CONNECTION_REFUSED)** → сервер не запущен. Запусти снова:
@@ -189,7 +204,7 @@ powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\drgr-bot\start.ps1"
 
 **Обновить до последней версии:**
 ```powershell
-cd "$env:USERPROFILE\drgr-bot"; git pull; powershell -ExecutionPolicy Bypass -File install.ps1
+Set-Location "$env:USERPROFILE\drgr-bot"; git pull; .\install.ps1
 ```
 
 ---
