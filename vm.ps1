@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Launch Code VM (Monaco Editor + Flask) from PowerShell.
 

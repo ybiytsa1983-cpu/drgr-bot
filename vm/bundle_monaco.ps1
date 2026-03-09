@@ -1,4 +1,4 @@
-# bundle_monaco.ps1 - Downloads Monaco Editor core files for offline use.
+﻿# bundle_monaco.ps1 - Downloads Monaco Editor core files for offline use.
 # Called automatically by install.bat during first-time setup.
 # Result: vm/static/vendor/monaco/vs/  (~2.5 MB, no CDN needed at runtime)
 #

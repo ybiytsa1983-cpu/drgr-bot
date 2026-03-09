@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     First-time setup for Code VM on Windows (PowerShell).
 

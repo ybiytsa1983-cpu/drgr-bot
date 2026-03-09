@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     ONE-COMMAND launcher for Code VM.
 

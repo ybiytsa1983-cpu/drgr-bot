@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Creates a "Code VM" desktop shortcut on Windows.
 
