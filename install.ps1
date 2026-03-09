@@ -53,8 +53,13 @@ if (Test-Path (Join-Path $repoDir ".git")) {
         $hashAfter = (Get-FileHash $selfPath -Algorithm MD5).Hash
         if ($hashBefore -ne $hashAfter) {
             Write-Host "  [UPDATED] install.ps1 was updated - restarting with the new version..." -ForegroundColor Cyan
-            $psExe = try { (Get-Process -Id $PID).Path } catch { "powershell.exe" }
-            & $psExe -ExecutionPolicy Bypass -File $selfPath
+            $psExe = try {
+                (Get-Process -Id $PID).Path
+            } catch {
+                Write-Host "  [!!] Could not detect PowerShell path; falling back to powershell.exe" -ForegroundColor Yellow
+                "powershell.exe"
+            }
+            & $psExe -ExecutionPolicy Bypass -File $selfPath @args
             exit
         }
     }
