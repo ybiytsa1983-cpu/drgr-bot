@@ -30,6 +30,7 @@ import re
 import subprocess
 import tempfile
 import threading
+import time
 import urllib.parse
 from datetime import datetime, timezone
 
@@ -59,6 +60,10 @@ _img_desc_lock    = threading.Lock()
 
 # Ollama service base URL (override via OLLAMA_HOST env var)
 OLLAMA_BASE = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+
+# Heartbeat configuration
+_OLLAMA_HEARTBEAT_INTERVAL = 60   # seconds between liveness pings
+_OLLAMA_HEARTBEAT_TIMEOUT  = 2    # seconds to wait for each Ollama response
 
 # ---------------------------------------------------------------------------
 # Ollama port auto-discovery
@@ -103,6 +108,27 @@ def _autodiscover_ollama() -> None:
 
 # Kick off discovery immediately so it's done before the first browser request
 threading.Thread(target=_autodiscover_ollama, daemon=True).start()
+
+
+def _ollama_heartbeat() -> None:
+    """Background thread: re-check Ollama every 60 s and re-discover if lost.
+
+    This ensures the VM always picks up Ollama even when it starts or restarts
+    after the VM is already running — without requiring the browser to be open.
+    """
+    while True:
+        time.sleep(_OLLAMA_HEARTBEAT_INTERVAL)
+        try:
+            _http.get(f"{OLLAMA_BASE}/api/tags", timeout=_OLLAMA_HEARTBEAT_TIMEOUT)
+        except Exception:  # pylint: disable=broad-except
+            # Ollama appears to be gone — allow a fresh scan
+            with _OLLAMA_SCAN_LOCK:
+                if _OLLAMA_SCANNED:
+                    _OLLAMA_SCANNED = False
+            _autodiscover_ollama()
+
+
+threading.Thread(target=_ollama_heartbeat, daemon=True).start()
 
 # Preferred model order for auto-selection (first match wins).
 # Override the default with OLLAMA_DEFAULT_MODEL env var.
