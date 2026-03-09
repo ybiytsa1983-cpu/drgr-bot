@@ -40,7 +40,7 @@ $venvDir    = Join-Path $repoDir ".venv"
 $venvPython = Join-Path $venvDir "Scripts\python.exe"
 $venvPip    = Join-Path $venvDir "Scripts\pip.exe"
 
-# ── Pick Python ───────────────────────────────────────────────────────────────
+# -- Pick Python ---------------------------------------------------------------
 $python = $null
 $pip    = $null
 
@@ -67,7 +67,7 @@ if (-not $python) {
     exit 1
 }
 
-# ── Check if server is already running ───────────────────────────────────────
+# -- Check if server is already running ---------------------------------------
 $listening = netstat -an 2>$null | Select-String ":$Port.*LISTEN"
 if ($listening) {
     Write-Host "[Code VM] Server already running on port $Port." -ForegroundColor Green
@@ -75,7 +75,7 @@ if ($listening) {
     exit 0
 }
 
-# ── Install Flask if missing ──────────────────────────────────────────────────
+# -- Install Flask if missing --------------------------------------------------
 $flaskOk = & $python -c "import flask" 2>$null
 if ($LASTEXITCODE -ne 0) {
     Write-Host "[Code VM] Installing dependencies (first run)..." -ForegroundColor Cyan
@@ -88,14 +88,14 @@ if ($LASTEXITCODE -ne 0) {
     }
 }
 
-# ── Resolve Ollama host URL and port from OLLAMA_HOST env var ────────────────
-# server.py reads OLLAMA_HOST too — keep them in sync.
+# -- Resolve Ollama host URL and port from OLLAMA_HOST env var ----------------
+# server.py reads OLLAMA_HOST too - keep them in sync.
 # Default: http://localhost:11434  Override: set OLLAMA_HOST=http://localhost:11435
 if (-not $env:OLLAMA_HOST) { $env:OLLAMA_HOST = "http://localhost:11434" }
 $ollamaPort = 11434
 if ($env:OLLAMA_HOST -match ':(\d+)/?$') { $ollamaPort = [int]$Matches[1] }
 
-# ── Auto-start Ollama if installed but not yet running ────────────────────────
+# -- Auto-start Ollama if installed but not yet running ------------------------
 $ollamaRunning  = $false
 $ollamaInstalled = $false
 try {
@@ -125,13 +125,13 @@ if ($ollamaInstalled) {
         }
     }
 } else {
-    Write-Host "[Code VM] Ollama not installed — AI features disabled." -ForegroundColor Yellow
+    Write-Host "[Code VM] Ollama not installed - AI features disabled." -ForegroundColor Yellow
     Write-Host "           Install from https://ollama.com/download" -ForegroundColor DarkGray
 }
 
-# ── Start Flask server without any console window ────────────────────────────
+# -- Start Flask server without any console window ----------------------------
 # Start-Process -WindowStyle Hidden works on all Windows 7+ and does NOT
-# require pythonw.exe — no visible window, server survives closing this script.
+# require pythonw.exe - no visible window, server survives closing this script.
 Write-Host "[Code VM] Starting server on port $Port ..." -ForegroundColor Cyan
 $env:VM_PORT = "$Port"
 Start-Process -FilePath $python `
@@ -139,7 +139,7 @@ Start-Process -FilePath $python `
     -WorkingDirectory $repoDir `
     -WindowStyle Hidden
 
-# ── Wait until server responds (up to 20 s) ───────────────────────────────────
+# -- Wait until server responds (up to 20 s) -----------------------------------
 Write-Host "[Code VM] Waiting for server to be ready..." -ForegroundColor Cyan
 $logPath = Join-Path $repoDir "server.log"
 $ready = $false
@@ -160,7 +160,7 @@ if (-not $ready) {
         Get-Content $logPath | ForEach-Object { Write-Host $_ }
         Write-Host "------------------" -ForegroundColor Yellow
     } else {
-        Write-Host "(no server.log found — trying visible python.exe window)" -ForegroundColor Yellow
+        Write-Host "(no server.log found - trying visible python.exe window)" -ForegroundColor Yellow
         Write-Host "Retrying with visible python.exe window..." -ForegroundColor Cyan
         Start-Process -FilePath $python -ArgumentList "vm\server.py" -WorkingDirectory $repoDir
         Start-Sleep -Seconds 5
@@ -172,7 +172,7 @@ if (-not $ready) {
     exit 1
 }
 
-# ── Find local LAN IP ─────────────────────────────────────────────────────────
+# -- Find local LAN IP ---------------------------------------------------------
 $localIP = $null
 try {
     $localIP = (& $python -c @"
@@ -187,7 +187,7 @@ finally:
 } catch { }
 if (-not $localIP) { $localIP = $null }
 
-# ── Add Windows Firewall rule (silent, best-effort) ──────────────────────────
+# -- Add Windows Firewall rule (silent, best-effort) --------------------------
 try {
     $existing = Get-NetFirewallRule -DisplayName "Code VM (port $Port)" -ErrorAction SilentlyContinue
     if (-not $existing) {
@@ -197,7 +197,7 @@ try {
     }
 } catch { }
 
-# ── Open browser ──────────────────────────────────────────────────────────────
+# -- Open browser --------------------------------------------------------------
 Write-Host "[Code VM] Opening browser..." -ForegroundColor Cyan
 Start-Process "http://localhost:$Port"
 
@@ -222,7 +222,7 @@ Write-Host ("  |{0}|" -f ("-" * 52)) -ForegroundColor DarkGreen
 if ($ollamaRunning) {
     Write-Host ("  |  {0,-50}|" -f "Ollama AI:  running on port $ollamaPort  [OK]") -ForegroundColor Green
 } elseif ($ollamaInstalled) {
-    Write-Host ("  |  {0,-50}|" -f "Ollama AI:  installed — run 'ollama serve'") -ForegroundColor Yellow
+    Write-Host ("  |  {0,-50}|" -f "Ollama AI:  installed - run 'ollama serve'") -ForegroundColor Yellow
 } else {
     Write-Host ("  |  {0,-50}|" -f "Ollama AI:  not installed (https://ollama.com)") -ForegroundColor DarkGray
 }

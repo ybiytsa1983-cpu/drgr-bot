@@ -10,7 +10,7 @@
 
 $ErrorActionPreference = 'Stop'
 
-# Resolve script directory robustly — $PSScriptRoot is empty when PS is invoked
+# Resolve script directory robustly - $PSScriptRoot is empty when PS is invoked
 # without -File (e.g. "powershell bundle_monaco.ps1" vs "powershell -File ...").
 $scriptRoot = if ($PSScriptRoot) {
     $PSScriptRoot

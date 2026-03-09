@@ -32,7 +32,7 @@ $scriptDir = if ($PSScriptRoot) {
 }
 $repoDir    = Split-Path -Parent $scriptDir
 
-# Point the shortcut at start.ps1, run via powershell.exe — avoids all
+# Point the shortcut at start.ps1, run via powershell.exe - avoids all
 # cmd.exe / execution-policy quirks that affect .bat-based shortcuts.
 $ps1File       = Join-Path $repoDir "start.ps1"
 $powershellExe = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
@@ -45,7 +45,7 @@ if (-not $usePs1) {
         Write-Error "Neither start.ps1 nor vm\start_vm.bat found."
         exit 1
     }
-    Write-Warning "start.ps1 not found — shortcut will point to vm\start_vm.bat instead."
+    Write-Warning "start.ps1 not found - shortcut will point to vm\start_vm.bat instead."
 }
 
 # -- Create the .lnk shortcut -------------------------------------------------
@@ -89,6 +89,6 @@ if ($usePs1) {
 } else {
     Start-Process -FilePath "cmd.exe" -ArgumentList "/k `"$batFile`"" -WorkingDirectory $repoDir
 }
-Write-Host "  [OK] Code VM is starting — browser will open in a few seconds." -ForegroundColor Green
+Write-Host "  [OK] Code VM is starting - browser will open in a few seconds." -ForegroundColor Green
 Write-Host "       http://localhost:5000" -ForegroundColor Cyan
 Write-Host ""

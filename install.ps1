@@ -36,7 +36,7 @@ $repoDir = if ($PSScriptRoot) {
 }
 Set-Location $repoDir
 
-# ── 0. Auto-update repo ───────────────────────────────────────────────────────
+# -- 0. Auto-update repo -------------------------------------------------------
 # If this is a git repo, pull latest changes so old installs get fixes.
 if (Test-Path (Join-Path $repoDir ".git")) {
     try {
@@ -49,7 +49,7 @@ if (Test-Path (Join-Path $repoDir ".git")) {
 
 $venvDir = Join-Path $repoDir ".venv"
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+# -- Helpers -------------------------------------------------------------------
 function Ok($msg)   { Write-Host "  [OK] $msg" -ForegroundColor Green }
 function Info($msg) { Write-Host "  [--] $msg" -ForegroundColor Cyan }
 function Warn($msg) { Write-Host "  [!!] $msg" -ForegroundColor Yellow }
@@ -57,11 +57,11 @@ function Err($msg)  { Write-Host "  [ERROR] $msg" -ForegroundColor Red }
 
 Write-Host ""
 Write-Host "  =============================================" -ForegroundColor White
-Write-Host "   Code VM — First-time setup (PowerShell)    " -ForegroundColor White
+Write-Host "   Code VM - First-time setup (PowerShell)    " -ForegroundColor White
 Write-Host "  =============================================" -ForegroundColor White
 Write-Host ""
 
-# ── 1. Find Python ────────────────────────────────────────────────────────────
+# -- 1. Find Python ------------------------------------------------------------
 $python = $null
 foreach ($cmd in @("python", "python3", "py")) {
     try {
@@ -89,7 +89,7 @@ if (-not $python) {
     exit 1
 }
 
-# ── 2. Create virtual environment ─────────────────────────────────────────────
+# -- 2. Create virtual environment ---------------------------------------------
 $venvPython = Join-Path $venvDir "Scripts\python.exe"
 $venvPip    = Join-Path $venvDir "Scripts\pip.exe"
 
@@ -106,12 +106,12 @@ if (Test-Path $venvPython) {
     Ok "Virtual environment created"
 }
 
-# ── 3. Upgrade pip ────────────────────────────────────────────────────────────
+# -- 3. Upgrade pip ------------------------------------------------------------
 Info "Upgrading pip..."
 & $venvPip install --upgrade pip --quiet 2>$null
 Ok "pip up to date"
 
-# ── 4. Install Flask + requests ───────────────────────────────────────────────
+# -- 4. Install Flask + requests -----------------------------------------------
 Info "Installing Flask + requests..."
 & $venvPip install flask requests --quiet
 if ($LASTEXITCODE -ne 0) {
@@ -121,7 +121,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 Ok "Flask + requests installed"
 
-# ── 5. Install requirements.txt (optional extras) ─────────────────────────────
+# -- 5. Install requirements.txt (optional extras) -----------------------------
 $reqFile = Join-Path $repoDir "requirements.txt"
 if (Test-Path $reqFile) {
     Info "Installing requirements.txt (Telegram bot deps)..."
@@ -129,7 +129,7 @@ if (Test-Path $reqFile) {
     Ok "requirements.txt processed"
 }
 
-# ── 4. Bundle Monaco Editor locally ──────────────────────────────────────────
+# -- 4. Bundle Monaco Editor locally ------------------------------------------
 Write-Host ""
 Write-Host "  =============================================" -ForegroundColor White
 Write-Host "   Bundling Monaco Editor (offline support)   " -ForegroundColor White
@@ -143,13 +143,13 @@ if (Test-Path $bundleScript) {
         & powershell -NoProfile -ExecutionPolicy Bypass -File $bundleScript
         Ok "Monaco Editor bundled (editor works without internet)"
     } catch {
-        Warn "Monaco bundle failed — CDN fallback will be used automatically."
+        Warn "Monaco bundle failed - CDN fallback will be used automatically."
     }
 } else {
-    Warn "vm\bundle_monaco.ps1 not found — CDN fallback will be used."
+    Warn "vm\bundle_monaco.ps1 not found - CDN fallback will be used."
 }
 
-# ── 5. Install Ollama automatically ──────────────────────────────────────────
+# -- 5. Install Ollama automatically ------------------------------------------
 Write-Host ""
 Write-Host "  =============================================" -ForegroundColor White
 Write-Host "   Ollama (AI features)                       " -ForegroundColor White
@@ -192,7 +192,7 @@ if ($ollamaInstalled) {
     }
 }
 
-# ── 6. Start AI model download in background ─────────────────────────────────
+# -- 6. Start AI model download in background ---------------------------------
 $modelName = "qwen3-vl:8b"
 if ($ollamaInstalled) {
     $modelPresent = $false
@@ -211,7 +211,7 @@ if ($ollamaInstalled) {
         Ok "AI model already downloaded ($modelName)"
     } else {
         Info "Starting AI model download in background ($modelName, ~5 GB)..."
-        Info "A small window will show download progress — it can run while you work."
+        Info "A small window will show download progress - it can run while you work."
         # Write a temp batch file instead of embedding && in ArgumentList
         # (avoids HTML-entity corruption when the script is downloaded via a browser)
         $pullBat = Join-Path $env:TEMP "ollama_pull_model.bat"
@@ -221,14 +221,14 @@ if ($ollamaInstalled) {
         Ok "Model download started in background"
     }
 } else {
-    Warn "Ollama not installed — skipping model download."
+    Warn "Ollama not installed - skipping model download."
     Write-Host "  To enable AI features later:" -ForegroundColor Yellow
     Write-Host "    1. Install from https://ollama.com/download" -ForegroundColor Cyan
     Write-Host "    2. Run: ollama pull $modelName" -ForegroundColor Cyan
     Write-Host "    3. Run: ollama serve" -ForegroundColor Cyan
 }
 
-# ── 7. Create Desktop shortcut ────────────────────────────────────────────────
+# -- 7. Create Desktop shortcut ------------------------------------------------
 Write-Host ""
 Write-Host "  =============================================" -ForegroundColor White
 Write-Host "   Desktop shortcut                           " -ForegroundColor White
@@ -238,7 +238,7 @@ Write-Host ""
 Info "Creating 'Code VM' shortcut on your Desktop..."
 $desktopPath  = [Environment]::GetFolderPath("Desktop")
 $shortcutPath = Join-Path $desktopPath "Code VM.lnk"
-# Point to start.ps1 — run via powershell.exe so the shortcut never relies on cmd.exe
+# Point to start.ps1 - run via powershell.exe so the shortcut never relies on cmd.exe
 $ps1Target    = Join-Path $repoDir "start.ps1"
 $batFallback  = Join-Path $repoDir "start.bat"
 $powershellExe = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
@@ -255,21 +255,21 @@ try {
     $shortcut.IconLocation     = "$powershellExe,0"
     $shortcut.Save()
     $shortcutOk = $true
-    Ok "Desktop shortcut created — 'Code VM' icon is on your Desktop"
+    Ok "Desktop shortcut created - 'Code VM' icon is on your Desktop"
 } catch {
     Warn "WScript.Shell shortcut failed ($_). Creating .bat fallback on Desktop..."
     try {
         $fallbackPath = Join-Path $desktopPath "Code VM.bat"
         "@echo off`r`ncall `"$batFallback`"`r`n" | Out-File -FilePath $fallbackPath -Encoding ascii
         $shortcutOk = $true
-        Ok "Desktop launcher created: '$fallbackPath' — double-click it to launch Code VM"
+        Ok "Desktop launcher created: '$fallbackPath' - double-click it to launch Code VM"
     } catch {
         Warn "Could not create Desktop shortcut: $_"
         Warn "Run manually later: powershell -ExecutionPolicy Bypass -File vm\create_shortcut.ps1"
     }
 }
 
-# ── 8. Copy self-discovering launcher to Desktop ──────────────────────────────
+# -- 8. Copy self-discovering launcher to Desktop ------------------------------
 $launcherSrc  = Join-Path $repoDir "ЗАПУСТИТЬ.bat"
 $launcherDest = Join-Path ([Environment]::GetFolderPath("Desktop")) "ЗАПУСТИТЬ.bat"
 if (Test-Path $launcherSrc) {
@@ -281,15 +281,15 @@ if (Test-Path $launcherSrc) {
     }
 }
 
-# ── 9. Done ───────────────────────────────────────────────────────────────────
+# -- 9. Done -------------------------------------------------------------------
 Write-Host ""
 Write-Host "  =============================================" -ForegroundColor Green
 Write-Host "   Setup complete!                            " -ForegroundColor Green
 Write-Host "  =============================================" -ForegroundColor Green
 Write-Host ""
 Write-Host "  Two launchers are on your Desktop:" -ForegroundColor White
-Write-Host "    'Code VM'        — main shortcut (PowerShell)" -ForegroundColor Cyan
-Write-Host "    'ЗАПУСТИТЬ.bat'  — backup launcher (double-click)" -ForegroundColor Cyan
+Write-Host "    'Code VM'        - main shortcut (PowerShell)" -ForegroundColor Cyan
+Write-Host "    'ЗАПУСТИТЬ.bat'  - backup launcher (double-click)" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "  Or launch directly from PowerShell (paste this):" -ForegroundColor White
 Write-Host "    powershell -ExecutionPolicy Bypass -File `"$repoDir\start.ps1`"" -ForegroundColor Yellow

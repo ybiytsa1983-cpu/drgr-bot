@@ -3,7 +3,7 @@
     ONE-COMMAND launcher for Code VM.
 
 .DESCRIPTION
-    Run this script ONCE — it installs everything on first launch, then opens
+    Run this script ONCE - it installs everything on first launch, then opens
     the editor.  On every subsequent run it just opens the editor immediately.
 
     Usage in PowerShell (always include .\):
@@ -16,7 +16,7 @@
     You can also double-click start.bat in Windows Explorer (no .\  needed there).
 #>
 
-# ── Resolve the directory containing this script ──────────────────────────────
+# -- Resolve the directory containing this script ------------------------------
 # $PSScriptRoot is empty when PS is started without -File (e.g. some shortcuts
 # or "powershell start.ps1" instead of "powershell -File start.ps1").
 # Fall back to $MyInvocation, then to the current working directory.
@@ -28,24 +28,24 @@ $scriptRoot = if ($PSScriptRoot) {
     (Get-Location).Path
 }
 
-# ── Always run from the repository root ───────────────────────────────────────
+# -- Always run from the repository root ---------------------------------------
 Set-Location $scriptRoot
 
-# ── Auto-update from remote (silent, best-effort) ────────────────────────────
+# -- Auto-update from remote (silent, best-effort) ----------------------------
 try { git pull --ff-only --quiet 2>$null } catch { }
 
-# ── First-time setup if .venv is missing ──────────────────────────────────────
+# -- First-time setup if .venv is missing --------------------------------------
 $venvPython = Join-Path $scriptRoot ".venv\Scripts\python.exe"
 
 if (-not (Test-Path $venvPython)) {
     Write-Host ""
-    Write-Host "  ╔═══════════════════════════════════════════════════════╗" -ForegroundColor Cyan
-    Write-Host "  ║  Code VM — первый запуск, выполняется установка...   ║" -ForegroundColor Cyan
-    Write-Host "  ║  Подождите ~1-2 минуты.                              ║" -ForegroundColor Cyan
-    Write-Host "  ╚═══════════════════════════════════════════════════════╝" -ForegroundColor Cyan
+    Write-Host "  +-------------------------------------------------------+" -ForegroundColor Cyan
+    Write-Host "  |  Code VM - первый запуск, выполняется установка...   |" -ForegroundColor Cyan
+    Write-Host "  |  Подождите ~1-2 минуты.                              |" -ForegroundColor Cyan
+    Write-Host "  +-------------------------------------------------------+" -ForegroundColor Cyan
     Write-Host ""
 
-    # ── Find Python ───────────────────────────────────────────────────────────
+    # -- Find Python -----------------------------------------------------------
     $python = $null
     foreach ($cmd in @("python", "python3", "py")) {
         try {
@@ -71,7 +71,7 @@ if (-not (Test-Path $venvPython)) {
         exit 1
     }
 
-    # ── Create .venv ──────────────────────────────────────────────────────────
+    # -- Create .venv ----------------------------------------------------------
     Write-Host "  [--] Создание виртуального окружения..." -ForegroundColor Cyan
     & $python -m venv .venv
     if ($LASTEXITCODE -ne 0) {
@@ -80,7 +80,7 @@ if (-not (Test-Path $venvPython)) {
         exit 1
     }
 
-    # ── Install dependencies ──────────────────────────────────────────────────
+    # -- Install dependencies --------------------------------------------------
     Write-Host "  [--] Установка зависимостей (flask, requests)..." -ForegroundColor Cyan
     & ".venv\Scripts\pip" install flask requests --quiet
     if ($LASTEXITCODE -ne 0) {
@@ -89,13 +89,13 @@ if (-not (Test-Path $venvPython)) {
         exit 1
     }
 
-    # ── Optional full requirements.txt ───────────────────────────────────────
+    # -- Optional full requirements.txt ---------------------------------------
     if (Test-Path "requirements.txt") {
         Write-Host "  [--] Установка requirements.txt..." -ForegroundColor Cyan
         & ".venv\Scripts\pip" install -r requirements.txt --quiet 2>$null
     }
 
-    # ── Create Desktop shortcut (so user has icon next time) ─────────────────
+    # -- Create Desktop shortcut (so user has icon next time) -----------------
     try {
         $desktopPath  = [Environment]::GetFolderPath("Desktop")
         $shortcutPath = Join-Path $desktopPath "Code VM.lnk"
@@ -114,7 +114,7 @@ if (-not (Test-Path $venvPython)) {
         $shortcut.Save()
         Write-Host "  [OK] Ярлык 'Code VM' создан на Рабочем столе" -ForegroundColor Green
     } catch {
-        # Non-fatal — icon is nice but not required
+        # Non-fatal - icon is nice but not required
         Write-Host "  [!] Ярлык не создан (не критично): $_" -ForegroundColor Yellow
     }
 
@@ -123,10 +123,10 @@ if (-not (Test-Path $venvPython)) {
     Write-Host ""
 }
 
-# ── Launch the VM server in a new visible window ──────────────────────────────
+# -- Launch the VM server in a new visible window ------------------------------
 $vmBat = Join-Path $scriptRoot "vm\start_vm.bat"
 Write-Host "  [-->] Запуск Code VM..." -ForegroundColor Cyan
 Start-Process -FilePath "cmd.exe" -ArgumentList "/k `"$vmBat`"" -WorkingDirectory $scriptRoot
-Write-Host "  [OK] Code VM запускается — браузер откроется через несколько секунд." -ForegroundColor Green
+Write-Host "  [OK] Code VM запускается - браузер откроется через несколько секунд." -ForegroundColor Green
 Write-Host "       Закройте окно 'Code VM - Monaco Editor' чтобы остановить сервер." -ForegroundColor Yellow
 Write-Host ""
