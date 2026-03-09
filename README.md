@@ -1,186 +1,145 @@
-# 🤖 drgr-bot + ⚡ Code VM
+# ⚡ Code VM — AI-редактор кода с qwen / llama
 
-A Telegram bot with a built-in **AI-powered code editor** (Code VM) and **Android navigator PWA** — all runnable from a laptop.
-
----
-
-## 🚨 ВАЖНО — читай сюда, если ничего не работает
-
-> **В PowerShell перед ЛЮБЫМ файлом (.ps1 и .bat) ВСЕГДА нужна `.\` в начале:**
->
-> ❌ Неправильно: `start.bat`, `install.ps1`, `start.ps1`  
-> ✅ Правильно:   `.\start.bat`, `.\install.ps1`, `.\start.ps1`
-
-Без точки с обратным слэшем PowerShell говорит «не найдено» — хотя файл прямо рядом.
-
-### ⚡ Самый быстрый запуск прямо сейчас
-
-Если ты в PowerShell — скопируй и вставь одну строку:
-
-```
-.\start.bat
-```
-
-Или дважды кликни по файлу **`start.bat`** в Проводнике — тогда `.\` вообще не нужна.
-
-```
-.\start.ps1
-```
-
-### 🟢 Если скрипты заблокированы («running scripts is disabled») — одна команда:
-
-```
-powershell -ExecutionPolicy Bypass -File vm\create_shortcut.ps1
-```
-
-Создаст ярлык на Рабочем столе **и сразу откроет редактор** в браузере.
+Monaco Editor + Flask + Ollama. Пишешь промпт — получаешь код.  
+Переобучение моделей через вкладку **🔧 Workshop**.
 
 ---
 
-## 🔴 ERR_CONNECTION_REFUSED — сайт localhost не позволяет установить соединение
+## 🖥 ЧТО ВСТАВИТЬ В ТЕРМИНАЛ — ОДИН РАЗ
 
-Это значит сервер не запущен. Причины и решения:
+Открой **PowerShell** (Win+X → Windows PowerShell) и вставь всё сразу:
 
-**Причина 1 — Python не установлен.**  
-Установи Python 3.8+ с [python.org/downloads](https://python.org/downloads/) — **обязательно ставь галочку «Add Python to PATH»**.  
-Потом запусти снова:
-```
-.\start.ps1
-```
-или двойной клик по `start.bat`.
-
-**Причина 2 — сервер был остановлен** (закрыл окно, нажал Ctrl+C).  
-Просто запусти снова:
-```
-.\start.ps1
+```powershell
+cd "$env:USERPROFILE"; git clone https://github.com/ybiytsa1983-cpu/drgr-bot.git; cd drgr-bot; powershell -ExecutionPolicy Bypass -File install.ps1
 ```
 
-**Причина 3 — не запустил установку** перед запуском VM.  
-Запусти полную установку один раз:
-```
-.\install.ps1
-```
-Потом `.\start.ps1`.
+> **Git не установлен?** Скачай: https://git-scm.com/download/win — установи с настройками по умолчанию, потом снова вставь команду выше.
 
-> 💡 Начиная с последнего обновления сервер запускается **в фоне** и **НЕ останавливается** при закрытии окна терминала. Если у тебя старая версия — сделай `git pull`.
+> **Python не установлен?** Скачай: https://www.python.org/downloads/ — **ОБЯЗАТЕЛЬНО** поставь галочку «Add Python to PATH», потом снова вставь команду.
+
+Установка займёт ~2 минуты. После неё на Рабочем столе появятся два файла:
+- **`Code VM`** — основной ярлык
+- **`ЗАПУСТИТЬ.bat`** — резервный, на случай если ярлык не сработает
 
 ---
 
-## ⚠️ Уже клонировал раньше? Сначала обнови!
+## 🖱 КАК ЗАПУСКАТЬ С РАБОЧЕГО СТОЛА
 
-Если папка `drgr-bot` у тебя **уже есть**, открой PowerShell, перейди в неё и обнови:
+### Вариант 1 — двойной клик по ярлыку «Code VM»
+Просто дважды кликни. Откроется браузер на `http://localhost:5000/`
 
-```
-cd C:\путь\к\папке\drgr-bot
-git pull
-```
+### Вариант 2 — двойной клик по «ЗАПУСТИТЬ.bat»
+Если ярлык не работает — кликай по этому файлу.  
+Он сам найдёт папку `drgr-bot` на компьютере, обновится через git и откроет VM.
 
-После этого запусти:
-
-```
-.\start.ps1
+### Вариант 3 — из PowerShell (всегда работает)
+```powershell
+powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\drgr-bot\start.ps1"
 ```
 
 ---
 
-## ⚡ Быстрый старт — одна команда
+## ✅ ПРОВЕРКА — VM РАБОТАЕТ
 
-### Windows (первый раз, свежая установка)
+После запуска открой в браузере: **http://localhost:5000/**
 
-**Шаг 1 — клонируй репозиторий** (один раз):
+Должен увидеть редактор кода с шапкой «⚡ Code VM» и вкладками:
 
+| Вкладка | Что делает |
+|---------|-----------|
+| ⚠ **Issues** | ошибки в коде |
+| 🌐 **HTML** | предпросмотр HTML-страниц |
+| 🧠 **AI** | чат с qwen / llama |
+| 🚀 **Tasks** | готовые сложные задачи |
+| 📈 **Stats** | статистика генераций |
+| 🔧 **Workshop** | скачать / создать / удалить модель Ollama |
+
+**Проверка кода:** вставь в редактор:
+```python
+print("VM работает!")
 ```
-git clone -b copilot/create-monaco-code-generator https://github.com/ybiytsa1983-cpu/drgr-bot.git
-cd drgr-bot
-```
+Нажми **▶ Run** (или Ctrl+Enter). В панели Output появится `VM работает!`
 
-**Шаг 2 — запусти**:
-
-```
-.\start.ps1
-```
-
-> 💡 **Важно:** в PowerShell перед командой нужно писать `.\`
-> `start.ps1` (без точки и слэша) **не работает** — пишите `.\start.ps1`
-
-> ⚠️ **Не копируй строки с `PS C:\...>` из примеров!**  
-> Копируй только саму команду. Символы `PS C:\...>` — это приглашение терминала,
-> а `PS` в PowerShell — это псевдоним (alias) команды `Get-Process`, что вызовет ошибку.
-
-Первый запуск установит всё автоматически (~1-2 мин), потом откроет браузер.  
-Каждый следующий раз: просто откроет браузер.
-
-> ⚠️ Если PowerShell говорит **"running scripts is disabled"** — выполни это один раз:
-> ```
-> Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-> ```
-> Потом снова запусти `.\start.ps1`.
-
-**Альтернатива — двойной клик** по `start.bat` в Проводнике (без PowerShell, просто мышкой).
-
-Если скрипты отключены, можно создать ярлык на Рабочем столе **и сразу запустить редактор** одной командой:
-```
-powershell -ExecutionPolicy Bypass -File vm\create_shortcut.ps1
-```
-
-### macOS / Linux
-
-```bash
-git clone -b copilot/create-monaco-code-generator https://github.com/ybiytsa1983-cpu/drgr-bot.git
-cd drgr-bot
-chmod +x start.sh && ./start.sh
-```
+**Проверка AI:** открой вкладку **🧠 AI** → если видишь «Ollama not connected» — Ollama не запущена (смотри раздел ниже).
 
 ---
 
-## 🤖 AI (Ollama) — ничего настраивать не нужно
+## 🤖 КАК ПОДКЛЮЧИТЬ OLLAMA (qwen)
 
-Если Ollama уже запущена (на **любом** порту 11434-11444) — Code VM найдёт её **автоматически**.
+Ollama — движок для запуска qwen, llama и других моделей локально.
 
+**Шаг 1 — установка Ollama** (если не установлена):
+```powershell
+winget install Ollama.Ollama
 ```
-# Просто запусти Ollama отдельно (если не запущена):
+или скачай вручную: https://ollama.com/download
+
+**Шаг 2 — скачай модель** (один раз, ~4 ГБ):
+```powershell
+ollama pull qwen:latest
+```
+или прямо в VM → вкладка **🔧 Workshop** → поле Pull → введи `qwen:latest` → кнопка «⬇ Pull»
+
+**Шаг 3 — запусти Ollama** (если не запущена):
+```powershell
 ollama serve
 ```
+Оставь это окно открытым, открой новый PowerShell и запусти VM.
 
-Хочешь другой порт? Укажи явно перед запуском:
+После этого в вкладке **🧠 AI** статус изменится на зелёный «Connected».
+
+---
+
+## 🔧 WORKSHOP — создать свою модель кодера
+
+1. Запусти VM → вкладка **🔧 Workshop**
+2. В блоке **Pull** — введи `qwen:latest` → кнопка **⬇ Pull** (скачает модель, ~4 ГБ)
+3. В блоке **Create** — имя `my-coder` → нажми **🛠 Create**  
+   Modelfile уже заполнен — система-промпт для программирования с `temperature 0.4`
+4. Готово! Модель `my-coder` появится в выпадающих списках вкладок AI и Generate
+
+---
+
+## ⚡ ГЕНЕРАЦИЯ КОДА (qwen → код)
+
+Нажми **⚡ Generate** (или Ctrl+G):
+- Выбери модель (например `my-coder` или `qwen:latest`)
+- Выбери язык (Python / JavaScript)
+- Напиши промпт: `HTTP-сервер с endpoint /health`
+- Кнопка **▶ Code** — код вставится в редактор автоматически
+
+Или вкладка **🌐 HTML** → напиши промпт → **🌐 Generate HTML Page** — получишь готовую страницу с превью.
+
+---
+
+## 🌐 АДРЕСА В БРАУЗЕРЕ
+
+| Адрес | Что открывает |
+|-------|--------------|
+| `http://localhost:5000/` | ⚡ Code VM — редактор кода |
+| `http://localhost:5000/navigator/` | 🧭 Android-навигатор (PWA) |
+
+---
+
+## 🛑 ЕСЛИ ЧТО-ТО СЛОМАЛОСЬ
+
+**«Python not found»** → установи Python с https://www.python.org/downloads/ (галочка «Add Python to PATH»)
+
+**«Git не является командой»** → установи Git с https://git-scm.com/download/win
+
+**«running scripts is disabled»** → выполни в PowerShell:
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 ```
-$env:OLLAMA_HOST = "http://localhost:11435"
-.\start.ps1
+
+**Страница не открывается (ERR_CONNECTION_REFUSED)** → сервер не запущен. Запусти снова:
+```powershell
+powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\drgr-bot\start.ps1"
 ```
 
----
-
-## 🖥 Что откроется в браузере
-
-| URL | Описание |
-|-----|---------|
-| `http://localhost:5000/` | ⚡ Code VM — Monaco Editor с AI-генерацией кода |
-| `http://localhost:5000/navigator/` | 🧭 DRGRNav — PWA-навигатор для Android |
-| `http://localhost:5000/challenges` | 🚀 Сложные AI-задачи (JSON) |
-
----
-
-## 🚀 Возможности VM
-
-| Функция | Горячая клавиша |
-|---------|----------------|
-| ⚡ Генерация кода с AI | Ctrl+G → ввод промпта → Code |
-| 🌐 Генерация HTML-страницы | Ctrl+G → HTML |
-| ▶ Запуск кода (Python / JS) | Ctrl+Enter |
-| 🔍 Линтинг / проверка | Ctrl+Shift+K |
-| 🚀 Сложные AI-задачи | вкладка Tasks |
-| 💬 AI-чат по коду | вкладка AI |
-
----
-
-## 🧭 DRGRNav — навигатор для Android
-
-Открой `http://ТВОЙ_IP:5000/navigator/` в Chrome на Android → ⋮ → **Добавить на главный экран**.
-
-```bash
-# Узнать свой IP:
-ipconfig | findstr IPv4     # Windows
-ip route get 1 | awk '{print $NF; exit}'  # Linux/macOS
+**Обновить до последней версии:**
+```powershell
+cd "$env:USERPROFILE\drgr-bot"; git pull; powershell -ExecutionPolicy Bypass -File install.ps1
 ```
 
 ---
@@ -189,18 +148,25 @@ ip route get 1 | awk '{print $NF; exit}'  # Linux/macOS
 
 ```
 drgr-bot/
-├── start.ps1              # ← ЗАПУСК в PowerShell: .\start.ps1
-├── start.bat              # ← ЗАПУСК двойным кликом или из cmd.exe
-├── start.sh               # ← ЗАПУСК в Linux/macOS: ./start.sh
-├── vm/
-│   ├── server.py          # Flask backend
-│   ├── static/index.html  # Monaco Editor UI
-│   └── start_vm.bat       # Windows double-click launcher
-├── navigator/             # Android PWA
-├── vm.bat                 # Запуск без переустановки (Windows)
-├── vm.sh                  # Запуск без переустановки (Linux/macOS)
-├── install.bat            # Только установка (Windows)
-└── install.ps1            # Только установка (PowerShell)
+├── start.ps1          ← запуск в PowerShell
+├── start.bat          ← двойной клик в Проводнике
+├── start.sh           ← Linux/macOS
+├── install.ps1        ← первоначальная установка
+├── ЗАПУСТИТЬ.bat      ← резервный самоопределяющий лаунчер
+└── vm/
+    ├── server.py      ← Flask backend (порт 5000)
+    └── static/
+        └── index.html ← Monaco Editor UI
+```
+
+---
+
+## 🐧 Linux / macOS
+
+```bash
+git clone https://github.com/ybiytsa1983-cpu/drgr-bot.git
+cd drgr-bot
+chmod +x start.sh && ./start.sh
 ```
 
 ---
@@ -209,17 +175,7 @@ drgr-bot/
 
 | Переменная | По умолчанию | Описание |
 |-----------|-------------|---------|
-| `VM_PORT` | `5000` | Порт сервера Code VM |
-| `OLLAMA_HOST` | *(авто)* | URL Ollama, если нужен нестандартный порт |
-| `OLLAMA_TIMEOUT` | `120` | Таймаут AI-ответа (секунды) |
-| `OLLAMA_DEFAULT_MODEL` | *(авто)* | Принудительно выбрать модель |
-
----
-
-## 📋 Требования
-
-- Python 3.8+
-- pip (идёт вместе с Python)
-- Современный браузер (Chrome, Edge, Firefox)
-- Ollama (опционально, для AI-функций — [ollama.com/download](https://ollama.com/download))
-
+| `VM_PORT` | `5000` | Порт сервера |
+| `OLLAMA_HOST` | *(авто, порты 11434-11444)* | Адрес Ollama |
+| `OLLAMA_TIMEOUT` | `120` | Таймаут ответа AI (секунды) |
+| `OLLAMA_DEFAULT_MODEL` | *(первая найденная)* | Принудительно выбрать модель |
