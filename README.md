@@ -10,11 +10,10 @@ Monaco Editor + Flask + Ollama. Пишешь промпт — получаешь
 **Нажми Win+X → «Windows PowerShell» и вставь одну строку:**
 
 ```powershell
-irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/ЗАПУСТИТЬ.bat" -OutFile "$env:USERPROFILE\Desktop\ЗАПУСТИТЬ.bat"; & "$env:USERPROFILE\Desktop\ЗАПУСТИТЬ.bat"
+irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/run.ps1" | iex
 ```
 
-> Это скачает батник **ЗАПУСТИТЬ.bat** прямо на Рабочий стол и запустит его.  
-> Батник сам склонирует репозиторий, установит зависимости и создаст ярлык.  
+> Это скачает и запустит установщик — он сам склонирует репозиторий, установит зависимости и создаст ярлык.  
 > **Git не установлен?** → Сначала: https://git-scm.com/download/win — потом повтори команду выше.  
 > ⚠️ Перед запуском убедись что URL ведёт именно на `github.com/ybiytsa1983-cpu/drgr-bot`.
 
@@ -245,6 +244,7 @@ Set-Location "$env:USERPROFILE\drgr-bot"; git pull; .\install.ps1
 
 ```
 drgr-bot/
+├── run.ps1            ← bootstrap (irm … | iex) — скачать и установить с нуля
 ├── start.ps1          ← запуск в PowerShell
 ├── start.bat          ← двойной клик в Проводнике
 ├── start.sh           ← Linux/macOS
