@@ -894,6 +894,32 @@ def generate_html():
 
 
 # ---------------------------------------------------------------------------
+# Retrain / self-improvement trigger
+# ---------------------------------------------------------------------------
+@app.route("/retrain", methods=["POST"])
+def retrain():
+    """Manually trigger a self-improvement cycle.
+
+    Analyses accumulated execution statistics and rewrites training_instructions
+    based on observed error patterns, success rates, and frequently-used imports.
+    Returns the updated instructions document.
+    """
+    try:
+        data = load_instructions()
+        _regenerate_instructions(data)
+        save_instructions(data)
+        return jsonify({
+            "success": True,
+            "message": "Self-improvement cycle completed.",
+            "training_instructions": data["training_instructions"],
+            "statistics": data["statistics"],
+            "improvement_history_count": len(data.get("improvement_history", [])),
+        })
+    except Exception as exc:  # pylint: disable=broad-except
+        return jsonify({"success": False, "error": str(exc)}), 500
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
