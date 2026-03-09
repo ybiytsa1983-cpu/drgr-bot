@@ -34,7 +34,22 @@ for %%D in (
         exit /b
     )
 )
-powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Write-Host '' ; Write-Host '  ERROR: папка drgr-bot не найдена.' -ForegroundColor Red ; Write-Host '  Установите: git clone https://github.com/ybiytsa1983-cpu/drgr-bot' -ForegroundColor Yellow ; Write-Host '' ; Read-Host '  Нажмите Enter для выхода'"
+:: Not found — try auto-clone with git
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
+  "$dest = \"$env:USERPROFILE\drgr-bot\"; " ^
+  "Write-Host ''; " ^
+  "Write-Host '  Репозиторий drgr-bot не найден. Пробуем клонировать...' -ForegroundColor Yellow; " ^
+  "if (Get-Command git -ErrorAction SilentlyContinue) { " ^
+  "  git clone https://github.com/ybiytsa1983-cpu/drgr-bot \"$dest\"; " ^
+  "  $inst = Join-Path $dest 'install.ps1'; " ^
+  "  $st   = Join-Path $dest 'start.ps1'; " ^
+  "  if (Test-Path $inst) { Write-Host '  Установка...' -ForegroundColor Cyan; & $inst }; " ^
+  "  if (Test-Path $st)   { Write-Host '  Запуск Code VM...' -ForegroundColor Green; & $st; exit } " ^
+  "} else { " ^
+  "  Write-Host '  git не найден. Скачайте: https://git-scm.com/download/win' -ForegroundColor Red; " ^
+  "  Write-Host '  После установки запустите этот файл снова.' -ForegroundColor Yellow; " ^
+  "  Write-Host ''; Read-Host '  Нажмите Enter для выхода' " ^
+  "}"
 exit /b 1
 #>
 # PowerShell fallback — runs when .bat is invoked directly from PS
@@ -70,9 +85,29 @@ foreach ($d in @(
     $zap = Join-Path $d 'zapustit.ps1'
     if (Test-Path $zap) { & $zap @args; exit }
 }
+# Repo not found anywhere — try auto-clone
 Write-Host ''
-Write-Host '  ERROR: папка drgr-bot не найдена.' -ForegroundColor Red
-Write-Host '  Установите: git clone https://github.com/ybiytsa1983-cpu/drgr-bot' -ForegroundColor Yellow
+Write-Host '  Репозиторий drgr-bot не найден. Пробуем клонировать...' -ForegroundColor Yellow
+$dest = "$env:USERPROFILE\drgr-bot"
+if (Get-Command git -ErrorAction SilentlyContinue) {
+    Write-Host "  git clone -> $dest" -ForegroundColor Cyan
+    git clone https://github.com/ybiytsa1983-cpu/drgr-bot $dest
+    $installPs = Join-Path $dest 'install.ps1'
+    $startPs   = Join-Path $dest 'start.ps1'
+    if (Test-Path $installPs) {
+        Write-Host '  Установка зависимостей...' -ForegroundColor Cyan
+        & $installPs
+    }
+    if (Test-Path $startPs) {
+        Write-Host '  Запуск Code VM...' -ForegroundColor Green
+        & $startPs
+        exit
+    }
+} else {
+    Write-Host '  git не найден.' -ForegroundColor Red
+    Write-Host '  1. Скачайте Git: https://git-scm.com/download/win' -ForegroundColor Yellow
+    Write-Host '  2. После установки запустите этот файл снова.' -ForegroundColor Yellow
+}
 Write-Host ''
 Read-Host '  Нажмите Enter для выхода'
 exit 1
