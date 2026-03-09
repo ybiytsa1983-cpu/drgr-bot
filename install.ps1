@@ -40,8 +40,10 @@ Set-Location $repoDir
 # If this is a git repo, pull latest changes so old installs get fixes.
 if (Test-Path (Join-Path $repoDir ".git")) {
     try {
-        $gitOut = & git pull 2>&1
-        Write-Host "  [GIT] $gitOut" -ForegroundColor DarkGray
+        $gitLines = & git pull 2>&1
+        foreach ($line in $gitLines) {
+            Write-Host "  [GIT] $line" -ForegroundColor DarkGray
+        }
     } catch { }
 }
 
@@ -213,7 +215,7 @@ if ($ollamaInstalled) {
         # Write a temp batch file instead of embedding && in ArgumentList
         # (avoids HTML-entity corruption when the script is downloaded via a browser)
         $pullBat = Join-Path $env:TEMP "ollama_pull_model.bat"
-        "@echo off`r`necho Downloading $modelName ...`r`nollama pull $modelName`r`necho [OK] Model ready!`r`npause`r`n" |
+        "@echo off`r`necho Downloading $modelName ...`r`nollama pull $modelName`r`necho [OK] Model ready!`r`npause`r`ndel `"%~f0`"`r`n" |
             Out-File -FilePath $pullBat -Encoding ascii
         Start-Process cmd -ArgumentList "/c `"$pullBat`"" -WindowStyle Minimized
         Ok "Model download started in background"
