@@ -25,7 +25,19 @@ $d="$env:USERPROFILE\drgr-bot"; if(Test-Path $d){cd $d; git pull}else{cd "$env:U
 
 ---
 
-## 🖱 КАК ЗАПУСКАТЬ С РАБОЧЕГО СТОЛА
+## ▶ ЗАПУСК (каждый раз после установки)
+
+Вставь в **PowerShell** (Win+X → Windows PowerShell):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\drgr-bot\start.ps1"
+```
+
+Или просто дважды кликни по ярлыку **«Code VM»** на Рабочем столе.
+
+---
+
+## 🖱 ВСЕ СПОСОБЫ ЗАПУСКА
 
 ### Вариант 1 — двойной клик по ярлыку «Code VM»
 Просто дважды кликни. Откроется браузер на `http://localhost:5000/`
