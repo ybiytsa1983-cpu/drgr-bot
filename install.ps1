@@ -107,8 +107,9 @@ if (Test-Path $venvPython) {
 }
 
 # -- 3. Upgrade pip ------------------------------------------------------------
+# Use python -m pip (not pip.exe) so Windows can replace the executable
 Info "Upgrading pip..."
-& $venvPip install --upgrade pip --quiet 2>$null
+& $venvPython -m pip install --upgrade pip --quiet 2>$null
 Ok "pip up to date"
 
 # -- 4. Install Flask + requests -----------------------------------------------
