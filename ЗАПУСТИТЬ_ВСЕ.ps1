@@ -22,7 +22,8 @@ param(
     [string]$Token = ""
 )
 
-$ErrorActionPreference = "Stop"
+# Only Stop on truly unrecoverable errors; individual steps use try/catch
+$ErrorActionPreference = "Continue"
 
 # ── Resolve repo root ────────────────────────────────────────────────────────
 $repoDir = if ($PSScriptRoot) { $PSScriptRoot }
@@ -148,8 +149,9 @@ if (-not (Test-Path $venvPython)) {
 
 Info "Проверяю зависимости..."
 try {
-    & $venvPip install --quiet -r (Join-Path $repoDir "requirements.txt") 2>&1 | Out-Null
-    Ok "Зависимости установлены"
+    $pipOut = & $venvPip install --quiet -r (Join-Path $repoDir "requirements.txt") 2>&1
+    if ($LASTEXITCODE -ne 0) { Err "pip вернул код $LASTEXITCODE. Возможны проблемы с зависимостями." }
+    else { Ok "Зависимости установлены" }
 } catch {
     Err "Ошибка установки зависимостей: $_"
 }
@@ -159,7 +161,7 @@ Say ""
 Say "► Шаг 4: Проверка Ollama"
 
 $ollamaOk = $false
-foreach ($port in @(11434, 11435, 11436)) {
+foreach ($port in @(11434, 11435, 11436, 11437, 11438, 11439, 11440, 11441, 11442, 11443, 11444)) {
     try {
         $r = Invoke-WebRequest -Uri "http://localhost:$port/api/tags" -TimeoutSec 2 -UseBasicParsing -EA Stop
         Ok "Ollama доступна на порту $port"
