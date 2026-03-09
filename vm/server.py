@@ -665,6 +665,7 @@ def health():
         # auto-discovery thread to re-scan ports (in case Ollama started
         # after the VM did or moved to a different port).
         # Only reset the flag when no scan is already in flight.
+        global _OLLAMA_SCANNED  # noqa: PLW0603 – intentional module-level flag reset
         _should_rescan = False
         with _OLLAMA_SCAN_LOCK:
             if _OLLAMA_SCANNED:   # True = last scan finished; safe to retry

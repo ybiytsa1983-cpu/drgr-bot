@@ -88,45 +88,58 @@ if ($LASTEXITCODE -ne 0) {
     }
 }
 
-# -- Resolve Ollama host URL and port from OLLAMA_HOST env var ----------------
-# server.py reads OLLAMA_HOST too - keep them in sync.
-# Default: http://localhost:11434  Override: set OLLAMA_HOST=http://localhost:11435
-if (-not $env:OLLAMA_HOST) { $env:OLLAMA_HOST = "http://localhost:11434" }
-$ollamaPort = 11434
-if ($env:OLLAMA_HOST -match ':(\d+)/?$') { $ollamaPort = [int]$Matches[1] }
-
-# -- Auto-start Ollama if installed but not yet running ------------------------
-$ollamaRunning  = $false
+# -- Detect Ollama: scan ports 11434-11444 first, then fall back to default ---
+# This correctly handles users who run Ollama on a non-default port (e.g. 11435)
+# without requiring them to manually set OLLAMA_HOST.
+$ollamaRunning   = $false
 $ollamaInstalled = $false
+$ollamaPort      = 11434
+
 try {
     $null = & ollama --version 2>&1
     if ($LASTEXITCODE -eq 0) { $ollamaInstalled = $true }
 } catch { }
 
-if ($ollamaInstalled) {
-    $ollamaListening = netstat -an 2>$null | Select-String ":$ollamaPort.*LISTEN"
-    if ($ollamaListening) {
-        Write-Host "[Code VM] Ollama already running on port $ollamaPort." -ForegroundColor Green
-        $ollamaRunning = $true
-    } else {
+# Probe ports 11434-11444 to find an already-running Ollama instance
+$detectedPort = $null
+foreach ($tryPort in (11434..11444)) {
+    try {
+        $r = Invoke-WebRequest -Uri "http://localhost:$tryPort/api/tags" `
+                -UseBasicParsing -TimeoutSec 1 -ErrorAction SilentlyContinue
+        if ($r -and $r.StatusCode -eq 200) { $detectedPort = $tryPort; break }
+    } catch { }
+}
+
+if ($detectedPort) {
+    $ollamaPort    = $detectedPort
+    $ollamaRunning = $true
+    # Sync OLLAMA_HOST so server.py starts with the correct URL immediately
+    if (-not $env:OLLAMA_HOST) { $env:OLLAMA_HOST = "http://localhost:$ollamaPort" }
+    Write-Host "[Code VM] Ollama already running on port $ollamaPort." -ForegroundColor Green
+} else {
+    # Ollama not detected — fall back to configured / default port
+    if (-not $env:OLLAMA_HOST) { $env:OLLAMA_HOST = "http://localhost:11434" }
+    if ($env:OLLAMA_HOST -match ':(\d+)/?$') { $ollamaPort = [int]$Matches[1] }
+    if ($ollamaInstalled) {
         Write-Host "[Code VM] Starting Ollama service on port $ollamaPort..." -ForegroundColor Cyan
-        # OLLAMA_HOST is already set in the environment so ollama serve picks it up
+        # OLLAMA_HOST is already set so ollama serve listens on the correct port
         Start-Process -FilePath "ollama" -ArgumentList "serve" -WindowStyle Minimized
-        # Wait up to 10 s for Ollama to start listening
+        # Wait up to 10 s for Ollama to respond
         for ($i = 0; $i -lt 10; $i++) {
             Start-Sleep -Seconds 1
-            $ollamaListening = netstat -an 2>$null | Select-String ":$ollamaPort.*LISTEN"
-            if ($ollamaListening) { break }
+            try {
+                $r = Invoke-WebRequest -Uri "http://localhost:$ollamaPort/api/tags" `
+                        -UseBasicParsing -TimeoutSec 1 -ErrorAction SilentlyContinue
+                if ($r -and $r.StatusCode -eq 200) { $ollamaRunning = $true; break }
+            } catch { }
         }
-        if (netstat -an 2>$null | Select-String ":$ollamaPort.*LISTEN") {
-            $ollamaRunning = $true
-        } else {
+        if (-not $ollamaRunning) {
             Write-Host "[Code VM] Warning: Ollama may not have started yet." -ForegroundColor Yellow
         }
+    } else {
+        Write-Host "[Code VM] Ollama not installed - AI features disabled." -ForegroundColor Yellow
+        Write-Host "           Install from https://ollama.com/download" -ForegroundColor DarkGray
     }
-} else {
-    Write-Host "[Code VM] Ollama not installed - AI features disabled." -ForegroundColor Yellow
-    Write-Host "           Install from https://ollama.com/download" -ForegroundColor DarkGray
 }
 
 # -- Start Flask server without any console window ----------------------------
