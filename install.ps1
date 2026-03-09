@@ -238,27 +238,32 @@ Write-Host ""
 Info "Creating 'Code VM' shortcut on your Desktop..."
 $desktopPath  = [Environment]::GetFolderPath("Desktop")
 $shortcutPath = Join-Path $desktopPath "Code VM.lnk"
-# Point to start.bat directly - single step, works even without PS execution policy
-$batFallback  = Join-Path $repoDir "start.bat"
+# Target powershell.exe directly to avoid .bat-file association issues on
+# Windows 11 (Windows Terminal can open .bat shortcuts in a PS profile,
+# causing PowerShell to parse batch syntax and fail with %~dp0 errors).
+$startPs1     = Join-Path $repoDir "start.ps1"
+$psExe        = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
+if (-not (Test-Path $psExe)) { $psExe = "powershell.exe" }
 
 $shortcutOk = $false
 try {
     $shell    = New-Object -ComObject WScript.Shell
     $shortcut = $shell.CreateShortcut($shortcutPath)
-    $shortcut.TargetPath       = $batFallback
-    $shortcut.Arguments        = ""
+    $shortcut.TargetPath       = $psExe
+    $shortcut.Arguments        = "-NoProfile -ExecutionPolicy Bypass -File `"$startPs1`""
     $shortcut.WorkingDirectory = $repoDir
     $shortcut.Description      = "Launch Code VM - Monaco Editor with Ollama AI"
     $shortcut.WindowStyle      = 1   # Normal window
-    $shortcut.IconLocation     = "$env:SystemRoot\System32\cmd.exe,0"
+    $shortcut.IconLocation     = "$psExe,0"
     $shortcut.Save()
     $shortcutOk = $true
     Ok "Desktop shortcut created - 'Code VM' icon is on your Desktop"
 } catch {
     Warn "WScript.Shell shortcut failed ($_). Creating .bat fallback on Desktop..."
     try {
+        $batFallback  = Join-Path $repoDir "start.bat"
         $fallbackPath = Join-Path $desktopPath "Code VM.bat"
-        "@echo off`r`ncall `"$batFallback`"`r`n" | Out-File -FilePath $fallbackPath -Encoding ascii
+        "@echo off`r`n powershell -NoProfile -ExecutionPolicy Bypass -File `"$startPs1`"`r`n" | Out-File -FilePath $fallbackPath -Encoding ascii
         $shortcutOk = $true
         Ok "Desktop launcher created: '$fallbackPath' - double-click it to launch Code VM"
     } catch {

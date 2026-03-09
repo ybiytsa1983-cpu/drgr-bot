@@ -88,16 +88,18 @@ Write-Host '  [OK] CRLF normalization done.' -ForegroundColor Green
 
 Write-Host '  [Shortcut] Updating Desktop shortcut...' -ForegroundColor Cyan
 try {
-    $desktop = [Environment]::GetFolderPath('Desktop')
-    $bat = Join-Path $FOUND 'start.bat'
+    $desktop  = [Environment]::GetFolderPath('Desktop')
+    $startPs1 = Join-Path $FOUND 'start.ps1'
+    $psExe    = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
+    if (-not (Test-Path $psExe)) { $psExe = 'powershell.exe' }
     $sh  = New-Object -COM WScript.Shell
     $lnk = $sh.CreateShortcut((Join-Path $desktop 'Code VM.lnk'))
-    $lnk.TargetPath       = $bat
-    $lnk.Arguments        = ''
+    $lnk.TargetPath       = $psExe
+    $lnk.Arguments        = "-NoProfile -ExecutionPolicy Bypass -File `"$startPs1`""
     $lnk.WorkingDirectory = $FOUND
     $lnk.Description      = 'Launch Code VM - Monaco Editor with Ollama AI'
     $lnk.WindowStyle      = 1
-    $lnk.IconLocation     = "$env:SystemRoot\System32\cmd.exe,0"
+    $lnk.IconLocation     = "$psExe,0"
     $lnk.Save()
     Write-Host '  [OK] Code VM shortcut updated on Desktop.' -ForegroundColor Green
 } catch {
