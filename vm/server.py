@@ -612,6 +612,60 @@ def index():
     return send_from_directory(app.static_folder, "index.html")
 
 
+@app.route("/health", methods=["GET"])
+def health():
+    """Return overall system status: VM, Ollama, and Telegram bot token.
+
+    Response shape:
+    {
+      "vm":     {"status": "ok"},
+      "ollama": {"status": "ok"|"unreachable", "url": "...", "models": [...]},
+      "bot":    {"token_set": true|false, "status": "configured"|"missing"}
+    }
+    """
+    # --- Ollama ---
+    ollama_ok     = False
+    ollama_models = []
+    try:
+        resp = _http.get(f"{OLLAMA_BASE}/api/tags", timeout=3)
+        if resp.status_code == 200:
+            ollama_ok     = True
+            ollama_models = [m["name"] for m in resp.json().get("models", [])]
+    except Exception:  # pylint: disable=broad-except
+        pass
+
+    # --- Telegram BOT_TOKEN (read from .env in repo root, non-fatal) ---
+    bot_token_set = False
+    try:
+        env_path = os.path.join(os.path.dirname(_DIR), ".env")
+        if os.path.exists(env_path):
+            with open(env_path, "r", encoding="utf-8") as fh:
+                for line in fh:
+                    line = line.strip()
+                    if line.startswith("BOT_TOKEN="):
+                        val = line.split("=", 1)[1].strip().strip('"').strip("'")
+                        bot_token_set = bool(val and val != "your_telegram_bot_token_here")
+                        break
+        # Also honour env var set at runtime (e.g. when running on a server)
+        if not bot_token_set and os.environ.get("BOT_TOKEN"):
+            bot_token_set = True
+    except Exception:  # pylint: disable=broad-except
+        pass
+
+    return jsonify({
+        "vm":     {"status": "ok"},
+        "ollama": {
+            "status": "ok" if ollama_ok else "unreachable",
+            "url":    OLLAMA_BASE,
+            "models": ollama_models,
+        },
+        "bot": {
+            "token_set": bot_token_set,
+            "status":    "configured" if bot_token_set else "missing",
+        },
+    })
+
+
 # ---------------------------------------------------------------------------
 # Navigator PWA
 # ---------------------------------------------------------------------------

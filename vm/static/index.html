@@ -271,6 +271,15 @@
 
     .btn-ask { background: #8b3ce8; color: #fff; width: 100%; margin-bottom: 8px; padding: 7px; }
 
+    /* ── Status health panel ── */
+    .health-row   { display:flex; align-items:center; gap:8px; padding:7px 10px; background:#252526; border-radius:5px; margin-bottom:6px; font-size:13px; }
+    .health-icon  { font-size:16px; flex-shrink:0; }
+    .health-label { color:#9d9d9d; font-size:11px; text-transform:uppercase; letter-spacing:.5px; min-width:80px; flex-shrink:0; }
+    .health-val   { color:#d4d4d4; flex:1; word-break:break-all; }
+    .health-ok    { color:#4caf50; }
+    .health-err   { color:#f48771; }
+    .health-warn  { color:#e9b213; }
+
     /* ── Workshop tab ── */
     .workshop-section { padding: 8px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; height: 100%; }
     .workshop-title   { font-size: 14px; font-weight: 700; color: #e9b213; margin-bottom: 2px; }
@@ -472,6 +481,7 @@
         <button class="tab-btn" id="tab-btn-chal" onclick="switchToChallengesTab()">&#128640; Tasks</button>
         <button class="tab-btn" id="tab-btn-instr" onclick="switchTab('instr')">&#128200; Stats</button>
         <button class="tab-btn" id="tab-btn-workshop" onclick="switchToWorkshopTab()">&#128295; Workshop</button>
+        <button class="tab-btn" id="tab-btn-status" onclick="switchToStatusTab()">&#128268; Status</button>
       </div>
 
       <!-- Issues pane -->
@@ -497,7 +507,11 @@
 
       <!-- AI (Ollama) pane -->
       <div class="tab-pane" id="tab-pane-ai">
-        <div id="ai-status-bar" class="ai-status err">Ollama not connected</div>
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+          <div id="ai-status-bar" class="ai-status err" style="flex:1;">Ollama not connected</div>
+          <button onclick="retryOllamaConnection();" title="Retry Ollama connection"
+            style="padding:2px 8px;font-size:11px;background:#3c3c3c;color:#ccc;border:1px solid #555;border-radius:4px;cursor:pointer;flex-shrink:0;">&#8635;</button>
+        </div>
         <div class="ai-controls">
           <select id="ollama-model-select" title="Select Ollama model">
             <option value="">-- Select model --</option>
@@ -583,6 +597,25 @@ PARAMETER repeat_penalty 1.1</textarea>
             <div class="workshop-group-label">&#128221; Progress</div>
             <div id="ws-log" class="ws-log"><span class="out-hint">Output will appear here&#8230;</span></div>
           </div>
+        </div>
+      </div>
+
+      <!-- Status pane — live health check for VM, Ollama, Telegram bot -->
+      <div class="tab-pane" id="tab-pane-status">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+          <strong style="color:#ccc;font-size:13px;">&#128268; System Status</strong>
+          <button onclick="loadStatus()" style="padding:3px 10px;font-size:12px;background:#3c3c3c;color:#ccc;border:1px solid #555;border-radius:4px;cursor:pointer;">&#8635; Refresh</button>
+        </div>
+        <div id="status-panel">
+          <span class="loading">Checking&#8230;</span>
+        </div>
+        <div style="margin-top:14px;border-top:1px solid #333;padding-top:10px;font-size:12px;color:#777;">
+          <div style="margin-bottom:5px;"><strong style="color:#aaa;">&#9654; Launch from PowerShell:</strong></div>
+          <code style="background:#2d2d2d;padding:3px 7px;border-radius:3px;color:#9cdcfe;">powershell -ExecutionPolicy Bypass -File start.ps1</code>
+          <div style="margin-top:8px;margin-bottom:5px;"><strong style="color:#aaa;">&#9654; Telegram bot (.env):</strong></div>
+          <code style="background:#2d2d2d;padding:3px 7px;border-radius:3px;color:#9cdcfe;">BOT_TOKEN=your_token  &nbsp;  python bot.py</code>
+          <div style="margin-top:8px;margin-bottom:5px;"><strong style="color:#aaa;">&#9654; Start Ollama + pull model:</strong></div>
+          <code style="background:#2d2d2d;padding:3px 7px;border-radius:3px;color:#9cdcfe;">ollama serve &nbsp;&amp;&amp;&nbsp; ollama pull qwen3-vl:8b</code>
         </div>
       </div>
 
@@ -1173,6 +1206,10 @@ async function loadOllamaModels() {
       statusEl.className = 'ai-status ok';
       _applyModels(data.models, data.preferred || '');
       _ollamaLoaded = true;
+    } else if (data.available) {
+      statusEl.textContent = '\u2717 Ollama running but no models \u2014 pull one in the \u128295 Workshop tab';
+      statusEl.className = 'ai-status err';
+      modelSel.innerHTML = '<option value="">-- Pull a model in Workshop --</option>';
     } else {
       statusEl.textContent = '\u2717 Ollama not running \u2014 start with: ollama serve';
       statusEl.className = 'ai-status err';
@@ -1326,6 +1363,95 @@ function renderInstructions(data) {
 loadInstructions();
 // Eagerly probe Ollama so model selectors are ready when the user opens the drawer
 loadAllModels();
+
+// ── Status / Health tab ──────────────────────────────────────────────────────
+function switchToStatusTab() {
+  switchTab('status');
+  loadStatus();
+}
+
+// Dedicated retry function for the AI tab ↻ button
+function retryOllamaConnection() {
+  _ollamaLoaded = false;
+  loadOllamaModels();
+}
+
+let _statusLoading = false;
+
+async function loadStatus() {
+  if (_statusLoading) return;
+  const panel = document.getElementById('status-panel');
+  if (!panel) return;
+  _statusLoading = true;
+  panel.innerHTML = '<span class="loading">Checking&#8230;</span>';
+
+  try {
+    const res  = await fetch('/health');
+    const data = await res.json();
+
+    const vm      = data.vm     || {};
+    const ollama  = data.ollama || {};
+    const bot     = data.bot    || {};
+
+    const ollamaOk  = ollama.status === 'ok';
+    const botOk     = bot.token_set === true;
+    const modelList = (ollama.models || []);
+
+    let html = '';
+
+    // VM row
+    html += `<div class="health-row">
+      <span class="health-icon">&#9889;</span>
+      <span class="health-label">VM Server</span>
+      <span class="health-val health-ok">&#10003; Running</span>
+    </div>`;
+
+    // Ollama row
+    html += `<div class="health-row">
+      <span class="health-icon">&#129504;</span>
+      <span class="health-label">Ollama AI</span>
+      <span class="health-val ${ollamaOk ? 'health-ok' : 'health-err'}">
+        ${ollamaOk
+          ? '&#10003; Connected &mdash; ' + modelList.length + ' model(s): ' + esc(modelList.join(', ') || '(none pulled yet)')
+          : '&#10007; Not reachable &mdash; run: <code style="background:#2d2d2d;padding:1px 4px;border-radius:2px;">ollama serve</code>'}
+      </span>
+    </div>`;
+
+    // Telegram bot token row
+    html += `<div class="health-row">
+      <span class="health-icon">&#128268;</span>
+      <span class="health-label">Telegram Bot</span>
+      <span class="health-val ${botOk ? 'health-ok' : 'health-warn'}">
+        ${botOk
+          ? '&#10003; BOT_TOKEN configured in .env'
+          : '&#9888; BOT_TOKEN not set &mdash; edit <code style="background:#2d2d2d;padding:1px 4px;border-radius:2px;">.env</code> (copy from .env.example)'}
+      </span>
+    </div>`;
+
+    // Ollama URL info
+    html += `<div class="health-row" style="font-size:11px;">
+      <span class="health-icon">&#128279;</span>
+      <span class="health-label">Ollama URL</span>
+      <span class="health-val" style="color:#9cdcfe;">${esc(ollama.url || '')}</span>
+    </div>`;
+
+    panel.innerHTML = html;
+
+    // If Ollama is up and models not yet loaded into selects, trigger load
+    if (ollamaOk && !_ollamaLoaded) {
+      loadAllModels();
+    }
+  } catch (err) {
+    panel.innerHTML = '<span class="health-err">&#10007; Could not reach VM server: ' + esc(String(err)) + '</span>';
+  } finally {
+    _statusLoading = false;
+  }
+}
+
+// Auto-retry Ollama model load every 30 s if not yet loaded
+setInterval(function () {
+  if (!_ollamaLoaded) loadAllModels();
+}, 30000);
 
 // Global keyboard shortcuts (outside editor focus)
 document.addEventListener('keydown', function (e) {
