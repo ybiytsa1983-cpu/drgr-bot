@@ -35,6 +35,9 @@ powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\drgr-bot\start.ps1"
 
 Или просто дважды кликни по ярлыку **«Code VM»** на Рабочем столе.
 
+> ⚠️ **Видишь ошибки `'cal' is not recognized` или `'"SCRIPT_DIR=..."'`?**  
+> Это проблема окончаний строк в `.bat` файлах. Исправляется [командой из раздела «ЕСЛИ ЧТО-ТО СЛОМАЛОСЬ»](#-если-что-то-сломалось) ниже, или просто запусти `.ps1` напрямую (команда выше — всегда работает).
+
 ---
 
 ## 🖱 ВСЕ СПОСОБЫ ЗАПУСКА
@@ -136,6 +139,34 @@ ollama serve
 ---
 
 ## 🛑 ЕСЛИ ЧТО-ТО СЛОМАЛОСЬ
+
+### ❌ Ошибки вроде `'cal' is not recognized` / `'"SCRIPT_DIR=..."'` / `'xist'` / `'se'` при запуске .bat файла
+
+Это **проблема окончаний строк** (LF вместо CRLF). Файл `.bat` скачался с неправильными окончаниями строк и Windows `cmd.exe` «проглатывает» первый символ каждой строки.
+
+**Исправление — вставь в PowerShell** (Win+X → Windows PowerShell):
+
+```powershell
+# 1. Перейти в папку репозитория и обновить файлы
+cd "$env:USERPROFILE\drgr-bot"
+git pull
+
+# 2. Исправить окончания строк во всех .bat файлах (LF → CRLF)
+Get-ChildItem -Recurse -Filter *.bat | ForEach-Object {
+    $t = [IO.File]::ReadAllText($_.FullName)
+    $n = ($t -replace "`r`n","`n" -replace "`r","`n") -replace "`n","`r`n"
+    if ($t -ne $n) { [IO.File]::WriteAllText($_.FullName, $n) }
+}
+
+# 3. Запустить Code VM
+powershell -ExecutionPolicy Bypass -File start.ps1
+```
+
+Выдели **все строки** выше (Ctrl+A в блоке кода), вставь в PowerShell — Code VM откроется автоматически.
+
+> Если папка `drgr-bot` не в домашней директории (`%USERPROFILE%`), замени путь на свой, например `cd "C:\drgr-bot"`.
+
+---
 
 **«Python not found»** → установи Python с https://www.python.org/downloads/ (галочка «Add Python to PATH»)
 
