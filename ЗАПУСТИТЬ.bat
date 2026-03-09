@@ -94,10 +94,10 @@ if not errorlevel 1 (
     echo  [OK] Обновление пропущено (нет подключения или нет изменений).
 )
 
-REM --- Пересоздаём ярлык на Рабочем столе (PS1 версия) ----------------
+REM --- Пересоздаём ярлык на Рабочем столе (прямая ссылка на start.bat) --------
 echo  [Ярлык] Создаём/обновляем ярлык на Рабочем столе...
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-  "$ps1='%FOUND%\start.ps1'; $pexe=$env:SystemRoot+'\System32\WindowsPowerShell\v1.0\powershell.exe'; $s=(New-Object -COM WScript.Shell).CreateShortcut([Environment]::GetFolderPath('Desktop')+'\Code VM.lnk'); $s.TargetPath=$pexe; $s.Arguments='-NoProfile -ExecutionPolicy Bypass -File \"'+$ps1+'\"'; $s.WorkingDirectory='%FOUND%'; $s.Description='Launch Code VM'; $s.IconLocation=$pexe+',0'; $s.Save()" ^
+  "$bat='%FOUND%\start.bat'; $s=(New-Object -COM WScript.Shell).CreateShortcut([Environment]::GetFolderPath('Desktop')+'\Code VM.lnk'); $s.TargetPath=$bat; $s.Arguments=''; $s.WorkingDirectory='%FOUND%'; $s.Description='Launch Code VM - Monaco Editor with Ollama AI'; $s.IconLocation=$env:SystemRoot+'\System32\cmd.exe,0'; $s.Save()" ^
   >nul 2>&1
 if not errorlevel 1 (
     echo  [OK] Ярлык "Code VM" на Рабочем столе обновлён.

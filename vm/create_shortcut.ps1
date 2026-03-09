@@ -11,7 +11,7 @@
         powershell -ExecutionPolicy Bypass -File vm\create_shortcut.ps1
 
 .NOTES
-    The shortcut runs start.ps1 via powershell.exe (no cmd.exe dependency).
+    The shortcut runs start.bat via cmd.exe (works with any execution policy).
     You can also pin it to the taskbar by right-clicking and choosing
     "Pin to taskbar" after it appears on the Desktop.
 #>
@@ -32,20 +32,12 @@ $scriptDir = if ($PSScriptRoot) {
 }
 $repoDir    = Split-Path -Parent $scriptDir
 
-# Point the shortcut at start.ps1, run via powershell.exe - avoids all
-# cmd.exe / execution-policy quirks that affect .bat-based shortcuts.
-$ps1File       = Join-Path $repoDir "start.ps1"
-$powershellExe = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
-$usePs1        = Test-Path $ps1File
-
-if (-not $usePs1) {
-    # Fallback to vm\start_vm.bat if start.ps1 is somehow missing
-    $batFile = Join-Path $scriptDir "start_vm.bat"
-    if (-not (Test-Path $batFile)) {
-        Write-Error "Neither start.ps1 nor vm\start_vm.bat found."
-        exit 1
-    }
-    Write-Warning "start.ps1 not found - shortcut will point to vm\start_vm.bat instead."
+# Point the shortcut at start.bat - single step, no PowerShell dependency,
+# works even if execution policy blocks .ps1 files.
+$batFile = Join-Path $repoDir "start.bat"
+if (-not (Test-Path $batFile)) {
+    Write-Error "start.bat not found in $repoDir."
+    exit 1
 }
 
 # -- Create the .lnk shortcut -------------------------------------------------
@@ -55,15 +47,9 @@ $shortcutPath = Join-Path $desktopPath "Code VM.lnk"
 $shell    = New-Object -ComObject WScript.Shell
 $shortcut = $shell.CreateShortcut($shortcutPath)
 
-if ($usePs1) {
-    $shortcut.TargetPath   = $powershellExe
-    $shortcut.Arguments    = "-NoProfile -ExecutionPolicy Bypass -File `"$ps1File`""
-    $shortcut.IconLocation = "$powershellExe,0"
-} else {
-    $shortcut.TargetPath   = $batFile
-    $shortcut.Arguments    = ""
-    $shortcut.IconLocation = "%SystemRoot%\System32\cmd.exe,0"
-}
+$shortcut.TargetPath   = $batFile
+$shortcut.Arguments    = ""
+$shortcut.IconLocation = "$env:SystemRoot\System32\cmd.exe,0"
 $shortcut.WorkingDirectory = $repoDir
 $shortcut.Description      = "Launch Code VM - Monaco Editor with Ollama AI"
 $shortcut.WindowStyle      = 1   # Normal window
@@ -82,13 +68,7 @@ Write-Host ""
 
 # -- Launch the server now so localhost:5000 is immediately reachable ---------
 Write-Host "  [-->] Starting Code VM now..." -ForegroundColor Cyan
-if ($usePs1) {
-    Start-Process -FilePath $powershellExe `
-        -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$ps1File`"" `
-        -WorkingDirectory $repoDir
-} else {
-    Start-Process -FilePath "cmd.exe" -ArgumentList "/k `"$batFile`"" -WorkingDirectory $repoDir
-}
+Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"$batFile`"" -WorkingDirectory $repoDir
 Write-Host "  [OK] Code VM is starting - browser will open in a few seconds." -ForegroundColor Green
 Write-Host "       http://localhost:5000" -ForegroundColor Cyan
 Write-Host ""

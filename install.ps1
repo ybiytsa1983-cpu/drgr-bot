@@ -238,21 +238,19 @@ Write-Host ""
 Info "Creating 'Code VM' shortcut on your Desktop..."
 $desktopPath  = [Environment]::GetFolderPath("Desktop")
 $shortcutPath = Join-Path $desktopPath "Code VM.lnk"
-# Point to start.ps1 - run via powershell.exe so the shortcut never relies on cmd.exe
-$ps1Target    = Join-Path $repoDir "start.ps1"
+# Point to start.bat directly - single step, works even without PS execution policy
 $batFallback  = Join-Path $repoDir "start.bat"
-$powershellExe = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
 
 $shortcutOk = $false
 try {
     $shell    = New-Object -ComObject WScript.Shell
     $shortcut = $shell.CreateShortcut($shortcutPath)
-    $shortcut.TargetPath       = $powershellExe
-    $shortcut.Arguments        = "-NoProfile -ExecutionPolicy Bypass -File `"$ps1Target`""
+    $shortcut.TargetPath       = $batFallback
+    $shortcut.Arguments        = ""
     $shortcut.WorkingDirectory = $repoDir
     $shortcut.Description      = "Launch Code VM - Monaco Editor with Ollama AI"
     $shortcut.WindowStyle      = 1   # Normal window
-    $shortcut.IconLocation     = "$powershellExe,0"
+    $shortcut.IconLocation     = "$env:SystemRoot\System32\cmd.exe,0"
     $shortcut.Save()
     $shortcutOk = $true
     Ok "Desktop shortcut created - 'Code VM' icon is on your Desktop"
@@ -288,7 +286,7 @@ Write-Host "   Setup complete!                            " -ForegroundColor Gre
 Write-Host "  =============================================" -ForegroundColor Green
 Write-Host ""
 Write-Host "  Two launchers are on your Desktop:" -ForegroundColor White
-Write-Host "    'Code VM'        - main shortcut (PowerShell)" -ForegroundColor Cyan
+Write-Host "    'Code VM'        - main shortcut (double-click to launch)" -ForegroundColor Cyan
 Write-Host "    'ЗАПУСТИТЬ.bat'  - backup launcher (double-click)" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "  Or launch directly from PowerShell (paste this):" -ForegroundColor White
