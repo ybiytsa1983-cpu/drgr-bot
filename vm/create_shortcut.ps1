@@ -64,6 +64,15 @@ $shortcut.Save()
 Write-Host ""
 Write-Host "  [OK] Desktop shortcut created!" -ForegroundColor Green
 Write-Host "       $shortcutPath" -ForegroundColor DarkGray
+
+# Also copy ЗАПУСТИТЬ.bat to Desktop as a backup/recovery launcher
+$batSrc = Join-Path $repoDir 'ЗАПУСТИТЬ.bat'
+if (Test-Path $batSrc) {
+    try {
+        Copy-Item -Path $batSrc -Destination (Join-Path $desktopPath 'ЗАПУСТИТЬ.bat') -Force
+        Write-Host "  [OK] ЗАПУСТИТЬ.bat also placed on Desktop (backup launcher)." -ForegroundColor Green
+    } catch { }
+}
 Write-Host ""
 Write-Host "  Double-click 'Code VM' on your Desktop to launch the editor." -ForegroundColor Cyan
 Write-Host "  The Monaco editor opens at http://localhost:5000" -ForegroundColor Cyan

@@ -48,6 +48,45 @@ try { git pull --ff-only --quiet 2>$null } catch { }
     } catch { }
 }
 
+# -- Copy ЗАПУСТИТЬ.bat to Desktop as self-discovering backup launcher ---------
+# This ensures the user always has a recovery tool even if Code VM.lnk breaks.
+try {
+    $batSrc  = Join-Path $scriptRoot 'ЗАПУСТИТЬ.bat'
+    $batDest = Join-Path ([Environment]::GetFolderPath('Desktop')) 'ЗАПУСТИТЬ.bat'
+    if ((Test-Path $batSrc) -and (-not (Test-Path $batDest))) {
+        Copy-Item -Path $batSrc -Destination $batDest -Force -ErrorAction SilentlyContinue
+    }
+} catch { }
+
+# -- Start Ollama early so server.py connects on first heartbeat ---------------
+try {
+    $ollamaExe = $null
+    $ollamaCmd = Get-Command ollama -ErrorAction SilentlyContinue
+    if ($ollamaCmd) { $ollamaExe = $ollamaCmd.Source }
+    if (-not $ollamaExe) {
+        foreach ($c in @(
+            "$env:LOCALAPPDATA\Programs\Ollama\ollama.exe",
+            "$env:USERPROFILE\AppData\Local\Programs\Ollama\ollama.exe",
+            "C:\Program Files\Ollama\ollama.exe",
+            "C:\Program Files (x86)\Ollama\ollama.exe"
+        )) { if (Test-Path $c) { $ollamaExe = $c; break } }
+    }
+    if ($ollamaExe) {
+        $ollamaUp = $false
+        foreach ($tryPort in (11434..11444)) {
+            try {
+                $r = Invoke-WebRequest -Uri "http://localhost:$tryPort/api/tags" `
+                        -UseBasicParsing -TimeoutSec 1 -ErrorAction SilentlyContinue
+                if ($r -and $r.StatusCode -eq 200) { $ollamaUp = $true; break }
+            } catch { }
+        }
+        if (-not $ollamaUp) {
+            Start-Process -FilePath $ollamaExe -ArgumentList 'serve' `
+                -WindowStyle Minimized -ErrorAction SilentlyContinue
+        }
+    }
+} catch { }
+
 # -- First-time setup if .venv is missing --------------------------------------
 $venvPython = Join-Path $scriptRoot ".venv\Scripts\python.exe"
 
@@ -133,6 +172,15 @@ if (-not (Test-Path $venvPython)) {
         # Non-fatal - icon is nice but not required
         Write-Host "  [!] Ярлык не создан (не критично): $_" -ForegroundColor Yellow
     }
+
+    # -- Copy ЗАПУСТИТЬ.bat to Desktop as backup/recovery launcher ---------------
+    try {
+        $batSrc = Join-Path $scriptRoot 'ЗАПУСТИТЬ.bat'
+        if (Test-Path $batSrc) {
+            Copy-Item -Path $batSrc -Destination (Join-Path $desktopPath 'ЗАПУСТИТЬ.bat') -Force
+            Write-Host "  [OK] ЗАПУСТИТЬ.bat скопирован на Рабочий стол (запасной лаунчер)" -ForegroundColor Green
+        }
+    } catch { }
 
     Write-Host ""
     Write-Host "  [OK] Установка завершена!" -ForegroundColor Green

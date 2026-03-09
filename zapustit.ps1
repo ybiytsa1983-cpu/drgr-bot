@@ -106,6 +106,21 @@ try {
     Write-Host "  [!] Shortcut not created: $_" -ForegroundColor Yellow
 }
 
+# Also copy ЗАПУСТИТЬ.bat + zapustit.ps1 to Desktop as backup/recovery launchers
+try {
+    $batSrc = Join-Path $FOUND 'ЗАПУСТИТЬ.bat'
+    if (Test-Path $batSrc) {
+        Copy-Item -Path $batSrc -Destination (Join-Path $desktop 'ЗАПУСТИТЬ.bat') -Force
+        Write-Host '  [OK] ЗАПУСТИТЬ.bat copied to Desktop (backup launcher).' -ForegroundColor Green
+    }
+} catch { Write-Host "  [!] Could not copy ЗАПУСТИТЬ.bat: $_" -ForegroundColor Yellow }
+try {
+    $zapSrc = Join-Path $FOUND 'zapustit.ps1'
+    if (Test-Path $zapSrc) {
+        Copy-Item -Path $zapSrc -Destination (Join-Path $desktop 'zapustit.ps1') -Force
+    }
+} catch { }
+
 # ── Start Ollama early so it is ready when the VM server connects ─────────────
 Write-Host '  [Ollama] Checking Ollama...' -ForegroundColor Cyan
 $ollamaExe = $null
