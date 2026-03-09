@@ -19,6 +19,22 @@ $d="$env:USERPROFILE\drgr-bot"; if(Test-Path $d){Set-Location $d; git pull}else{
 
 > **Python не установлен?** Скачай: https://www.python.org/downloads/ — **ОБЯЗАТЕЛЬНО** поставь галочку «Add Python to PATH», потом снова вставь команду.
 
+> ⚠️ **ЧАСТЫЕ ОШИБКИ при ручном клонировании** (не делай так):
+> ```
+> ❌  git clone https://...drgr-bot в%USERPROFILE%\drgr-bot    ← содержит 2 ошибки:
+>                                   ↑ лишний символ              %USERPROFILE% не работает в PS
+>
+> ❌  install.ps1       ← PS не ищет скрипты в текущей папке без .\
+> ❌  cd drgr-bot       ← только если уже в правильной папке
+> ```
+> **Правильный ручной вариант** (или просто используй однострочник выше):
+> ```powershell
+> Set-Location "$env:USERPROFILE"                                   # перейти в домашнюю папку
+> git clone https://github.com/ybiytsa1983-cpu/drgr-bot            # клонировать
+> Set-Location drgr-bot                                             # войти в папку
+> .\install.ps1                                                      # запустить установку (.\ обязательно!)
+> ```
+
 Установка займёт ~2 минуты. После неё на Рабочем столе появятся два файла:
 - **`Code VM`** — основной ярлык
 - **`ЗАПУСТИТЬ.bat`** — резервный, на случай если ярлык не сработает
@@ -182,20 +198,21 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 Set-Location "$env:USERPROFILE\drgr-bot"; git pull; .\install.ps1
 ```
 
-**«install.ps1: The term 'install.ps1' is not recognized»** → PowerShell требует `.\` перед именем скрипта. Используй:
+**«install.ps1: The term 'install.ps1' is not recognized»** → PowerShell не выполняет скрипты из текущей папки без `.\`. Также убедись, что ты **находишься в папке `drgr-bot`** (`Set-Location "$env:USERPROFILE\drgr-bot"`), а не где-то ещё:
 ```powershell
 Set-Location "$env:USERPROFILE\drgr-bot"; .\install.ps1
 ```
-Или используй однострочник из раздела [«ЧТО ВСТАВИТЬ В ТЕРМИНАЛ»](#-что-вставить-в-терминал--один-раз) — он правильный.
+Или используй однострочник из раздела [«ЧТО ВСТАВИТЬ В ТЕРМИНАЛ»](#-что-вставить-в-терминал--один-раз) — он правильный и обрабатывает всё автоматически.
 
-**Клонировал в неправильную папку** (например, случайно включил лишний символ в путь) → удали неправильную папку и склонируй заново:
+**Клонировал в неправильную папку** (например, `в%USERPROFILE%\drgr-bot` — лишний символ `в` и `%USERPROFILE%` не работает в PowerShell, нужно `$env:USERPROFILE`) → удали неправильную папку и склонируй заново:
 ```powershell
-# Правильный способ клонирования:
+# Правильный способ клонирования — 4 команды:
 Set-Location "$env:USERPROFILE"
 git clone https://github.com/ybiytsa1983-cpu/drgr-bot
 Set-Location drgr-bot
 .\install.ps1
 ```
+> **Важно:** `%USERPROFILE%` — синтаксис **cmd.exe**. В PowerShell используй `$env:USERPROFILE`.
 
 **Страница не открывается (ERR_CONNECTION_REFUSED)** → сервер не запущен. Запусти снова:
 ```powershell
