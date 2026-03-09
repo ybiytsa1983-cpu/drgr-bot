@@ -82,11 +82,22 @@ threading.Thread(target=_autodiscover_ollama, daemon=True).start()
 _PREFERRED_MODELS = [
     m for m in [
         os.environ.get("OLLAMA_DEFAULT_MODEL", ""),
+        # Preferred models (newest first)
         "qwen3-vl:8b",
         "qwen3-vl:235b-cloud",
+        "qwen2.5-coder:7b",
+        "qwen2.5:7b",
+        # Common qwen variants already installed by many users
+        "qwen2:7b",
+        "qwen:latest",
+        "qwen:7b",
+        "qwen:4b",
+        # Other capable models
         "gemma3:12b",
         "gemma3:latest",
         "llama3.2:latest",
+        "llama3:8b",
+        "mistral:latest",
     ] if m
 ]
 

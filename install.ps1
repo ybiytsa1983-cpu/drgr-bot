@@ -223,29 +223,21 @@ Write-Host ""
 Info "Creating 'Code VM' shortcut on your Desktop..."
 $desktopPath  = [Environment]::GetFolderPath("Desktop")
 $shortcutPath = Join-Path $desktopPath "Code VM.lnk"
-# Point to start.bat in the repo root (one-command launcher)
-$batTarget    = Join-Path $repoDir "start.bat"
-if (-not (Test-Path $batTarget)) {
-    $batTarget = Join-Path $repoDir "vm\start_vm.bat"  # fallback
-}
+# Point to start.ps1 — run via powershell.exe so the shortcut never relies on cmd.exe
+$ps1Target    = Join-Path $repoDir "start.ps1"
+$batFallback  = Join-Path $repoDir "start.bat"
+$powershellExe = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
 
 $shortcutOk = $false
 try {
     $shell    = New-Object -ComObject WScript.Shell
     $shortcut = $shell.CreateShortcut($shortcutPath)
-    $shortcut.TargetPath       = $batTarget
+    $shortcut.TargetPath       = $powershellExe
+    $shortcut.Arguments        = "-NoProfile -ExecutionPolicy Bypass -File `"$ps1Target`""
     $shortcut.WorkingDirectory = $repoDir
     $shortcut.Description      = "Launch Code VM - Monaco Editor with Ollama AI"
     $shortcut.WindowStyle      = 1   # Normal window
-    # Use python icon when available, else cmd.exe
-    $pyCmd = Get-Command python  -ErrorAction SilentlyContinue
-    if (-not $pyCmd) { $pyCmd = Get-Command python3 -ErrorAction SilentlyContinue }
-    if (-not $pyCmd) { $pyCmd = Get-Command py      -ErrorAction SilentlyContinue }
-    if ($pyCmd) {
-        $shortcut.IconLocation = "$($pyCmd.Source),0"
-    } else {
-        $shortcut.IconLocation = "%SystemRoot%\System32\cmd.exe,0"
-    }
+    $shortcut.IconLocation     = "$powershellExe,0"
     $shortcut.Save()
     $shortcutOk = $true
     Ok "Desktop shortcut created — 'Code VM' icon is on your Desktop"
@@ -253,7 +245,7 @@ try {
     Warn "WScript.Shell shortcut failed ($_). Creating .bat fallback on Desktop..."
     try {
         $fallbackPath = Join-Path $desktopPath "Code VM.bat"
-        "@echo off`r`ncall `"$batTarget`"`r`n" | Out-File -FilePath $fallbackPath -Encoding ascii
+        "@echo off`r`ncall `"$batFallback`"`r`n" | Out-File -FilePath $fallbackPath -Encoding ascii
         $shortcutOk = $true
         Ok "Desktop launcher created: '$fallbackPath' — double-click it to launch Code VM"
     } catch {
