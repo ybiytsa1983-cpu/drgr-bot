@@ -107,9 +107,12 @@ if (Test-Path $venvPython) {
 }
 
 # -- 3. Upgrade pip ------------------------------------------------------------
-# Use python -m pip (not pip.exe) so Windows can replace the executable
+# Use python -m pip (not pip.exe) so Windows can replace the executable.
+# 2>&1 | Out-Null merges stderr→stdout then discards all output, preventing
+# $ErrorActionPreference="Stop" from aborting on a NativeCommandError.
+# try/catch makes the upgrade non-fatal (a newer pip is nice but not required).
 Info "Upgrading pip..."
-& $venvPython -m pip install --upgrade pip --quiet 2>$null
+try { & $venvPython -m pip install --upgrade pip 2>&1 | Out-Null } catch { }
 Ok "pip up to date"
 
 # -- 4. Install Flask + requests -----------------------------------------------
@@ -311,7 +314,8 @@ Write-Host "  =============================================" -ForegroundColor Gr
 Write-Host ""
 Write-Host "  Two launchers are on your Desktop:" -ForegroundColor White
 Write-Host "    'Code VM'        - main shortcut (double-click to launch)" -ForegroundColor Cyan
-Write-Host "    'ЗАПУСТИТЬ.bat'  - backup launcher (double-click)" -ForegroundColor Cyan
+Write-Host "    'ЗАПУСТИТЬ.bat'  - backup launcher (double-click in File Explorer)" -ForegroundColor Cyan
+Write-Host "                       (from a PowerShell terminal: .\ЗАПУСТИТЬ.bat)" -ForegroundColor DarkGray
 Write-Host ""
 Write-Host "  Or launch directly from PowerShell (paste this):" -ForegroundColor White
 Write-Host "    powershell -ExecutionPolicy Bypass -File `"$repoDir\start.ps1`"" -ForegroundColor Yellow
