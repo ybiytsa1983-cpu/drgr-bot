@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "last_updated": "2026-03-09T10:28:59.828759+00:00",
+  "last_updated": "",
   "statistics": {
-    "total_runs": 6,
-    "successful_runs": 6,
+    "total_runs": 0,
+    "successful_runs": 0,
     "failed_runs": 0,
     "total_checks": 0
   },
@@ -14,7 +14,8 @@
   "training_instructions": [
     "Write clean, readable code with meaningful variable names",
     "Always handle exceptions — never use bare except",
-    "Good success rate (100%) — maintain current coding practices"
+    "Add docstrings to every function and class",
+    "Prefer list comprehensions over explicit for-loops where readable"
   ],
   "internet_work_instructions": [
     "Use the requests library for HTTP calls",
@@ -23,54 +24,27 @@
     "Store API keys in environment variables, never hard-code them",
     "Use aiohttp for async HTTP when performance matters"
   ],
-  "improvement_history": [
-    {
-      "timestamp": "2026-03-08T07:17:44.947638+00:00",
-      "total_runs": 1,
-      "success_rate": 1.0,
-      "instructions_count": 3
-    },
-    {
-      "timestamp": "2026-03-08T08:54:25.066907+00:00",
-      "total_runs": 2,
-      "success_rate": 1.0,
-      "instructions_count": 3
-    },
-    {
-      "timestamp": "2026-03-08T08:55:42.930933+00:00",
-      "total_runs": 3,
-      "success_rate": 1.0,
-      "instructions_count": 3
-    },
-    {
-      "timestamp": "2026-03-09T09:02:17.842573+00:00",
-      "total_runs": 4,
-      "success_rate": 1.0,
-      "instructions_count": 3
-    },
-    {
-      "timestamp": "2026-03-09T09:03:45.772582+00:00",
-      "total_runs": 5,
-      "success_rate": 1.0,
-      "instructions_count": 3
-    },
-    {
-      "timestamp": "2026-03-09T10:11:40.604163+00:00",
-      "total_runs": 6,
-      "success_rate": 1.0,
-      "instructions_count": 3
-    },
-    {
-      "timestamp": "2026-03-09T10:28:12.599135+00:00",
-      "total_runs": 6,
-      "success_rate": 1.0,
-      "instructions_count": 3
-    },
-    {
-      "timestamp": "2026-03-09T10:28:59.828744+00:00",
-      "total_runs": 6,
-      "success_rate": 1.0,
-      "instructions_count": 3
-    }
-  ]
+  "improvement_history": [],
+  "generation_stats": {
+    "total_generations": 0,
+    "code_generations": 0,
+    "html_generations": 0,
+    "successful_prompts": []
+  },
+  "agent_actions": {
+    "total_searches": 0,
+    "total_screenshots": 0,
+    "total_articles": 0,
+    "total_image_descriptions": 0,
+    "total_generate_html": 0,
+    "failed_actions": 0,
+    "retrain_cycles": 0,
+    "popular_queries": {},
+    "screenshot_failed_domains": {},
+    "avg_sources_per_query": 0.0,
+    "screenshot_success_rate": 1.0,
+    "image_descriptions": [],
+    "article_topics": [],
+    "actions_since_last_retrain": 0
+  }
 }

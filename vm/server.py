@@ -17,10 +17,14 @@ Endpoints:
   GET  /navigator/     — serve the DRGRNav PWA navigator app
   GET  /challenges     — return pre-defined hard challenge prompts for the VM
   POST /retrain        — manually trigger a self-improvement cycle
+  POST /agent/log      — receive action record from the Telegram bot for self-learning
+  GET  /agent/stats    — return agent action statistics and current training instructions
+  POST /agent/describe_image — describe an image using Ollama vision model
 """
 
 import ast
 import json
+import logging
 import os
 import re
 import subprocess
@@ -33,6 +37,7 @@ import requests as _http
 from flask import Flask, Response, jsonify, request, send_from_directory, stream_with_context
 
 app = Flask(__name__, static_folder="static")
+_log = logging.getLogger("CodeVM")
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -40,7 +45,14 @@ app = Flask(__name__, static_folder="static")
 _DIR = os.path.dirname(os.path.abspath(__file__))
 INSTRUCTIONS_FILE = os.path.join(_DIR, "instructions.json")
 NAVIGATOR_DIR     = os.path.join(os.path.dirname(_DIR), "navigator")
+
+# Training-data directory — stores per-action JSONL logs from the bot
+TRAINING_DATA_DIR = os.path.join(_DIR, "training_data")
+ACTIONS_LOG_FILE  = os.path.join(TRAINING_DATA_DIR, "actions.jsonl")
+os.makedirs(TRAINING_DATA_DIR, exist_ok=True)
+
 _lock = threading.Lock()
+_actions_lock = threading.Lock()
 
 # Ollama service base URL (override via OLLAMA_HOST env var)
 OLLAMA_BASE = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
@@ -148,6 +160,25 @@ _DEFAULT_INSTRUCTIONS: dict = {
         "code_generations": 0,
         "html_generations": 0,
         "successful_prompts": [],
+    },
+    # ── Agent self-learning section ──────────────────────────────────────────
+    # Populated by POST /agent/log calls from the Telegram bot.
+    # Used by _regenerate_instructions() to improve prompts & behaviour.
+    "agent_actions": {
+        "total_searches": 0,
+        "total_screenshots": 0,
+        "total_articles": 0,
+        "total_image_descriptions": 0,
+        "total_generate_html": 0,
+        "failed_actions": 0,
+        "retrain_cycles": 0,
+        "popular_queries": {},          # query -> count
+        "screenshot_failed_domains": {},  # domain -> fail_count
+        "avg_sources_per_query": 0.0,
+        "screenshot_success_rate": 1.0,
+        "image_descriptions": [],       # last 50 AI descriptions (for training)
+        "article_topics": [],           # last 50 article titles
+        "actions_since_last_retrain": 0,
     },
 }
 
@@ -288,18 +319,148 @@ def _check_python(code: str) -> list:
 # ---------------------------------------------------------------------------
 # Self-improvement engine
 # ---------------------------------------------------------------------------
+
+# Auto-retrain after this many logged agent actions
+_RETRAIN_AFTER_ACTIONS = int(os.environ.get("RETRAIN_AFTER_ACTIONS", "10"))
+
+# Vision-capable models (preferred order for image description)
+_VISION_MODELS = [
+    m for m in [
+        os.environ.get("OLLAMA_VISION_MODEL", ""),
+        "llava:latest",
+        "llava:7b",
+        "bakllava:latest",
+        "moondream:latest",
+        "llava-phi3:latest",
+    ] if m
+]
+
+
+def _record_agent_action(record: dict) -> None:
+    """
+    Persist one agent action record:
+      - Appends the raw JSON line to ACTIONS_LOG_FILE (JSONL format)
+      - Updates summary counters in instructions.json
+      - Auto-triggers _regenerate_instructions every _RETRAIN_AFTER_ACTIONS actions
+    """
+    action_type = record.get("action_type", "unknown")
+    success     = bool(record.get("success", False))
+
+    # 1. Append to JSONL log
+    with _actions_lock:
+        try:
+            with open(ACTIONS_LOG_FILE, "a", encoding="utf-8") as fh:
+                fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+        except OSError as exc:
+            _log.debug("Failed to write action log: %s", exc)
+
+    # 2. Update summary in instructions.json
+    data = load_instructions()
+    aa = data.setdefault("agent_actions", _deep_copy(
+        _DEFAULT_INSTRUCTIONS["agent_actions"]
+    ))
+
+    if action_type == "search":
+        aa["total_searches"] = aa.get("total_searches", 0) + 1
+        query = record.get("input", {}).get("query", "")
+        if query:
+            # strip "ddg:" / "wiki:" prefix
+            clean_q = re.sub(r"^(ddg|wiki):", "", query)
+            pop = aa.setdefault("popular_queries", {})
+            pop[clean_q] = pop.get(clean_q, 0) + 1
+            # keep only top 100
+            if len(pop) > 100:
+                aa["popular_queries"] = dict(
+                    sorted(pop.items(), key=lambda x: -x[1])[:100]
+                )
+        # update avg sources
+        sc = record.get("output", {}).get("source_count", 0)
+        prev_total = aa.get("total_searches", 1)
+        prev_avg   = aa.get("avg_sources_per_query", 0.0)
+        aa["avg_sources_per_query"] = round(
+            (prev_avg * (prev_total - 1) + sc) / prev_total, 2
+        )
+
+    elif action_type == "screenshot":
+        aa["total_screenshots"] = aa.get("total_screenshots", 0) + 1
+        if not success:
+            aa["failed_actions"] = aa.get("failed_actions", 0) + 1
+            url = record.get("input", {}).get("url", "")
+            try:
+                import urllib.parse as _up
+                domain = _up.urlparse(url).netloc
+                if domain:
+                    fd = aa.setdefault("screenshot_failed_domains", {})
+                    fd[domain] = fd.get(domain, 0) + 1
+            except Exception:
+                pass
+        total_ss = aa.get("total_screenshots", 1)
+        failed   = sum(aa.get("screenshot_failed_domains", {}).values())
+        aa["screenshot_success_rate"] = round(
+            max(0.0, (total_ss - failed) / total_ss), 3
+        )
+
+    elif action_type == "article":
+        aa["total_articles"] = aa.get("total_articles", 0) + 1
+        title = record.get("output", {}).get("title", "")
+        if title:
+            topics = aa.setdefault("article_topics", [])
+            topics.append({"title": title, "ts": record.get("timestamp", "")})
+            if len(topics) > 50:
+                aa["article_topics"] = topics[-50:]
+
+    elif action_type == "describe_image":
+        aa["total_image_descriptions"] = aa.get("total_image_descriptions", 0) + 1
+        if success:
+            desc = record.get("output", {}).get("description", "")
+            if desc:
+                descs = aa.setdefault("image_descriptions", [])
+                descs.append({
+                    "path": record.get("input", {}).get("image_path", ""),
+                    "description": desc[:400],
+                    "ts": record.get("timestamp", ""),
+                })
+                if len(descs) > 50:
+                    aa["image_descriptions"] = descs[-50:]
+        else:
+            aa["failed_actions"] = aa.get("failed_actions", 0) + 1
+
+    elif action_type == "generate_html":
+        aa["total_generate_html"] = aa.get("total_generate_html", 0) + 1
+        if not success:
+            aa["failed_actions"] = aa.get("failed_actions", 0) + 1
+
+    # 3. Increment actions-since-retrain counter
+    aa["actions_since_last_retrain"] = aa.get("actions_since_last_retrain", 0) + 1
+    save_instructions(data)
+
+    # 4. Auto-retrain if threshold reached
+    if aa["actions_since_last_retrain"] >= _RETRAIN_AFTER_ACTIONS:
+        data2 = load_instructions()
+        _regenerate_instructions(data2)
+        data2["agent_actions"]["actions_since_last_retrain"] = 0
+        data2["agent_actions"]["retrain_cycles"] = (
+            data2["agent_actions"].get("retrain_cycles", 0) + 1
+        )
+        save_instructions(data2)
+
+
 def _regenerate_instructions(data: dict) -> None:
-    """Analyse accumulated statistics and rewrite training_instructions."""
-    stats = data["statistics"]
+    """
+    Analyse accumulated statistics (code runs + agent actions) and rewrite
+    training_instructions so the VM constantly improves its behaviour.
+    """
+    stats    = data["statistics"]
     patterns = data["learned_patterns"]
-    total = stats["total_runs"]
+    total    = stats["total_runs"]
+    aa       = data.get("agent_actions", {})
 
     instructions: list = [
         "Write clean, readable code with meaningful variable names",
         "Always handle exceptions — never use bare except",
     ]
 
-    # Success-rate advice
+    # ── Code execution success rate ──────────────────────────────────────────
     if total > 0:
         rate = stats["successful_runs"] / total
         if rate < 0.40:
@@ -308,32 +469,90 @@ def _regenerate_instructions(data: dict) -> None:
             )
         elif rate < 0.70:
             instructions.append(
-                f"Moderate success rate ({rate:.0%}) — review error patterns and improve error handling"
+                f"Moderate success rate ({rate:.0%}) — review error patterns"
             )
         else:
             instructions.append(
                 f"Good success rate ({rate:.0%}) — maintain current coding practices"
             )
 
-    # Advice from common errors (top 3)
+    # ── Common errors ────────────────────────────────────────────────────────
     common = patterns.get("common_errors", {})
     for error_key, count in sorted(common.items(), key=lambda x: -x[1])[:3]:
-        instructions.append(f"Recurring error ({count}×): {error_key[:80]}")
+        instructions.append(f"Recurring error ({count}\u00d7): {error_key[:80]}")
 
-    # Note frequently-used imports (top 5)
+    # ── Frequently-used imports ───────────────────────────────────────────────
     freq = patterns.get("frequently_used_imports", {})
     top_libs = sorted(freq.items(), key=lambda x: -x[1])[:5]
     if top_libs:
         lib_names = ", ".join(name for name, _ in top_libs)
         instructions.append(f"Frequently used libraries: {lib_names}")
 
-    # Note generation activity
+    # ── Generation activity ───────────────────────────────────────────────────
     gen_stats = data.get("generation_stats", {})
     if gen_stats.get("total_generations", 0) > 0:
         instructions.append(
             f"AI generations so far: {gen_stats['total_generations']} "
             f"({gen_stats.get('code_generations', 0)} code, "
             f"{gen_stats.get('html_generations', 0)} HTML)"
+        )
+
+    # ── Agent action insights ─────────────────────────────────────────────────
+    if aa.get("total_searches", 0) > 0:
+        avg_src = aa.get("avg_sources_per_query", 0)
+        instructions.append(
+            f"Agent has performed {aa['total_searches']} web searches "
+            f"(avg {avg_src:.1f} sources/query)"
+        )
+
+    if aa.get("total_screenshots", 0) > 0:
+        ss_rate = aa.get("screenshot_success_rate", 1.0)
+        instructions.append(
+            f"Screenshot success rate: {ss_rate:.0%} "
+            f"({aa['total_screenshots']} attempts)"
+        )
+        # Domains that often fail — avoid or retry with longer timeout
+        bad_domains = sorted(
+            aa.get("screenshot_failed_domains", {}).items(), key=lambda x: -x[1]
+        )[:3]
+        if bad_domains:
+            dom_str = ", ".join(d for d, _ in bad_domains)
+            instructions.append(
+                f"Domains with frequent screenshot failures: {dom_str} "
+                "— increase timeout or skip"
+            )
+
+    if aa.get("total_articles", 0) > 0:
+        instructions.append(
+            f"Agent has written {aa['total_articles']} research articles"
+        )
+        recent_topics = [t["title"] for t in aa.get("article_topics", [])[-5:]]
+        if recent_topics:
+            instructions.append(
+                "Recent article topics: " + "; ".join(recent_topics)
+            )
+
+    if aa.get("total_image_descriptions", 0) > 0:
+        instructions.append(
+            f"Agent has described {aa['total_image_descriptions']} images via Ollama vision"
+        )
+        # Summarise recent descriptions to inform future image understanding
+        recent_descs = [d["description"][:60] for d in aa.get("image_descriptions", [])[-3:]]
+        if recent_descs:
+            instructions.append(
+                "Recent image content observed: " + " | ".join(recent_descs)
+            )
+
+    if aa.get("total_searches", 0) > 0:
+        # Learn about popular topics to improve future search strategies
+        pop_q = sorted(aa.get("popular_queries", {}).items(), key=lambda x: -x[1])[:5]
+        if pop_q:
+            q_str = ", ".join(f'"{q}"' for q, _ in pop_q)
+            instructions.append(f"Most searched topics: {q_str}")
+
+    if aa.get("retrain_cycles", 0) > 0:
+        instructions.append(
+            f"Self-improvement cycles completed: {aa['retrain_cycles']}"
         )
 
     data["training_instructions"] = instructions
@@ -344,6 +563,8 @@ def _regenerate_instructions(data: dict) -> None:
         "total_runs": total,
         "success_rate": round(stats["successful_runs"] / total, 2) if total > 0 else 0,
         "instructions_count": len(instructions),
+        "agent_searches": aa.get("total_searches", 0),
+        "agent_articles": aa.get("total_articles", 0),
     }
     history = data.setdefault("improvement_history", [])
     history.append(entry)
@@ -911,16 +1132,149 @@ def retrain():
     try:
         data = load_instructions()
         _regenerate_instructions(data)
+        aa = data.setdefault("agent_actions", {})
+        aa["actions_since_last_retrain"] = 0
+        aa["retrain_cycles"] = aa.get("retrain_cycles", 0) + 1
         save_instructions(data)
         return jsonify({
             "success": True,
             "message": "Self-improvement cycle completed.",
             "training_instructions": data["training_instructions"],
             "statistics": data["statistics"],
+            "agent_actions": data.get("agent_actions", {}),
             "improvement_history_count": len(data.get("improvement_history", [])),
         })
     except Exception as exc:  # pylint: disable=broad-except
         return jsonify({"success": False, "error": str(exc)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Agent self-learning endpoints
+# ---------------------------------------------------------------------------
+
+@app.route("/agent/log", methods=["POST"])
+def agent_log():
+    """Receive one action record from the Telegram bot and persist it.
+
+    Body: {
+      "timestamp":   "2026-...",
+      "action_type": "search|screenshot|article|describe_image|generate_html|...",
+      "input":       {...},
+      "output":      {...},
+      "success":     true|false,
+      "duration_ms": 1234,
+      "metadata":    {...}
+    }
+
+    The record is:
+      1. Appended to vm/training_data/actions.jsonl (one JSON object per line)
+      2. Summarised into instructions.json for the self-improvement engine
+      3. Auto-triggers _regenerate_instructions every RETRAIN_AFTER_ACTIONS actions
+    """
+    record = request.get_json(silent=True)
+    if not record or not isinstance(record, dict):
+        return jsonify({"error": "Invalid JSON body"}), 400
+    try:
+        threading.Thread(target=_record_agent_action, args=(record,), daemon=True).start()
+        return jsonify({"ok": True})
+    except Exception as exc:  # pylint: disable=broad-except
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/agent/stats", methods=["GET"])
+def agent_stats():
+    """Return agent action statistics and current training instructions."""
+    try:
+        data = load_instructions()
+        return jsonify({
+            "agent_actions":         data.get("agent_actions", {}),
+            "training_instructions": data.get("training_instructions", []),
+            "improvement_history":   data.get("improvement_history", [])[-5:],
+            "generation_stats":      data.get("generation_stats", {}),
+            "statistics":            data.get("statistics", {}),
+        })
+    except Exception as exc:  # pylint: disable=broad-except
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/agent/describe_image", methods=["POST"])
+def agent_describe_image():
+    """Describe an image file using the best available Ollama vision model.
+
+    Body: {"image_path": "/absolute/path/to/image.png"}
+    Returns: {"description": "...", "model": "llava:latest", "success": true}
+    """
+    import base64 as _b64
+
+    body       = request.get_json(silent=True) or {}
+    image_path = body.get("image_path", "").strip()
+
+    if not image_path:
+        return jsonify({"error": "image_path required"}), 400
+    if not os.path.isabs(image_path):
+        return jsonify({"error": "image_path must be absolute"}), 400
+    if not os.path.exists(image_path):
+        return jsonify({"error": f"File not found: {image_path}"}), 404
+
+    # Select the first available vision model
+    selected_model = None
+    try:
+        resp = _http.get(f"{OLLAMA_BASE}/api/tags", timeout=5)
+        if resp.status_code == 200:
+            available = {m["name"] for m in resp.json().get("models", [])}
+            for vm_candidate in _VISION_MODELS:
+                if vm_candidate in available:
+                    selected_model = vm_candidate
+                    break
+    except Exception:
+        pass
+
+    if not selected_model:
+        # No vision model available — return empty description gracefully
+        return jsonify({"description": "", "model": None, "success": False,
+                        "error": "No vision model available. Run: ollama pull llava"})
+
+    try:
+        with open(image_path, "rb") as fh:
+            img_b64 = _b64.b64encode(fh.read()).decode()
+
+        resp = _http.post(
+            f"{OLLAMA_BASE}/api/generate",
+            json={
+                "model":  selected_model,
+                "prompt": (
+                    "Describe this image in detail in Russian. "
+                    "Include all visible text, objects, layout, and context. "
+                    "Be specific and informative."
+                ),
+                "images": [img_b64],
+                "stream": False,
+            },
+            timeout=int(os.environ.get("OLLAMA_TIMEOUT", 120)),
+        )
+        if resp.status_code == 200:
+            description = resp.json().get("response", "")
+            # Log to training data
+            _record_agent_action({
+                "timestamp":   _now(),
+                "action_type": "describe_image",
+                "input":       {"image_path": image_path},
+                "output":      {"description": description[:400]},
+                "success":     bool(description),
+                "duration_ms": 0,
+                "metadata":    {"model": selected_model},
+            })
+            return jsonify({
+                "description": description,
+                "model":       selected_model,
+                "success":     bool(description),
+            })
+        return jsonify({"description": "", "model": selected_model, "success": False,
+                        "error": resp.text[:200]}), resp.status_code
+    except _http.exceptions.ConnectionError:
+        return jsonify({"error": "Cannot connect to Ollama"}), 503
+    except Exception as exc:  # pylint: disable=broad-except
+        return jsonify({"error": str(exc)}), 500
 
 
 # ---------------------------------------------------------------------------

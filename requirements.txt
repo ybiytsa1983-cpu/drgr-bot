@@ -1,7 +1,19 @@
-aiogram==3.0.0
-pillow
-moviepy
-requests
-python-dotenv
-aiofiles
+# Core bot framework
+aiogram==3.7.0
+# HTTP (async + sync)
+aiohttp>=3.9.0
+requests>=2.31.0
+# Async file I/O
+aiofiles>=23.0.0
+# Environment variables
+python-dotenv>=1.0.0
+# Web search
+duckduckgo-search>=6.0.0
+# Browser automation & screenshots
+playwright>=1.44.0
+# Image processing (Pillow kept for future image effects)
+pillow>=10.0.0
+# Flask VM server
 flask>=2.3.0
+# BeautifulSoup for HTML parsing (used by scraper challenge)
+beautifulsoup4>=4.12.0

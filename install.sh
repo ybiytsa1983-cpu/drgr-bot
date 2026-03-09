@@ -91,6 +91,22 @@ if [ -f "$SCRIPT_DIR/requirements.txt" ]; then
         warn "Some optional packages in requirements.txt failed (Telegram bot deps) — VM will still work"
 fi
 
+# ── 5b. Install Playwright browsers ───────────────────────────────────────────
+if "$VENV_PYTHON" -c "import playwright" 2>/dev/null; then
+    info "Installing Playwright browsers (Chromium)..."
+    "$VENV_PYTHON" -m playwright install chromium --quiet 2>/dev/null && \
+        ok "Playwright Chromium browser installed" || \
+        warn "Playwright browser install failed — screenshots will not work"
+fi
+
+# ── 5c. Create .env file from example if not present ─────────────────────────
+if [ ! -f "$SCRIPT_DIR/.env" ]; then
+    if [ -f "$SCRIPT_DIR/.env.example" ]; then
+        cp "$SCRIPT_DIR/.env.example" "$SCRIPT_DIR/.env"
+        warn ".env created from .env.example — please edit it and set BOT_TOKEN"
+    fi
+fi
+
 # ── 6. Make launchers executable ──────────────────────────────────────────────
 chmod +x "$SCRIPT_DIR/vm.sh" 2>/dev/null || true
 ok "Launchers are executable"
@@ -129,6 +145,9 @@ echo -e "${GREEN}${BOLD}  ✓  Setup complete!${RESET}"
 echo ""
 echo "  Launch the VM:"
 echo -e "    ${CYAN}./vm.sh${RESET}          (Linux / macOS)"
+echo ""
+echo "  Launch the Telegram bot:"
+echo -e "    ${CYAN}source .venv/bin/activate && python bot.py${RESET}"
 echo ""
 echo "  Then open in browser:"
 echo -e "    ${CYAN}http://localhost:5000/${RESET}            ⚡ Code VM"
