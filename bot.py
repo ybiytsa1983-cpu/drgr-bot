@@ -49,7 +49,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 if not BOT_TOKEN:
     raise ValueError("Set BOT_TOKEN in your .env file.")
 
-OLLAMA_BASE        = os.getenv("OLLAMA_HOST",        "http://localhost:11435")
+OLLAMA_BASE        = os.getenv("OLLAMA_HOST",        "http://localhost:11434")
 VM_BASE            = os.getenv("VM_BASE",            "http://localhost:5000")
 OLLAMA_MODEL       = os.getenv("OLLAMA_MODEL",       "llama2")
 MAX_SEARCH_RESULTS = int(os.getenv("MAX_SEARCH_RESULTS", "5"))
@@ -177,11 +177,39 @@ action_logger = ActionLogger(VM_BASE)
 
 
 # ===========================================================================
+# PER-USER CHAT HISTORY  (used by chat_via_vm)
+# ===========================================================================
+
+_chat_history: Dict[int, List[Dict[str, str]]] = {}  # user_id -> [{role, text}, ...]
+_MAX_CHAT_TURNS = 20  # keep last N turns in context (mirrors _MAX_CHAT_HISTORY_TURNS in server.py)
+
+
+# ===========================================================================
 # OLLAMA HELPERS
 # ===========================================================================
 
 async def get_ollama_models() -> List[str]:
-    """Return list of locally available Ollama model names."""
+    """Return list of available Ollama model names.
+
+    Tries the VM /ollama/models endpoint first (auto-discovered Ollama port)
+    and falls back to querying Ollama directly.
+    """
+    # 1. Try VM endpoint (preferred — uses auto-discovered Ollama port)
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{VM_BASE}/ollama/models",
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    names = [m["name"] for m in data.get("models", [])]
+                    if names:
+                        return names
+    except Exception as exc:
+        logger.debug("VM /ollama/models: %s", exc)
+
+    # 2. Fallback: query Ollama directly
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(
@@ -200,6 +228,72 @@ async def get_best_model() -> str:
     """Return the first available Ollama model name, or fall back to OLLAMA_MODEL."""
     models = await get_ollama_models()
     return models[0] if models else OLLAMA_MODEL
+
+
+async def chat_via_vm(user_id: int, text: str, message: Message) -> bool:
+    """Send a conversational message to the VM /chat/stream endpoint (SSE).
+
+    Maintains per-user history (up to _MAX_CHAT_TURNS turns).
+    Returns True if the VM responded successfully, False otherwise
+    (caller should fall back to research_and_reply).
+    """
+    model = await get_best_model()
+    history = _chat_history.get(user_id, [])
+
+    full_response = ""
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{VM_BASE}/chat/stream",
+                json={"message": text, "model": model, "history": history},
+                timeout=aiohttp.ClientTimeout(total=180),
+            ) as resp:
+                if resp.status != 200:
+                    return False
+                async for raw_line in resp.content:
+                    line = raw_line.decode("utf-8", errors="replace").strip()
+                    if not line.startswith("data: "):
+                        continue
+                    payload = line[6:]
+                    if payload == "[DONE]":
+                        break
+                    try:
+                        chunk = json.loads(payload)
+                    except ValueError:
+                        continue
+                    if "error" in chunk:
+                        logger.debug("VM chat/stream error: %s", chunk["error"])
+                        return False
+                    full_response += chunk.get("token", "")
+    except Exception as exc:
+        logger.debug("VM chat/stream unreachable: %s", exc)
+        return False
+
+    if not full_response.strip():
+        return False
+
+    # Persist updated history
+    history = history + [
+        {"role": "user", "text": text},
+        {"role": "assistant", "text": full_response},
+    ]
+    _chat_history[user_id] = history[-_MAX_CHAT_TURNS * 2:]
+
+    # Log the chat action to VM for self-learning
+    await action_logger.log(
+        "chat",
+        {"user_id": user_id, "message": text[:200]},
+        {"length": len(full_response)},
+        True,
+    )
+
+    # Split long replies into chunks to respect Telegram 4096-char limit
+    for chunk in _split_text(full_response, 4000):
+        try:
+            await message.answer(chunk)
+        except Exception:
+            await message.answer(chunk, parse_mode=None)
+    return True
 
 
 async def ask_ollama(prompt: str, model: Optional[str] = None) -> str:
@@ -1072,7 +1166,11 @@ async def handle_text(message: Message) -> None:
             parse_mode="MarkdownV2",
         )
         return
-    await research_and_reply(query, message)
+    user_id = message.from_user.id if message.from_user else 0
+    # Try VM chat/stream first (conversational AI with per-user history).
+    # Falls back to full web research if VM is unreachable or returns nothing.
+    if not await chat_via_vm(user_id, query, message):
+        await research_and_reply(query, message)
 
 
 # ===========================================================================
