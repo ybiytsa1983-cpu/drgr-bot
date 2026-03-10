@@ -83,6 +83,15 @@ try {
         if (-not $ollamaUp) {
             Start-Process -FilePath $ollamaExe -ArgumentList 'serve' `
                 -WindowStyle Minimized -ErrorAction SilentlyContinue
+            # Wait up to 8 s so vm.ps1 detects Ollama immediately (avoids duplicate start)
+            for ($attempt = 0; $attempt -lt 8; $attempt++) {
+                Start-Sleep -Seconds 1
+                try {
+                    $r2 = Invoke-WebRequest -Uri "http://localhost:11434/api/tags" `
+                            -UseBasicParsing -TimeoutSec 1 -ErrorAction SilentlyContinue
+                    if ($r2 -and $r2.StatusCode -eq 200) { break }
+                } catch { }
+            }
         }
     }
 } catch { }
@@ -164,7 +173,7 @@ if (-not (Test-Path $venvPython)) {
         $shortcut.Arguments        = "-NoProfile -ExecutionPolicy Bypass -File `"$startPs1`""
         $shortcut.WorkingDirectory = $scriptRoot
         $shortcut.Description      = "Launch Code VM - Monaco Editor with Ollama AI"
-        $shortcut.WindowStyle      = 7   # Start minimized (browser opens automatically)
+        $shortcut.WindowStyle      = 1   # Normal window so progress and errors are visible
         $icoLib = Join-Path $env:SystemRoot "System32\imageres.dll"
         $shortcut.IconLocation = if (Test-Path $icoLib) { "$icoLib,97" } else { "$psExe,0" }
         $shortcut.Save()
@@ -188,12 +197,12 @@ if (-not (Test-Path $venvPython)) {
     Write-Host ""
 }
 
-# -- Launch the VM server minimized so browser opens without a full console window --
+# -- Launch the VM server so browser opens (Normal window so errors are visible) --
 $vmPs1 = Join-Path $scriptRoot "vm.ps1"
 Write-Host "  [-->] Запуск Code VM..." -ForegroundColor Cyan
 Start-Process -FilePath "powershell.exe" `
     -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$vmPs1`"" `
     -WorkingDirectory $scriptRoot `
-    -WindowStyle Minimized
+    -WindowStyle Normal
 Write-Host "  [OK] Code VM запускается - браузер откроется через несколько секунд." -ForegroundColor Green
 Write-Host ""

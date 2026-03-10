@@ -165,19 +165,23 @@ if ($detectedPort) {
     }
 }
 
-# -- Start Flask server without any console window ----------------------------
-# Start-Process -WindowStyle Hidden works on all Windows 7+ and does NOT
-# require pythonw.exe - no visible window, server survives closing this script.
+# -- Start Flask server and capture output for diagnostics --------------------
 Write-Host "[Code VM] Starting server on port $Port ..." -ForegroundColor Cyan
 $env:VM_PORT = "$Port"
+$logPath = Join-Path $repoDir "server.log"
+$errPath = Join-Path $repoDir "server_err.log"
+# Clear stale logs so fresh errors are immediately visible
+Remove-Item $logPath -Force -ErrorAction SilentlyContinue
+Remove-Item $errPath -Force -ErrorAction SilentlyContinue
 Start-Process -FilePath $python `
     -ArgumentList "vm\server.py" `
     -WorkingDirectory $repoDir `
-    -WindowStyle Hidden
+    -RedirectStandardOutput $logPath `
+    -RedirectStandardError  $errPath `
+    -NoNewWindow
 
 # -- Wait until server responds (up to 20 s) -----------------------------------
 Write-Host "[Code VM] Waiting for server to be ready..." -ForegroundColor Cyan
-$logPath = Join-Path $repoDir "server.log"
 $ready = $false
 for ($i = 0; $i -lt 20; $i++) {
     Start-Sleep -Seconds 1
@@ -191,12 +195,16 @@ if (-not $ready) {
     Write-Host ""
     Write-Host "[Code VM] ERROR: server did not start after 20 seconds!" -ForegroundColor Red
     Write-Host ""
-    if (Test-Path $logPath) {
-        Write-Host "--- server.log ---" -ForegroundColor Yellow
-        Get-Content $logPath | ForEach-Object { Write-Host $_ }
-        Write-Host "------------------" -ForegroundColor Yellow
+    # Show combined log and error output
+    $combined = @()
+    if (Test-Path $logPath) { $combined += Get-Content $logPath }
+    if (Test-Path $errPath) { $combined += Get-Content $errPath }
+    if ($combined) {
+        Write-Host "--- server output ---" -ForegroundColor Yellow
+        $combined | ForEach-Object { Write-Host $_ }
+        Write-Host "---------------------" -ForegroundColor Yellow
     } else {
-        Write-Host "(no server.log found - trying visible python.exe window)" -ForegroundColor Yellow
+        Write-Host "(no server output captured)" -ForegroundColor Yellow
         Write-Host "Retrying with visible python.exe window..." -ForegroundColor Cyan
         Start-Process -FilePath $python -ArgumentList "vm\server.py" -WorkingDirectory $repoDir
         Start-Sleep -Seconds 5

@@ -59,7 +59,7 @@ $icoLib = Join-Path $env:SystemRoot "System32\imageres.dll"
 $shortcut.IconLocation     = if (Test-Path $icoLib) { "$icoLib,97" } else { "$psExe,0" }
 $shortcut.WorkingDirectory = $repoDir
 $shortcut.Description      = "Launch Code VM - Monaco Editor with Ollama AI"
-$shortcut.WindowStyle      = 7   # Start minimized (no jarring console window; browser opens automatically)
+$shortcut.WindowStyle      = 1   # Normal window so progress and errors are visible
 
 $shortcut.Save()
 
