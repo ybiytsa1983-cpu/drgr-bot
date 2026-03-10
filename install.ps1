@@ -1,25 +1,25 @@
 ﻿<#
 .SYNOPSIS
-    First-time setup for Code VM on Windows (PowerShell).
+    Первоначальная установка Code VM на Windows (PowerShell).
 
 .DESCRIPTION
-    Run once after cloning the repository:
+    Запусти один раз после клонирования репозитория:
         .\install.ps1
 
-    What it does:
-      1. Checks for Python 3.8+
-      2. Creates a virtual environment (.venv)
-      3. Installs Python dependencies (Flask, requests)
-      4. Bundles Monaco Editor locally (works without internet after this)
-      5. Downloads and installs Ollama automatically
-      6. Starts downloading the AI model in the background
-      7. Creates a "Code VM" shortcut on your Desktop
+    Что делает скрипт:
+      1. Проверяет наличие Python 3.8+
+      2. Создаёт виртуальное окружение (.venv)
+      3. Устанавливает зависимости Python (Flask, requests)
+      4. Скачивает Monaco Editor локально (после этого работает без интернета)
+      5. Автоматически скачивает и устанавливает Ollama
+      6. Запускает загрузку AI-модели в фоне
+      7. Создаёт ярлык «Code VM» на Рабочем столе
 
 .NOTES
-    If you see "script cannot be loaded because running scripts is disabled",
-    run this once to allow local scripts:
+    Если видишь «script cannot be loaded because running scripts is disabled»,
+    выполни один раз чтобы разрешить локальные скрипты:
         Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-    Then re-run: .\install.ps1
+    Затем повтори: .\install.ps1
 #>
 
 $ErrorActionPreference = "Stop"
@@ -52,11 +52,11 @@ if (Test-Path (Join-Path $repoDir ".git")) {
     if ($hashBefore -ne "" -and (Test-Path $selfPath)) {
         $hashAfter = (Get-FileHash $selfPath -Algorithm MD5).Hash
         if ($hashBefore -ne $hashAfter) {
-            Write-Host "  [UPDATED] install.ps1 was updated - restarting with the new version..." -ForegroundColor Cyan
+            Write-Host "  [ОБНОВЛЕНО] install.ps1 был обновлён — перезапуск с новой версией..." -ForegroundColor Cyan
             $psExe = try {
                 (Get-Process -Id $PID).Path
             } catch {
-                Write-Host "  [!!] Could not detect PowerShell path; falling back to powershell.exe" -ForegroundColor Yellow
+                Write-Host "  [!!] Не удалось определить путь PowerShell; используется powershell.exe" -ForegroundColor Yellow
                 "powershell.exe"
             }
             & $psExe -ExecutionPolicy Bypass -File $selfPath @args
@@ -75,7 +75,7 @@ function Err($msg)  { Write-Host "  [ERROR] $msg" -ForegroundColor Red }
 
 Write-Host ""
 Write-Host "  =============================================" -ForegroundColor White
-Write-Host "   Code VM - First-time setup (PowerShell)    " -ForegroundColor White
+Write-Host "   Code VM — Первоначальная установка         " -ForegroundColor White
 Write-Host "  =============================================" -ForegroundColor White
 Write-Host ""
 
@@ -88,7 +88,7 @@ foreach ($cmd in @("python", "python3", "py")) {
             $minor = [int]$Matches[1]
             if ($minor -ge 8) {
                 $python = $cmd
-                Ok "Python found: $ver"
+                Ok "Python найден: $ver"
                 break
             }
         }
@@ -96,14 +96,14 @@ foreach ($cmd in @("python", "python3", "py")) {
 }
 
 if (-not $python) {
-    Err "Python 3.8+ not found."
+    Err "Python 3.8+ не найден."
     Write-Host ""
-    Write-Host "  Download Python from:" -ForegroundColor Yellow
+    Write-Host "  Скачай Python здесь:" -ForegroundColor Yellow
     Write-Host "    https://www.python.org/downloads/" -ForegroundColor Cyan
     Write-Host ""
-    Write-Host "  IMPORTANT: During installation, check 'Add Python to PATH'" -ForegroundColor Yellow
+    Write-Host "  ВАЖНО: при установке поставь галочку 'Add Python to PATH'" -ForegroundColor Yellow
     Write-Host ""
-    Read-Host "  Press Enter to exit"
+    Read-Host "  Нажми Enter для выхода"
     exit 1
 }
 
@@ -112,16 +112,16 @@ $venvPython = Join-Path $venvDir "Scripts\python.exe"
 $venvPip    = Join-Path $venvDir "Scripts\pip.exe"
 
 if (Test-Path $venvPython) {
-    Ok "Virtual environment already exists (.venv)"
+    Ok "Виртуальное окружение уже существует (.venv)"
 } else {
-    Info "Creating virtual environment (.venv)..."
+    Info "Создание виртуального окружения (.venv)..."
     & $python -m venv $venvDir
     if ($LASTEXITCODE -ne 0) {
-        Err "Failed to create virtual environment."
-        Read-Host "  Press Enter to exit"
+        Err "Не удалось создать виртуальное окружение."
+        Read-Host "  Нажми Enter для выхода"
         exit 1
     }
-    Ok "Virtual environment created"
+    Ok "Виртуальное окружение создано"
 }
 
 # -- 3. Upgrade pip ------------------------------------------------------------
@@ -129,52 +129,52 @@ if (Test-Path $venvPython) {
 # 2>&1 | Out-Null merges stderr→stdout then discards all output, preventing
 # $ErrorActionPreference="Stop" from aborting on a NativeCommandError.
 # try/catch makes the upgrade non-fatal (a newer pip is nice but not required).
-Info "Upgrading pip..."
+Info "Обновление pip..."
 try { & $venvPython -m pip install --upgrade pip 2>&1 | Out-Null } catch { }
-Ok "pip up to date"
+Ok "pip обновлён"
 
 # -- 4. Install Flask + requests -----------------------------------------------
-Info "Installing Flask + requests..."
+Info "Установка Flask + requests..."
 & $venvPip install flask requests --quiet
 if ($LASTEXITCODE -ne 0) {
-    Err "Failed to install Flask/requests."
-    Read-Host "  Press Enter to exit"
+    Err "Не удалось установить Flask/requests."
+    Read-Host "  Нажми Enter для выхода"
     exit 1
 }
-Ok "Flask + requests installed"
+Ok "Flask + requests установлены"
 
 # -- 5. Install requirements.txt (optional extras) -----------------------------
 $reqFile = Join-Path $repoDir "requirements.txt"
 if (Test-Path $reqFile) {
-    Info "Installing requirements.txt (Telegram bot deps)..."
+    Info "Установка requirements.txt (зависимости Telegram-бота)..."
     & $venvPip install -r $reqFile --quiet 2>$null
-    Ok "requirements.txt processed"
+    Ok "requirements.txt обработан"
 }
 
 # -- 4. Bundle Monaco Editor locally ------------------------------------------
 Write-Host ""
 Write-Host "  =============================================" -ForegroundColor White
-Write-Host "   Bundling Monaco Editor (offline support)   " -ForegroundColor White
+Write-Host "   Скачивание Monaco Editor (автономная работа)" -ForegroundColor White
 Write-Host "  =============================================" -ForegroundColor White
 Write-Host ""
 
 $bundleScript = Join-Path $repoDir "vm\bundle_monaco.ps1"
 if (Test-Path $bundleScript) {
-    Info "Bundling Monaco Editor files locally..."
+    Info "Скачивание файлов Monaco Editor для работы без интернета..."
     try {
         & powershell -NoProfile -ExecutionPolicy Bypass -File $bundleScript
-        Ok "Monaco Editor bundled (editor works without internet)"
+        Ok "Monaco Editor скачан (редактор работает без интернета)"
     } catch {
-        Warn "Monaco bundle failed - CDN fallback will be used automatically."
+        Warn "Не удалось скачать Monaco — будет использован CDN автоматически."
     }
 } else {
-    Warn "vm\bundle_monaco.ps1 not found - CDN fallback will be used."
+    Warn "vm\bundle_monaco.ps1 не найден — будет использован CDN."
 }
 
 # -- 5. Install Ollama automatically ------------------------------------------
 Write-Host ""
 Write-Host "  =============================================" -ForegroundColor White
-Write-Host "   Ollama (AI features)                       " -ForegroundColor White
+Write-Host "   Ollama (AI-функции)                        " -ForegroundColor White
 Write-Host "  =============================================" -ForegroundColor White
 Write-Host ""
 
@@ -185,14 +185,14 @@ try {
 } catch { }
 
 if ($ollamaInstalled) {
-    Ok "Ollama already installed: $ollamaVer"
+    Ok "Ollama уже установлена: $ollamaVer"
 } else {
-    Info "Downloading Ollama installer (this may take a minute)..."
+    Info "Загрузка установщика Ollama (может занять минуту)..."
     $ollamaInstaller = Join-Path $env:TEMP "OllamaSetup.exe"
     try {
         Invoke-WebRequest -Uri "https://ollama.com/download/OllamaSetup.exe" `
             -OutFile $ollamaInstaller -UseBasicParsing
-        Info "Installing Ollama silently..."
+        Info "Установка Ollama в тихом режиме..."
         $proc = Start-Process -FilePath $ollamaInstaller `
             -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART" `
             -Wait -PassThru
@@ -202,15 +202,15 @@ if ($ollamaInstalled) {
             if (Test-Path $ollamaDir) {
                 $env:PATH = "$ollamaDir;$env:PATH"
             }
-            Ok "Ollama installed"
+            Ok "Ollama установлена"
             $ollamaInstalled = $true
         } else {
-            Warn "Ollama installation returned exit code $($proc.ExitCode)."
-            Warn "Install manually later: https://ollama.com/download"
+            Warn "Установка Ollama завершилась с кодом $($proc.ExitCode)."
+            Warn "Установи вручную позже: https://ollama.com/download"
         }
     } catch {
-        Warn "Download or install failed: $_"
-        Warn "Install manually later: https://ollama.com/download"
+        Warn "Ошибка при загрузке или установке: $_"
+        Warn "Установи вручную позже: https://ollama.com/download"
     }
 }
 
@@ -230,34 +230,34 @@ if ($ollamaInstalled) {
     } catch { }
 
     if ($modelPresent) {
-        Ok "AI model already downloaded ($modelName)"
+        Ok "AI-модель уже скачана ($modelName)"
     } else {
-        Info "Starting AI model download in background ($modelName, ~5 GB)..."
-        Info "A small window will show download progress - it can run while you work."
+        Info "Запуск загрузки AI-модели в фоне ($modelName, ~5 ГБ)..."
+        Info "Откроется маленькое окно с прогрессом загрузки — можно работать пока оно работает."
         # Write a temp batch file instead of embedding && in ArgumentList
         # (avoids HTML-entity corruption when the script is downloaded via a browser)
         $pullBat = Join-Path $env:TEMP "ollama_pull_model.bat"
-        "@echo off`r`necho Downloading $modelName ...`r`nollama pull $modelName`r`necho [OK] Model ready!`r`npause`r`ndel `"%~f0`"`r`n" |
+        "@echo off`r`necho Загружаю $modelName ...`r`nollama pull $modelName`r`necho [OK] Модель готова!`r`npause`r`ndel `"%~f0`"`r`n" |
             Out-File -FilePath $pullBat -Encoding ascii
         Start-Process cmd -ArgumentList "/c `"$pullBat`"" -WindowStyle Minimized
-        Ok "Model download started in background"
+        Ok "Загрузка модели запущена в фоне"
     }
 } else {
-    Warn "Ollama not installed - skipping model download."
-    Write-Host "  To enable AI features later:" -ForegroundColor Yellow
-    Write-Host "    1. Install from https://ollama.com/download" -ForegroundColor Cyan
-    Write-Host "    2. Run: ollama pull $modelName" -ForegroundColor Cyan
-    Write-Host "    3. Run: ollama serve" -ForegroundColor Cyan
+    Warn "Ollama не установлена — загрузка модели пропущена."
+    Write-Host "  Чтобы включить AI-функции позже:" -ForegroundColor Yellow
+    Write-Host "    1. Установи с https://ollama.com/download" -ForegroundColor Cyan
+    Write-Host "    2. Выполни: ollama pull $modelName" -ForegroundColor Cyan
+    Write-Host "    3. Выполни: ollama serve" -ForegroundColor Cyan
 }
 
 # -- 7. Create Desktop shortcut ------------------------------------------------
 Write-Host ""
 Write-Host "  =============================================" -ForegroundColor White
-Write-Host "   Desktop shortcut                           " -ForegroundColor White
+Write-Host "   Ярлык на Рабочем столе                     " -ForegroundColor White
 Write-Host "  =============================================" -ForegroundColor White
 Write-Host ""
 
-Info "Creating 'Code VM' shortcut on your Desktop..."
+Info "Создание ярлыка «Code VM» на Рабочем столе..."
 $desktopPath     = [Environment]::GetFolderPath("Desktop")
 $startPs1        = Join-Path $repoDir "start.ps1"
 $createShortcut  = Join-Path $repoDir "vm\create_shortcut.ps1"
@@ -271,18 +271,18 @@ if (Test-Path $createShortcut) {
             -WorkingDirectory $repoDir -Wait -PassThru -ErrorAction Stop
         if ($proc.ExitCode -eq 0) {
             $shortcutOk = $true
-            Ok "Desktop shortcut created - 'Code VM' icon is on your Desktop"
+            Ok "Ярлык создан — значок «Code VM» на Рабочем столе"
         } else {
-            Warn "create_shortcut.ps1 exited with code $($proc.ExitCode)."
+            Warn "create_shortcut.ps1 завершился с кодом $($proc.ExitCode)."
         }
     } catch {
-        Warn "Shortcut creation failed: $_"
+        Warn "Создание ярлыка не удалось: $_"
     }
 }
 
 # Fallback: inline shortcut creation if the script approach failed
 if (-not $shortcutOk) {
-    Warn "Trying inline shortcut creation as fallback..."
+    Warn "Пробую создать ярлык напрямую (резервный способ)..."
     $psExe    = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
     if (-not (Test-Path $psExe)) { $psExe = "powershell.exe" }
     $shortcutPath = Join-Path $desktopPath "Code VM.lnk"
@@ -303,9 +303,9 @@ if (-not $shortcutOk) {
         }
         $shortcut.Save()
         $shortcutOk = $true
-        Ok "Desktop shortcut created (fallback) - 'Code VM' icon is on your Desktop"
+        Ok "Ярлык создан (резервный способ) — значок «Code VM» на Рабочем столе"
     } catch {
-        Warn "Inline shortcut creation also failed: $_"
+        Warn "Резервный способ тоже не сработал: $_"
     }
 }
 
@@ -315,9 +315,9 @@ $launcherDest = Join-Path $desktopPath "ЗАПУСТИТЬ.bat"
 if (Test-Path $launcherSrc) {
     try {
         Copy-Item -Path $launcherSrc -Destination $launcherDest -Force
-        Ok "Backup launcher copied: 'ЗАПУСТИТЬ.bat' on Desktop (double-click if main shortcut fails)"
+        Ok "Резервный лаунчер скопирован: «ЗАПУСТИТЬ.bat» на Рабочем столе (двойной клик если основной ярлык не работает)"
     } catch {
-        Warn "Could not copy ЗАПУСТИТЬ.bat to Desktop: $_"
+        Warn "Не удалось скопировать ЗАПУСТИТЬ.bat на Рабочий стол: $_"
     }
 }
 # Also copy the PS1 helper script that ЗАПУСТИТЬ.bat delegates to
@@ -327,7 +327,7 @@ if (Test-Path $zapustitPsSrc) {
     try {
         Copy-Item -Path $zapustitPsSrc -Destination $zapustitPsDest -Force
     } catch {
-        Warn "Could not copy zapustit.ps1 to Desktop: $_"
+        Warn "Не удалось скопировать zapustit.ps1 на Рабочий стол: $_"
     }
 }
 
@@ -337,9 +337,9 @@ $vmLauncherDest = Join-Path $desktopPath "ЗАПУСТИТЬ_ВМ.bat"
 if (Test-Path $vmLauncherSrc) {
     try {
         Copy-Item -Path $vmLauncherSrc -Destination $vmLauncherDest -Force
-        Ok "Visor VM launcher copied: 'ЗАПУСТИТЬ_ВМ.bat' on Desktop"
+        Ok "Лаунчер Visor VM скопирован: «ЗАПУСТИТЬ_ВМ.bat» на Рабочем столе"
     } catch {
-        Warn "Could not copy ЗАПУСТИТЬ_ВМ.bat to Desktop: $_"
+        Warn "Не удалось скопировать ЗАПУСТИТЬ_ВМ.bat на Рабочий стол: $_"
     }
 }
 
@@ -349,40 +349,40 @@ $retrainDest = Join-Path $desktopPath "ПЕРЕУЧИТЬ_ВМ.bat"
 if (Test-Path $retrainSrc) {
     try {
         Copy-Item -Path $retrainSrc -Destination $retrainDest -Force
-        Ok "Retrain launcher copied: 'ПЕРЕУЧИТЬ_ВМ.bat' on Desktop"
+        Ok "Лаунчер переобучения скопирован: «ПЕРЕУЧИТЬ_ВМ.bat» на Рабочем столе"
     } catch {
-        Warn "Could not copy ПЕРЕУЧИТЬ_ВМ.bat to Desktop: $_"
+        Warn "Не удалось скопировать ПЕРЕУЧИТЬ_ВМ.bat на Рабочий стол: $_"
     }
 }
 
 # -- 9. Done -------------------------------------------------------------------
 Write-Host ""
 Write-Host "  =============================================" -ForegroundColor Green
-Write-Host "   Setup complete!                            " -ForegroundColor Green
+Write-Host "   Установка завершена!                       " -ForegroundColor Green
 Write-Host "  =============================================" -ForegroundColor Green
 Write-Host ""
 if ($shortcutOk) {
-    Write-Host "  On your Desktop you now have:" -ForegroundColor White
-    Write-Host "    'Code VM.lnk'        - shortcut (double-click to launch)" -ForegroundColor Cyan
-    Write-Host "    'ЗАПУСТИТЬ.bat'      - backup launcher (works from any location)" -ForegroundColor Cyan
-    Write-Host "    'ЗАПУСТИТЬ_ВМ.bat'   - Code VM + creates retrained model drgr-visor" -ForegroundColor Green
-    Write-Host "    'ПЕРЕУЧИТЬ_ВМ.bat'   - retrain only (create/update drgr-visor)" -ForegroundColor Green
+    Write-Host "  На Рабочем столе теперь есть:" -ForegroundColor White
+    Write-Host "    'Code VM.lnk'        — ярлык (двойной клик для запуска)" -ForegroundColor Cyan
+    Write-Host "    'ЗАПУСТИТЬ.bat'      — резервный лаунчер (работает откуда угодно)" -ForegroundColor Cyan
+    Write-Host "    'ЗАПУСТИТЬ_ВМ.bat'   — Code VM + создание переученной модели drgr-visor" -ForegroundColor Green
+    Write-Host "    'ПЕРЕУЧИТЬ_ВМ.bat'   — только переучить (создать/обновить drgr-visor)" -ForegroundColor Green
 } else {
-    Write-Host "  [!!] Desktop shortcut could not be created automatically." -ForegroundColor Yellow
-    Write-Host "  To create the 'Code VM' icon on your Desktop, run this command:" -ForegroundColor Yellow
+    Write-Host "  [!!] Ярлык не удалось создать автоматически." -ForegroundColor Yellow
+    Write-Host "  Чтобы создать значок «Code VM» на Рабочем столе, выполни:" -ForegroundColor Yellow
     Write-Host "    powershell -ExecutionPolicy Bypass -File `"$repoDir\vm\create_shortcut.ps1`"" -ForegroundColor Cyan
     Write-Host ""
-    Write-Host "  Backup launcher 'ЗАПУСТИТЬ.bat' may still be on your Desktop." -ForegroundColor White
+    Write-Host "  Резервный лаунчер «ЗАПУСТИТЬ.bat» может уже быть на Рабочем столе." -ForegroundColor White
 }
 Write-Host ""
-Write-Host "  Or launch directly from PowerShell (paste this):" -ForegroundColor White
+Write-Host "  Или запусти напрямую из PowerShell (вставь это):" -ForegroundColor White
 Write-Host "    powershell -ExecutionPolicy Bypass -File `"$repoDir\start.ps1`"" -ForegroundColor Yellow
 Write-Host ""
-Write-Host "  Then open in browser:" -ForegroundColor White
+Write-Host "  Затем открой в браузере:" -ForegroundColor White
 Write-Host "    http://localhost:5000/" -ForegroundColor Cyan
 Write-Host ""
 if ($shortcutOk) {
-    Write-Host "  Tip: to recreate the shortcut at any time, run:" -ForegroundColor DarkGray
+    Write-Host "  Совет: чтобы пересоздать ярлык в любое время, выполни:" -ForegroundColor DarkGray
     Write-Host "    powershell -ExecutionPolicy Bypass -File `"$repoDir\vm\create_shortcut.ps1`"" -ForegroundColor DarkGray
     Write-Host ""
 }
@@ -391,7 +391,7 @@ if ($shortcutOk) {
 # Skip auto-launch only when the caller passes -NoLaunch (e.g., CI/test runs).
 if ($args -notcontains '-NoLaunch') {
     if (Test-Path $startPs1) {
-        Write-Host "  [-->] Запуск Code VM (браузер откроется автоматически) / launching Code VM..." -ForegroundColor Cyan
+        Write-Host "  [-->] Запуск Code VM (браузер откроется автоматически)..." -ForegroundColor Cyan
         $psExeLaunch = try { (Get-Process -Id $PID).Path } catch { "powershell.exe" }
         Start-Process -FilePath $psExeLaunch `
             -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$startPs1`"" `

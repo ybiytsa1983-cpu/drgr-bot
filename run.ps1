@@ -1,39 +1,39 @@
-# Code VM -- bootstrap / one-liner installer.
-# Usage (from any PowerShell window -- no repo needed):
+# Code VM -- скрипт скачивания и запуска (однострочник).
+# Использование (из любого окна PowerShell — репозиторий не нужен):
 #   irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/run.ps1" | iex
 #
-# Steps:
-#   1. Checks that Git is installed.
-#   2. Clones or updates the drgr-bot repository to $HOME\drgr-bot.
-#   3. Runs install.ps1 from the cloned repo.
+# Что делает скрипт:
+#   1. Проверяет, установлен ли Git.
+#   2. Клонирует или обновляет репозиторий drgr-bot в $HOME\drgr-bot.
+#   3. Запускает install.ps1 из скачанного репозитория.
 
 $ErrorActionPreference = "Stop"
 
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "  Code VM — Bootstrap" -ForegroundColor Cyan
+Write-Host "  Code VM — Установка и запуск" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
-# --- Git check ---
+# --- Проверка Git ---
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
-    Write-Host "ERROR: Git is not installed." -ForegroundColor Red
+    Write-Host "ОШИБКА: Git не установлен." -ForegroundColor Red
     Write-Host ""
-    Write-Host "Install Git first:" -ForegroundColor Yellow
+    Write-Host "Сначала установи Git:" -ForegroundColor Yellow
     Write-Host "  https://git-scm.com/download/win" -ForegroundColor Yellow
     Write-Host ""
-    Write-Host "Then re-run this command." -ForegroundColor Yellow
+    Write-Host "После установки Git повтори эту команду." -ForegroundColor Yellow
     Write-Host ""
     pause
     exit 1
 }
 
-# --- Clone or pull ---
+# --- Клонирование или обновление ---
 $repoDir = Join-Path $env:USERPROFILE "drgr-bot"
 $repoUrl = "https://github.com/ybiytsa1983-cpu/drgr-bot"
 
 if (Test-Path (Join-Path $repoDir ".git")) {
-    Write-Host "Repository already exists — running git pull..." -ForegroundColor Green
+    Write-Host "Репозиторий уже существует — обновление (git pull)..." -ForegroundColor Green
     Push-Location $repoDir
     try {
         git pull
@@ -41,7 +41,7 @@ if (Test-Path (Join-Path $repoDir ".git")) {
         Pop-Location
     }
 } else {
-    Write-Host "Cloning repository to: $repoDir" -ForegroundColor Green
+    Write-Host "Клонирование репозитория в: $repoDir" -ForegroundColor Green
     Push-Location $env:USERPROFILE
     try {
         git clone $repoUrl
@@ -50,39 +50,38 @@ if (Test-Path (Join-Path $repoDir ".git")) {
     }
 }
 
-# --- Ensure we have the full codebase (main may be empty before PR merge) ---
-# If install.ps1 is absent, fetch all remote branches and checkout the first
-# one that contains it.  This is fully automatic and handles both pre-merge
-# (code lives on a dev branch) and post-merge (code lives on main) scenarios.
+# --- Поиск полного кода во всех ветках (на случай если main ещё пустой) ---
+# Если install.ps1 отсутствует, перебираем все удалённые ветки и
+# переключаемся на первую, где есть install.ps1.
 $installScript = Join-Path $repoDir "install.ps1"
 if (-not (Test-Path $installScript)) {
     Write-Host ""
-    Write-Host "  The default branch appears incomplete — searching all branches for the full code..." -ForegroundColor Yellow
+    Write-Host "  Ветка main выглядит неполной — ищу полный код во всех ветках..." -ForegroundColor Yellow
     Push-Location $repoDir
     try {
-        # Fetch every remote branch (non-fatal — we may still have what we need locally)
+        # Загружаем все удалённые ветки (ошибки некритичны)
         $fetchOutput = & git fetch --all 2>&1
         if ($LASTEXITCODE -ne 0) {
-            Write-Host "  Warning: git fetch failed — trying locally cached branches." -ForegroundColor Yellow
+            Write-Host "  Предупреждение: git fetch завершился с ошибкой — пробую локальные ветки." -ForegroundColor Yellow
         }
         $remoteBranches = & git branch -r 2>&1 |
             Where-Object { $_ -notmatch 'HEAD' } |
             ForEach-Object { $_.Trim() -replace '^origin/', '' }
         $found = $false
         foreach ($branch in $remoteBranches) {
-            if ($branch -eq 'main') { continue }   # already tried main
+            if ($branch -eq 'main') { continue }   # main уже проверен
             $checkoutOutput = & git checkout -B $branch "origin/$branch" --quiet 2>&1
-            if ($LASTEXITCODE -ne 0) { continue }   # branch not accessible — try next
+            if ($LASTEXITCODE -ne 0) { continue }   # ветка недоступна — пробуем следующую
             if (Test-Path $installScript) {
-                Write-Host "  Found full code on branch: $branch" -ForegroundColor Green
+                Write-Host "  Полный код найден в ветке: $branch" -ForegroundColor Green
                 $found = $true
                 break
             }
         }
         if (-not $found) {
             Write-Host ""
-            Write-Host "  ERROR: Could not find install.ps1 in any branch." -ForegroundColor Red
-            Write-Host "  Please try again in a few minutes, or visit:" -ForegroundColor Yellow
+            Write-Host "  ОШИБКА: Не удалось найти install.ps1 ни в одной ветке." -ForegroundColor Red
+            Write-Host "  Попробуй ещё раз через несколько минут или зайди на:" -ForegroundColor Yellow
             Write-Host "    https://github.com/ybiytsa1983-cpu/drgr-bot" -ForegroundColor Cyan
             exit 1
         }
@@ -91,15 +90,15 @@ if (-not (Test-Path $installScript)) {
     }
 }
 
-# --- Run install ---
+# --- Запуск установщика ---
 if (-not (Test-Path $installScript)) {
-    Write-Host "ERROR: install.ps1 not found at $installScript" -ForegroundColor Red
+    Write-Host "ОШИБКА: файл install.ps1 не найден по пути: $installScript" -ForegroundColor Red
     exit 1
 }
 
 Write-Host ""
-Write-Host "Running install.ps1..." -ForegroundColor Green
+Write-Host "Запуск install.ps1..." -ForegroundColor Green
 Write-Host ""
-# Allow local scripts for this process session (needed when invoked via irm | iex)
+# Разрешаем выполнение локальных скриптов для текущей сессии (нужно при irm | iex)
 Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force
 & $installScript
