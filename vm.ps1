@@ -186,9 +186,10 @@ $ready = $false
 for ($i = 0; $i -lt 20; $i++) {
     Start-Sleep -Seconds 1
     try {
+        # Use /ping (instant, no Ollama query) so the check never races against
+        # the 3-second Ollama timeout inside /health.
         # Use 127.0.0.1 (not localhost) to avoid IPv6 resolution on Windows.
-        # Use /health endpoint (small JSON) rather than / (full HTML page).
-        $null = Invoke-WebRequest -Uri "http://127.0.0.1:$Port/health" -UseBasicParsing -TimeoutSec 3
+        $null = Invoke-WebRequest -Uri "http://127.0.0.1:$Port/ping" -UseBasicParsing -TimeoutSec 10
         $ready = $true
         break
     } catch [System.Net.WebException] {
@@ -216,6 +217,10 @@ if (-not $ready) {
     }
     Write-Host ""
     Write-Host "Fix the error above then run .\start.ps1 again." -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "  PowerShell command to restart:" -ForegroundColor White
+    Write-Host "    powershell -ExecutionPolicy Bypass -File `"$repoDir\start.ps1`"" -ForegroundColor Cyan
+    Write-Host ""
     Write-Host "Tip: .venv\Scripts\pip install flask requests" -ForegroundColor Cyan
     Read-Host "Press Enter to exit"
     exit 1
@@ -276,5 +281,9 @@ if ($ollamaRunning) {
 Write-Host ("  |  {0,-50}|" -f "Server runs in the background.") -ForegroundColor White
 Write-Host ("  |  {0,-50}|" -f "This window can be closed safely.") -ForegroundColor White
 Write-Host ("  |  {0,-50}|" -f "To stop: double-click stop.bat") -ForegroundColor DarkGray
+Write-Host ("  |{0}|" -f ("-" * 52)) -ForegroundColor DarkGreen
+Write-Host ("  |  {0,-50}|" -f "To restart from PowerShell:") -ForegroundColor White
+Write-Host ("  |    {0,-48}|" -f "powershell -ExecutionPolicy Bypass -File") -ForegroundColor Cyan
+Write-Host ("  |    {0,-48}|" -f "  `"$repoDir\start.ps1`"") -ForegroundColor Cyan
 Write-Host $sep -ForegroundColor Green
 Write-Host ""

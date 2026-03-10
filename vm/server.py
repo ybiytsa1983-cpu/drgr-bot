@@ -655,6 +655,12 @@ def index():
     return send_from_directory(app.static_folder, "index.html")
 
 
+@app.route("/ping", methods=["GET"])
+def ping():
+    """Instant liveness probe — returns immediately without any external calls."""
+    return jsonify({"ok": True})
+
+
 @app.route("/health", methods=["GET"])
 def health():
     """Return overall system status: VM, Ollama, and Telegram bot token.
