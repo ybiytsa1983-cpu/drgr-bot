@@ -235,18 +235,41 @@ async def chat_via_vm(user_id: int, text: str, message: Message) -> bool:
     """Send a conversational message to the VM /chat/stream endpoint (SSE).
 
     Maintains per-user history (up to _MAX_CHAT_TURNS turns).
+    Injects a system context so the model knows it is connected to the VM
+    and can explain/suggest use of its capabilities.
     Returns True if the VM responded successfully, False otherwise
     (caller should fall back to research_and_reply).
     """
     model = await get_best_model()
     history = _chat_history.get(user_id, [])
 
+    # Build a VM-awareness system prefix (injected as the first turn context)
+    _VM_SYSTEM = (
+        "Ты — AI-агент DRGR VM, подключённый к локальной Code VM по адресу "
+        f"{VM_BASE}. "
+        "Твои возможности через VM:\n"
+        "• Генерация и выполнение кода (Python, JS, HTML) — /execute, /code\n"
+        "• Генерация HTML-страниц и просмотр в ВИЗОРЕ — /generate\n"
+        "• Скриншот и AI-анализ любой веб-страницы — /browse <url>\n"
+        "• Поиск в интернете и написание статей — /search <тема>\n"
+        "• Конвертация файлов (изображения, JSON, CSV, Markdown) — /convert\n"
+        "• Управление Ollama-моделями (pull, delete, retrain)\n"
+        "• Самообучение VM на основе накопленного опыта — /retrain\n"
+        "Если пользователь просит что-то из этого — расскажи конкретную команду. "
+        "Отвечай на русском языке, кратко и по делу.\n\n"
+    )
+
     full_response = ""
     try:
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 f"{VM_BASE}/chat/stream",
-                json={"message": text, "model": model, "history": history},
+                json={
+                    "message":    text,
+                    "model":      model,
+                    "history":    history,
+                    "system":     _VM_SYSTEM,
+                },
                 timeout=aiohttp.ClientTimeout(total=180),
             ) as resp:
                 if resp.status != 200:
@@ -341,6 +364,7 @@ async def ask_ollama(prompt: str, model: Optional[str] = None) -> str:
 async def describe_image_ollama(image_path: str, model: Optional[str] = None) -> str:
     """
     Describe an image using Ollama vision endpoint or the VM /agent/describe_image.
+    Prefers qwen3-vl:8b as the vision model.
     Result is logged to the VM for self-improvement training.
     """
     if not os.path.exists(image_path):
@@ -348,13 +372,13 @@ async def describe_image_ollama(image_path: str, model: Optional[str] = None) ->
     t0 = time.monotonic()
     description = ""
 
-    # 1. Try VM dedicated endpoint (auto-selects best vision model)
+    # 1. Try VM dedicated endpoint (auto-selects best vision model — qwen3-vl:8b first)
     try:
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 f"{VM_BASE}/agent/describe_image",
                 json={"image_path": os.path.abspath(image_path)},
-                timeout=aiohttp.ClientTimeout(total=60),
+                timeout=aiohttp.ClientTimeout(total=90),
             ) as resp:
                 if resp.status == 200:
                     data = await resp.json()
@@ -367,7 +391,8 @@ async def describe_image_ollama(image_path: str, model: Optional[str] = None) ->
         try:
             with open(image_path, "rb") as fh:
                 img_b64 = base64.b64encode(fh.read()).decode()
-            vis_model = model or "llava"
+            # Prefer qwen3-vl, fall back to llava
+            vis_model = model or "qwen3-vl:8b"
             async with aiohttp.ClientSession() as session:
                 async with session.post(
                     f"{OLLAMA_BASE}/api/generate",
@@ -380,7 +405,7 @@ async def describe_image_ollama(image_path: str, model: Optional[str] = None) ->
                         "images": [img_b64],
                         "stream": False,
                     },
-                    timeout=aiohttp.ClientTimeout(total=60),
+                    timeout=aiohttp.ClientTimeout(total=90),
                 ) as resp:
                     if resp.status == 200:
                         data = await resp.json()
@@ -770,10 +795,11 @@ async def cmd_start(message: Message) -> None:
         "Я автономный агент для исследования, генерации кода и HTML\\.\n\n"
         "*Команды:*\n"
         "/search `<запрос>` — исследовать тему, статья \\+ скриншоты\n"
-        "/code `[python|js|html|...]` `<задача>` — сгенерировать код и скачать файл\n"
+        "/browse `<url>` — скриншот страницы \\+ AI анализ \\(qwen3\\-vl\\)\n"
+        "/code `[python|js|html|...]` `<задача>` — написать, запустить, исправить\n"
         "/execute `<код>` — выполнить код в VM sandbox\n"
         "/generate `<описание>` — HTML\\-страница \\(скачать файл\\)\n"
-        "/screenshot `<url>` — скриншот страницы\n"
+        "/screenshot `<url>` — быстрый скриншот страницы\n"
         "/convert — форматы конвертера; отправьте фото или файл \\(json/csv/md/html\\) для конвертации\n"
         "/retrain — запустить цикл самообучения VM\n"
         "/vm — статус VM, URL и команда запуска\n"
@@ -792,12 +818,15 @@ async def cmd_start(message: Message) -> None:
 async def cmd_help(message: Message) -> None:
     await message.answer(
         "\U0001f4d6 *Помощь — все команды*\n\n"
-        "*Исследование:*\n"
+        "*Исследование и браузер:*\n"
         "• `/search <тема>` — полное исследование, статья \\+ скриншоты \\+ HTML\n"
-        "• `/screenshot <url>` — скриншот страницы с AI описанием\n\n"
-        "*Генерация кода и HTML:*\n"
-        "• `/code <задача>` — Python код \\(файл `.py`\\)\n"
+        "• `/browse <url>` — скриншот страницы \\+ AI анализ \\(qwen3\\-vl:8b\\)\n"
+        "• `/screenshot <url>` — быстрый скриншот с описанием\n\n"
+        "*Генерация и выполнение кода:*\n"
+        "• `/code <задача>` — написать код, запустить, исправить ошибки, прислать файл\n"
         "• `/code python|js|html|go|... <задача>` — выбрать язык\n"
+        "• `/execute <код>` — выполнить код в VM sandbox\n"
+        "• `/generate <описание>` — HTML\\-страница \\(файл `.html`\\)\n\n"
         "• `/generate <описание>` — HTML\\-страница \\(файл `.html`\\)\n\n"
         "*Выполнение кода в VM sandbox:*\n"
         "• `/execute <код>` — Python по умолчанию\n"
@@ -938,7 +967,100 @@ async def cmd_screenshot(message: Message) -> None:
         )
 
 
-@router.message(Command("generate"))
+@router.message(Command("browse"))
+async def cmd_browse(message: Message) -> None:
+    """Screenshot a URL and analyse it with qwen3-vl:8b vision AI.
+
+    Usage: /browse <url>
+    Uses the VM /browse/screenshot endpoint which runs Playwright headless and
+    describes the result with the best available vision model (qwen3-vl:8b).
+    """
+    parts = (message.text or "").split(maxsplit=1)
+    if len(parts) < 2:
+        await message.answer(
+            "🌐 *Браузер + AI анализ страницы*\n\n"
+            "Использование: `/browse <url>`\n\n"
+            "Примеры:\n"
+            "• `/browse https://google.com`\n"
+            "• `/browse github.com`\n\n"
+            "Делает скриншот страницы и анализирует её с помощью qwen3\\-vl:8b",
+            parse_mode="MarkdownV2",
+        )
+        return
+
+    url = parts[1].strip()
+    if not url.startswith("http"):
+        url = "https://" + url
+
+    status = await message.answer(f"🌐 Делаю скриншот и анализирую `{url[:80]}`\u2026", parse_mode="MarkdownV2")
+    t0 = time.monotonic()
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{VM_BASE}/browse/screenshot",
+                json={"url": url},
+                timeout=aiohttp.ClientTimeout(total=60),
+            ) as resp:
+                if resp.status != 200:
+                    await status.edit_text(f"\u274c VM вернула ошибку {resp.status}")
+                    return
+                data = await resp.json()
+    except Exception as exc:
+        await status.edit_text(f"\u274c Ошибка: {str(exc)[:200]}")
+        return
+
+    dur = int((time.monotonic() - t0) * 1000)
+    screenshot_b64 = data.get("screenshot_base64", "")
+    description    = data.get("description", "")
+    model_used     = data.get("model", "")
+    success        = data.get("success", False)
+
+    await status.delete()
+
+    await action_logger.log(
+        "browse_screenshot",
+        {"url": url},
+        {"has_screenshot": bool(screenshot_b64), "description": description[:200]},
+        success,
+        dur,
+        {"model": model_used},
+    )
+
+    if screenshot_b64:
+        import base64 as _b64
+        img_bytes = _b64.b64decode(screenshot_b64)
+        ts = int(time.time())
+        shot_path = str(SCREENSHOTS_DIR / f"browse_{ts}.png")
+        with open(shot_path, "wb") as fh:
+            fh.write(img_bytes)
+
+        caption = f"🌐 {url[:100]}"
+        if model_used:
+            caption += f"\n🧠 Модель: {model_used}"
+        if description:
+            caption += f"\n\n{description[:800]}"
+
+        try:
+            await message.answer_photo(FSInputFile(shot_path), caption=caption[:1024])
+        except Exception:
+            # If photo too large send as document
+            try:
+                await message.answer_document(
+                    FSInputFile(shot_path, filename="screenshot.png"),
+                    caption=caption[:1024],
+                )
+            except Exception as exc:
+                await message.answer(caption[:4096])
+        return
+
+    # No screenshot — text fallback
+    text_fb = data.get("text_fallback", False)
+    fallback_desc = description or data.get("error", "Нет данных")
+    prefix = "⚠ Скриншот недоступен (установите Playwright: `playwright install chromium`).\n\n" if text_fb else "\u274c "
+    await message.answer(prefix + fallback_desc[:3000])
+
+
 async def cmd_generate(message: Message) -> None:
     parts = (message.text or "").split(maxsplit=1)
     if len(parts) < 2:
@@ -1052,10 +1174,15 @@ _LANG_EXT: Dict[str, str] = {
 
 @router.message(Command("code"))
 async def cmd_code(message: Message) -> None:
-    """Generate code from a prompt and send it as a downloadable file.
+    """Generate code, execute it, auto-fix errors, and send the verified file.
+
+    Uses POST /generate/auto/complete which iterates up to 3 times:
+      1. Generate code with Ollama
+      2. Execute it in the VM sandbox
+      3. If it fails: re-prompt with the error and try again
 
     Usage:
-      /code <task description>            — defaults to Python
+      /code <task description>            — auto-detect language
       /code python <task description>
       /code js <task description>
       /code html <task description>
@@ -1064,10 +1191,15 @@ async def cmd_code(message: Message) -> None:
 
     if len(parts) < 2:
         await message.answer(
-            "\U0001f4bb *Генерация кода*\n\n"
+            "\U0001f4bb *Генерация и проверка кода*\n\n"
             "Использование:\n"
-            "`/code <задача>` — Python \\(по умолчанию\\)\n"
+            "`/code <задача>` — автовыбор языка\n"
             "`/code python|js|html|go|rust|cpp|... <задача>`\n\n"
+            "VM автоматически:\n"
+            "1\\. Пишет код\n"
+            "2\\. Запускает его\n"
+            "3\\. Исправляет ошибки \\(до 3 попыток\\)\n"
+            "4\\. Отправляет проверенный рабочий файл\n\n"
             "Примеры:\n"
             "• `/code python скрипт для парсинга JSON файла`\n"
             "• `/code js анимированный счётчик`\n"
@@ -1077,7 +1209,7 @@ async def cmd_code(message: Message) -> None:
         return
 
     # Determine language and prompt
-    lang   = "python"
+    lang   = ""
     prompt = ""
     if len(parts) >= 3 and parts[1].lower() in _LANG_ALIASES:
         lang   = _LANG_ALIASES[parts[1].lower()]
@@ -1089,46 +1221,82 @@ async def cmd_code(message: Message) -> None:
         await message.answer("Укажите описание задачи после команды.")
         return
 
-    ext    = _LANG_EXT.get(lang, lang)
-    status = await message.answer(f"\u2699\ufe0f Генерирую {lang} код\u2026")
+    ext    = _LANG_EXT.get(lang, lang or "py")
+    lang_label = f" {lang}" if lang else ""
+    status = await message.answer(
+        f"\u2699\ufe0f Пишу{_esc(lang_label)} код\\, запускаю\\, проверяю\u2026",
+        parse_mode="MarkdownV2",
+    )
 
     try:
         model  = await get_best_model()
 
+        # Use auto-complete endpoint: generates + executes + auto-fixes
         async with aiohttp.ClientSession() as session:
             async with session.post(
-                f"{VM_BASE}/generate/code",
-                json={"model": model, "prompt": prompt, "language": lang},
-                timeout=aiohttp.ClientTimeout(total=120),
+                f"{VM_BASE}/generate/auto/complete",
+                json={"model": model, "prompt": prompt, "max_attempts": 3},
+                timeout=aiohttp.ClientTimeout(total=300),
             ) as resp:
                 if resp.status == 200:
-                    data = await resp.json()
-                    code = data.get("code", "")
+                    data     = await resp.json()
+                    code     = data.get("code", "")
+                    output   = data.get("output", "")
+                    lang_det = data.get("language", lang or "python")
+                    success  = data.get("success", False)
+                    attempts = data.get("attempts", 1)
+                    err_msg  = data.get("error", "")
+
                     if code:
                         ts   = int(time.time())
+                        ext  = _LANG_EXT.get(lang_det, lang_det)
                         path = str(ARTICLES_DIR / f"code_{ts}.{ext}")
                         async with aiofiles.open(path, "w", encoding="utf-8") as fh:
                             await fh.write(code)
                         await status.delete()
                         await action_logger.log(
                             "generate_code",
-                            {"prompt": prompt, "language": lang, "model": model},
-                            {"path": path, "length": len(code)},
-                            True,
+                            {"prompt": prompt, "language": lang_det, "model": model},
+                            {
+                                "path": path, "length": len(code),
+                                "attempts": attempts, "success": success,
+                            },
+                            success,
                         )
-                        await message.answer_document(
-                            FSInputFile(path, filename=f"code_{ts}.{ext}"),
-                            caption=(
-                                f"\U0001f4bb *{lang.title()}* код по запросу:\n"
-                                f"{prompt[:200]}"
-                            ),
+                        # Build caption
+                        status_icon = "\u2705" if success else "\u26a0\ufe0f"
+                        attempt_str = f"{attempts} попытк{'а' if attempts == 1 else 'и' if attempts < 5 else 'ок'}"
+                        caption = (
+                            f"{status_icon} *{_esc(lang_det.title())}* "
+                            f"\\({_esc(attempt_str)}\\) по запросу:\n"
+                            f"{_esc(prompt[:200])}"
                         )
+                        if output:
+                            caption += f"\n\n📤 Вывод:\n`{_esc(output[:300])}`"
+                        if not success and err_msg:
+                            caption += (
+                                f"\n\n⚠ Не удалось исправить за {attempts} попытки\\. "
+                                f"Последняя ошибка:\n`{_esc(err_msg[:200])}`"
+                            )
+                        try:
+                            await message.answer_document(
+                                FSInputFile(path, filename=f"code_{ts}.{ext}"),
+                                caption=caption[:1024],
+                                parse_mode="MarkdownV2",
+                            )
+                        except Exception:
+                            await message.answer_document(
+                                FSInputFile(path, filename=f"code_{ts}.{ext}"),
+                                caption=f"Код готов ({lang_det}, {attempt_str})",
+                            )
                         return
-                    error = data.get("error", "Пустой ответ от модели")
-                    await status.edit_text(f"\u274c {error[:300]}")
+
+                    error_text = data.get("error", "Пустой ответ от модели")
+                    await status.edit_text(f"\u274c {error_text[:300]}")
                     return
-                text = await resp.text()
-                await status.edit_text(f"\u274c VM вернула {resp.status}: {text[:200]}")
+
+                text_err = await resp.text()
+                await status.edit_text(f"\u274c VM вернула {resp.status}: {text_err[:200]}")
                 return
 
     except Exception as exc:

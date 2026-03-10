@@ -112,8 +112,27 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
 #vpane{display:flex;flex-direction:column;width:48%;min-width:240px;
   border-left:1px solid var(--border)}
 #vtb{display:flex;align-items:center;gap:6px;padding:4px 8px;
-  background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0}
-#vtb span{font-size:11px;font-weight:700;color:var(--text2);flex:1}
+  background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0;flex-wrap:wrap}
+#vtb span{font-size:11px;font-weight:700;color:var(--text2)}
+/* URL bar row inside ВИЗОР */
+#vurl-row{display:flex;align-items:center;gap:5px;padding:4px 8px;
+  background:var(--bg3);border-bottom:1px solid var(--border);flex-shrink:0}
+#vurl-input{flex:1;padding:4px 8px;background:var(--bg4);color:var(--text);
+  border:1px solid var(--border);border-radius:4px;font-size:12px;outline:none}
+#vurl-input:focus{border-color:var(--accent)}
+#vurl-input::placeholder{color:var(--text2)}
+.vbtn{background:none;border:1px solid var(--border);color:var(--text2);
+  cursor:pointer;font-size:11px;padding:3px 8px;border-radius:4px;white-space:nowrap;
+  transition:background .15s,color .15s}
+.vbtn:hover{background:var(--bg4);color:var(--text)}
+.vbtn.ai{border-color:var(--accent);color:var(--accent)}
+.vbtn.ai:hover{background:var(--accent);color:#fff}
+/* AI analysis overlay */
+#vai-box{padding:8px 10px;background:var(--bg3);border-bottom:1px solid var(--border);
+  font-size:11px;line-height:1.5;color:var(--text);max-height:120px;overflow-y:auto;
+  flex-shrink:0;display:none;white-space:pre-wrap;word-break:break-word}
+#vai-box.show{display:block}
+#vai-box .vai-hdr{font-size:10px;font-weight:700;color:var(--accent);margin-bottom:4px}
 #preview-frame{flex:1;border:none;background:#fff}
 #preview-placeholder{flex:1;display:flex;align-items:center;justify-content:center;
   flex-direction:column;gap:10px;color:var(--text2);font-size:13px;
@@ -322,17 +341,31 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
     <!-- Preview pane (ВИЗОР) -->
     <div id="vpane">
       <div id="vtb">
-        <span>🖥 ВИЗОР — Живой предпросмотр HTML</span>
+        <span>🖥 ВИЗОР</span>
         <button class="ei" onclick="previewFromEditor()" title="Обновить из редактора">↻ Обновить</button>
         <button class="ei" onclick="openFullscreen()" title="Открыть на весь экран">⛶</button>
+        <button class="vbtn ai" onclick="analyzePageAI()" id="btn-vai" title="Анализировать страницу с помощью qwen3-vl AI">🧠 AI анализ</button>
+      </div>
+      <!-- URL Navigation bar -->
+      <div id="vurl-row">
+        <input type="text" id="vurl-input" placeholder="https://example.com — загрузить страницу или скриншот+AI"
+          onkeydown="if(event.key==='Enter') browseUrl()"
+          autocomplete="off" autocorrect="off" spellcheck="false"/>
+        <button class="vbtn" onclick="browseUrl()" title="Загрузить в ВИЗОР">🌐 Перейти</button>
+        <button class="vbtn ai" onclick="screenshotAndAnalyze()" title="Скриншот страницы + AI описание">📸+🧠</button>
+      </div>
+      <!-- AI analysis result -->
+      <div id="vai-box">
+        <div class="vai-hdr">🧠 AI анализ страницы</div>
+        <div id="vai-text"></div>
       </div>
       <div id="preview-placeholder">
         <div class="big">🖥</div>
         <div>Здесь будет живой предпросмотр HTML</div>
-        <div style="font-size:11px">Введите запрос внизу и нажмите <b>Генерировать</b><br>или откройте HTML-файл в редакторе и нажмите <b>Обновить визор</b></div>
+        <div style="font-size:11px">Введите запрос внизу и нажмите <b>Генерировать</b><br>или введите URL выше и нажмите <b>Перейти</b><br>или откройте HTML-файл в редакторе и нажмите <b>Обновить</b></div>
       </div>
       <iframe id="preview-frame" style="display:none"
-        sandbox="allow-scripts allow-forms allow-modals allow-popups allow-same-origin"></iframe>
+        sandbox="allow-scripts allow-forms allow-modals allow-popups allow-same-origin allow-top-navigation-by-user-activation"></iframe>
     </div>
   </div>
 
@@ -603,6 +636,113 @@ function openFullscreen() {
 }
 function closeFullscreen() {
   document.getElementById('fs-overlay').style.display = 'none';
+}
+
+// ── ВИЗОР URL navigation ──────────────────────────────────────────────────────
+function browseUrl() {
+  var url = document.getElementById('vurl-input').value.trim();
+  if (!url) { toast('Введите URL'); return; }
+  if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+  var ph  = document.getElementById('preview-placeholder');
+  var frm = document.getElementById('preview-frame');
+  ph.style.display  = 'none';
+  frm.style.display = 'block';
+  frm.src = url;
+  frm.srcdoc = '';
+  var vpane = document.getElementById('vpane');
+  if (window.getComputedStyle(vpane).display === 'none') setView('both');
+}
+
+// ── ВИЗОР screenshot + AI analysis ───────────────────────────────────────────
+var vaiBusy = false;
+
+async function screenshotAndAnalyze() {
+  var url = document.getElementById('vurl-input').value.trim();
+  if (!url) { toast('Введите URL для скриншота'); return; }
+  if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+  if (vaiBusy) { toast('Анализ уже выполняется...'); return; }
+  vaiBusy = true;
+  var btn = document.querySelector('.vbtn.ai[onclick="screenshotAndAnalyze()"]');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳'; }
+  showVaiResult('⏳ Делаю скриншот и анализирую страницу...', true);
+  try {
+    var r = await fetch('/browse/screenshot', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({url: url})
+    });
+    var d = await r.json();
+    if (d.screenshot_base64) {
+      // Show screenshot in preview frame
+      var imgHtml = '<!DOCTYPE html><html><head><meta charset="UTF-8">'
+        + '<style>body{margin:0;background:#111;display:flex;align-items:flex-start;'
+        + 'justify-content:center;}img{max-width:100%;border:none;display:block}</style>'
+        + '</head><body><img src="data:image/png;base64,' + d.screenshot_base64 + '" alt="screenshot"/>'
+        + '</body></html>';
+      showPreview(imgHtml);
+    }
+    var desc = d.description || d.error || 'Нет описания';
+    var model = d.model ? (' [' + d.model + ']') : '';
+    showVaiResult((d.success ? '✅' : '⚠') + model + '\n' + desc, false);
+  } catch(e) {
+    showVaiResult('⚠ Ошибка: ' + e.message, false);
+  }
+  vaiBusy = false;
+  if (btn) { btn.disabled = false; btn.textContent = '📸+🧠'; }
+}
+
+async function analyzePageAI() {
+  // Analyse whatever is currently shown in the preview frame
+  if (vaiBusy) { toast('Анализ уже выполняется...'); return; }
+  var frm = document.getElementById('preview-frame');
+  var urlInBar = document.getElementById('vurl-input').value.trim();
+  var srcUrl = '';
+  try { srcUrl = frm.src || ''; } catch(e) {}
+  var targetUrl = urlInBar || srcUrl;
+  if (!targetUrl || targetUrl === window.location.href || targetUrl === 'about:blank') {
+    // Analyse generated HTML using text
+    if (editor && editor.getValue().trim()) {
+      showVaiResult('⏳ Анализирую текущий HTML-контент через AI...', true);
+      vaiBusy = true;
+      var btn = document.getElementById('btn-vai');
+      if (btn) { btn.disabled = true; btn.textContent = '⏳ AI...'; }
+      try {
+        var code = editor.getValue();
+        var r = await fetch('/ollama/ask', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            model: curModel,
+            prompt: 'Опиши этот HTML код: что он делает, какой интерфейс создаёт, какие функции выполняет?\n\n' + code.slice(0, 3000)
+          })
+        });
+        var d = await r.json();
+        showVaiResult('🧠 AI анализ кода:\n' + (d.response || 'Нет ответа'), false);
+      } catch(e) { showVaiResult('⚠ Ошибка: ' + e.message, false); }
+      vaiBusy = false;
+      if (btn) { btn.disabled = false; btn.textContent = '🧠 AI анализ'; }
+    } else {
+      toast('Введите URL или сгенерируйте HTML для анализа');
+    }
+    return;
+  }
+  document.getElementById('vurl-input').value = targetUrl;
+  screenshotAndAnalyze();
+}
+
+function showVaiResult(text, loading) {
+  var box = document.getElementById('vai-box');
+  var txt = document.getElementById('vai-text');
+  txt.textContent = text;
+  box.classList.add('show');
+  if (!loading) {
+    var vpane = document.getElementById('vpane');
+    if (window.getComputedStyle(vpane).display === 'none') setView('both');
+  }
+}
+
+function hideVaiResult() {
+  document.getElementById('vai-box').classList.remove('show');
 }
 
 // ── Run code (Python/JS output) ───────────────────────────────────────────────

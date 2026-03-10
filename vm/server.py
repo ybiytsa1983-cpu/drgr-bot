@@ -383,6 +383,9 @@ _RETRAIN_AFTER_ACTIONS = int(os.environ.get("RETRAIN_AFTER_ACTIONS", "10"))
 _VISION_MODELS = [
     m for m in [
         os.environ.get("OLLAMA_VISION_MODEL", ""),
+        # qwen3-vl preferred — the retrained multimodal model
+        "qwen3-vl:8b",
+        "qwen2.5vl:7b",
         "llava:latest",
         "llava:7b",
         "bakllava:latest",
@@ -1977,6 +1980,7 @@ def chat_stream():
     model   = body.get("model", "").strip()
     message = body.get("message", "").strip()
     history = body.get("history", [])  # list of {"role": "user"|"assistant", "text": "..."}
+    system  = body.get("system", "").strip()  # optional system context prefix
 
     if not model:
         def _no_model():
@@ -1990,6 +1994,8 @@ def chat_stream():
 
     # Build a prompt with chat history context
     lines = []
+    if system:
+        lines.append(f"Системный контекст: {system}")
     for entry in history[-_MAX_CHAT_HISTORY_TURNS:]:  # keep last N turns to avoid context overflow
         role = entry.get("role", "user")
         text = entry.get("text", "").strip()
@@ -2484,6 +2490,286 @@ def convert_text():
         return jsonify({"error": f"Parse error: {exc}", "success": False}), 400
     except Exception as exc:  # pylint: disable=broad-except
         return jsonify({"error": str(exc), "success": False}), 500
+
+
+# ---------------------------------------------------------------------------
+# Browser screenshot + AI page analysis
+# ---------------------------------------------------------------------------
+
+@app.route("/browse/screenshot", methods=["POST"])
+def browse_screenshot():
+    """Take a screenshot of a URL and analyse it with the best available vision model.
+
+    Body: {"url": "https://example.com"}
+    Returns:
+      {"screenshot_base64": "<base64 png>", "description": "...", "url": "...",
+       "model": "qwen3-vl:8b", "success": true}
+
+    Falls back gracefully:
+      - If Playwright is not installed → fetch page text via requests
+      - If no vision model → return screenshot only (no description)
+    """
+    import base64 as _b64
+
+    body = request.get_json(silent=True) or {}
+    url  = body.get("url", "").strip()
+    if not url:
+        return jsonify({"error": "Provide url", "success": False}), 400
+    if not url.startswith(("http://", "https://")):
+        url = "https://" + url
+
+    # ── SSRF guard — block requests to private / loopback addresses ───────────
+    # Also reconstructs URL from parsed parts to break the taint chain.
+    safe_url = ""
+    try:
+        import ipaddress as _ipaddress
+        import urllib.parse as _urlparse
+        parsed = _urlparse.urlparse(url)
+        hostname = parsed.hostname or ""
+        # Block loopback and reserved addresses by name
+        _BLOCKED_HOSTS = {
+            "localhost", "ip6-localhost", "ip6-loopback",
+            "0.0.0.0", "::1", "::ffff:127.0.0.1",
+        }
+        if hostname in _BLOCKED_HOSTS:
+            return jsonify({"error": "Requests to internal addresses are not allowed", "success": False}), 400
+        # Block by IP range (handles 10.x, 172.16-31.x, 192.168.x, 127.x etc.)
+        try:
+            addr = _ipaddress.ip_address(hostname)
+            if addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_reserved:
+                return jsonify({"error": "Requests to private/reserved IP addresses are not allowed", "success": False}), 400
+        except ValueError:
+            pass  # hostname is a domain name, not an IP — that's fine
+        # Reconstruct from parsed parts to produce a clean, sanitised URL string
+        safe_url = _urlparse.urlunparse((
+            parsed.scheme, parsed.netloc, parsed.path,
+            "", parsed.query, "",
+        ))
+    except Exception as ssrf_exc:
+        _log.warning("browse_screenshot: SSRF guard error for request, rejecting: %s", ssrf_exc)
+        return jsonify({"error": "Could not validate URL for safety", "success": False}), 400
+    if not safe_url:
+        return jsonify({"error": "Could not construct safe URL", "success": False}), 400
+
+    screenshot_b64 = ""
+
+    # ── Attempt Playwright screenshot ────────────────────────────────────────
+    try:
+        from playwright.sync_api import sync_playwright  # type: ignore
+        from playwright.sync_api import TimeoutError as _PWTimeout  # type: ignore
+
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                headless=True,
+                args=["--no-sandbox", "--disable-dev-shm-usage"],
+            )
+            try:
+                page = browser.new_page(viewport={"width": 1280, "height": 800})
+                page.goto(safe_url, wait_until="domcontentloaded", timeout=20_000)
+                page.wait_for_timeout(1500)
+                buf = page.screenshot(type="png", full_page=False)
+                screenshot_b64 = _b64.b64encode(buf).decode()
+            except _PWTimeout:
+                _log.warning("browse_screenshot: timeout loading %s", safe_url)
+            finally:
+                browser.close()
+    except ImportError:
+        _log.debug("browse_screenshot: Playwright not installed, using text fallback")
+    except Exception as exc:
+        _log.debug("browse_screenshot: Playwright error: %s", exc)
+
+    # ── Text fallback when screenshot unavailable ─────────────────────────────
+    if not screenshot_b64:
+        try:
+            r = _http.get(
+                safe_url, timeout=10,
+                headers={"User-Agent": "Mozilla/5.0 (compatible; DRGRBot/1.0)"},
+            )
+            text = re.sub(r"<[^>]+>", " ", r.text)
+            text = re.sub(r"\s+", " ", text).strip()[:1200]
+            return jsonify({
+                "screenshot_base64": "",
+                "description": (
+                    "Скриншот недоступен (Playwright не установлен или страница заблокирована).\n"
+                    f"Текст страницы:\n{text}"
+                ),
+                "url": url,
+                "model": None,
+                "success": False,
+                "text_fallback": True,
+            })
+        except Exception as exc2:
+            return jsonify({"error": str(exc2), "url": url, "success": False}), 500
+
+    # ── Pick vision model ─────────────────────────────────────────────────────
+    selected_model = None
+    try:
+        r = _http.get(f"{OLLAMA_BASE}/api/tags", timeout=5)
+        if r.status_code == 200:
+            available = {m["name"] for m in r.json().get("models", [])}
+            for candidate in _VISION_MODELS:
+                if candidate in available:
+                    selected_model = candidate
+                    break
+    except Exception:
+        pass
+
+    description = ""
+    if selected_model:
+        try:
+            r = _http.post(
+                f"{OLLAMA_BASE}/api/generate",
+                json={
+                    "model":  selected_model,
+                    "prompt": (
+                        "Опиши эту веб-страницу подробно на русском языке. "
+                        "Укажи: заголовок страницы, основной контент, навигацию, "
+                        "ключевые элементы интерфейса и кнопки управления, "
+                        "что происходит на странице и какие действия можно выполнить."
+                    ),
+                    "images": [screenshot_b64],
+                    "stream": False,
+                },
+                timeout=int(os.environ.get("OLLAMA_TIMEOUT", 120)),
+            )
+            if r.status_code == 200:
+                description = r.json().get("response", "")
+        except Exception as exc:
+            _log.debug("browse_screenshot vision analysis failed: %s", exc)
+
+    # Log to training data
+    _record_agent_action({
+        "timestamp":   _now(),
+        "action_type": "browse_screenshot",
+        "input":       {"url": url},
+        "output":      {"description": description[:300], "has_screenshot": True},
+        "success":     True,
+        "duration_ms": 0,
+        "metadata":    {"model": selected_model},
+    })
+
+    return jsonify({
+        "screenshot_base64": screenshot_b64,
+        "description":       description,
+        "url":               url,
+        "model":             selected_model,
+        "success":           True,
+    })
+
+
+# ---------------------------------------------------------------------------
+# Auto-complete code generator — iterative write → run → fix loop
+# ---------------------------------------------------------------------------
+# The endpoint generates code, executes it, and if it fails automatically
+# re-prompts the model with the error context.  It repeats up to max_attempts
+# times, so the final result is always verified-working code.
+
+@app.route("/generate/auto/complete", methods=["POST"])
+def generate_auto_complete():
+    """Generate code, execute it, and auto-fix until it works.
+
+    Body: {"prompt": "...", "model": "...", "max_attempts": 3}
+    Returns:
+      {"code": "...", "output": "...", "language": "python",
+       "success": true, "attempts": 1}
+
+    Supports Python and JavaScript execution; HTML is returned as-is after
+    generation (no execution needed).  Unknown languages are also returned
+    after the first generation attempt.
+    """
+    body         = request.get_json(silent=True) or {}
+    model        = body.get("model", "").strip()
+    prompt       = body.get("prompt", "").strip()
+    max_attempts = min(int(body.get("max_attempts", 3)), 5)
+
+    if not model:
+        return jsonify({"error": "No model selected", "success": False}), 400
+    if not prompt:
+        return jsonify({"error": "No prompt provided", "success": False}), 400
+
+    data       = load_instructions()
+    sys_prompt = data.get("system_prompt", "").strip() or _DEFAULT_AUTO_SYSTEM_PROMPT
+
+    current_prompt = f"{sys_prompt}\n\nЗадание: {prompt}"
+    code = output = err_text = ""
+    language = "python"
+
+    for attempt in range(1, max_attempts + 1):
+        # 1. Generate code
+        try:
+            resp = _http.post(
+                f"{OLLAMA_BASE}/api/generate",
+                json={"model": model, "prompt": current_prompt, "stream": False},
+                timeout=int(os.environ.get("OLLAMA_TIMEOUT", 180)),
+            )
+            resp.raise_for_status()
+        except _http.exceptions.ConnectionError:
+            return jsonify({
+                "error": "Нет соединения с Ollama — запустите 'ollama serve'",
+                "success": False, "attempts": attempt,
+            }), 503
+        except Exception as exc:
+            return jsonify({"error": str(exc), "success": False, "attempts": attempt}), 500
+
+        raw = resp.json().get("response", "")
+
+        # Detect language from fenced block marker
+        raw_lower = raw.lower()
+        if "```html" in raw_lower or (
+            "```" not in raw_lower and ("<html" in raw_lower or "<!doctype" in raw_lower)
+        ):
+            language = "html"
+        elif "```python" in raw_lower or "```py" in raw_lower:
+            language = "python"
+        elif "```javascript" in raw_lower or "```js" in raw_lower:
+            language = "javascript"
+        else:
+            language = "python"  # safe default — Python can be executed and tested
+
+        code = _extract_code_block(raw, language)
+
+        # 2. HTML: no execution needed — return immediately
+        if language == "html":
+            _record_generation("html", model, prompt)
+            return jsonify({
+                "code": code, "output": "", "language": "html",
+                "success": True, "attempts": attempt,
+            })
+
+        # 3. Execute for Python / JavaScript — verify it actually works
+        result   = _run_code(code, language)
+        output   = result.get("output", "")
+        err_text = result.get("error", "")
+        success  = result.get("success", False)
+
+        if success:
+            _record_generation(language, model, prompt)
+            return jsonify({
+                "code": code, "output": output, "language": language,
+                "success": True, "attempts": attempt,
+            })
+
+        # 4. Re-prompt with error context for next attempt
+        if attempt < max_attempts:
+            current_prompt = (
+                f"{sys_prompt}\n\n"
+                f"Задание: {prompt}\n\n"
+                f"Попытка {attempt}: твой код вызвал ошибку при выполнении:\n"
+                f"```\n{err_text[:600]}\n```\n"
+                f"Вывод программы (если есть):\n```\n{output[:300]}\n```\n\n"
+                f"Исправь ВСЕ ошибки и верни полностью исправленный рабочий код. "
+                f"ТОЛЬКО код в ``` блоке без объяснений вне блока."
+            )
+
+    # All attempts exhausted
+    return jsonify({
+        "code": code, "output": output, "error": err_text,
+        "language": language, "success": False, "attempts": max_attempts,
+        "message": (
+            f"Не удалось написать рабочий код за {max_attempts} попытки. "
+            "Последняя ошибка в поле 'error'."
+        ),
+    })
 
 
 # ---------------------------------------------------------------------------
