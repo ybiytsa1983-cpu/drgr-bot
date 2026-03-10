@@ -8,6 +8,7 @@ to the VM self-learning store so the VM can constantly improve itself.
 import asyncio
 import base64
 import hashlib
+import io
 import json
 import logging
 import os
@@ -297,8 +298,29 @@ async def chat_via_vm(user_id: int, text: str, message: Message) -> bool:
 
 
 async def ask_ollama(prompt: str, model: Optional[str] = None) -> str:
-    """Generate text with Ollama. Returns empty string on failure."""
+    """Generate text with Ollama.
+
+    Tries the VM /ollama/ask endpoint first (uses VM's auto-discovered Ollama
+    port), then falls back to querying Ollama directly.
+    Returns empty string on failure.
+    """
     model = model or OLLAMA_MODEL
+    # 1. Try VM endpoint (preferred — uses auto-discovered Ollama port)
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{VM_BASE}/ollama/ask",
+                json={"model": model, "prompt": prompt},
+                timeout=aiohttp.ClientTimeout(total=120),
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    text = data.get("response", "")
+                    if text:
+                        return text
+    except Exception as exc:
+        logger.debug("VM /ollama/ask: %s", exc)
+    # 2. Fallback: query Ollama directly
     try:
         async with aiohttp.ClientSession() as session:
             async with session.post(
@@ -749,9 +771,11 @@ async def cmd_start(message: Message) -> None:
         "*Команды:*\n"
         "/search `<запрос>` — исследовать тему, статья \\+ скриншоты\n"
         "/code `[python|js|html|...]` `<задача>` — сгенерировать код и скачать файл\n"
+        "/execute `<код>` — выполнить код в VM sandbox\n"
         "/generate `<описание>` — HTML\\-страница \\(скачать файл\\)\n"
         "/screenshot `<url>` — скриншот страницы\n"
-        "/convert — конвертер форматов \\(изображения, текст\\)\n"
+        "/convert — форматы конвертера; отправьте фото или файл \\(json/csv/md/html\\) для конвертации\n"
+        "/retrain — запустить цикл самообучения VM\n"
         "/vm — статус VM, URL и команда запуска\n"
         "/models — доступные AI\\-модели\n"
         "/stats — статистика самообучения\n"
@@ -775,13 +799,18 @@ async def cmd_help(message: Message) -> None:
         "• `/code <задача>` — Python код \\(файл `.py`\\)\n"
         "• `/code python|js|html|go|... <задача>` — выбрать язык\n"
         "• `/generate <описание>` — HTML\\-страница \\(файл `.html`\\)\n\n"
+        "*Выполнение кода в VM sandbox:*\n"
+        "• `/execute <код>` — Python по умолчанию\n"
+        "• `/execute python|js <код>` — выбрать язык\n"
+        "• `/run <код>` — псевдоним /execute\n\n"
         "*Конвертер файлов \\(через VM\\):*\n"
         "• `/convert` — список всех доступных конвертаций\n"
-        "• Изображения: PNG↔JPEG↔WEBP↔BMP\n"
-        "• Текст: JSON↔CSV, HTML→текст, Markdown→HTML\n\n"
-        "*Прочее:*\n"
+        "• Отправьте фото с подписью `jpeg`, `png`, `webp` или `bmp` — конвертация изображения\n"
+        "• Отправьте файл `.json`, `.csv`, `.html` или `.md` — конвертация текстового формата\n\n"
+        "*VM и самообучение:*\n"
         "• `/models` — список AI\\-моделей Ollama\n"
         "• `/stats` — что VM узнала из своих действий\n"
+        "• `/retrain` — запустить цикл самообучения VM вручную\n"
         "• `/vm` — статус VM и команды запуска\n\n"
         "*Установка VM \\(один раз\\):*\n"
         "`irm \"https://raw.githubusercontent.com/ybiytsa1983\\-cpu/drgr\\-bot/main/run\\.ps1\" | iex`\n\n"
@@ -838,6 +867,45 @@ async def cmd_stats(message: Message) -> None:
     )
 
 
+@router.message(Command("retrain"))
+async def cmd_retrain(message: Message) -> None:
+    """Trigger a VM self-improvement cycle via POST /retrain."""
+    status = await message.answer("\U0001f504 Запускаю цикл самообучения VM\u2026")
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{VM_BASE}/retrain",
+                timeout=aiohttp.ClientTimeout(total=30),
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    if data.get("success"):
+                        inst  = data.get("training_instructions", [])
+                        aa    = data.get("agent_actions", {})
+                        stats = data.get("statistics", {})
+                        text  = (
+                            "\U0001f9e0 *Самообучение завершено\\!*\n\n"
+                            f"\U0001f504 Циклов всего: *{_esc(str(aa.get('retrain_cycles', 0)))}*\n"
+                            f"\u2705 Успешных запусков: *{_esc(str(stats.get('successful_runs', 0)))}*\n"
+                            f"\u274c Ошибок: *{_esc(str(stats.get('failed_runs', 0)))}*\n"
+                            f"\U0001f4cb Правил сейчас: *{_esc(str(len(inst)))}*\n\n"
+                            "Последние правила:\n"
+                            + "\n".join(f"\u2022 {_esc(r[:80])}" for r in inst[-3:])
+                        )
+                        await status.delete()
+                        await message.answer(text, parse_mode="MarkdownV2")
+                        return
+                    error = data.get("error", "Неизвестная ошибка")
+                    await status.edit_text(f"\u274c {error[:300]}")
+                    return
+    except Exception as exc:
+        logger.warning("cmd_retrain: %s", exc)
+    await status.edit_text(
+        "\u26a0\ufe0f VM не отвечает\\. Убедитесь, что vm/server\\.py запущен\\.",
+        parse_mode="MarkdownV2",
+    )
+
+
 @router.message(Command("screenshot"))
 async def cmd_screenshot(message: Message) -> None:
     parts = (message.text or "").split(maxsplit=1)
@@ -878,49 +946,67 @@ async def cmd_generate(message: Message) -> None:
         return
     prompt = parts[1].strip()
     status = await message.answer(
-        "\U0001f528 Генерирую HTML\\-страницу\u2026", parse_mode="MarkdownV2"
+        "\U0001f528 Генерирую HTML\\-страницу через VM\u2026", parse_mode="MarkdownV2"
     )
     try:
-        model  = await get_best_model()
+        model = await get_best_model()
+        full_html = ""
 
+        # Use the streaming endpoint so the bot stays responsive during generation
         async with aiohttp.ClientSession() as session:
             async with session.post(
-                f"{VM_BASE}/generate/html",
+                f"{VM_BASE}/generate/html/stream",
                 json={"prompt": prompt, "model": model},
-                timeout=aiohttp.ClientTimeout(total=120),
+                timeout=aiohttp.ClientTimeout(total=180),
             ) as resp:
                 if resp.status == 200:
-                    data = await resp.json()
-                    html = data.get("html", "")
-                    if html:
-                        ts   = int(time.time())
-                        path = str(ARTICLES_DIR / f"gen_{ts}.html")
-                        async with aiofiles.open(path, "w", encoding="utf-8") as fh:
-                            await fh.write(html)
-                        await status.delete()
-                        await action_logger.log(
-                            "generate_html",
-                            {"prompt": prompt, "model": model},
-                            {"path": path, "length": len(html)},
-                            True,
-                        )
-                        await message.answer_document(
-                            FSInputFile(path, filename=f"page_{ts}.html"),
-                            caption=f"\U0001f4c4 HTML по запросу: {prompt[:100]}",
-                        )
-                        return
-                    error = data.get("error", "Пустой ответ")
-                    await status.edit_text(f"\u274c {error[:300]}")
-                    return
+                    async for raw_line in resp.content:
+                        line = raw_line.decode("utf-8", errors="replace").strip()
+                        if not line.startswith("data: "):
+                            continue
+                        payload = line[6:]
+                        if payload == "[DONE]":
+                            break
+                        try:
+                            chunk = json.loads(payload)
+                        except ValueError:
+                            continue
+                        if "error" in chunk:
+                            await status.edit_text(f"\u274c {chunk['error'][:300]}")
+                            return
+                        full_html += chunk.get("token", "")
+
+        if full_html.strip():
+            ts   = int(time.time())
+            path = str(ARTICLES_DIR / f"gen_{ts}.html")
+            async with aiofiles.open(path, "w", encoding="utf-8") as fh:
+                await fh.write(full_html)
+            await status.delete()
+            await action_logger.log(
+                "generate_html",
+                {"prompt": prompt, "model": model},
+                {"path": path, "length": len(full_html)},
+                True,
+            )
+            await message.answer_document(
+                FSInputFile(path, filename=f"page_{ts}.html"),
+                caption=f"\U0001f4c4 HTML по запросу: {prompt[:100]}",
+            )
+            return
+
+        await status.edit_text(
+            "\u274c VM не вернула HTML\\. Убедитесь, что VM и Ollama запущены\\.",
+            parse_mode="MarkdownV2",
+        )
     except Exception as exc:
         logger.error("generate failed: %s", exc)
         await action_logger.log(
             "generate_html", {"prompt": prompt}, {"error": str(exc)}, False
         )
-    await status.edit_text(
-        "\u274c Ошибка генерации\\. Убедитесь, что VM запущена\\.",
-        parse_mode="MarkdownV2",
-    )
+        await status.edit_text(
+            "\u274c Ошибка генерации\\. Убедитесь, что VM запущена\\.",
+            parse_mode="MarkdownV2",
+        )
 
 
 @router.message(Command("search"))
@@ -1060,6 +1146,95 @@ async def cmd_code(message: Message) -> None:
 
 
 # ---------------------------------------------------------------------------
+# /execute (/run) command — run code in the VM sandbox
+# ---------------------------------------------------------------------------
+
+
+@router.message(Command("execute", "run"))
+async def cmd_execute(message: Message) -> None:
+    """Execute code in the VM sandbox via POST /execute.
+
+    Usage:
+      /execute <code>                — Python by default
+      /execute python|js <code>
+      /run <code>
+    """
+    parts = (message.text or "").split(maxsplit=2)
+    if len(parts) < 2:
+        await message.answer(
+            "\U0001f4bb *Выполнение кода в VM*\n\n"
+            "Использование:\n"
+            "`/execute <код>` — Python \\(по умолчанию\\)\n"
+            "`/execute python|js <код>` — выбрать язык\n\n"
+            "Примеры:\n"
+            "• `/execute print\\('Hello, World\\!'\\)`\n"
+            "• `/execute js console\\.log\\('test'\\)`",
+            parse_mode="MarkdownV2",
+        )
+        return
+
+    lang = "python"
+    code = ""
+    if len(parts) >= 3 and parts[1].lower() in ("python", "py", "js", "javascript"):
+        lang = "python" if parts[1].lower() in ("python", "py") else "javascript"
+        code = parts[2]
+    else:
+        code = " ".join(parts[1:])
+
+    if not code.strip():
+        await message.answer("Укажите код для выполнения.")
+        return
+
+    status = await message.answer(f"\u2699\ufe0f Выполняю {lang} код в VM\u2026")
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{VM_BASE}/execute",
+                json={"code": code, "language": lang},
+                timeout=aiohttp.ClientTimeout(total=30),
+            ) as resp:
+                if resp.status == 200:
+                    data    = await resp.json()
+                    output  = data.get("output", "")
+                    error   = data.get("error", "")
+                    success = data.get("success", False)
+                    await action_logger.log(
+                        "execute_code",
+                        {"code": code[:200], "language": lang},
+                        {"output": output[:200], "success": success},
+                        success,
+                    )
+                    if success:
+                        result = (
+                            f"\u2705 *{_esc(lang.title())} \u2014 результат:*\n\n"
+                            f"```\n{output[:3000] or '(нет вывода)'}\n```"
+                        )
+                    else:
+                        result = (
+                            f"\u274c *{_esc(lang.title())} \u2014 ошибка:*\n\n"
+                            f"```\n{error[:3000]}\n```"
+                        )
+                    await status.delete()
+                    try:
+                        await message.answer(result, parse_mode="MarkdownV2")
+                    except Exception:
+                        await message.answer(result[:4096], parse_mode=None)
+                    return
+                text = await resp.text()
+                await status.edit_text(f"\u274c VM вернула {resp.status}: {text[:200]}")
+                return
+    except Exception as exc:
+        logger.error("cmd_execute: %s", exc)
+        await action_logger.log(
+            "execute_code", {"code": code[:200], "language": lang}, {"error": str(exc)}, False
+        )
+    await status.edit_text(
+        "\u274c Ошибка\\. Убедитесь, что VM запущена \\(http://localhost:5000/\\)\\.",
+        parse_mode="MarkdownV2",
+    )
+
+
+# ---------------------------------------------------------------------------
 # /convert command — show file converter capabilities
 # ---------------------------------------------------------------------------
 
@@ -1155,6 +1330,196 @@ async def cmd_vm(message: Message) -> None:
         parse_mode="MarkdownV2",
     )
 
+
+# ---------------------------------------------------------------------------
+# Photo handler — convert image via VM /convert/image
+# Send a photo with a caption like "jpeg", "png", "webp", or "bmp"
+# ---------------------------------------------------------------------------
+
+_IMAGE_FMT_ALIASES = {"jpg": "jpeg", "jpeg": "jpeg", "png": "png", "webp": "webp", "bmp": "bmp"}
+
+
+@router.message(F.photo)
+async def handle_photo_convert(message: Message) -> None:
+    """Convert a received photo to another image format via VM /convert/image."""
+    caption = (message.caption or "").strip().lower()
+
+    # Look for a target format anywhere in the caption
+    target_format = None
+    for word in caption.split():
+        if word in _IMAGE_FMT_ALIASES:
+            target_format = _IMAGE_FMT_ALIASES[word]
+            break
+    if not target_format:
+        for alias, fmt in _IMAGE_FMT_ALIASES.items():
+            if alias in caption:
+                target_format = fmt
+                break
+
+    if not target_format:
+        await message.answer(
+            "\U0001f5bc *Конвертация фото через VM*\n\n"
+            "Отправьте фото с подписью нужного формата:\n"
+            "\u2022 `jpeg` — JPEG \\(меньше размер\\)\n"
+            "\u2022 `png` — PNG \\(без потерь\\)\n"
+            "\u2022 `webp` — WebP \\(современный\\)\n"
+            "\u2022 `bmp` — BMP\n\n"
+            "Пример подписи: `webp` или `jpeg`",
+            parse_mode="MarkdownV2",
+        )
+        return
+
+    status = await message.answer(f"\U0001f504 Конвертирую в {target_format.upper()}\u2026")
+    try:
+        photo     = message.photo[-1]  # highest resolution
+        file_info = await bot.get_file(photo.file_id)
+        buf       = io.BytesIO()
+        await bot.download_file(file_info.file_path, buf)
+        img_b64   = base64.b64encode(buf.getvalue()).decode()
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{VM_BASE}/convert/image",
+                json={"image_base64": img_b64, "to_format": target_format},
+                timeout=aiohttp.ClientTimeout(total=30),
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    if data.get("success"):
+                        result_bytes = base64.b64decode(data["result_base64"])
+                        ts           = int(time.time())
+                        fname        = f"converted_{ts}.{target_format}"
+                        out_path     = str(ARTICLES_DIR / fname)
+                        async with aiofiles.open(out_path, "wb") as fh:
+                            await fh.write(result_bytes)
+                        await action_logger.log(
+                            "convert_image",
+                            {"to_format": target_format},
+                            {"size_bytes": data.get("size_bytes", 0),
+                             "dimensions": data.get("dimensions", "")},
+                            True,
+                        )
+                        await status.delete()
+                        await message.answer_document(
+                            FSInputFile(out_path, filename=fname),
+                            caption=(
+                                f"\u2705 Конвертировано в {target_format.upper()}\n"
+                                f"Размер: {data.get('dimensions', '?')}, "
+                                f"{data.get('size_bytes', 0) // 1024} КБ"
+                            ),
+                        )
+                        return
+                    await status.edit_text(f"\u274c {data.get('error', 'Ошибка конвертации')[:300]}")
+                    return
+                await status.edit_text(f"\u274c VM: HTTP {resp.status}")
+                return
+    except Exception as exc:
+        logger.error("photo_convert: %s", exc)
+    await status.edit_text(
+        "\u274c Ошибка конвертации\\. Убедитесь, что VM запущена\\.",
+        parse_mode="MarkdownV2",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Document handler — convert text file via VM /convert/text
+# Supported: JSON→CSV, CSV→JSON, HTML→text, Markdown→HTML
+# ---------------------------------------------------------------------------
+
+_TEXT_CONVERT_DEFAULTS = {
+    "json": "csv", "csv": "json", "html": "text", "htm": "text", "md": "html", "markdown": "html"
+}
+
+
+@router.message(F.document)
+async def handle_document_convert(message: Message) -> None:
+    """Convert a text document (JSON/CSV/HTML/Markdown) via VM /convert/text."""
+    doc   = message.document
+    if not doc:
+        return
+    fname   = (doc.file_name or "").lower()
+    caption = (message.caption or "").strip().lower()
+
+    # Detect source format from file extension
+    ext = fname.rsplit(".", 1)[-1] if "." in fname else ""
+    from_fmt = ext if ext in _TEXT_CONVERT_DEFAULTS else None
+    if not from_fmt:
+        return  # Not a text format we handle — silently ignore
+
+    # Detect target format from caption; fall back to default
+    to_fmt = None
+    valid_targets = {
+        "json": {"csv"},
+        "csv":  {"json"},
+        "html": {"text", "txt"},
+        "htm":  {"text", "txt"},
+        "md":   {"html"},
+        "markdown": {"html"},
+    }.get(from_fmt, set())
+    for word in caption.split():
+        if word in valid_targets or (word == "txt" and "text" in valid_targets):
+            to_fmt = "text" if word == "txt" else word
+            break
+    if not to_fmt:
+        to_fmt = _TEXT_CONVERT_DEFAULTS[from_fmt]
+
+    # Map source extension to canonical server format name
+    server_from = {"htm": "html", "markdown": "md"}.get(from_fmt, from_fmt)
+
+    # Limit file size to 1 MB
+    if doc.file_size and doc.file_size > 1_048_576:
+        await message.answer(
+            "\u26a0\ufe0f Файл слишком большой \\(макс 1 МБ\\)\\.", parse_mode="MarkdownV2"
+        )
+        return
+
+    status = await message.answer(
+        f"\U0001f504 Конвертирую {from_fmt.upper()} \u2192 {to_fmt.upper()} через VM\u2026"
+    )
+    try:
+        file_info = await bot.get_file(doc.file_id)
+        buf       = io.BytesIO()
+        await bot.download_file(file_info.file_path, buf)
+        content   = buf.getvalue().decode("utf-8", errors="replace")
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{VM_BASE}/convert/text",
+                json={"content": content, "from_format": server_from, "to_format": to_fmt},
+                timeout=aiohttp.ClientTimeout(total=30),
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    if data.get("success"):
+                        result_text = data.get("result", "")
+                        ts          = int(time.time())
+                        out_ext     = to_fmt if to_fmt != "text" else "txt"
+                        out_fname   = f"converted_{ts}.{out_ext}"
+                        out_path    = str(ARTICLES_DIR / out_fname)
+                        async with aiofiles.open(out_path, "w", encoding="utf-8") as fh:
+                            await fh.write(result_text)
+                        await action_logger.log(
+                            "convert_text",
+                            {"from_format": from_fmt, "to_format": to_fmt},
+                            {"length": len(result_text)},
+                            True,
+                        )
+                        await status.delete()
+                        await message.answer_document(
+                            FSInputFile(out_path, filename=out_fname),
+                            caption=f"\u2705 {from_fmt.upper()} \u2192 {to_fmt.upper()}",
+                        )
+                        return
+                    await status.edit_text(f"\u274c {data.get('error', 'Ошибка')[:300]}")
+                    return
+                await status.edit_text(f"\u274c VM: HTTP {resp.status}")
+                return
+    except Exception as exc:
+        logger.error("doc_convert: %s", exc)
+    await status.edit_text(
+        "\u274c Ошибка конвертации\\. Убедитесь, что VM запущена\\.",
+        parse_mode="MarkdownV2",
+    )
 
 
 @router.message(F.text & ~F.text.startswith("/"))
