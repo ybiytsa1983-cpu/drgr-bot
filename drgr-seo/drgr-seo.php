@@ -419,11 +419,20 @@ class DRGR_SEO_Manager {
      * This keeps the Yoast meta box but pushes it below DRGR SEO.
      */
     public function maybe_disable_yoast_metabox( $priority ) {
-        if ( is_admin() && isset( $_GET['post'] ) ) {
+        if ( ! is_admin() ) return $priority;
+
+        // Use the global $post object which WordPress sets reliably on edit screens —
+        // avoids direct $_GET access and is safe in all admin contexts.
+        $post_id = 0;
+        if ( ! empty( $GLOBALS['post'] ) && $GLOBALS['post'] instanceof WP_Post ) {
+            $post_id = $GLOBALS['post']->ID;
+        } elseif ( isset( $_GET['post'] ) ) {
+            // Fallback: cast to int prevents any injection; no user-facing output here.
             $post_id = (int) $_GET['post'];
-            if ( get_post_meta( $post_id, '_drgr_disable_yoast', true ) ) {
-                return 'low';
-            }
+        }
+
+        if ( $post_id && get_post_meta( $post_id, '_drgr_disable_yoast', true ) ) {
+            return 'low';
         }
         return $priority;
     }
@@ -459,21 +468,8 @@ register_activation_hook( __FILE__, 'drgr_seo_activate' );
 register_deactivation_hook( __FILE__, 'drgr_seo_deactivate' );
 
 function drgr_seo_activate() {
-    global $wpdb;
-    $table_name      = $wpdb->prefix . 'drgr_licenses';
-    $charset_collate = $wpdb->get_charset_collate();
-    $sql = "CREATE TABLE IF NOT EXISTS {$table_name} (
-        id          mediumint(9)  NOT NULL AUTO_INCREMENT,
-        license_key varchar(100)  NOT NULL,
-        status      varchar(20)   DEFAULT 'inactive',
-        domain      varchar(255)  DEFAULT NULL,
-        expires     datetime      DEFAULT NULL,
-        created     datetime      DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (id),
-        UNIQUE KEY license_key (license_key)
-    ) {$charset_collate};";
-    require_once ABSPATH . 'wp-admin/includes/upgrade.php';
-    dbDelta( $sql );
+    // Flush rewrite rules on activation in case post types need them.
+    flush_rewrite_rules();
 }
 
 function drgr_seo_deactivate() {

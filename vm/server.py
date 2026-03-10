@@ -2716,8 +2716,9 @@ def agent_describe_image():
 # ---------------------------------------------------------------------------
 
 # Ports/hosts where local image generation backends are expected.
-_SD_API_URL      = os.environ.get("SD_API_URL",      "http://127.0.0.1:7860")   # Automatic1111 / SD.Next
-_COMFYUI_API_URL = os.environ.get("COMFYUI_API_URL", "http://127.0.0.1:8188")   # ComfyUI
+_SD_API_URL          = os.environ.get("SD_API_URL",          "http://127.0.0.1:7860")   # Automatic1111 / SD.Next
+_COMFYUI_API_URL     = os.environ.get("COMFYUI_API_URL",     "http://127.0.0.1:8188")   # ComfyUI
+_COMFYUI_CHECKPOINT  = os.environ.get("COMFYUI_CHECKPOINT",  "v1-5-pruned-emaonly.ckpt")  # default SD 1.5 checkpoint
 
 
 def _sd_available(base_url: str) -> bool:
@@ -2800,7 +2801,7 @@ def _generate_via_comfyui(base_url: str, params: dict) -> dict:
                 "denoise":  1.0,
             },
         },
-        "4": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": "v1-5-pruned-emaonly.ckpt"}},
+        "4": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": _COMFYUI_CHECKPOINT}},
         "5": {"class_type": "EmptyLatentImage",       "inputs": {"width": width, "height": height, "batch_size": 1}},
         "6": {"class_type": "CLIPTextEncode",         "inputs": {"text": prompt_text, "clip": ["4", 1]}},
         "7": {"class_type": "CLIPTextEncode",         "inputs": {"text": negative,    "clip": ["4", 1]}},
@@ -2871,7 +2872,7 @@ def agent_generate_image():
     Override defaults via SD_API_URL / COMFYUI_API_URL environment variables.
     """
     import base64 as _b64
-    import time as _t0
+    import time as _time_mod
 
     body = request.get_json(silent=True) or {}
     prompt = (body.get("prompt") or "").strip()
@@ -2888,7 +2889,7 @@ def agent_generate_image():
         "save_as":         body.get("save_as", ""),
     }
 
-    t_start = _t0.time()
+    t_start = _time_mod.time()
     result  = None
     error   = None
 
@@ -2920,7 +2921,7 @@ def agent_generate_image():
         )
         return jsonify({"success": False, "error": msg, "hint": error}), 503
 
-    duration_ms = int((_t0.time() - t_start) * 1000)
+    duration_ms = int((_time_mod.time() - t_start) * 1000)
 
     # Optional: save file to projects directory
     saved_path = ""
@@ -2929,8 +2930,11 @@ def agent_generate_image():
         projects_dir = os.path.join(_DIR, "projects")
         os.makedirs(projects_dir, exist_ok=True)
         save_as = os.path.basename(save_as)  # strip any path traversal
-        if not save_as.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
-            save_as += ".png"
+        # Strip any existing extension then always save as .png to avoid confusion
+        root, _ext = os.path.splitext(save_as)
+        if not root:
+            root = "generated"
+        save_as = root + ".png"
         saved_path = os.path.join(projects_dir, save_as)
         try:
             with open(saved_path, "wb") as fh:

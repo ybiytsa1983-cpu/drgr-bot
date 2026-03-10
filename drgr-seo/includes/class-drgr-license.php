@@ -39,7 +39,11 @@ class DRGR_License_Manager {
     public function is_license_valid() {
         $license = $this->get_license();
         if ( $license['status'] !== 'active' ) return false;
-        if ( ! empty( $license['expires'] ) && strtotime( $license['expires'] ) < time() ) return false;
+        if ( ! empty( $license['expires'] ) ) {
+            $expires_ts = strtotime( $license['expires'] );
+            // strtotime returns false for invalid strings — treat invalid expiry as expired
+            if ( $expires_ts === false || $expires_ts < time() ) return false;
+        }
         return true;
     }
 
