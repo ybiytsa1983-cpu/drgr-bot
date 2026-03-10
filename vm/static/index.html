@@ -761,7 +761,8 @@ async function loadOllamaUrl() {
     if (d.ollama_url) document.getElementById('ol-url').value = d.ollama_url;
     // Also update bot token indicator from settings if health hasn't been polled yet
     if (typeof d.bot_token_set === 'boolean') {
-      set('h-bot', d.bot_token_set ? '✓ Токен есть' : '✗ Нет токена', d.bot_token_set ? 'ok' : 'warn');
+      var hasToken = d.bot_token_set;
+      set('h-bot', hasToken ? '✓ Токен есть' : '✗ Нет токена', hasToken ? 'ok' : 'warn');
     }
   } catch(e) {}
 }

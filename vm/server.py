@@ -154,6 +154,9 @@ def _ollama_heartbeat() -> None:
 
 threading.Thread(target=_ollama_heartbeat, daemon=True).start()
 
+# Maximum number of prior chat turns to include in the /chat/stream context.
+_MAX_CHAT_HISTORY_TURNS = 20
+
 # Preferred model order for auto-selection (first match wins).
 # Override the default with OLLAMA_DEFAULT_MODEL env var.
 _PREFERRED_MODELS = [
@@ -1898,7 +1901,7 @@ def chat_stream():
 
     # Build a prompt with chat history context
     lines = []
-    for entry in history[-20:]:  # keep last 20 turns to avoid context overflow
+    for entry in history[-_MAX_CHAT_HISTORY_TURNS:]:  # keep last N turns to avoid context overflow
         role = entry.get("role", "user")
         text = entry.get("text", "").strip()
         if text:
