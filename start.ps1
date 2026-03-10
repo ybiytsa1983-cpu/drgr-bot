@@ -73,28 +73,34 @@ try {
     }
     if ($ollamaExe) {
         $ollamaUp = $false
-        foreach ($tryPort in (11434..11444)) {
-            try {
-                $r = Invoke-WebRequest -Uri "http://localhost:$tryPort/api/tags" `
-                        -UseBasicParsing -TimeoutSec 1 -ErrorAction SilentlyContinue
-                if ($r -and $r.StatusCode -eq 200) { $ollamaUp = $true; break }
-            } catch { }
+        foreach ($tryHost in @("127.0.0.1", "localhost")) {
+            foreach ($tryPort in (11434..11444)) {
+                try {
+                    $r = Invoke-WebRequest -Uri "http://${tryHost}:$tryPort/api/tags" `
+                            -UseBasicParsing -TimeoutSec 1 -ErrorAction SilentlyContinue
+                    if ($r -and $r.StatusCode -eq 200) { $ollamaUp = $true; break }
+                } catch { }
+            }
+            if ($ollamaUp) { break }
         }
         if (-not $ollamaUp) {
             Start-Process -FilePath $ollamaExe -ArgumentList 'serve' `
                 -WindowStyle Minimized -ErrorAction SilentlyContinue
             # Wait up to 15 s so vm.ps1 detects Ollama immediately (avoids duplicate start)
-            # Probe all ports 11434-11444, not just the default, in case Ollama
-            # starts on a non-standard port (e.g. 11435 if 11434 is already taken).
+            # Probe both 127.0.0.1 and localhost on ports 11434-11444, in case Ollama
+            # starts on a non-standard port or binds to 127.0.0.1 only.
             for ($attempt = 0; $attempt -lt 15; $attempt++) {
                 Start-Sleep -Seconds 1
                 $detected = $false
-                foreach ($tryPort in (11434..11444)) {
-                    try {
-                        $r2 = Invoke-WebRequest -Uri "http://localhost:$tryPort/api/tags" `
-                                -UseBasicParsing -TimeoutSec 1 -ErrorAction SilentlyContinue
-                        if ($r2 -and $r2.StatusCode -eq 200) { $detected = $true; break }
-                    } catch { }
+                foreach ($tryHost2 in @("127.0.0.1", "localhost")) {
+                    foreach ($tryPort in (11434..11444)) {
+                        try {
+                            $r2 = Invoke-WebRequest -Uri "http://${tryHost2}:$tryPort/api/tags" `
+                                    -UseBasicParsing -TimeoutSec 1 -ErrorAction SilentlyContinue
+                            if ($r2 -and $r2.StatusCode -eq 200) { $detected = $true; break }
+                        } catch { }
+                    }
+                    if ($detected) { break }
                 }
                 if ($detected) { break }
             }

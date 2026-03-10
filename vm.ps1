@@ -120,25 +120,29 @@ if (-not $ollamaInstalled) {
 }
 
 # Probe ports 11434-11444 to find an already-running Ollama instance
+# Scan 127.0.0.1 first (avoids IPv6 issues on Windows where localhost → ::1).
 $detectedPort = $null
-foreach ($tryPort in (11434..11444)) {
-    try {
-        $r = Invoke-WebRequest -Uri "http://localhost:$tryPort/api/tags" `
-                -UseBasicParsing -TimeoutSec 1 -ErrorAction SilentlyContinue
-        if ($r -and $r.StatusCode -eq 200) { $detectedPort = $tryPort; break }
-    } catch { }
+$detectedHost = $null
+:portScan foreach ($tryHost in @("127.0.0.1", "localhost")) {
+    foreach ($tryPort in (11434..11444)) {
+        try {
+            $r = Invoke-WebRequest -Uri "http://${tryHost}:$tryPort/api/tags" `
+                    -UseBasicParsing -TimeoutSec 1 -ErrorAction SilentlyContinue
+            if ($r -and $r.StatusCode -eq 200) { $detectedPort = $tryPort; $detectedHost = $tryHost; break portScan }
+        } catch { }
+    }
 }
 
 if ($detectedPort) {
     $ollamaPort    = $detectedPort
     $ollamaRunning = $true
-    # Always sync OLLAMA_HOST to the actual detected port so server.py uses the right URL
-    # even when OLLAMA_HOST was previously set to a different (wrong) port.
-    if ($env:OLLAMA_HOST -and $env:OLLAMA_HOST -ne "http://localhost:$ollamaPort") {
-        Write-Host "[Code VM] Updating OLLAMA_HOST from $($env:OLLAMA_HOST) to detected http://localhost:$ollamaPort" -ForegroundColor Yellow
+    $detectedUrl   = "http://${detectedHost}:${detectedPort}"
+    # Always sync OLLAMA_HOST to the actual detected URL so server.py uses the right address.
+    if ($env:OLLAMA_HOST -and $env:OLLAMA_HOST -ne $detectedUrl) {
+        Write-Host "[Code VM] Updating OLLAMA_HOST from $($env:OLLAMA_HOST) to detected $detectedUrl" -ForegroundColor Yellow
     }
-    $env:OLLAMA_HOST = "http://localhost:$ollamaPort"
-    Write-Host "[Code VM] Ollama already running on port $ollamaPort." -ForegroundColor Green
+    $env:OLLAMA_HOST = $detectedUrl
+    Write-Host "[Code VM] Ollama already running on $detectedUrl." -ForegroundColor Green
 } else {
     # Ollama not detected — fall back to configured / default port
     if (-not $env:OLLAMA_HOST) { $env:OLLAMA_HOST = "http://localhost:11434" }
@@ -147,14 +151,18 @@ if ($detectedPort) {
         Write-Host "[Code VM] Starting Ollama service on port $ollamaPort..." -ForegroundColor Cyan
         # OLLAMA_HOST is already set so ollama serve listens on the correct port
         Start-Process -FilePath $ollamaExePath -ArgumentList "serve" -WindowStyle Minimized
-        # Wait up to 10 s for Ollama to respond
+        # Wait up to 10 s for Ollama to respond — probe both 127.0.0.1 and localhost
         for ($i = 0; $i -lt 10; $i++) {
             Start-Sleep -Seconds 1
-            try {
-                $r = Invoke-WebRequest -Uri "http://localhost:$ollamaPort/api/tags" `
-                        -UseBasicParsing -TimeoutSec 1 -ErrorAction SilentlyContinue
-                if ($r -and $r.StatusCode -eq 200) { $ollamaRunning = $true; break }
-            } catch { }
+            $started = $false
+            foreach ($wh in @("127.0.0.1", "localhost")) {
+                try {
+                    $r = Invoke-WebRequest -Uri "http://${wh}:$ollamaPort/api/tags" `
+                            -UseBasicParsing -TimeoutSec 1 -ErrorAction SilentlyContinue
+                    if ($r -and $r.StatusCode -eq 200) { $ollamaRunning = $true; $started = $true; break }
+                } catch { }
+            }
+            if ($started) { break }
         }
         if (-not $ollamaRunning) {
             Write-Host "[Code VM] Warning: Ollama may not have started yet." -ForegroundColor Yellow

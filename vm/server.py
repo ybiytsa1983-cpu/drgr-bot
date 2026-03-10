@@ -95,7 +95,11 @@ _OLLAMA_SCAN_LOCK = threading.Lock()
 
 
 def _autodiscover_ollama() -> None:
-    """Verify OLLAMA_BASE is reachable; if not, scan ports 11434-11444."""
+    """Verify OLLAMA_BASE is reachable; if not, scan ports 11434-11444.
+
+    Scans both 127.0.0.1 and localhost because on Windows, 'localhost' may
+    resolve to ::1 (IPv6) while Ollama listens on 127.0.0.1 only.
+    """
     global OLLAMA_BASE, _OLLAMA_SCANNED
     with _OLLAMA_SCAN_LOCK:
         if _OLLAMA_SCANNED:
@@ -107,20 +111,17 @@ def _autodiscover_ollama() -> None:
             return  # configured URL is reachable — done
         except Exception:  # pylint: disable=broad-except
             pass
-        # 2. Fall back: scan localhost ports 11434-11444.
-        #    Covers cases where Ollama is listening on a non-default port
-        #    (e.g. 11435) even though the configured default is 11434.
-        parsed = urllib.parse.urlparse(OLLAMA_BASE)
-        scheme = parsed.scheme or "http"
-        host = parsed.hostname or "localhost"
-        for port in range(11434, 11445):
-            url = f"{scheme}://{host}:{port}"
-            try:
-                _http.get(f"{url}/api/tags", timeout=1)
-                OLLAMA_BASE = url   # update global for all subsequent requests
-                return
-            except Exception:  # pylint: disable=broad-except
-                continue
+        # 2. Fall back: scan 127.0.0.1 first (avoids IPv6 issues on Windows),
+        #    then localhost, on ports 11434-11444.
+        for host in ("127.0.0.1", "localhost"):
+            for port in range(11434, 11445):
+                url = f"http://{host}:{port}"
+                try:
+                    _http.get(f"{url}/api/tags", timeout=1)
+                    OLLAMA_BASE = url   # update global for all subsequent requests
+                    return
+                except Exception:  # pylint: disable=broad-except
+                    continue
 
 
 # Kick off discovery immediately so it's done before the first browser request
@@ -1336,16 +1337,24 @@ def update_instructions():
 
 
 # ---------------------------------------------------------------------------
-# Settings (bot token, etc.)
+# Settings (bot token, Ollama URL, etc.)
 # ---------------------------------------------------------------------------
+@app.route("/settings", methods=["GET"])
+def get_settings():
+    """Return current runtime settings so the UI can pre-fill fields."""
+    return jsonify({"ollama_url": OLLAMA_BASE})
+
+
 @app.route("/settings", methods=["POST"])
 def save_settings():
-    """Save settings such as the Telegram bot token to .env."""
+    """Save settings (Telegram bot token, Ollama URL) to .env."""
+    global OLLAMA_BASE, _OLLAMA_SCANNED  # noqa: PLW0603
     body = request.get_json(silent=True) or {}
-    bot_token = body.get("bot_token", "").strip()
+    bot_token  = body.get("bot_token",  "").strip()
+    ollama_url = body.get("ollama_url", "").strip()
 
-    if not bot_token:
-        return jsonify({"ok": False, "error": "Empty token"})
+    if not bot_token and not ollama_url:
+        return jsonify({"ok": False, "error": "Nothing to save"})
 
     env_path = os.path.join(os.path.dirname(_DIR), ".env")
 
@@ -1355,21 +1364,40 @@ def save_settings():
         with open(env_path, "r", encoding="utf-8") as f:
             lines = f.readlines()
 
-    # Update or append BOT_TOKEN line
-    token_found = False
-    for i, line in enumerate(lines):
-        if line.startswith("BOT_TOKEN="):
-            lines[i] = f"BOT_TOKEN={bot_token}\n"
-            token_found = True
-            break
-    if not token_found:
-        lines.append(f"BOT_TOKEN={bot_token}\n")
+    if bot_token:
+        # Update or append BOT_TOKEN line
+        token_found = False
+        for i, line in enumerate(lines):
+            if line.startswith("BOT_TOKEN="):
+                lines[i] = f"BOT_TOKEN={bot_token}\n"
+                token_found = True
+                break
+        if not token_found:
+            lines.append(f"BOT_TOKEN={bot_token}\n")
+        # Apply to current process so /health reflects the change immediately
+        os.environ["BOT_TOKEN"] = bot_token
+
+    if ollama_url:
+        # Update or append OLLAMA_HOST line
+        ollama_found = False
+        for i, line in enumerate(lines):
+            if line.startswith("OLLAMA_HOST="):
+                lines[i] = f"OLLAMA_HOST={ollama_url}\n"
+                ollama_found = True
+                break
+        if not ollama_found:
+            lines.append(f"OLLAMA_HOST={ollama_url}\n")
+        # Apply to current process immediately
+        os.environ["OLLAMA_HOST"] = ollama_url
+        OLLAMA_BASE = ollama_url
+        # Allow auto-discovery to re-check with the new URL
+        with _OLLAMA_SCAN_LOCK:
+            _OLLAMA_SCANNED = False
+        threading.Thread(target=_autodiscover_ollama, daemon=True).start()
 
     with open(env_path, "w", encoding="utf-8") as f:
         f.writelines(lines)
 
-    # Apply to current process too so /health reflects the new token immediately
-    os.environ["BOT_TOKEN"] = bot_token
     return jsonify({"ok": True})
 
 

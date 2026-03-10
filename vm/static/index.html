@@ -169,6 +169,14 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
       </div>
     </div>
 
+    <!-- Ollama URL -->
+    <div>
+      <div class="pl">🔗 Ollama URL</div>
+      <input type="text" id="ol-url" placeholder="http://127.0.0.1:11434" autocomplete="off"/>
+      <button class="pb pb-p pb-f" style="margin-top:4px" onclick="saveOllamaUrl()">💾 Сохранить URL Ollama</button>
+      <div style="font-size:10px;color:var(--text2)">Если Ollama на нестандартном порту — укажите URL вручную</div>
+    </div>
+
     <!-- Bot token -->
     <div>
       <div class="pl">📱 Telegram Bot Token</div>
@@ -690,6 +698,29 @@ async function saveBotToken() {
   } catch(e) { toast('⚠ Ошибка сети: ' + e.message); }
 }
 
+// ── Ollama URL ────────────────────────────────────────────────────────────────
+async function loadOllamaUrl() {
+  try {
+    var r = await fetch('/settings'); var d = await r.json();
+    if (d.ollama_url) document.getElementById('ol-url').value = d.ollama_url;
+  } catch(e) {}
+}
+async function saveOllamaUrl() {
+  var url = document.getElementById('ol-url').value.trim();
+  if (!url) { toast('Введите URL, например: http://127.0.0.1:11434'); return; }
+  if (!/^https?:\/\/.+:\d+/.test(url)) { toast('Неверный формат. Пример: http://127.0.0.1:11435'); return; }
+  try {
+    var r = await fetch('/settings', { method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ ollama_url: url }) });
+    var d = await r.json();
+    if (d.ok) {
+      toast('✓ Ollama URL сохранён, проверяю соединение...');
+      setTimeout(function(){ loadHealth(); loadModels(); }, 1500);
+    } else { toast('⚠ ' + (d.error||'Ошибка')); }
+  } catch(e) { toast('⚠ Ошибка: ' + e.message); }
+}
+
 // ── Workshop ──────────────────────────────────────────────────────────────────
 async function pullModel() {
   var name = document.getElementById('wk-pull').value.trim(); if (!name) return;
@@ -746,6 +777,7 @@ window.addEventListener('load', function(){
   loadHealth();
   loadModels();
   loadSystemPrompt();
+  loadOllamaUrl();
   setView('both');
 });
 </script>
