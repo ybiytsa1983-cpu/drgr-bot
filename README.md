@@ -10,7 +10,7 @@ Monaco Editor + Flask + Ollama. Пишешь промпт — получаешь
 **Нажми Win+X → «Windows PowerShell» и вставь одну строку:**
 
 ```powershell
-irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/run.ps1" | iex
+irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/copilot/create-monaco-code-generator/run.ps1" | iex
 ```
 
 > Это скачает и запустит установщик — он сам склонирует репозиторий, установит зависимости и создаст ярлык.  
@@ -24,10 +24,10 @@ irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/run.ps1" | 
 Открой **PowerShell** (Win+X → Windows PowerShell) и вставь всё сразу:
 
 ```powershell
-$d="$env:USERPROFILE\drgr-bot"; if(Test-Path "$d\.git"){Set-Location $d; git pull}else{Set-Location "$env:USERPROFILE"; git clone https://github.com/ybiytsa1983-cpu/drgr-bot; Set-Location drgr-bot}; Set-ExecutionPolicy Bypass -Scope Process -Force; .\install.ps1
+$d="$env:USERPROFILE\drgr-bot"; $b="copilot/create-monaco-code-generator"; if(Test-Path "$d\.git"){Set-Location $d; git fetch --all; git checkout $b}else{git clone -b $b https://github.com/ybiytsa1983-cpu/drgr-bot $d; Set-Location $d}; Set-ExecutionPolicy Bypass -Scope Process -Force; .\install.ps1
 ```
 
-> **Папка уже есть?** Команда автоматически сделает `git pull` и обновит файлы вместо повторного клонирования.
+> **Папка уже есть?** Команда автоматически переключит ветку и обновит файлы.
 
 > **Git не установлен?** Скачай: https://git-scm.com/download/win — установи с настройками по умолчанию, потом снова вставь команду выше.
 
@@ -43,10 +43,10 @@ $d="$env:USERPROFILE\drgr-bot"; if(Test-Path "$d\.git"){Set-Location $d; git pul
 > ```
 > **Правильный ручной вариант** (или просто используй однострочник выше):
 > ```powershell
-> Set-Location "$env:USERPROFILE"                                   # перейти в домашнюю папку
-> git clone https://github.com/ybiytsa1983-cpu/drgr-bot            # клонировать
-> Set-Location drgr-bot                                             # войти в папку
-> .\install.ps1                                                      # запустить установку (.\ обязательно!)
+> Set-Location "$env:USERPROFILE"
+> git clone -b copilot/create-monaco-code-generator https://github.com/ybiytsa1983-cpu/drgr-bot
+> Set-Location drgr-bot
+> .\install.ps1
 > ```
 
 Установка займёт ~2 минуты. После неё на Рабочем столе появятся два файла:
