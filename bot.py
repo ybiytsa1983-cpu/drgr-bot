@@ -247,15 +247,23 @@ async def chat_via_vm(user_id: int, text: str, message: Message) -> bool:
     _VM_SYSTEM = (
         "Ты — AI-агент DRGR VM, подключённый к локальной Code VM по адресу "
         f"{VM_BASE}. "
-        "Твои возможности через VM:\n"
-        "• Генерация и выполнение кода (Python, JS, HTML) — /execute, /code\n"
-        "• Генерация HTML-страниц и просмотр в ВИЗОРЕ — /generate\n"
-        "• Скриншот и AI-анализ любой веб-страницы — /browse <url>\n"
-        "• Поиск в интернете и написание статей — /search <тема>\n"
-        "• Конвертация файлов (изображения, JSON, CSV, Markdown) — /convert\n"
-        "• Управление Ollama-моделями (pull, delete, retrain)\n"
-        "• Самообучение VM на основе накопленного опыта — /retrain\n"
-        "Если пользователь просит что-то из этого — расскажи конкретную команду. "
+        "Ты работаешь через расширение Code VM которое даёт тебе доступ к браузеру, "
+        "Monaco редактору, ВИЗОРУ и HTML-генератору.\n\n"
+        "Твои возможности:\n"
+        "• 🖥 ВИЗОР — браузер-инспектор со скриншотами и AI-анализом — /visor <url> или /browse <url>\n"
+        "• 🧑‍💻 Генерация и выполнение кода (Python, JS, HTML) — /execute, /code\n"
+        "• 🌐 HTML-генератор Monaco — создание полных страниц — /generate <описание>\n"
+        "• 🔍 Поиск в интернете и написание статей — /search <тема>\n"
+        "• 📂 Конвертация файлов (изображения, JSON, CSV, Markdown) — /convert\n"
+        "• 🧠 Управление моделями Ollama (pull, delete, retrain)\n"
+        "• 🔄 Самообучение VM на основе накопленного опыта — /retrain\n"
+        "• 📸 Скриншот + qwen3-vl анализ страницы — /browse <url>\n\n"
+        "ВАЖНО: Ты ПОДКЛЮЧЁН к расширению Code VM. Ты МОЖЕШЬ:\n"
+        "1. Делать скриншоты ЛЮБЫХ веб-страниц через /browse\n"
+        "2. Анализировать страницы с помощью qwen3-vl:8b (vision model)\n"
+        "3. Запускать код прямо в VM sandbox\n"
+        "4. Генерировать HTML и сразу видеть его в ВИЗОРЕ\n"
+        "Когда пользователь просит что-то — ДЕЛАЙ это немедленно, не объясняй как это сделать.\n"
         "Отвечай на русском языке, кратко и по делу.\n\n"
     )
 
@@ -795,6 +803,7 @@ async def cmd_start(message: Message) -> None:
         "Я автономный агент для исследования, генерации кода и HTML\\.\n\n"
         "*Команды:*\n"
         "/search `<запрос>` — исследовать тему, статья \\+ скриншоты\n"
+        "/visor `<url>` — 🖥 ВИЗОР: скриншот \\+ AI анализ \\(qwen3\\-vl\\)\n"
         "/browse `<url>` — скриншот страницы \\+ AI анализ \\(qwen3\\-vl\\)\n"
         "/code `[python|js|html|...]` `<задача>` — написать, запустить, исправить\n"
         "/execute `<код>` — выполнить код в VM sandbox\n"
@@ -809,7 +818,7 @@ async def cmd_start(message: Message) -> None:
         "*Или просто напишите запрос* — агент исследует тему и создаст статью\\.\n\n"
         "\U0001f4bb *Запуск VM \\(PowerShell\\):*\n"
         "`irm \"https://raw.githubusercontent.com/ybiytsa1983\\-cpu/drgr\\-bot/main/run\\.ps1\" | iex`\n\n"
-        "\U0001f5a5 После установки: ярлык *«Code VM»* на Рабочем столе",
+        "\U0001f5a5 После установки: ярлык *«Code VM»* и *«ЗАПУСТИТЬ ВМ»* на Рабочем столе",
         parse_mode="MarkdownV2",
     )
 
@@ -820,6 +829,8 @@ async def cmd_help(message: Message) -> None:
         "\U0001f4d6 *Помощь — все команды*\n\n"
         "*Исследование и браузер:*\n"
         "• `/search <тема>` — полное исследование, статья \\+ скриншоты \\+ HTML\n"
+        "• `/visor <url>` — 🖥 ВИЗОР: скриншот \\+ AI анализ \\(qwen3\\-vl:8b\\)\n"
+        "• `/visor watch <url>` — слежение за изменениями на странице \\(3 снимка\\)\n"
         "• `/browse <url>` — скриншот страницы \\+ AI анализ \\(qwen3\\-vl:8b\\)\n"
         "• `/screenshot <url>` — быстрый скриншот с описанием\n\n"
         "*Генерация и выполнение кода:*\n"
@@ -827,23 +838,18 @@ async def cmd_help(message: Message) -> None:
         "• `/code python|js|html|go|... <задача>` — выбрать язык\n"
         "• `/execute <код>` — выполнить код в VM sandbox\n"
         "• `/generate <описание>` — HTML\\-страница \\(файл `.html`\\)\n\n"
-        "• `/generate <описание>` — HTML\\-страница \\(файл `.html`\\)\n\n"
-        "*Выполнение кода в VM sandbox:*\n"
-        "• `/execute <код>` — Python по умолчанию\n"
-        "• `/execute python|js <код>` — выбрать язык\n"
-        "• `/run <код>` — псевдоним /execute\n\n"
+        "*VM и самообучение:*\n"
+        "• `/models` — список AI\\-моделей \\(включая drgr\\-visor\\)\n"
+        "• `/stats` — что VM узнала из своих действий\n"
+        "• `/retrain` — запустить цикл самообучения VM вручную\n"
+        "• `/vm` — статус VM и команды запуска\n\n"
         "*Конвертер файлов \\(через VM\\):*\n"
         "• `/convert` — список всех доступных конвертаций\n"
         "• Отправьте фото с подписью `jpeg`, `png`, `webp` или `bmp` — конвертация изображения\n"
         "• Отправьте файл `.json`, `.csv`, `.html` или `.md` — конвертация текстового формата\n\n"
-        "*VM и самообучение:*\n"
-        "• `/models` — список AI\\-моделей Ollama\n"
-        "• `/stats` — что VM узнала из своих действий\n"
-        "• `/retrain` — запустить цикл самообучения VM вручную\n"
-        "• `/vm` — статус VM и команды запуска\n\n"
         "*Установка VM \\(один раз\\):*\n"
         "`irm \"https://raw.githubusercontent.com/ybiytsa1983\\-cpu/drgr\\-bot/main/run\\.ps1\" | iex`\n\n"
-        "Пример: `/code python парсер JSON файла`",
+        "Пример: `/visor watch https://news.ycombinator.com`",
         parse_mode="MarkdownV2",
     )
 
@@ -1061,7 +1067,145 @@ async def cmd_browse(message: Message) -> None:
     await message.answer(prefix + fallback_desc[:3000])
 
 
-async def cmd_generate(message: Message) -> None:
+@router.message(Command("visor"))
+async def cmd_visor(message: Message) -> None:
+    """Analyse current page in ВИЗОР using qwen3-vl vision AI.
+
+    Usage: /visor <url>     — screenshot + detailed AI analysis
+           /visor watch <url> — start watching for page changes (3 snapshots)
+    """
+    parts = (message.text or "").split(maxsplit=2)
+    if len(parts) < 2:
+        await message.answer(
+            "🖥 *ВИЗОР — браузер\\-инспектор*\n\n"
+            "Команды:\n"
+            "• `/visor <url>` — скриншот \\+ AI анализ страницы\n"
+            "• `/visor watch <url>` — слежение за изменениями \\(3 снимка\\)\n\n"
+            "Примеры:\n"
+            "• `/visor https://google\\.com`\n"
+            "• `/visor watch https://news\\.ycombinator\\.com`\n\n"
+            "Использует qwen3\\-vl:8b или drgr\\-visor \\(переученная модель\\)",
+            parse_mode="MarkdownV2",
+        )
+        return
+
+    # /visor watch <url>
+    if parts[1].lower() == "watch" and len(parts) >= 3:
+        watch_url = parts[2].strip()
+        if not watch_url.startswith("http"):
+            watch_url = "https://" + watch_url
+
+        status = await message.answer(
+            f"👁 Слежу за изменениями на `{watch_url[:80]}`\\.\\.\\. (3 снимка с интервалом 10 сек)",
+            parse_mode="MarkdownV2",
+        )
+        t0 = time.monotonic()
+        results = []
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{VM_BASE}/visor/watch",
+                    json={"url": watch_url, "interval": 10, "max_snapshots": 3},
+                    timeout=aiohttp.ClientTimeout(total=120),
+                ) as resp:
+                    async for raw_line in resp.content:
+                        line = raw_line.decode("utf-8", errors="replace").strip()
+                        if not line.startswith("data: "):
+                            continue
+                        payload = line[6:]
+                        if payload == "[DONE]":
+                            break
+                        try:
+                            snap = json.loads(payload)
+                            if snap.get("description"):
+                                results.append(snap)
+                        except ValueError:
+                            continue
+        except Exception as exc:
+            await status.edit_text(f"❌ Ошибка: {str(exc)[:200]}")
+            return
+
+        await status.delete()
+        dur = int((time.monotonic() - t0) * 1000)
+
+        if not results:
+            await message.answer("❌ Не удалось получить снимки. Проверьте URL и наличие Playwright.")
+            return
+
+        report = f"👁 *Наблюдение за страницей* — {watch_url[:60]}\n\n"
+        for snap in results:
+            n = snap.get("snapshot", "?")
+            desc = snap.get("description", "")[:500]
+            change = snap.get("change", "")
+            report += f"*Снимок {n}:* {desc}\n"
+            if change:
+                report += f"🔄 {change}\n"
+            report += "\n"
+        report += f"⏱ {dur // 1000} сек | модель: {results[0].get('model', '?')}"
+
+        try:
+            await message.answer(report[:4096])
+        except Exception:
+            await message.answer(report[:4096], parse_mode=None)
+        return
+
+    # /visor <url> — same as /browse but with explicit ВИЗОР framing
+    url = parts[1].strip()
+    if not url.startswith("http"):
+        url = "https://" + url
+
+    status = await message.answer(
+        f"🖥 ВИЗОР анализирует `{url[:80]}`\\.\\.\\.",
+        parse_mode="MarkdownV2",
+    )
+    t0 = time.monotonic()
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{VM_BASE}/browse/screenshot",
+                json={"url": url},
+                timeout=aiohttp.ClientTimeout(total=60),
+            ) as resp:
+                if resp.status != 200:
+                    await status.edit_text(f"❌ VM вернула ошибку {resp.status}")
+                    return
+                data = await resp.json()
+    except Exception as exc:
+        await status.edit_text(f"❌ Ошибка: {str(exc)[:200]}")
+        return
+
+    dur = int((time.monotonic() - t0) * 1000)
+    screenshot_b64 = data.get("screenshot_base64", "")
+    description    = data.get("description", "")
+    model_used     = data.get("model", "")
+
+    await status.delete()
+
+    if screenshot_b64:
+        import base64 as _b64
+        img_bytes = _b64.b64decode(screenshot_b64)
+        ts = int(time.time())
+        shot_path = str(SCREENSHOTS_DIR / f"visor_{ts}.png")
+        with open(shot_path, "wb") as fh:
+            fh.write(img_bytes)
+
+        caption = f"🖥 ВИЗОР: {url[:80]}"
+        if model_used:
+            caption += f"\n🧠 {model_used}"
+        if description:
+            caption += f"\n\n{description[:800]}"
+
+        try:
+            await message.answer_photo(FSInputFile(shot_path), caption=caption[:1024])
+        except Exception:
+            await message.answer(caption[:4096])
+    else:
+        desc = description or data.get("error", "Нет данных")
+        await message.answer(f"🖥 ВИЗОР: {url}\n\n{desc[:3000]}")
+
+
+
     parts = (message.text or "").split(maxsplit=1)
     if len(parts) < 2:
         await message.answer("Использование: `/generate <описание>`", parse_mode="MarkdownV2")

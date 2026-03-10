@@ -11,6 +11,7 @@ Endpoints:
   POST /ollama/ask     — ask a free-form question to a model (AI chat)
   POST /ollama/pull    — pull / download an Ollama model (streaming NDJSON)
   POST /ollama/create  — create a custom model from a Modelfile
+  POST /ollama/create-visor-vm — create drgr-visor (retrained qwen3-vl:8b for ВИЗОР+Monaco)
   POST /ollama/delete  — delete an Ollama model
   POST /generate/code  — generate code from a prompt (returns extracted code block)
   POST /generate/html  — generate a full HTML page from a prompt (live-preview ready)
@@ -22,9 +23,11 @@ Endpoints:
   POST /agent/log      — receive action record from the Telegram bot for self-learning
   GET  /agent/stats    — return agent action statistics and current training instructions
   POST /agent/describe_image — describe an image using Ollama vision model
+  POST /visor/watch    — SSE: continuously screenshot a URL and report AI-detected changes
   GET  /convert/formats     — list available file conversion formats
   POST /convert/image       — convert image between formats (PNG/JPEG/WEBP/BMP) via Pillow
   POST /convert/text        — convert text between formats (JSON↔CSV, HTML→text, MD→HTML)
+  POST /browse/screenshot   — screenshot a URL and analyse with qwen3-vl / drgr-visor
 """
 
 import ast
@@ -2655,6 +2658,216 @@ def browse_screenshot():
         "model":             selected_model,
         "success":           True,
     })
+
+
+# ---------------------------------------------------------------------------
+# Visor VM — create retrained qwen3-vl model + live page-watch endpoint
+# ---------------------------------------------------------------------------
+
+@app.route("/ollama/create-visor-vm", methods=["POST"])
+def create_visor_vm():
+    """Create (or recreate) the drgr-visor custom model from qwen3-vl:8b.
+
+    Reads vm/Modelfile.qwen3-visor and submits it to Ollama's /api/create
+    endpoint as a streaming SSE response so the UI can show download progress.
+
+    Body: {} — no parameters needed, everything is read from the Modelfile.
+    Returns: text/event-stream with {"status": "...", "done": true|false}
+    """
+    modelfile_path = os.path.join(_DIR, "Modelfile.qwen3-visor")
+    try:
+        with open(modelfile_path, "r", encoding="utf-8") as fh:
+            modelfile_content = fh.read()
+    except FileNotFoundError:
+        return jsonify({"error": f"Modelfile not found: {modelfile_path}"}), 500
+
+    model_name = "drgr-visor"
+
+    def _stream():
+        yield f"data: {{\"status\":\"Creating model '{model_name}' from qwen3-vl:8b...\"}}\n\n"
+        try:
+            with _http.post(
+                f"{OLLAMA_BASE}/api/create",
+                json={"name": model_name, "modelfile": modelfile_content, "stream": True},
+                stream=True,
+                timeout=3600,
+            ) as r:
+                for raw_line in r.iter_lines():
+                    if not raw_line:
+                        continue
+                    try:
+                        obj = json.loads(raw_line)
+                    except ValueError:
+                        continue
+                    status  = obj.get("status", "")
+                    error   = obj.get("error", "")
+                    payload = json.dumps({"status": status, "error": error})
+                    yield f"data: {payload}\n\n"
+            yield (
+                f"data: {{\"status\":\"✅ Модель '{model_name}' создана! "
+                f"Используй её в настройках как '{model_name}'\",\"done\":true}}\n\n"
+            )
+        except _http.exceptions.ConnectionError:
+            yield "data: {\"error\":\"Cannot connect to Ollama — убедись что Ollama запущена\"}\n\n"
+        except Exception as exc:  # pylint: disable=broad-except
+            yield f"data: {{\"error\":{json.dumps(str(exc))}}}\n\n"
+
+    return Response(
+        stream_with_context(_stream()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.route("/visor/watch", methods=["POST"])
+def visor_watch():
+    """Continuously screenshot a URL and report AI-detected changes (SSE).
+
+    Body: {"url": "https://...", "interval": 10, "max_snapshots": 5}
+    Returns: text/event-stream with per-snapshot JSON objects:
+      {"snapshot": 1, "description": "...", "change": "...", "url": "..."}
+
+    Uses the best available vision model to describe each snapshot and compute
+    a diff summary compared to the previous snapshot.  Stops after max_snapshots.
+    """
+    import base64 as _b64
+
+    body         = request.get_json(silent=True) or {}
+    url          = body.get("url", "").strip()
+    interval_sec = max(3, min(int(body.get("interval", 10)), 60))
+    max_snaps    = max(1, min(int(body.get("max_snapshots", 5)), 20))
+
+    if not url:
+        return jsonify({"error": "Provide url"}), 400
+    if not url.startswith(("http://", "https://")):
+        url = "https://" + url
+
+    # SSRF guard (same logic as /browse/screenshot)
+    try:
+        import ipaddress as _ipaddress
+        import urllib.parse as _urlparse2
+        _parsed2 = _urlparse2.urlparse(url)
+        _hostname2 = _parsed2.hostname or ""
+        _BLOCKED2 = {"localhost", "ip6-localhost", "0.0.0.0", "::1"}
+        if _hostname2 in _BLOCKED2:
+            return jsonify({"error": "Requests to internal addresses not allowed"}), 400
+        try:
+            _addr2 = _ipaddress.ip_address(_hostname2)
+            if _addr2.is_private or _addr2.is_loopback or _addr2.is_link_local:
+                return jsonify({"error": "Requests to private IP addresses not allowed"}), 400
+        except ValueError:
+            pass
+        url = _urlparse2.urlunparse((
+            _parsed2.scheme, _parsed2.netloc, _parsed2.path, "", _parsed2.query, ""
+        ))
+    except Exception:
+        return jsonify({"error": "Could not validate URL"}), 400
+
+    # Select vision model: prefer drgr-visor (our retrained model), then qwen3-vl:8b
+    vis_model = _best_vision_model()
+
+    def _stream():
+        prev_description = ""
+        for snap_n in range(1, max_snaps + 1):
+            if snap_n > 1:
+                time.sleep(interval_sec)
+
+            # Take screenshot via same code path as /browse/screenshot
+            screenshot_b64 = ""
+            try:
+                from playwright.sync_api import sync_playwright  # type: ignore
+                from playwright.sync_api import TimeoutError as _PWTimeout  # type: ignore
+                with sync_playwright() as _pw:
+                    _brow = _pw.chromium.launch(headless=True, args=["--no-sandbox"])
+                    try:
+                        _pg = _brow.new_page(viewport={"width": 1280, "height": 800})
+                        _pg.goto(url, wait_until="networkidle", timeout=20_000)
+                        _img_bytes = _pg.screenshot(full_page=False)
+                        screenshot_b64 = _b64.b64encode(_img_bytes).decode()
+                    except _PWTimeout:
+                        pass
+                    finally:
+                        _brow.close()
+            except Exception:
+                pass
+
+            if not screenshot_b64:
+                payload = json.dumps({
+                    "snapshot": snap_n, "url": url,
+                    "error": "Playwright not available — установи: playwright install chromium",
+                    "done": snap_n == max_snaps,
+                })
+                yield f"data: {payload}\n\n"
+                break
+
+            # Ask vision model to describe this snapshot
+            description = ""
+            change_summary = ""
+            try:
+                vis_body: dict = {
+                    "model": vis_model,
+                    "prompt": (
+                        "Опиши подробно что видишь на этом скриншоте веб-страницы. "
+                        "Что изменилось по сравнению с предыдущим снимком?\n"
+                        f"Предыдущее описание: {prev_description[:500] or 'нет (первый снимок)'}"
+                    ),
+                    "images": [screenshot_b64],
+                    "stream": False,
+                }
+                _r = _http.post(
+                    f"{OLLAMA_BASE}/api/generate",
+                    json=vis_body,
+                    timeout=60,
+                )
+                if _r.status_code == 200:
+                    description = _r.json().get("response", "")
+                    if prev_description and description:
+                        change_summary = (
+                            "Нет изменений" if description[:200] == prev_description[:200]
+                            else "Обнаружены изменения на странице"
+                        )
+            except Exception as exc:
+                description = f"Ошибка AI анализа: {exc}"
+
+            prev_description = description
+
+            payload = json.dumps({
+                "snapshot":    snap_n,
+                "url":         url,
+                "model":       vis_model,
+                "description": description[:1000],
+                "change":      change_summary,
+                "screenshot_base64": screenshot_b64[:200] + "...",  # truncated for SSE
+                "done":        snap_n == max_snaps,
+            })
+            yield f"data: {payload}\n\n"
+
+    return Response(
+        stream_with_context(_stream()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+def _best_vision_model() -> str:
+    """Return the best available vision model name.
+
+    Preference order: drgr-visor (our retrained model), qwen3-vl:8b, llava.
+    Falls back to the first available model if none of the preferred ones exist.
+    """
+    preferred = ["drgr-visor", "qwen3-vl:8b", "qwen3-vl:235b-cloud", "llava", "llava:13b"]
+    try:
+        r = _http.get(f"{OLLAMA_BASE}/api/tags", timeout=5)
+        if r.status_code == 200:
+            available = {m.get("name", "") for m in r.json().get("models", [])}
+            for p in preferred:
+                if p in available:
+                    return p
+            if available:
+                return next(iter(available))
+    except Exception:
+        pass
+    return "qwen3-vl:8b"
 
 
 # ---------------------------------------------------------------------------

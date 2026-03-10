@@ -273,6 +273,7 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
     </div>
 
     <button class="pb pb-m pb-f" onclick="retrain()">🔄 Retrain (самообучение)</button>
+    <button class="pb pb-m pb-f" onclick="createVisorVM()" id="btn-create-visor" title="Создать переученную qwen3-vl модель с поддержкой ВИЗОРА и Monaco">🧠 Создать Visor VM</button>
     <button class="pb pb-d pb-f" onclick="clearOutput()">🗑 Очистить вывод</button>
 
     <!-- PowerShell commands -->
@@ -353,6 +354,7 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
           autocomplete="off" autocorrect="off" spellcheck="false"/>
         <button class="vbtn" onclick="browseUrl()" title="Загрузить в ВИЗОР">🌐 Перейти</button>
         <button class="vbtn ai" onclick="screenshotAndAnalyze()" title="Скриншот страницы + AI описание">📸+🧠</button>
+        <button class="vbtn" id="btn-watch" onclick="toggleWatchPage()" title="Следить за изменениями на странице (3 снимка)">👁 Watch</button>
       </div>
       <!-- AI analysis result -->
       <div id="vai-box">
@@ -1044,7 +1046,98 @@ async function retrain() {
   toast(d.message || 'Retrain запущен');
 }
 
-// ── Chat ──────────────────────────────────────────────────────────────────────
+// ── Create Visor VM (retrain qwen3-vl:8b with Monaco+ВИЗОР system prompt) ──
+async function createVisorVM() {
+  var btn = document.getElementById('btn-create-visor');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Создаю...'; }
+  showVaiResult('⏳ Создаю модель drgr-visor (переучиваю qwen3-vl:8b)...\nЭто может занять несколько минут.', true);
+  if (window.getComputedStyle(document.getElementById('vpane')).display === 'none') setView('both');
+  try {
+    var resp = await fetch('/ollama/create-visor-vm', { method: 'POST',
+      headers: {'Content-Type': 'application/json'}, body: '{}' });
+    var reader = resp.body.getReader();
+    var decoder = new TextDecoder();
+    var lastStatus = '';
+    while (true) {
+      var _r = await reader.read();
+      if (_r.done) break;
+      var lines = decoder.decode(_r.value).split('\n');
+      for (var line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        try {
+          var obj = JSON.parse(line.slice(6));
+          if (obj.error) { showVaiResult('❌ Ошибка: ' + obj.error, false); break; }
+          if (obj.status) { lastStatus = obj.status; showVaiResult('⏳ ' + lastStatus, obj.done !== true); }
+          if (obj.done) {
+            showVaiResult('✅ ' + lastStatus, false);
+            loadModels();
+          }
+        } catch(e) {}
+      }
+    }
+  } catch(e) { showVaiResult('❌ Ошибка: ' + e.message, false); }
+  if (btn) { btn.disabled = false; btn.textContent = '🧠 Создать Visor VM'; }
+}
+
+// ── Watch page changes (ВИЗОР) ────────────────────────────────────────────────
+var watchActive = false;
+var watchAbort = null;
+
+async function toggleWatchPage() {
+  if (watchActive) {
+    watchActive = false;
+    if (watchAbort) { watchAbort.abort(); watchAbort = null; }
+    var btn = document.getElementById('btn-watch');
+    if (btn) { btn.textContent = '👁 Watch'; btn.style.background = ''; }
+    showVaiResult('⏹ Наблюдение остановлено.', false);
+    return;
+  }
+  var url = document.getElementById('vurl-input').value.trim();
+  if (!url) { toast('Введите URL для наблюдения'); return; }
+  if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+  watchActive = true;
+  watchAbort = new AbortController();
+  var btn = document.getElementById('btn-watch');
+  if (btn) { btn.textContent = '⏹ Стоп'; btn.style.background = '#d97706'; }
+  showVaiResult('👁 Начинаю наблюдение за ' + url + '\n(3 снимка с интервалом 10 сек)...', true);
+  if (window.getComputedStyle(document.getElementById('vpane')).display === 'none') setView('both');
+  try {
+    var resp = await fetch('/visor/watch', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({url: url, interval: 10, max_snapshots: 3}),
+      signal: watchAbort.signal
+    });
+    var reader = resp.body.getReader();
+    var decoder = new TextDecoder();
+    var report = '👁 Наблюдение за: ' + url + '\n\n';
+    while (true) {
+      var _r2 = await reader.read();
+      if (_r2.done) break;
+      var lines2 = decoder.decode(_r2.value).split('\n');
+      for (var l2 of lines2) {
+        if (!l2.startsWith('data: ')) continue;
+        try {
+          var snap = JSON.parse(l2.slice(6));
+          if (snap.error) { report += '❌ ' + snap.error + '\n'; break; }
+          report += '📸 Снимок ' + snap.snapshot + ':\n' + (snap.description || '').slice(0, 400) + '\n';
+          if (snap.change) report += '🔄 ' + snap.change + '\n';
+          report += '\n';
+          showVaiResult(report, !snap.done);
+          if (snap.screenshot_base64 && snap.screenshot_base64.length > 10) {
+            // Show last screenshot (we get a truncated version in watch mode)
+          }
+          if (snap.done) break;
+        } catch(e) {}
+      }
+    }
+  } catch(e) {
+    if (e.name !== 'AbortError') showVaiResult('❌ Ошибка: ' + e.message, false);
+  }
+  watchActive = false;
+  watchAbort = null;
+  if (btn) { btn.textContent = '👁 Watch'; btn.style.background = ''; }
+}
 async function sendChat() {
   if (chatBusy) return;
   var input = document.getElementById('chat-input');
