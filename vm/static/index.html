@@ -159,6 +159,41 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
 
 /* ── Chat pane ── */
 #chat-pane{display:none;flex:1;flex-direction:column;overflow:hidden;min-height:0}
+
+/* ── Retrained VM pane ── */
+#vm-pane{display:none;flex:1;flex-direction:column;overflow:hidden;min-height:0}
+#vm-header{padding:14px 18px;background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0}
+#vm-header h2{font-size:16px;font-weight:700;color:var(--accent);margin-bottom:4px}
+#vm-header p{font-size:12px;color:var(--text2);margin:0}
+#vm-body{flex:1;overflow-y:auto;padding:18px;display:flex;flex-direction:column;gap:14px}
+#vm-body::-webkit-scrollbar{width:3px}
+#vm-body::-webkit-scrollbar-thumb{background:#333;border-radius:2px}
+#vm-status-box{background:var(--bg3);border-radius:8px;padding:14px 16px;border:1px solid var(--border)}
+.vm-status-row{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+.vm-dot{width:12px;height:12px;border-radius:50%;background:var(--danger);flex-shrink:0;transition:background .3s}
+.vm-dot.ready{background:var(--accent2)}
+.vm-dot.spin{background:var(--warn)}
+#vm-status-text{font-size:13px;font-weight:600}
+#vm-status-hint{font-size:11px;color:var(--text2);margin-bottom:10px;line-height:1.5}
+#vm-create-btn{background:var(--accent);border:none;color:#fff;padding:12px 24px;
+  border-radius:8px;cursor:pointer;font-size:14px;font-weight:700;width:100%;
+  transition:filter .15s}
+#vm-create-btn:hover:not(:disabled){filter:brightness(1.15)}
+#vm-create-btn:disabled{background:#333;cursor:not-allowed;filter:none}
+#vm-log{background:var(--bg3);border-radius:8px;padding:10px 12px;font-family:monospace;
+  font-size:11px;color:var(--text2);min-height:60px;max-height:200px;overflow-y:auto;
+  white-space:pre-wrap;word-break:break-word;border:1px solid var(--border)}
+.vm-card{background:var(--bg3);border-radius:8px;padding:14px 16px;border:1px solid var(--border)}
+.vm-card h3{font-size:13px;font-weight:700;color:var(--text);margin-bottom:8px}
+.vm-card p,.vm-card li{font-size:12px;color:var(--text2);line-height:1.7}
+.vm-card ul{padding-left:16px;margin:0}
+.vm-card code{background:var(--bg4);padding:2px 5px;border-radius:3px;
+  font-family:monospace;font-size:11px;color:#9cdcfe}
+.vm-ps{background:var(--bg4);border-radius:4px;padding:7px 10px;font-size:10px;
+  font-family:monospace;color:#9cdcfe;cursor:pointer;word-break:break-all;margin-top:6px;
+  border:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:4px}
+.vm-ps:hover{border-color:var(--accent)}
+.vm-ps code{background:none;padding:0;font-size:10px;color:inherit;flex:1}
 #chat-messages{flex:1;overflow-y:auto;padding:12px 16px;display:flex;flex-direction:column;gap:10px}
 #chat-messages::-webkit-scrollbar{width:3px}
 #chat-messages::-webkit-scrollbar-thumb{background:#333;border-radius:2px}
@@ -311,6 +346,7 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
     <button class="tv-btn" id="tv-editor" onclick="setView('editor')">📝 Редактор</button>
     <button class="tv-btn" id="tv-preview" onclick="setView('preview')">🖥 Визор</button>
     <button class="tv-btn" id="tv-chat" onclick="setView('chat')">💬 Чат</button>
+    <button class="tv-btn" id="tv-vm" onclick="setView('vm')">🧠 Переученная ВМ</button>
     <span class="tb-sep"></span>
     <span id="model-badge">нет модели</span>
     <div id="sdot" title="Ollama"></div>
@@ -397,7 +433,67 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
       <button id="btn-chat-clear" onclick="clearChat()" title="Очистить чат">🗑</button>
     </div>
   </div>
-</div>
+
+  <!-- Retrained VM pane (shown when view=vm) -->
+  <div id="vm-pane">
+    <div id="vm-header">
+      <h2>🧠 Переученная ВМ — drgr-visor</h2>
+      <p>Создай и используй переученную модель <b>drgr-visor</b> (qwen3-vl:8b + Monaco + ВИЗОР)</p>
+    </div>
+    <div id="vm-body">
+
+      <div id="vm-status-box">
+        <div class="vm-status-row">
+          <div id="vm-dot" class="vm-dot"></div>
+          <span id="vm-status-text">Проверяю статус...</span>
+        </div>
+        <div id="vm-status-hint">Нажми кнопку ниже чтобы создать переученную модель drgr-visor</div>
+        <button id="vm-create-btn" onclick="doCreateVisorVM()">⚡ Создать переученную ВМ (drgr-visor)</button>
+      </div>
+
+      <div id="vm-log">Лог создания появится здесь...</div>
+
+      <div class="vm-card">
+        <h3>📋 Как пользоваться переученной ВМ</h3>
+        <ul>
+          <li>Нажми <b>Создать переученную ВМ</b> выше — дождись завершения (1–3 мин)</li>
+          <li>После создания модель <code>drgr-visor</code> появится в списке моделей</li>
+          <li>Открой настройки (кнопка <b>☰</b> слева вверху) → выбери <code>drgr-visor</code> в поле <b>Модель</b></li>
+          <li>Перейди на вкладку <b>💬 Чат</b> и общайся с переученной ВМ</li>
+        </ul>
+      </div>
+
+      <div class="vm-card">
+        <h3>🪟 Запуск с рабочего стола (Windows)</h3>
+        <p>На рабочем столе должны быть файлы — двойной клик запускает Code VM и создаёт drgr-visor:</p>
+        <ul style="margin-top:6px">
+          <li><code>ЗАПУСТИТЬ_ВМ.bat</code> — запуск VM + автосоздание drgr-visor</li>
+          <li><code>ПЕРЕУЧИТЬ_ВМ.bat</code> — только переучить (создать/обновить drgr-visor)</li>
+          <li><code>Code VM.lnk</code> — основной ярлык запуска</li>
+        </ul>
+        <p style="margin-top:8px">Если файлов нет — вставь в <b>PowerShell</b> (Win+X → Windows PowerShell):</p>
+        <div class="vm-ps" onclick="copyText(this.querySelector('code').textContent)" title="Нажми для копирования">
+          <code>irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/run.ps1" | iex</code>
+          <span style="color:var(--text2);font-size:9px;flex-shrink:0">📋</span>
+        </div>
+        <p style="margin-top:8px">Или для запуска переученной ВМ напрямую:</p>
+        <div class="vm-ps" onclick="copyText(this.querySelector('code').textContent)" title="Нажми для копирования">
+          <code>powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\drgr-bot\ЗАПУСТИТЬ_ВМ.ps1"</code>
+          <span style="color:var(--text2);font-size:9px;flex-shrink:0">📋</span>
+        </div>
+      </div>
+
+      <div class="vm-card">
+        <h3>🔑 Токен Telegram-бота</h3>
+        <p>Чтобы сменить токен бота — открой <b>☰ Настройки</b> (кнопка слева вверху) → раздел <b>Telegram Bot Token</b>.</p>
+        <p style="margin-top:6px">Или нажми кнопку:</p>
+        <button class="pb pb-s" style="margin-top:8px;width:100%;padding:9px" onclick="openPanel()">⚙ Открыть настройки (токен бота, модель)</button>
+      </div>
+
+    </div>
+  </div>
+
+</div><!-- /#app -->
 
 <div id="toast"></div>
 
@@ -420,6 +516,7 @@ var chatBusy = false;
 var chatHistory = [];  // [{role:'user'|'assistant', text:'...'}]
 var MONACO_LOCAL = '/static/vendor/monaco/vs';
 var MONACO_CDN   = 'https://cdn.jsdelivr.net/npm/monaco-editor@0.44.0/min/vs';
+var VISOR_MODEL_NAME = 'drgr-visor';
 
 // ── View switching ───────────────────────────────────────────────────────────
 function setView(v) {
@@ -428,22 +525,29 @@ function setView(v) {
   var vp = document.getElementById('vpane');
   var pb = document.getElementById('pbar');
   var cp = document.getElementById('chat-pane');
-  ['both','editor','preview','chat'].forEach(function(x){
+  var vmp= document.getElementById('vm-pane');
+  var mn = document.getElementById('main');
+  ['both','editor','preview','chat','vm'].forEach(function(x){
     var el = document.getElementById('tv-'+x);
     if (el) el.classList.toggle('on', x===v);
   });
-  var isChat = (v === 'chat');
-  cp.style.display = isChat ? 'flex' : 'none';
-  pb.style.display  = isChat ? 'none' : '';
-  if (v === 'both')    { ep.style.display='flex'; rh.style.display='block'; vp.style.display='flex'; }
-  if (v === 'editor')  { ep.style.display='flex'; rh.style.display='none';  vp.style.display='none'; }
-  if (v === 'preview') { ep.style.display='none'; rh.style.display='none';  vp.style.display='flex'; }
-  if (isChat)          { ep.style.display='none'; rh.style.display='none';  vp.style.display='none'; }
+  var isChat    = (v === 'chat');
+  var isVM      = (v === 'vm');
+  var isSpecial = isChat || isVM;
+  cp.style.display  = isChat    ? 'flex' : 'none';
+  vmp.style.display = isVM      ? 'flex' : 'none';
+  pb.style.display  = isSpecial ? 'none' : '';
+  mn.style.display  = isSpecial ? 'none' : 'flex';
+  if (v === 'both')   { ep.style.display='flex'; rh.style.display='block'; vp.style.display='flex'; }
+  if (v === 'editor') { ep.style.display='flex'; rh.style.display='none';  vp.style.display='none'; }
+  if (v === 'preview'){ ep.style.display='none'; rh.style.display='none';  vp.style.display='flex'; }
+  if (isSpecial)      { ep.style.display='none'; rh.style.display='none';  vp.style.display='none'; }
   if (editor) editor.layout();
   if (isChat) {
     var ci = document.getElementById('chat-input');
     if (ci) setTimeout(function(){ ci.focus(); }, 50);
   }
+  if (isVM) checkVisorStatus();
 }
 
 // ── Resize handle ────────────────────────────────────────────────────────────
@@ -1044,6 +1148,105 @@ async function deleteModel() {
 async function retrain() {
   var r = await fetch('/retrain', {method:'POST'}); var d = await r.json();
   toast(d.message || 'Retrain запущен');
+}
+
+// ── Retrained VM pane ────────────────────────────────────────────────────────
+async function checkVisorStatus() {
+  var dot  = document.getElementById('vm-dot');
+  var text = document.getElementById('vm-status-text');
+  var hint = document.getElementById('vm-status-hint');
+  var btn  = document.getElementById('vm-create-btn');
+  if (!dot) return;
+  try {
+    var r = await fetch('/ollama/models');
+    var d = await r.json();
+    var models = d.models || [];
+    var hasVisor = models.some(function(m){ return m === VISOR_MODEL_NAME || m.startsWith(VISOR_MODEL_NAME + ':'); });
+    if (hasVisor) {
+      dot.className = 'vm-dot ready';
+      text.textContent = '✅ Переученная ВМ готова (' + VISOR_MODEL_NAME + ')';
+      hint.textContent = 'Выбери ' + VISOR_MODEL_NAME + ' в настройках (☰ → Модель) и общайся в чате (💬 Чат)';
+      btn.textContent  = '🔄 Пересоздать ' + VISOR_MODEL_NAME;
+    } else {
+      dot.className = 'vm-dot';
+      text.textContent = '⚠ ' + VISOR_MODEL_NAME + ' не создана';
+      hint.textContent = 'Нажми кнопку ниже чтобы создать переученную модель ' + VISOR_MODEL_NAME + ' (qwen3-vl:8b)';
+      btn.textContent  = '⚡ Создать переученную ВМ (' + VISOR_MODEL_NAME + ')';
+    }
+  } catch(e) {
+    dot.className = 'vm-dot';
+    text.textContent = '⚠ Ollama не запущена?';
+    hint.textContent = 'Запусти: ollama serve — потом обнови страницу или нажми кнопку повторно';
+  }
+}
+
+async function doCreateVisorVM() {
+  var btn  = document.getElementById('vm-create-btn');
+  var log  = document.getElementById('vm-log');
+  var dot  = document.getElementById('vm-dot');
+  var text = document.getElementById('vm-status-text');
+  var hint = document.getElementById('vm-status-hint');
+  btn.disabled = true;
+  btn.textContent = '⏳ Создаю переученную ВМ...';
+  dot.className = 'vm-dot spin';
+  text.textContent = 'Создание модели drgr-visor...';
+  hint.textContent = 'Пожалуйста подожди — это может занять 1–3 минуты...';
+  log.textContent = '⏳ Подключаюсь к Ollama...\n';
+  try {
+    var resp = await fetch('/ollama/create-visor-vm', {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'
+    });
+    var reader = resp.body.getReader();
+    var decoder = new TextDecoder();
+    while (true) {
+      var _r = await reader.read();
+      if (_r.done) break;
+      var lines = decoder.decode(_r.value).split('\n');
+      for (var i = 0; i < lines.length; i++) {
+        var line = lines[i];
+        if (!line.startsWith('data: ')) continue;
+        try {
+          var obj = JSON.parse(line.slice(6));
+          if (obj.error) {
+            log.textContent += '❌ Ошибка: ' + obj.error + '\n';
+            log.scrollTop = log.scrollHeight;
+            dot.className = 'vm-dot';
+            text.textContent = '❌ Ошибка создания';
+            hint.textContent = obj.error;
+            break;
+          }
+          if (obj.status) {
+            log.textContent += obj.status + '\n';
+            log.scrollTop = log.scrollHeight;
+            text.textContent = obj.status.slice(0, 70);
+          }
+          if (obj.done) {
+            dot.className = 'vm-dot ready';
+            text.textContent = '✅ ' + VISOR_MODEL_NAME + ' готова!';
+            hint.textContent = 'Выбери ' + VISOR_MODEL_NAME + ' в настройках (☰ → Модель) и используй в чате (💬 Чат)';
+            btn.textContent = '🔄 Пересоздать ' + VISOR_MODEL_NAME;
+            loadModels();
+          }
+        } catch(e2) {}
+      }
+    }
+  } catch(e) {
+    log.textContent += '❌ Ошибка сети: ' + e.message + '\n';
+    log.scrollTop = log.scrollHeight;
+    dot.className = 'vm-dot';
+    text.textContent = '❌ Ошибка сети';
+    hint.textContent = 'Проверь что Ollama запущена: в PowerShell → ollama serve';
+  }
+  btn.disabled = false;
+  if (btn.textContent === '⏳ Создаю переученную ВМ...') {
+    btn.textContent = '⚡ Создать переученную ВМ (drgr-visor)';
+  }
+}
+
+function copyText(text) {
+  navigator.clipboard.writeText(text)
+    .then(function(){ toast('📋 Скопировано'); })
+    .catch(function(){ toast('Ошибка копирования'); });
 }
 
 // ── Create Visor VM (retrain qwen3-vl:8b with Monaco+ВИЗОР system prompt) ──

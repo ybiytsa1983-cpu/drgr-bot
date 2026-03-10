@@ -343,6 +343,18 @@ if (Test-Path $vmLauncherSrc) {
     }
 }
 
+# Copy ПЕРЕУЧИТЬ_ВМ.bat (standalone retrain-only launcher)
+$retrainSrc  = Join-Path $repoDir "ПЕРЕУЧИТЬ_ВМ.bat"
+$retrainDest = Join-Path $desktopPath "ПЕРЕУЧИТЬ_ВМ.bat"
+if (Test-Path $retrainSrc) {
+    try {
+        Copy-Item -Path $retrainSrc -Destination $retrainDest -Force
+        Ok "Retrain launcher copied: 'ПЕРЕУЧИТЬ_ВМ.bat' on Desktop"
+    } catch {
+        Warn "Could not copy ПЕРЕУЧИТЬ_ВМ.bat to Desktop: $_"
+    }
+}
+
 # -- 9. Done -------------------------------------------------------------------
 Write-Host ""
 Write-Host "  =============================================" -ForegroundColor Green
@@ -350,11 +362,11 @@ Write-Host "   Setup complete!                            " -ForegroundColor Gre
 Write-Host "  =============================================" -ForegroundColor Green
 Write-Host ""
 if ($shortcutOk) {
-    Write-Host "  Three launchers are on your Desktop:" -ForegroundColor White
-    Write-Host "    'Code VM'          - main shortcut (double-click to launch)" -ForegroundColor Cyan
-    Write-Host "    'ЗАПУСТИТЬ.bat'    - backup launcher (double-click in File Explorer)" -ForegroundColor Cyan
-    Write-Host "    'ЗАПУСТИТЬ_ВМ.bat' - Visor VM launcher (creates drgr-visor model)" -ForegroundColor Green
-    Write-Host "                          (from a PowerShell terminal: .\ЗАПУСТИТЬ_ВМ.bat)" -ForegroundColor DarkGray
+    Write-Host "  On your Desktop you now have:" -ForegroundColor White
+    Write-Host "    'Code VM.lnk'        - shortcut (double-click to launch)" -ForegroundColor Cyan
+    Write-Host "    'ЗАПУСТИТЬ.bat'      - backup launcher (works from any location)" -ForegroundColor Cyan
+    Write-Host "    'ЗАПУСТИТЬ_ВМ.bat'   - Code VM + creates retrained model drgr-visor" -ForegroundColor Green
+    Write-Host "    'ПЕРЕУЧИТЬ_ВМ.bat'   - retrain only (create/update drgr-visor)" -ForegroundColor Green
 } else {
     Write-Host "  [!!] Desktop shortcut could not be created automatically." -ForegroundColor Yellow
     Write-Host "  To create the 'Code VM' icon on your Desktop, run this command:" -ForegroundColor Yellow

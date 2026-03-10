@@ -179,6 +179,21 @@ try {
         Copy-Item -Path $zapSrc -Destination (Join-Path $desktop 'zapustit.ps1') -Force
     }
 } catch { }
+# Copy VM launchers to Desktop
+try {
+    $vmBat = Join-Path $FOUND 'ЗАПУСТИТЬ_ВМ.bat'
+    if (Test-Path $vmBat) {
+        Copy-Item -Path $vmBat -Destination (Join-Path $desktop 'ЗАПУСТИТЬ_ВМ.bat') -Force
+        Write-Host '  [OK] ЗАПУСТИТЬ_ВМ.bat copied to Desktop.' -ForegroundColor Green
+    }
+} catch { }
+try {
+    $retrainBat = Join-Path $FOUND 'ПЕРЕУЧИТЬ_ВМ.bat'
+    if (Test-Path $retrainBat) {
+        Copy-Item -Path $retrainBat -Destination (Join-Path $desktop 'ПЕРЕУЧИТЬ_ВМ.bat') -Force
+        Write-Host '  [OK] ПЕРЕУЧИТЬ_ВМ.bat copied to Desktop.' -ForegroundColor Green
+    }
+} catch { }
 
 # ── Start Ollama early so it is ready when the VM server connects ─────────────
 Write-Host '  [Ollama] Checking Ollama...' -ForegroundColor Cyan
