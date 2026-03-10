@@ -374,10 +374,49 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
     <!-- Monaco Editor pane -->
     <div id="epane">
       <div id="etb">
-        <span id="lang-badge" style="font-size:11px;background:var(--bg4);border:1px solid var(--border);color:var(--text2);padding:3px 9px;border-radius:11px;white-space:nowrap">🔍 авто</span>
+        <span id="lang-badge" style="font-size:11px;background:var(--bg4);border:1px solid var(--border);color:var(--text2);padding:3px 9px;border-radius:11px;white-space:nowrap;cursor:pointer" onclick="cycleLanguage()" title="Кликни для смены языка">🔍 авто</span>
+        <select id="lang-select" onchange="setLangManual(this.value)" title="Выбрать язык" style="font-size:11px;padding:3px 6px;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:4px;cursor:pointer">
+          <option value="">🌐 Язык авто</option>
+          <optgroup label="Web">
+            <option value="html">🌐 HTML</option>
+            <option value="css">🎨 CSS</option>
+            <option value="javascript">⚡ JavaScript</option>
+            <option value="typescript">🔷 TypeScript</option>
+          </optgroup>
+          <optgroup label="Данные">
+            <option value="json">📋 JSON</option>
+            <option value="xml">📄 XML</option>
+            <option value="yaml">📑 YAML</option>
+            <option value="markdown">📝 Markdown</option>
+            <option value="sql">🗄 SQL</option>
+          </optgroup>
+          <optgroup label="Скрипты">
+            <option value="python">🐍 Python</option>
+            <option value="shell">🖥 Shell/Bash</option>
+            <option value="powershell">💙 PowerShell</option>
+          </optgroup>
+          <optgroup label="Компилируемые">
+            <option value="java">☕ Java</option>
+            <option value="kotlin">🟣 Kotlin</option>
+            <option value="cpp">⚙ C++</option>
+            <option value="c">🔧 C</option>
+            <option value="csharp">🔵 C#</option>
+            <option value="go">🐹 Go</option>
+            <option value="rust">🦀 Rust</option>
+            <option value="swift">🍎 Swift</option>
+            <option value="php">🐘 PHP</option>
+            <option value="ruby">💎 Ruby</option>
+            <option value="r">📊 R</option>
+          </optgroup>
+          <optgroup label="Прочее">
+            <option value="dockerfile">🐳 Dockerfile</option>
+            <option value="plaintext">📃 Plain text</option>
+          </optgroup>
+        </select>
         <button class="ei run" onclick="runCode()" title="Запустить (F5)">▶ Запустить</button>
-        <button class="ei" onclick="previewFromEditor()" title="Обновить визор">🖥 Обновить визор</button>
-        <button class="ei" onclick="copyEditorCode()" title="Копировать весь код">📋 Копировать</button>
+        <button class="ei" onclick="formatCode()" title="Форматировать / Красиво отформатировать код">✨ Формат</button>
+        <button class="ei" onclick="previewFromEditor()" title="Обновить визор">🖥 Визор</button>
+        <button class="ei" onclick="copyEditorCode()" title="Копировать весь код">📋</button>
         <button class="ei" onclick="clearEditor()" title="Очистить">🗑</button>
       </div>
       <div id="monaco-box"></div>
@@ -742,12 +781,19 @@ function createEditor(container) {
   // F5 = run
   editor.addCommand(monaco.KeyCode.F5, runCode);
   editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, runCode);
-  // Auto-preview HTML on change (debounced)
+  // Auto-preview HTML on change (debounced) + update lang badge
   var previewTimer = null;
   editor.onDidChangeModelContent(function(){
     clearTimeout(previewTimer);
     previewTimer = setTimeout(function(){
-      if(detectLang(editor.getValue()) === 'html') livePreview();
+      if (!_manualLang) {
+        var detected = detectLang(editor.getValue());
+        setLangBadge(detected);
+        // Sync dropdown to show auto-detect state
+        var sel = document.getElementById('lang-select');
+        if (sel) sel.value = '';
+      }
+      if(getEffectiveLang() === 'html') livePreview();
     }, 600);
   });
   // Show initial placeholder preview
@@ -764,31 +810,164 @@ function copyEditorCode() {
     .catch(function(){ toast('Ошибка копирования'); });
 }
 
-// ── Language auto-detect ─────────────────────────────────────────────────────
+// ── Language management ──────────────────────────────────────────────────────
+var _manualLang = '';  // '' = auto-detect
+
+// Monaco language IDs for languages that need remapping
+var _MONACO_LANG_MAP = {
+  shell: 'shell', bash: 'shell', sh: 'shell',
+  javascript: 'javascript', js: 'javascript',
+  typescript: 'typescript', ts: 'typescript',
+  python: 'python', py: 'python',
+  html: 'html', css: 'css', json: 'json',
+  xml: 'xml', yaml: 'yaml', markdown: 'markdown', md: 'markdown',
+  sql: 'sql', cpp: 'cpp', c: 'c', csharp: 'csharp',
+  java: 'java', kotlin: 'kotlin', go: 'go', rust: 'rust',
+  swift: 'swift', php: 'php', ruby: 'ruby', r: 'r',
+  powershell: 'powershell', dockerfile: 'dockerfile',
+  plaintext: 'plaintext', text: 'plaintext'
+};
+
+var _LANG_ICONS = {
+  html:'🌐', javascript:'⚡', typescript:'🔷', python:'🐍',
+  css:'🎨', json:'📋', xml:'📄', yaml:'📑', sql:'🗄',
+  shell:'🖥', bash:'🖥', powershell:'💙', markdown:'📝',
+  java:'☕', kotlin:'🟣', cpp:'⚙', c:'🔧', csharp:'🔵',
+  go:'🐹', rust:'🦀', swift:'🍎', php:'🐘', ruby:'💎',
+  r:'📊', dockerfile:'🐳', plaintext:'📃'
+};
+
+// Languages that can be executed server-side
+var _RUNNABLE_LANGS = {python:1, javascript:1, shell:1, bash:1};
+// Languages handled client-side (JSON pretty-print, markdown render, etc.)
+var _CLIENT_LANGS = {json:1, xml:1, markdown:1, html:1, css:1, sql:1, yaml:1, plaintext:1};
+
 function detectLang(code) {
   if (!code) return 'plaintext';
   var s = code.trim();
+  // HTML / XML
   if (/<html[\s>]/i.test(s) || /<!DOCTYPE\s/i.test(s)) return 'html';
   if (/<[a-z][a-z0-9]*[\s\/>][^>]*>[\s\S]{20,}<\/[a-z]/i.test(s)) return 'html';
+  if (/^<\?xml\b/.test(s) || /^<[A-Za-z][A-Za-z0-9]*(\s[^>]*)?>[\s\S]{10,}<\/[A-Za-z]/.test(s)) return 'xml';
+  // Data formats — JSON: objects with key:value OR plain arrays
   if (/^\s*\{[\s\S]*\}$/.test(s) && /"[\w$]+"\s*:/.test(s)) return 'json';
+  if (/^\s*\[[\s\S]*\]$/.test(s) && /"[\w$]*"\s*[,:\]]/.test(s)) return 'json';
+  if (/^---\s*\n|^\w[\w-]*:\s+\S/m.test(s) && !/function|class|def /.test(s)) return 'yaml';
+  // Docker
+  if (/^FROM\s+\S/m.test(s) && /^(RUN|CMD|COPY|ADD|ENV|EXPOSE|ENTRYPOINT)\b/m.test(s)) return 'dockerfile';
+  // Python
   if (/\bdef\s+\w+\s*\(|^\s*import\s+\w|^\s*from\s+\w+\s+import\b|print\s*\(/m.test(s)) return 'python';
-  if (/\bfunction\s+\w|\bconst\b\s+\w|\blet\b\s+\w|\bvar\b\s+\w|\bclass\s+\w|\bimport\s+[{*'"]/.test(s)) return 'javascript';
-  if (/:\s*(string|number|boolean|void)\b|\binterface\s+\w|\btype\s+\w+\s*=/.test(s)) return 'typescript';
-  if (/^\s*[\w.-]+\s*\{|:\s*#[0-9a-f]{3,6}|margin:|padding:|@media\b/im.test(s) && !/<[a-z]/i.test(s)) return 'css';
-  if (/^\s*(SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP)\s/im.test(s)) return 'sql';
-  if (/^#!.*sh\b|^\s*(echo|export|grep|sed|awk|chmod|mkdir|cd)\s/m.test(s)) return 'shell';
-  if (/^#{1,6}\s\S|\*\*\w|\[.+\]\(https?:/.test(s)) return 'markdown';
+  // TypeScript (before JavaScript since TS is a superset)
+  if (/:\s*(string|number|boolean|void|any|never|unknown)\b|\binterface\s+\w|\btype\s+\w+\s*=|\benum\s+\w/.test(s)) return 'typescript';
+  // JavaScript
+  if (/\bfunction\s+\w|\bconst\b\s+\w|\blet\b\s+\w|\bvar\b\s+\w|\bclass\s+\w|\bimport\s+[{*'"]|=>/.test(s)) return 'javascript';
+  // CSS/SCSS
+  if (/^\s*[\w.-]+\s*\{|:\s*#[0-9a-f]{3,6}|margin:|padding:|@media\b|@import\s+['"]|@keyframes\b/im.test(s) && !/<[a-z]/i.test(s)) return 'css';
+  // SQL
+  if (/^\s*(SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|TRUNCATE|BEGIN|COMMIT|ROLLBACK)\b/im.test(s)) return 'sql';
+  // Shell
+  if (/^#!.*\b(bash|sh|zsh)\b|^\s*(echo|export|grep|sed|awk|chmod|mkdir|cd|ls|rm|cp|mv|apt|pip|npm|brew)\s/m.test(s)) return 'shell';
+  // PowerShell
+  if (/^\$\w+\s*=|\bWrite-(Host|Output|Error)\b|\bGet-\w+\b|\bSet-\w+\b/m.test(s)) return 'powershell';
+  // Markdown
+  if (/^#{1,6}\s\S|\*\*\w|\[.+\]\(https?:|^>\s\S|\|.*\|.*\|/m.test(s)) return 'markdown';
+  // Go
+  if (/^package\s+\w|^import\s*\(|\bfunc\s+\w+\s*\(/m.test(s)) return 'go';
+  // Rust
+  if (/^fn\s+\w+\s*\(|\blet\s+mut\b|\bstruct\s+\w+\s*\{|\bimpl\s+\w/m.test(s)) return 'rust';
+  // Java/Kotlin
+  if (/\bpublic\s+class\s+\w|\bprivate\s+\w+\s+\w+\s*\(|\bSystem\.out\.print/m.test(s)) return 'java';
+  if (/\bfun\s+\w+\s*\(|\bval\s+\w+\s*=|\bvar\s+\w+\s*:/m.test(s)) return 'kotlin';
+  // C++ (check C++-specific patterns first) vs C
+  if (/#include\s*<iostream>|#include\s*<vector>|#include\s*<string>|\bstd::|::\w+\b/.test(s)) return 'cpp';
+  if (/#include\s*<\w+\.h>|\bint\s+main\s*\(/.test(s)) return 'c';
+  // PHP
+  if (/^<\?php\b|\$\w+\s*=/.test(s)) return 'php';
+  // Ruby
+  if (/\bputs\s+\S|\bend\s*$|\bdef\s+\w+\s*\n|\brequire\s+['"]\w/m.test(s)) return 'ruby';
+  // R
+  if (/\b(library|require)\s*\([\w."']+\)|\bggplot\b|\bdata\.frame\b|\bsapply\b/m.test(s)) return 'r';
+  // C#
+  if (/\bnamespace\s+\w|\busing\s+System|\bConsole\.Write/m.test(s)) return 'csharp';
   return 'javascript';
 }
 
+function setLangManual(lang) {
+  _manualLang = lang || '';
+  var effectiveLang = _manualLang || detectLang(editor ? editor.getValue() : '');
+  setLangBadge(effectiveLang);
+}
+
+function cycleLanguage() {
+  var langs = ['','html','javascript','typescript','python','json','xml','yaml',
+               'css','sql','shell','markdown','go','rust','java','kotlin','cpp','php','ruby'];
+  var cur = _manualLang;
+  var idx = langs.indexOf(cur);
+  _manualLang = langs[(idx + 1) % langs.length];
+  var sel = document.getElementById('lang-select');
+  if (sel) sel.value = _manualLang;
+  var eff = _manualLang || detectLang(editor ? editor.getValue() : '');
+  setLangBadge(eff);
+  toast('Язык: ' + (eff || 'авто'));
+}
+
 function setLangBadge(lang) {
-  var icons = {html:'🌐',javascript:'⚡',typescript:'🔷',python:'🐍',css:'🎨',json:'📋',sql:'🗄',shell:'🖥',markdown:'📄',plaintext:'📝'};
   var badge = document.getElementById('lang-badge');
-  if (badge) badge.textContent = (icons[lang] || '📝') + ' ' + lang;
+  if (badge) badge.textContent = (_LANG_ICONS[lang] || '📝') + ' ' + (lang || 'авто');
   if (editor) {
-    var ml = (lang === 'shell' || lang === 'bash') ? 'shell' : lang;
-    try { monaco.editor.setModelLanguage(editor.getModel(), ml); } catch(e) {}
+    var ml = _MONACO_LANG_MAP[lang] || lang || 'plaintext';
+    try { monaco.editor.setModelLanguage(editor.getModel(), ml); } catch(e) {
+      // Fallback: Monaco may not support all languages — use plaintext
+      try { monaco.editor.setModelLanguage(editor.getModel(), 'plaintext'); } catch(e2) {}
+    }
   }
+}
+
+function getEffectiveLang() {
+  return _manualLang || detectLang(editor ? editor.getValue() : '');
+}
+
+// ── Format / Beautify code ──────────────────────────────────────────────────
+function formatCode() {
+  if (!editor) return;
+  var code = editor.getValue();
+  var lang = getEffectiveLang();
+  if (lang === 'json') {
+    try {
+      var parsed = JSON.parse(code);
+      editor.setValue(JSON.stringify(parsed, null, 2));
+      toast('✨ JSON отформатирован');
+    } catch(e) { toast('❌ JSON ошибка: ' + e.message); }
+    return;
+  }
+  if (lang === 'xml') {
+    try {
+      var formatted = formatXml(code);
+      editor.setValue(formatted);
+      toast('✨ XML отформатирован');
+    } catch(e) { toast('❌ XML ошибка: ' + e.message); }
+    return;
+  }
+  // For Monaco-supported langs, use built-in formatter
+  if (editor && editor.getAction) {
+    var action = editor.getAction('editor.action.formatDocument');
+    if (action) { action.run(); toast('✨ Форматирование выполнено'); return; }
+  }
+  toast('Форматирование для ' + lang + ' не поддерживается');
+}
+
+function formatXml(xml) {
+  var formatted = '';
+  var indent = 0;
+  var nodes = xml.replace(/>\s*</g, '>\n<').split('\n');
+  for (var i = 0; i < nodes.length; i++) {
+    var node = nodes[i].trim();
+    if (!node) continue;
+    if (node.match(/^<\/\w/)) indent--;
+    formatted += '  '.repeat(Math.max(0, indent)) + node + '\n';
+    if (node.match(/^<\w[^>]*[^\/]>$/) && !node.match(/^<.+\/>/)) indent++;
+  }
+  return formatted.trim();
 }
 
 // ── Preview (ВИЗОР) ──────────────────────────────────────────────────────────
@@ -796,7 +975,7 @@ function livePreview() {
   if (!editor) return;
   var code = editor.getValue();
   if (!code.trim()) return;
-  var lang = detectLang(code);
+  var lang = getEffectiveLang();
   setLangBadge(lang);
   if (lang === 'html') showPreview(code);
 }
@@ -805,9 +984,46 @@ function previewFromEditor() {
   if (!editor) return;
   var code = editor.getValue();
   if (!code.trim()) { toast('Редактор пуст'); return; }
-  var lang = detectLang(code);
+  var lang = getEffectiveLang();
   setLangBadge(lang);
-  showPreview(lang === 'html' ? code : wrapForVisor(code, lang));
+  if (lang === 'html') {
+    showPreview(code);
+  } else if (lang === 'markdown') {
+    showPreview(renderMarkdownPreview(code));
+  } else if (lang === 'json') {
+    try {
+      var parsed = JSON.parse(code);
+      showPreview(wrapForVisor(JSON.stringify(parsed, null, 2), 'json'));
+    } catch(e) {
+      showPreview(wrapForVisor(code + '\n\n❌ JSON Error: ' + e.message, 'json'));
+    }
+  } else {
+    showPreview(wrapForVisor(code, lang));
+  }
+}
+
+function renderMarkdownPreview(md) {
+  var html = md
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/^#{6}\s(.+)$/gm,'<h6>$1</h6>')
+    .replace(/^#{5}\s(.+)$/gm,'<h5>$1</h5>')
+    .replace(/^#{4}\s(.+)$/gm,'<h4>$1</h4>')
+    .replace(/^#{3}\s(.+)$/gm,'<h3>$1</h3>')
+    .replace(/^#{2}\s(.+)$/gm,'<h2>$1</h2>')
+    .replace(/^#{1}\s(.+)$/gm,'<h1>$1</h1>')
+    .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g,'<em>$1</em>')
+    .replace(/`([^`]+)`/g,'<code>$1</code>')
+    .replace(/^\s*[-*+]\s+(.+)$/gm,'<li>$1</li>')
+    .replace(/^\s*\d+\.\s+(.+)$/gm,'<li>$1</li>')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g,'<a href="$2" target="_blank">$1</a>')
+    .replace(/\n\n/g,'</p><p>')
+    .replace(/\n/g,'<br>');
+  return '<!DOCTYPE html><html><head><meta charset="UTF-8"><style>'
+    + 'body{background:#1a1a1a;color:#e0e0e0;font-family:sans-serif;padding:20px;line-height:1.7;max-width:800px;margin:0 auto}'
+    + 'h1,h2,h3,h4,h5,h6{color:#60a0e0;margin-top:1.5em}code{background:#2a2a2a;padding:2px 6px;border-radius:4px;font-family:monospace}'
+    + 'a{color:#4ec9b0}li{margin:4px 0}hr{border-color:#333}'
+    + '</style></head><body><p>' + html + '</p></body></html>';
 }
 
 // Strip allow-same-origin from iframe sandbox when allow-scripts is also present.
@@ -840,12 +1056,14 @@ function showPreview(html) {
 
 function wrapForVisor(code, lang) {
   var escaped = code.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  var icon = _LANG_ICONS[lang] || '📝';
   return '<!DOCTYPE html><html><head><meta charset="UTF-8"><style>'
     + 'body{background:#0d0d0d;color:#e0e0e0;margin:0;font-family:"Cascadia Code","Fira Code",Consolas,monospace}'
     + 'pre{margin:0;padding:16px;white-space:pre-wrap;word-break:break-word;font-size:13px;line-height:1.6}'
-    + '.hdr{background:#161616;padding:8px 16px;font-size:11px;color:#888;border-bottom:1px solid #2a2a2a}'
+    + '.hdr{background:#161616;padding:8px 16px;font-size:11px;color:#888;border-bottom:1px solid #2a2a2a;display:flex;align-items:center;gap:6px}'
+    + '.lang-tag{background:#1a2a3a;color:#60a0e0;padding:2px 8px;border-radius:10px;font-size:10px}'
     + '</style></head><body>'
-    + '<div class="hdr">🖥 ВИЗОР — ' + lang.toUpperCase() + ' код</div>'
+    + '<div class="hdr"><span>' + icon + '</span><span class="lang-tag">' + lang.toUpperCase() + '</span><span style="flex:1">DRGR ВИЗОР</span></div>'
     + '<pre>' + escaped + '</pre>'
     + '</body></html>';
 }
@@ -987,11 +1205,83 @@ async function runCode() {
   if (!editor) return;
   var code = editor.getValue().trim();
   if (!code) { toast('Редактор пуст'); return; }
-  var lang = detectLang(code);
+  var lang = getEffectiveLang();
   setLangBadge(lang);
-  if (lang === 'html') { previewFromEditor(); return; }
+
+  // Update lang-select dropdown to match
+  var sel = document.getElementById('lang-select');
+  if (sel && !_manualLang) sel.value = '';
+
   var out = document.getElementById('outc');
   var bar = document.getElementById('outbar');
+
+  // HTML → live preview
+  if (lang === 'html') { previewFromEditor(); return; }
+
+  // Markdown → rendered preview
+  if (lang === 'markdown') { previewFromEditor(); return; }
+
+  // JSON → pretty-print / validate (client-side, no server needed)
+  if (lang === 'json') {
+    bar.classList.add('show');
+    try {
+      var parsed = JSON.parse(code);
+      var pretty = JSON.stringify(parsed, null, 2);
+      out.innerHTML = '<span class="o-ok">' + esc(pretty) + '</span>';
+      showPreview(wrapForVisor(pretty, 'json'));
+      toast('✅ JSON валиден (нажми ✨ Формат для форматирования)');
+    } catch(e) {
+      out.innerHTML = '<span class="o-err">❌ JSON ошибка: ' + esc(e.message) + '</span>';
+      toast('❌ JSON ошибка: ' + e.message);
+    }
+    return;
+  }
+
+  // XML → validate client-side
+  if (lang === 'xml') {
+    bar.classList.add('show');
+    try {
+      var parser = new DOMParser();
+      var doc = parser.parseFromString(code, 'text/xml');
+      var err = doc.querySelector('parsererror');
+      if (err) throw new Error(err.textContent);
+      var formatted = formatXml(code);
+      out.innerHTML = '<span class="o-ok">' + esc(formatted) + '</span>';
+      showPreview(wrapForVisor(formatted, 'xml'));
+      toast('✅ XML валиден (нажми ✨ Формат для форматирования)');
+    } catch(e) {
+      out.innerHTML = '<span class="o-err">❌ XML ошибка: ' + esc(e.message) + '</span>';
+      toast('❌ XML ошибка: ' + e.message);
+    }
+    return;
+  }
+
+  // CSS → show in visor
+  if (lang === 'css') {
+    var demoHtml = '<!DOCTYPE html><html><head><meta charset="UTF-8"><style>' + code
+      + '</style></head><body style="background:#1a1a1a;padding:20px">'
+      + '<h1>CSS Preview</h1><p class="demo">Демо-параграф</p>'
+      + '<button class="demo">Демо-кнопка</button><div class="demo">Демо-блок</div>'
+      + '</body></html>';
+    showPreview(demoHtml);
+    toast('🎨 CSS — показан предпросмотр в визоре');
+    return;
+  }
+
+  // SQL / YAML / plaintext → show in visor
+  if (lang === 'sql' || lang === 'yaml' || lang === 'plaintext') {
+    previewFromEditor();
+    toast(_LANG_ICONS[lang] + ' ' + lang.toUpperCase() + ' — показан в визоре');
+    return;
+  }
+
+  // Languages that require a runtime: Python, JavaScript, Shell
+  if (!_RUNNABLE_LANGS[lang]) {
+    toast('⚠ Выполнение ' + lang + ' не поддерживается. Откройте в визоре.');
+    previewFromEditor();
+    return;
+  }
+
   out.innerHTML = '<span style="color:#888">Выполняю...</span>';
   bar.classList.add('show');
   try {
@@ -1000,13 +1290,13 @@ async function runCode() {
       body: JSON.stringify({ code: code, language: lang }) });
     var d = await r.json();
     var html = '';
-    if (d.stdout) html += '<span class="o-ok">' + esc(d.stdout) + '</span>';
+    if (d.stdout || d.output) html += '<span class="o-ok">' + esc(d.stdout || d.output) + '</span>';
     if (d.stderr) html += '<span class="o-err">' + esc(d.stderr) + '</span>';
     if (d.error && !d.stderr) html += '<span class="o-err">' + esc(d.error) + '</span>';
     if (!html) html = '<span style="color:#888">(выполнено, нет вывода)</span>';
     out.innerHTML = html;
     // Show output in ВИЗОР too
-    var outputText = (d.stdout || '') + (d.stderr ? '\n[stderr]\n' + d.stderr : '') + (d.error && !d.stderr ? '\n[error] ' + d.error : '');
+    var outputText = (d.stdout || d.output || '') + (d.stderr ? '\n[stderr]\n' + d.stderr : '') + (d.error && !d.stderr ? '\n[error] ' + d.error : '');
     showPreview(wrapForVisor(code + (outputText ? '\n\n--- ВЫВОД ---\n' + outputText : ''), lang));
   } catch(e) {
     out.innerHTML = '<span class="o-err">Ошибка: ' + esc(e.message) + '</span>';
@@ -1086,11 +1376,23 @@ async function generateCode() {
     if (done && accumulated) {
       var code = extractCode(accumulated);
       var lang = detectLang(code);
+      _manualLang = '';  // reset manual override on new generation
       if (editor) editor.setValue(code);
       setLangBadge(lang);
-      // Always verify in ВИЗОР
-      showPreview(lang === 'html' ? code : wrapForVisor(code, lang));
-      status.innerHTML = '<span class="gs-ok">✓ Готово! Язык: ' + lang.toUpperCase() + '. Визор обновлён.</span>';
+      var sel = document.getElementById('lang-select');
+      if (sel) sel.value = '';
+      // Always show in ВИЗОР
+      if (lang === 'html') {
+        showPreview(code);
+      } else if (lang === 'markdown') {
+        showPreview(renderMarkdownPreview(code));
+      } else if (lang === 'json') {
+        try { showPreview(wrapForVisor(JSON.stringify(JSON.parse(code), null, 2), 'json')); }
+        catch(e) { showPreview(wrapForVisor(code, lang)); }
+      } else {
+        showPreview(wrapForVisor(code, lang));
+      }
+      status.innerHTML = '<span class="gs-ok">✓ Готово! Язык: ' + (_LANG_ICONS[lang]||'') + ' ' + lang.toUpperCase() + '. Визор обновлён.</span>';
     }
   } catch(e) {
     status.innerHTML = '<span class="gs-err">⚠ Ошибка: ' + esc(e.message) + '</span>';
@@ -1175,9 +1477,14 @@ async function patchCode() {
     if (done && accumulated) {
       var code = extractCode(accumulated);
       var lang = detectLang(code);
+      _manualLang = '';
       if (editor) editor.setValue(code);
       setLangBadge(lang);
-      showPreview(lang === 'html' ? code : wrapForVisor(code, lang));
+      var sel = document.getElementById('lang-select');
+      if (sel) sel.value = '';
+      if (lang === 'html') { showPreview(code); }
+      else if (lang === 'markdown') { showPreview(renderMarkdownPreview(code)); }
+      else { showPreview(wrapForVisor(code, lang)); }
       status.innerHTML = '<span class="gs-ok">✓ Правки внесены! Визор обновлён.</span>';
     }
   } catch(e) {
@@ -1194,7 +1501,7 @@ function openInBrowser() {
   if (!editor) { toast('Редактор не готов'); return; }
   var code = editor.getValue().trim();
   if (!code) { toast('Редактор пуст'); return; }
-  var lang = detectLang(code);
+  var lang = getEffectiveLang();
   var content = lang === 'html' ? code : wrapForVisor(code, lang);
   var blob = new Blob([content], { type: 'text/html' });
   var url  = URL.createObjectURL(blob);

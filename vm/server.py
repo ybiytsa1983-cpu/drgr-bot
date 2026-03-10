@@ -361,16 +361,38 @@ def _is_html_content(code: str) -> bool:
 _RUNNERS = {
     "python": ["python3"],
     "javascript": ["node"],
+    "shell": ["bash"],
+    "bash": ["bash"],
+    "typescript": ["npx", "ts-node", "--transpile-only"],
 }
 
 # Fallback runtimes tried when the primary runner is not found.
 # Key = primary executable name (runner[0]); value = fallback command list.
 _RUNNER_FALLBACKS = {
     "python3": ["python"],
+    "bash": ["sh"],
 }
+
+# Languages handled entirely in-process (no subprocess needed).
+_INPROCESS_RUNNERS = {"json", "xml", "html", "markdown", "css", "sql",
+                      "plaintext", "text"}
 
 
 def _run_code(code: str, language: str) -> dict:
+    # Handle languages that don't require execution
+    if language in _INPROCESS_RUNNERS:
+        if language == "json":
+            try:
+                parsed = json.loads(code)
+                formatted = json.dumps(parsed, ensure_ascii=False, indent=2)
+                return {"output": formatted, "error": "", "success": True,
+                        "stdout": formatted, "stderr": ""}
+            except json.JSONDecodeError as exc:
+                return {"output": "", "error": f"JSON error: {exc}", "success": False,
+                        "stdout": "", "stderr": f"JSON error: {exc}"}
+        # For html/css/markdown/sql/plaintext — just echo the content
+        return {"output": code, "error": "", "success": True, "stdout": code, "stderr": ""}
+
     runner = _RUNNERS.get(language)
     if runner is None:
         return {"output": "", "error": f"Unsupported language: {language}", "success": False}
@@ -386,7 +408,14 @@ def _run_code(code: str, language: str) -> dict:
             "success": False,
         }
 
-    suffix = ".py" if language == "python" else ".js"
+    _suffix_map = {
+        "python": ".py",
+        "javascript": ".js",
+        "typescript": ".ts",
+        "shell": ".sh",
+        "bash": ".sh",
+    }
+    suffix = _suffix_map.get(language, ".txt")
     tmp_path = None
 
     def _exec(cmd: list) -> dict:
@@ -399,7 +428,9 @@ def _run_code(code: str, language: str) -> dict:
         )
         return {
             "output": proc.stdout[:4096],
+            "stdout": proc.stdout[:4096],
             "error": proc.stderr[:2048],
+            "stderr": proc.stderr[:2048],
             "success": proc.returncode == 0,
         }
 
@@ -2149,7 +2180,14 @@ _DEFAULT_HTML_SYSTEM_PROMPT = (
     "со встроенным CSS и JavaScript.\n"
     "Используй современный CSS (flexbox/grid), красивые цвета, плавные анимации.\n"
     "НЕ подключай внешние зависимости без необходимости.\n"
-    "Выводи ТОЛЬКО HTML код без пояснений и комментариев вне кода."
+    "Выводи ТОЛЬКО HTML код без пояснений и комментариев вне кода.\n\n"
+    "Ты также знаешь протокол DRGRBrowserAgent v1.0 — автономного агента для управления "
+    "браузером через DRGR-визор. Агент работает в цикле: наблюдение → планирование → действие "
+    "→ проверка → логирование. Команды агента: NAVIGATE, CLICK, TYPE, WAIT, SWITCH_TAB, "
+    "SCROLL, SCREENSHOT, NOOP. Вывод агента содержит cycle_state (status, current_step, "
+    "max_steps), thoughts (observation, state_analysis, plan_short, risks) и commands. "
+    "Особые состояния: blocked_captcha (обнаружена капча), finished_success/finished_error. "
+    "При генерации HTML-визора для браузерного агента учитывай эту схему."
 )
 
 
