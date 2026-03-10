@@ -218,7 +218,7 @@ if (-not $ready) {
     Write-Host ""
     Write-Host "Fix the error above then run .\start.ps1 again." -ForegroundColor Yellow
     Write-Host ""
-    Write-Host "  PowerShell command to restart:" -ForegroundColor White
+    Write-Host "  # To restart, paste this command:" -ForegroundColor White
     Write-Host "    powershell -ExecutionPolicy Bypass -File `"$repoDir\start.ps1`"" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "Tip: .venv\Scripts\pip install flask requests" -ForegroundColor Cyan
