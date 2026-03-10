@@ -1690,20 +1690,30 @@ def _parse_modelfile(content: str) -> dict:
 def _ollama_create_payload(model_name: str, modelfile: str) -> dict:
     """Build the best Ollama /api/create payload for the given Modelfile.
 
-    Newer Ollama versions (≥ 0.6) removed support for the ``modelfile``
-    string parameter and instead require ``from`` (base model), ``system``,
-    and ``parameters`` as top-level fields.  This helper always produces
-    the new-style payload so creation works on both old and new Ollama.
+    Sends both the new structured fields (``from``, ``system``, ``parameters``)
+    AND the legacy ``modelfile`` string so the request works regardless of which
+    Ollama version is installed:
 
-    If the Modelfile does not contain a FROM directive the function falls back
-    to the legacy ``name``/``modelfile`` payload format so that older Ollama
-    installations can still attempt creation.
+    * Ollama < 0.6  — uses ``name`` + ``modelfile`` (ignores ``from``/``system``)
+    * Ollama ≥ 0.6  — uses ``model`` + ``from`` + ``system`` + ``parameters``
+                       (ignores ``modelfile``)
+
+    If the Modelfile has no FROM directive we only send the legacy format.
     """
     parsed = _parse_modelfile(modelfile)
     if not parsed.get("from"):
-        # Legacy fallback: Modelfile has no FROM line — send raw string.
+        # No FROM directive — only legacy format is possible.
         return {"name": model_name, "modelfile": modelfile, "stream": True}
-    payload: dict = {"model": model_name, "from": parsed["from"], "stream": True}
+    # Include BOTH formats so any Ollama version handles the request.
+    payload: dict = {
+        # New-style API (Ollama ≥ 0.6)
+        "model": model_name,
+        "from": parsed["from"],
+        # Legacy API (Ollama < 0.6)
+        "name": model_name,
+        "modelfile": modelfile,
+        "stream": True,
+    }
     if parsed.get("system"):
         payload["system"] = parsed["system"]
     if parsed.get("parameters"):

@@ -25,7 +25,7 @@ from dotenv import load_dotenv
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.types import FSInputFile, Message
+from aiogram.types import BotCommand, FSInputFile, Message
 
 try:
     from playwright.async_api import async_playwright
@@ -1205,6 +1205,7 @@ async def cmd_visor(message: Message) -> None:
         await message.answer(f"🖥 ВИЗОР: {url}\n\n{desc[:3000]}")
 
 
+@router.message(Command("generate"))
 async def cmd_generate(message: Message) -> None:
     parts = (message.text or "").split(maxsplit=1)
     if len(parts) < 2:
@@ -1861,6 +1862,22 @@ async def main() -> None:
         DDG_AVAILABLE,
         VM_BASE,
     )
+    # Register bot commands so Telegram shows them in the menu
+    await bot.set_my_commands([
+        BotCommand(command="search",     description="Исследовать тему (статья + скриншоты)"),
+        BotCommand(command="generate",   description="Сгенерировать HTML-страницу"),
+        BotCommand(command="visor",      description="ВИЗОР: скриншот + AI анализ страницы"),
+        BotCommand(command="browse",     description="Скриншот страницы + AI анализ"),
+        BotCommand(command="code",       description="Написать и выполнить код"),
+        BotCommand(command="execute",    description="Выполнить код в VM sandbox"),
+        BotCommand(command="screenshot", description="Быстрый скриншот страницы"),
+        BotCommand(command="convert",    description="Конвертер файлов (фото, json, csv, md)"),
+        BotCommand(command="vm",         description="Статус VM и команды запуска"),
+        BotCommand(command="models",     description="Доступные AI-модели"),
+        BotCommand(command="retrain",    description="Запустить цикл самообучения VM"),
+        BotCommand(command="stats",      description="Статистика самообучения"),
+        BotCommand(command="help",       description="Все команды и справка"),
+    ])
     await dp.start_polling(bot, skip_updates=True)
 
 
