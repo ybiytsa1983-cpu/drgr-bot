@@ -132,8 +132,12 @@ foreach ($tryPort in (11434..11444)) {
 if ($detectedPort) {
     $ollamaPort    = $detectedPort
     $ollamaRunning = $true
-    # Sync OLLAMA_HOST so server.py starts with the correct URL immediately
-    if (-not $env:OLLAMA_HOST) { $env:OLLAMA_HOST = "http://localhost:$ollamaPort" }
+    # Always sync OLLAMA_HOST to the actual detected port so server.py uses the right URL
+    # even when OLLAMA_HOST was previously set to a different (wrong) port.
+    if ($env:OLLAMA_HOST -and $env:OLLAMA_HOST -ne "http://localhost:$ollamaPort") {
+        Write-Host "[Code VM] Updating OLLAMA_HOST from $($env:OLLAMA_HOST) to detected http://localhost:$ollamaPort" -ForegroundColor Yellow
+    }
+    $env:OLLAMA_HOST = "http://localhost:$ollamaPort"
     Write-Host "[Code VM] Ollama already running on port $ollamaPort." -ForegroundColor Green
 } else {
     # Ollama not detected — fall back to configured / default port

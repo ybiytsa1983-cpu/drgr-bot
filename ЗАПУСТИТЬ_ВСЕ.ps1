@@ -169,6 +169,9 @@ foreach ($port in @(11434, 11435, 11436, 11437, 11438, 11439, 11440, 11441, 1144
         $content = Get-Content $envFile -Raw
         $content = $content -replace 'OLLAMA_HOST=http://localhost:\d+', "OLLAMA_HOST=http://localhost:$port"
         [IO.File]::WriteAllText($envFile, $content)
+        # Also set the env var so server.py spawned below inherits the right URL
+        # (server.py reads OLLAMA_HOST from env with override=False; env var wins over .env)
+        $env:OLLAMA_HOST = "http://localhost:$port"
         $ollamaOk = $true
         break
     } catch {}
