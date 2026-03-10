@@ -63,6 +63,17 @@ LOG_FILE        = os.getenv("LOG_FILE", "bot.log")
 SCREENSHOTS_DIR.mkdir(exist_ok=True)
 ARTICLES_DIR.mkdir(exist_ok=True)
 
+# ---------------------------------------------------------------------------
+# Reusable MarkdownV2 fragments
+# ---------------------------------------------------------------------------
+
+_MD_INSTALL_CMD = (
+    "*Установка и запуск VM \\(PowerShell, Win\\+X → Windows PowerShell\\):*\n"
+    "`irm \"https://raw.githubusercontent.com/ybiytsa1983\\-cpu/drgr\\-bot/main/run\\.ps1\" | iex`"
+)
+
+_MD_WEB_URL = "`http://localhost:5000/`"
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s",
@@ -640,7 +651,15 @@ async def research_and_reply(query: str, message: Message) -> None:
     all_sources.extend(ddg_results)
 
     if not all_sources:
-        await status.edit_text("\u274c Ничего не найдено. Попробуйте другой запрос.")
+        no_ddg_note = (
+            "\n⚠️ Библиотека поиска \\(duckduckgo\\-search\\) не установлена\\. "
+            "Выполните: `pip install duckduckgo-search`"
+        ) if not DDG_AVAILABLE else ""
+        await status.edit_text(
+            "\u274c Ничего не найдено по запросу\\. Попробуйте другой запрос\\."
+            + no_ddg_note,
+            parse_mode="MarkdownV2",
+        )
         await action_logger.log(
             "research", {"query": query}, {"error": "no sources"}, False,
             int((time.monotonic() - t0) * 1000),
@@ -801,7 +820,9 @@ async def cmd_start(message: Message) -> None:
     await message.answer(
         "\U0001f916 *AI Research Agent \\+ Code VM*\n\n"
         "Я автономный агент для исследования, генерации кода и HTML\\.\n\n"
+        f"\U0001f5a5 *Веб\\-интерфейс VM \\(откройте в браузере\\):* {_MD_WEB_URL}\n\n"
         "*Команды:*\n"
+        "/web — \U0001f517 ссылка на веб\\-интерфейс Code VM\n"
         "/search `<запрос>` — исследовать тему, статья \\+ скриншоты\n"
         "/visor `<url>` — 🖥 ВИЗОР: скриншот \\+ AI анализ \\(qwen3\\-vl\\)\n"
         "/browse `<url>` — скриншот страницы \\+ AI анализ \\(qwen3\\-vl\\)\n"
@@ -816,9 +837,28 @@ async def cmd_start(message: Message) -> None:
         "/stats — статистика самообучения\n"
         "/help — помощь\n\n"
         "*Или просто напишите запрос* — агент исследует тему и создаст статью\\.\n\n"
-        "\U0001f4bb *Запуск VM \\(PowerShell\\):*\n"
-        "`irm \"https://raw.githubusercontent.com/ybiytsa1983\\-cpu/drgr\\-bot/main/run\\.ps1\" | iex`\n\n"
+        f"\U0001f4bb {_MD_INSTALL_CMD}\n\n"
         "\U0001f5a5 После установки: ярлык *«Code VM»* и *«ЗАПУСТИТЬ ВМ»* на Рабочем столе",
+        parse_mode="MarkdownV2",
+    )
+
+
+@router.message(Command("web", "open"))
+async def cmd_web(message: Message) -> None:
+    """Show the URL to the Code VM web interface (the extension page)."""
+    await message.answer(
+        "\U0001f5a5 *Code VM — веб\\-интерфейс*\n\n"
+        "Откройте в браузере на компьютере, где запущена VM:\n\n"
+        f"\U0001f517 {_MD_WEB_URL}\n\n"
+        "*Что доступно в веб\\-интерфейсе:*\n"
+        "• 🧑‍💻 Monaco редактор кода\n"
+        "• 🌐 HTML\\-генератор \\(вкладка **HTML**\\)\n"
+        "• 💬 Чат с AI \\(вкладка **AI**\\)\n"
+        "• 🖥 ВИЗОР — браузер\\-инспектор\n"
+        "• 🔧 Workshop — управление моделями Ollama\n"
+        "• ⚙️ Настройки — токен бота, модель, промпт\n\n"
+        f"*Если VM не запущена —* {_MD_INSTALL_CMD}\n\n"
+        "После установки — двойной клик на ярлыке *«Code VM»* на Рабочем столе\\.",
         parse_mode="MarkdownV2",
     )
 
@@ -827,6 +867,7 @@ async def cmd_start(message: Message) -> None:
 async def cmd_help(message: Message) -> None:
     await message.answer(
         "\U0001f4d6 *Помощь — все команды*\n\n"
+        f"\U0001f5a5 *Веб\\-интерфейс:* {_MD_WEB_URL} \\| /web\n\n"
         "*Исследование и браузер:*\n"
         "• `/search <тема>` — полное исследование, статья \\+ скриншоты \\+ HTML\n"
         "• `/visor <url>` — 🖥 ВИЗОР: скриншот \\+ AI анализ \\(qwen3\\-vl:8b\\)\n"
@@ -839,6 +880,7 @@ async def cmd_help(message: Message) -> None:
         "• `/execute <код>` — выполнить код в VM sandbox\n"
         "• `/generate <описание>` — HTML\\-страница \\(файл `.html`\\)\n\n"
         "*VM и самообучение:*\n"
+        "• `/web` — ссылка на веб\\-интерфейс Code VM\n"
         "• `/models` — список AI\\-моделей \\(включая drgr\\-visor\\)\n"
         "• `/stats` — что VM узнала из своих действий\n"
         "• `/retrain` — запустить цикл самообучения VM вручную\n"
@@ -847,8 +889,7 @@ async def cmd_help(message: Message) -> None:
         "• `/convert` — список всех доступных конвертаций\n"
         "• Отправьте фото с подписью `jpeg`, `png`, `webp` или `bmp` — конвертация изображения\n"
         "• Отправьте файл `.json`, `.csv`, `.html` или `.md` — конвертация текстового формата\n\n"
-        "*Установка VM \\(один раз\\):*\n"
-        "`irm \"https://raw.githubusercontent.com/ybiytsa1983\\-cpu/drgr\\-bot/main/run\\.ps1\" | iex`\n\n"
+        f"{_MD_INSTALL_CMD}\n\n"
         "Пример: `/visor watch https://news.ycombinator.com`",
         parse_mode="MarkdownV2",
     )
@@ -1262,7 +1303,9 @@ async def cmd_generate(message: Message) -> None:
             return
 
         await status.edit_text(
-            "\u274c VM не вернула HTML\\. Убедитесь, что VM и Ollama запущены\\.",
+            "\u274c VM не вернула HTML\\.\n\n"
+            f"Убедитесь, что VM и Ollama запущены\\. {_MD_WEB_URL}\n\n"
+            "Или используйте /vm для подробностей\\.",
             parse_mode="MarkdownV2",
         )
     except Exception as exc:
@@ -1271,7 +1314,10 @@ async def cmd_generate(message: Message) -> None:
             "generate_html", {"prompt": prompt}, {"error": str(exc)}, False
         )
         await status.edit_text(
-            "\u274c Ошибка генерации\\. Убедитесь, что VM запущена\\.",
+            "\u274c VM не запущена или недоступна\\.\n\n"
+            f"\U0001f4bb {_MD_INSTALL_CMD}\n\n"
+            f"После запуска откройте: {_MD_WEB_URL}\n"
+            "Или используйте /vm для подробностей\\.",
             parse_mode="MarkdownV2",
         )
 
@@ -1633,12 +1679,10 @@ async def cmd_vm(message: Message) -> None:
         f"{vm_icon} VM \\(`{_esc(VM_BASE)}`\\): {'работает' if vm_ok else 'не запущена'}\n"
         f"{ollama_icon} Ollama: {'подключена' if ollama_ok else 'не подключена'}\n"
         f"\U0001f9e0 Модели: `{_esc(models_str)}`\n\n"
-        "*\U0001f680 Установка \\(один раз\\):*\n"
-        "`irm \"https://raw.githubusercontent.com/ybiytsa1983\\-cpu/drgr\\-bot/main/run\\.ps1\" | iex`\n\n"
+        f"*\U0001f680 {_MD_INSTALL_CMD}\n\n"
         "*\u25b6\ufe0f Запуск VM:*\n"
         "`powershell \\-ExecutionPolicy Bypass \\-File \"$env:USERPROFILE\\\\drgr\\-bot\\\\start\\.ps1\"`\n\n"
-        "*\U0001f5a5 Адрес VM в браузере:*\n"
-        "`http://localhost:5000/`\n\n"
+        f"*\U0001f5a5 Адрес VM в браузере:* {_MD_WEB_URL}\n\n"
         "_Или дважды кликни ярлык «Code VM» на Рабочем столе_",
         parse_mode="MarkdownV2",
     )
@@ -1864,6 +1908,7 @@ async def main() -> None:
     )
     # Register bot commands so Telegram shows them in the menu
     await bot.set_my_commands([
+        BotCommand(command="web",        description="🌐 Открыть веб-интерфейс Code VM (localhost:5000)"),
         BotCommand(command="search",     description="Исследовать тему (статья + скриншоты)"),
         BotCommand(command="generate",   description="Сгенерировать HTML-страницу"),
         BotCommand(command="visor",      description="ВИЗОР: скриншот + AI анализ страницы"),
