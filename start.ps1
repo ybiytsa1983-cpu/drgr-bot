@@ -164,8 +164,9 @@ if (-not (Test-Path $venvPython)) {
         $shortcut.Arguments        = "-NoProfile -ExecutionPolicy Bypass -File `"$startPs1`""
         $shortcut.WorkingDirectory = $scriptRoot
         $shortcut.Description      = "Launch Code VM - Monaco Editor with Ollama AI"
-        $shortcut.WindowStyle      = 1
-        $shortcut.IconLocation     = "$psExe,0"
+        $shortcut.WindowStyle      = 7   # Start minimized (browser opens automatically)
+        $icoLib = Join-Path $env:SystemRoot "System32\imageres.dll"
+        $shortcut.IconLocation = if (Test-Path $icoLib) { "$icoLib,97" } else { "$psExe,0" }
         $shortcut.Save()
         Write-Host "  [OK] Ярлык 'Code VM' создан на Рабочем столе" -ForegroundColor Green
     } catch {
@@ -187,12 +188,12 @@ if (-not (Test-Path $venvPython)) {
     Write-Host ""
 }
 
-# -- Launch the VM server in a new visible window ------------------------------
+# -- Launch the VM server minimized so browser opens without a full console window --
 $vmPs1 = Join-Path $scriptRoot "vm.ps1"
 Write-Host "  [-->] Запуск Code VM..." -ForegroundColor Cyan
 Start-Process -FilePath "powershell.exe" `
     -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$vmPs1`"" `
-    -WorkingDirectory $scriptRoot
+    -WorkingDirectory $scriptRoot `
+    -WindowStyle Minimized
 Write-Host "  [OK] Code VM запускается - браузер откроется через несколько секунд." -ForegroundColor Green
-Write-Host "       Закройте окно 'Code VM - Monaco Editor' чтобы остановить сервер." -ForegroundColor Yellow
 Write-Host ""

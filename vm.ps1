@@ -244,12 +244,10 @@ Write-Host ("  |  {0,-50}|" -f "Code VM is running!") -ForegroundColor Green
 Write-Host ("  |{0}|" -f ("-" * 52)) -ForegroundColor DarkGreen
 Write-Host ("  |  {0,-50}|" -f "This device:") -ForegroundColor Cyan
 Write-Host ("  |    {0,-48}|" -f "http://localhost:$Port/") -ForegroundColor Cyan
-Write-Host ("  |    {0,-48}|" -f "http://localhost:$Port/navigator/") -ForegroundColor Cyan
 Write-Host ("  |{0}|" -f ("-" * 52)) -ForegroundColor DarkGreen
 if ($localIP) {
     Write-Host ("  |  {0,-50}|" -f "Other devices on the same network:") -ForegroundColor Yellow
     Write-Host ("  |    {0,-48}|" -f "http://${localIP}:${Port}/") -ForegroundColor Yellow
-    Write-Host ("  |    {0,-48}|" -f "http://${localIP}:${Port}/navigator/") -ForegroundColor Yellow
 } else {
     Write-Host ("  |  {0,-50}|" -f "Other devices: run 'ipconfig' to find your IP,") -ForegroundColor Yellow
     Write-Host ("  |  {0,-50}|" -f "then open http://YOUR_IP:$Port/") -ForegroundColor Yellow

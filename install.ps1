@@ -275,8 +275,10 @@ try {
     $shortcut.Arguments        = "-NoProfile -ExecutionPolicy Bypass -File `"$startPs1`""
     $shortcut.WorkingDirectory = $repoDir
     $shortcut.Description      = "Launch Code VM - Monaco Editor with Ollama AI"
-    $shortcut.WindowStyle      = 1   # Normal window
-    $shortcut.IconLocation     = "$psExe,0"
+    $shortcut.WindowStyle      = 7   # Start minimized (no jarring console window; browser opens automatically)
+    # Use a recognisable app icon from imageres.dll (available on all modern Windows)
+    $icoLib = Join-Path $env:SystemRoot "System32\imageres.dll"
+    $shortcut.IconLocation = if (Test-Path $icoLib) { "$icoLib,97" } else { "$psExe,0" }
     $shortcut.Save()
     $shortcutOk = $true
     Ok "Desktop shortcut created - 'Code VM' icon is on your Desktop"
@@ -339,6 +341,5 @@ Write-Host "  Or launch directly from PowerShell (paste this):" -ForegroundColor
 Write-Host "    powershell -ExecutionPolicy Bypass -File `"$repoDir\start.ps1`"" -ForegroundColor Yellow
 Write-Host ""
 Write-Host "  Then open in browser:" -ForegroundColor White
-Write-Host "    http://localhost:5000/            Code VM" -ForegroundColor Cyan
-Write-Host "    http://localhost:5000/navigator/  Android Navigator" -ForegroundColor Cyan
+Write-Host "    http://localhost:5000/" -ForegroundColor Cyan
 Write-Host ""
