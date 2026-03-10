@@ -22,6 +22,9 @@ Endpoints:
   POST /agent/log      — receive action record from the Telegram bot for self-learning
   GET  /agent/stats    — return agent action statistics and current training instructions
   POST /agent/describe_image — describe an image using Ollama vision model
+  GET  /convert/formats     — list available file conversion formats
+  POST /convert/image       — convert image between formats (PNG/JPEG/WEBP/BMP) via Pillow
+  POST /convert/text        — convert text between formats (JSON↔CSV, HTML→text, MD→HTML)
 """
 
 import ast
@@ -1902,6 +1905,245 @@ def agent_training_data():
         })
     except (OSError, json.JSONDecodeError, ValueError) as exc:
         return jsonify({"error": str(exc)}), 500
+
+
+# ---------------------------------------------------------------------------
+# File Converter — image and text format conversions
+# ---------------------------------------------------------------------------
+
+_IMAGE_FORMATS = ("png", "jpeg", "bmp", "webp")
+_IMAGE_FMT_ALIAS = {"jpg": "jpeg", "jpeg": "jpeg", "png": "png", "bmp": "bmp", "webp": "webp"}
+_TEXT_CONVERSIONS = [
+    {"from": "json", "to": "csv",  "description": "JSON array of objects → CSV"},
+    {"from": "csv",  "to": "json", "description": "CSV → JSON array of objects"},
+    {"from": "html", "to": "text", "description": "HTML → plain text (strips tags)"},
+    {"from": "markdown", "to": "html", "description": "Markdown → HTML"},
+]
+
+
+def _md_inline(text: str) -> str:
+    """Convert inline Markdown (bold, italic, code, links) to HTML."""
+    import html as _html_mod
+    text = _html_mod.escape(text)
+    text = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", text)
+    text = re.sub(r"__(.+?)__",     r"<strong>\1</strong>", text)
+    text = re.sub(r"\*(.+?)\*",     r"<em>\1</em>",         text)
+    text = re.sub(r"_(.+?)_",       r"<em>\1</em>",         text)
+    text = re.sub(r"`(.+?)`",       r"<code>\1</code>",     text)
+    text = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r'<a href="\2">\1</a>', text)
+    return text
+
+
+@app.route("/convert/formats", methods=["GET"])
+def convert_formats():
+    """List available conversion formats and supported conversions."""
+    return jsonify({
+        "image": {
+            "from": list(_IMAGE_FMT_ALIAS.keys()),
+            "to":   list(_IMAGE_FORMATS),
+            "note": "Uses Pillow. JPEG/BMP do not support transparency — white background used.",
+        },
+        "text": {
+            "conversions": _TEXT_CONVERSIONS,
+        },
+    })
+
+
+@app.route("/convert/image", methods=["POST"])
+def convert_image():
+    """Convert an image between formats using Pillow.
+
+    Body (one of):
+      {"image_base64": "<base64>", "to_format": "jpeg", "quality": 85}
+      {"image_path":  "/abs/path/img.png", "to_format": "webp", "quality": 90}
+
+    Returns:
+      {"result_base64": "...", "format": "jpeg", "size_bytes": N,
+       "dimensions": "1920x1080", "success": true}
+    """
+    import base64 as _b64
+    import io as _io
+
+    body        = request.get_json(silent=True) or {}
+    to_format   = _IMAGE_FMT_ALIAS.get(body.get("to_format", "jpeg").lower().lstrip("."), "")
+    quality     = min(max(int(body.get("quality", 85)), 1), 100)
+
+    if not to_format:
+        return jsonify({
+            "error": f"Unsupported target format. Supported: {', '.join(_IMAGE_FORMATS)}",
+            "success": False,
+        }), 400
+
+    image_base64 = body.get("image_base64", "").strip()
+    image_path   = body.get("image_path",   "").strip()
+
+    if image_base64:
+        try:
+            img_bytes = _b64.b64decode(image_base64)
+        except Exception:
+            return jsonify({"error": "Invalid base64 data", "success": False}), 400
+    elif image_path:
+        if not os.path.isabs(image_path):
+            return jsonify({"error": "image_path must be absolute", "success": False}), 400
+        if not os.path.exists(image_path):
+            return jsonify({"error": f"File not found: {image_path}", "success": False}), 404
+        with open(image_path, "rb") as fh:
+            img_bytes = fh.read()
+    else:
+        return jsonify({"error": "Provide image_base64 or image_path", "success": False}), 400
+
+    try:
+        from PIL import Image  # pillow is in requirements.txt
+
+        buf_in = _io.BytesIO(img_bytes)
+        img    = Image.open(buf_in)
+        img.load()  # eagerly decode so errors surface here
+
+        # JPEG and BMP don't support alpha — composite onto white background
+        if to_format in ("jpeg", "bmp") and img.mode in ("RGBA", "LA", "P"):
+            if img.mode == "P":
+                img = img.convert("RGBA")
+            bg = Image.new("RGB", img.size, (255, 255, 255))
+            if img.mode in ("RGBA", "LA"):
+                bg.paste(img, mask=img.split()[-1])
+            else:
+                bg.paste(img)
+            img = bg
+        elif img.mode not in ("RGB", "RGBA", "L") and to_format != "png":
+            img = img.convert("RGB")
+
+        buf_out     = _io.BytesIO()
+        save_kwargs = {}
+        if to_format == "jpeg":
+            save_kwargs = {"quality": quality, "optimize": True}
+        elif to_format == "webp":
+            save_kwargs = {"quality": quality}
+
+        img.save(buf_out, format=to_format.upper(), **save_kwargs)
+        result_b64 = _b64.b64encode(buf_out.getvalue()).decode()
+
+        return jsonify({
+            "result_base64": result_b64,
+            "format":        to_format,
+            "size_bytes":    len(buf_out.getvalue()),
+            "dimensions":    f"{img.width}x{img.height}",
+            "success":       True,
+        })
+
+    except ImportError:
+        return jsonify({"error": "Pillow not installed. Run: pip install pillow", "success": False}), 500
+    except Exception as exc:  # pylint: disable=broad-except
+        return jsonify({"error": str(exc), "success": False}), 500
+
+
+@app.route("/convert/text", methods=["POST"])
+def convert_text():
+    """Convert text content between formats.
+
+    Supported conversions:
+      json     → csv   (expects JSON array of objects)
+      csv      → json  (returns JSON array of objects)
+      html/htm → text  (strips tags, returns plain text)
+      md/markdown → html (basic Markdown → HTML)
+
+    Body: {"content": "...", "from_format": "json", "to_format": "csv"}
+    Returns: {"result": "...", "success": true}
+    """
+    import csv as _csv
+    import html as _html_mod
+    import io as _io
+
+    body     = request.get_json(silent=True) or {}
+    content  = body.get("content", "")
+    from_fmt = body.get("from_format", "").lower().strip()
+    to_fmt   = body.get("to_format",   "").lower().strip()
+
+    if not content:
+        return jsonify({"error": "No content provided", "success": False}), 400
+    if not from_fmt or not to_fmt:
+        return jsonify({"error": "Provide from_format and to_format", "success": False}), 400
+
+    try:
+        result = ""
+
+        # ── JSON → CSV ────────────────────────────────────────────────────────
+        if from_fmt == "json" and to_fmt == "csv":
+            data = json.loads(content)
+            if not isinstance(data, list):
+                data = [data]
+            if not data:
+                return jsonify({"result": "", "success": True})
+            keys = list(data[0].keys()) if isinstance(data[0], dict) else ["value"]
+            buf  = _io.StringIO()
+            writer = _csv.DictWriter(buf, fieldnames=keys, extrasaction="ignore")
+            writer.writeheader()
+            for row in data:
+                writer.writerow(row if isinstance(row, dict) else {"value": str(row)})
+            result = buf.getvalue()
+
+        # ── CSV → JSON ────────────────────────────────────────────────────────
+        elif from_fmt == "csv" and to_fmt == "json":
+            buf    = _io.StringIO(content)
+            reader = _csv.DictReader(buf)
+            result = json.dumps(list(reader), ensure_ascii=False, indent=2)
+
+        # ── HTML → plain text ─────────────────────────────────────────────────
+        elif from_fmt in ("html", "htm") and to_fmt == "text":
+            try:
+                from bs4 import BeautifulSoup
+                result = BeautifulSoup(content, "html.parser").get_text(separator="\n", strip=True)
+            except ImportError:
+                result = _html_mod.unescape(re.sub(r"<[^>]+>", "", content))
+
+        # ── Markdown → HTML ───────────────────────────────────────────────────
+        elif from_fmt in ("md", "markdown") and to_fmt in ("html", "htm"):
+            lines, html_lines, in_code = content.splitlines(), [], False
+            for line in lines:
+                if line.startswith("```"):
+                    if in_code:
+                        html_lines.append("</code></pre>")
+                        in_code = False
+                    else:
+                        lang_hint = line[3:].strip()
+                        # Whitelist: only allow safe language identifier characters
+                        lang_hint = re.sub(r"[^a-zA-Z0-9_+\-]", "", lang_hint)[:32]
+                        html_lines.append(f'<pre><code class="language-{lang_hint}">')
+                        in_code = True
+                    continue
+                if in_code:
+                    html_lines.append(_html_mod.escape(line))
+                    continue
+                m = re.match(r"^(#{1,6})\s+(.*)", line)
+                if m:
+                    lvl = len(m.group(1))
+                    html_lines.append(f"<h{lvl}>{_md_inline(m.group(2))}</h{lvl}>")
+                    continue
+                if re.match(r"^[-*_]{3,}$", line.strip()):
+                    html_lines.append("<hr>")
+                    continue
+                if not line.strip():
+                    html_lines.append("")
+                    continue
+                m = re.match(r"^[\-*]\s+(.*)", line)
+                if m:
+                    html_lines.append(f"<li>{_md_inline(m.group(1))}</li>")
+                    continue
+                html_lines.append(f"<p>{_md_inline(line)}</p>")
+            result = "\n".join(html_lines)
+
+        else:
+            return jsonify({
+                "error": f"Unsupported conversion: {from_fmt} → {to_fmt}",
+                "supported": [f"{c['from']} → {c['to']}" for c in _TEXT_CONVERSIONS],
+                "success": False,
+            }), 400
+
+        return jsonify({"result": result, "success": True})
+
+    except (json.JSONDecodeError, _csv.Error) as exc:
+        return jsonify({"error": f"Parse error: {exc}", "success": False}), 400
+    except Exception as exc:  # pylint: disable=broad-except
+        return jsonify({"error": str(exc), "success": False}), 500
 
 
 # ---------------------------------------------------------------------------

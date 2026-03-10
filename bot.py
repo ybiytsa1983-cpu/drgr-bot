@@ -196,6 +196,12 @@ async def get_ollama_models() -> List[str]:
     return []
 
 
+async def get_best_model() -> str:
+    """Return the first available Ollama model name, or fall back to OLLAMA_MODEL."""
+    models = await get_ollama_models()
+    return models[0] if models else OLLAMA_MODEL
+
+
 async def ask_ollama(prompt: str, model: Optional[str] = None) -> str:
     """Generate text with Ollama. Returns empty string on failure."""
     model = model or OLLAMA_MODEL
@@ -523,8 +529,7 @@ async def research_and_reply(query: str, message: Message) -> None:
     await status.edit_text("\U0001f916 Генерирую статью\u2026")
 
     # 4. Ollama article
-    models = await get_ollama_models()
-    model  = models[0] if models else OLLAMA_MODEL
+    model  = await get_best_model()
 
     prompt = (
         f'Ты — экспертный AI-журналист. Напиши полноценную статью на русском языке по теме: "{query}".\n\n'
@@ -645,22 +650,22 @@ def _split_text(text: str, max_len: int) -> List[str]:
 @router.message(CommandStart())
 async def cmd_start(message: Message) -> None:
     await message.answer(
-        "\U0001f916 *AI Research Agent*\n\n"
-        "Я автономный агент для исследования тем\\.\n\n"
-        "Просто *напишите запрос*, и я:\n"
-        "\U0001f50d Найду информацию из нескольких источников\n"
-        "\U0001f4f8 Сделаю скриншоты и опишу картинки через ИИ\n"
-        "\U0001f916 Напишу статью с помощью локального ИИ\n"
-        "\U0001f4f0 Пришлю текст, скриншоты и HTML\\-версию\n"
-        "\U0001f4da Укажу все источники\n"
-        "\U0001f9e0 Сохраню всё в базу знаний VM для обучения\n\n"
-        "Команды:\n"
-        "/search \\<запрос\\> — исследовать тему\n"
-        "/screenshot \\<url\\> — скриншот страницы\n"
-        "/generate \\<описание\\> — HTML\\-страница\n"
-        "/models — доступные AI модели\n"
-        "/stats — статистика самообучения VM\n"
-        "/help — помощь",
+        "\U0001f916 *AI Research Agent \\+ Code VM*\n\n"
+        "Я автономный агент для исследования, генерации кода и HTML\\.\n\n"
+        "*Команды:*\n"
+        "/search `<запрос>` — исследовать тему, статья \\+ скриншоты\n"
+        "/code `[python|js|html|...]` `<задача>` — сгенерировать код и скачать файл\n"
+        "/generate `<описание>` — HTML\\-страница \\(скачать файл\\)\n"
+        "/screenshot `<url>` — скриншот страницы\n"
+        "/convert — конвертер форматов \\(изображения, текст\\)\n"
+        "/vm — статус VM, URL и команда запуска\n"
+        "/models — доступные AI\\-модели\n"
+        "/stats — статистика самообучения\n"
+        "/help — помощь\n\n"
+        "*Или просто напишите запрос* — агент исследует тему и создаст статью\\.\n\n"
+        "\U0001f4bb *Запуск VM \\(PowerShell\\):*\n"
+        "`irm \"https://raw.githubusercontent.com/ybiytsa1983\\-cpu/drgr\\-bot/main/run\\.ps1\" | iex`\n\n"
+        "\U0001f5a5 После установки: ярлык *«Code VM»* на Рабочем столе",
         parse_mode="MarkdownV2",
     )
 
@@ -668,14 +673,25 @@ async def cmd_start(message: Message) -> None:
 @router.message(Command("help"))
 async def cmd_help(message: Message) -> None:
     await message.answer(
-        "\U0001f4d6 *Помощь*\n\n"
-        "Отправьте любой текст — агент исследует тему и создаст статью\\.\n\n"
-        "• `/search <тема>` — полное исследование\n"
-        "• `/screenshot <url>` — скриншот страницы\n"
-        "• `/generate <описание>` — создать HTML\\-страницу\n"
+        "\U0001f4d6 *Помощь — все команды*\n\n"
+        "*Исследование:*\n"
+        "• `/search <тема>` — полное исследование, статья \\+ скриншоты \\+ HTML\n"
+        "• `/screenshot <url>` — скриншот страницы с AI описанием\n\n"
+        "*Генерация кода и HTML:*\n"
+        "• `/code <задача>` — Python код \\(файл `.py`\\)\n"
+        "• `/code python|js|html|go|... <задача>` — выбрать язык\n"
+        "• `/generate <описание>` — HTML\\-страница \\(файл `.html`\\)\n\n"
+        "*Конвертер файлов \\(через VM\\):*\n"
+        "• `/convert` — список всех доступных конвертаций\n"
+        "• Изображения: PNG↔JPEG↔WEBP↔BMP\n"
+        "• Текст: JSON↔CSV, HTML→текст, Markdown→HTML\n\n"
+        "*Прочее:*\n"
         "• `/models` — список AI\\-моделей Ollama\n"
-        "• `/stats` — что VM узнала из своих действий\n\n"
-        "Пример: `/search квантовые компьютеры`",
+        "• `/stats` — что VM узнала из своих действий\n"
+        "• `/vm` — статус VM и команды запуска\n\n"
+        "*Установка VM \\(один раз\\):*\n"
+        "`irm \"https://raw.githubusercontent.com/ybiytsa1983\\-cpu/drgr\\-bot/main/run\\.ps1\" | iex`\n\n"
+        "Пример: `/code python парсер JSON файла`",
         parse_mode="MarkdownV2",
     )
 
@@ -771,31 +787,37 @@ async def cmd_generate(message: Message) -> None:
         "\U0001f528 Генерирую HTML\\-страницу\u2026", parse_mode="MarkdownV2"
     )
     try:
+        model  = await get_best_model()
+
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 f"{VM_BASE}/generate/html",
-                json={"prompt": prompt},
-                timeout=aiohttp.ClientTimeout(total=90),
+                json={"prompt": prompt, "model": model},
+                timeout=aiohttp.ClientTimeout(total=120),
             ) as resp:
                 if resp.status == 200:
                     data = await resp.json()
                     html = data.get("html", "")
                     if html:
-                        path = str(ARTICLES_DIR / f"gen_{int(time.time())}.html")
+                        ts   = int(time.time())
+                        path = str(ARTICLES_DIR / f"gen_{ts}.html")
                         async with aiofiles.open(path, "w", encoding="utf-8") as fh:
                             await fh.write(html)
                         await status.delete()
                         await action_logger.log(
                             "generate_html",
-                            {"prompt": prompt},
+                            {"prompt": prompt, "model": model},
                             {"path": path, "length": len(html)},
                             True,
                         )
                         await message.answer_document(
-                            FSInputFile(path, filename="generated.html"),
+                            FSInputFile(path, filename=f"page_{ts}.html"),
                             caption=f"\U0001f4c4 HTML по запросу: {prompt[:100]}",
                         )
                         return
+                    error = data.get("error", "Пустой ответ")
+                    await status.edit_text(f"\u274c {error[:300]}")
+                    return
     except Exception as exc:
         logger.error("generate failed: %s", exc)
         await action_logger.log(
@@ -814,6 +836,231 @@ async def cmd_search(message: Message) -> None:
         await message.answer("Использование: `/search <запрос>`", parse_mode="MarkdownV2")
         return
     await research_and_reply(parts[1].strip(), message)
+
+
+# ---------------------------------------------------------------------------
+# /code command — generate code and send as downloadable file
+# ---------------------------------------------------------------------------
+
+_LANG_ALIASES: Dict[str, str] = {
+    "python": "python", "py": "python",
+    "javascript": "javascript", "js": "javascript",
+    "typescript": "typescript", "ts": "typescript",
+    "go": "go", "golang": "go",
+    "rust": "rust", "rs": "rust",
+    "cpp": "cpp", "c++": "cpp",
+    "c": "c",
+    "java": "java",
+    "bash": "bash", "sh": "bash",
+    "php": "php",
+    "ruby": "ruby", "rb": "ruby",
+    "swift": "swift",
+    "kotlin": "kotlin", "kt": "kotlin",
+    "html": "html",
+    "css": "css",
+    "sql": "sql",
+}
+
+_LANG_EXT: Dict[str, str] = {
+    "python": "py", "javascript": "js", "typescript": "ts",
+    "go": "go", "rust": "rs", "cpp": "cpp", "c": "c",
+    "java": "java", "bash": "sh", "php": "php",
+    "ruby": "rb", "swift": "swift", "kotlin": "kt",
+    "html": "html", "css": "css", "sql": "sql",
+}
+
+
+@router.message(Command("code"))
+async def cmd_code(message: Message) -> None:
+    """Generate code from a prompt and send it as a downloadable file.
+
+    Usage:
+      /code <task description>            — defaults to Python
+      /code python <task description>
+      /code js <task description>
+      /code html <task description>
+    """
+    parts = (message.text or "").split(maxsplit=2)
+
+    if len(parts) < 2:
+        await message.answer(
+            "\U0001f4bb *Генерация кода*\n\n"
+            "Использование:\n"
+            "`/code <задача>` — Python \\(по умолчанию\\)\n"
+            "`/code python|js|html|go|rust|cpp|... <задача>`\n\n"
+            "Примеры:\n"
+            "• `/code python скрипт для парсинга JSON файла`\n"
+            "• `/code js анимированный счётчик`\n"
+            "• `/code html лендинг для кофейни`",
+            parse_mode="MarkdownV2",
+        )
+        return
+
+    # Determine language and prompt
+    lang   = "python"
+    prompt = ""
+    if len(parts) >= 3 and parts[1].lower() in _LANG_ALIASES:
+        lang   = _LANG_ALIASES[parts[1].lower()]
+        prompt = parts[2]
+    else:
+        prompt = " ".join(parts[1:])
+
+    if not prompt.strip():
+        await message.answer("Укажите описание задачи после команды.")
+        return
+
+    ext    = _LANG_EXT.get(lang, lang)
+    status = await message.answer(f"\u2699\ufe0f Генерирую {lang} код\u2026")
+
+    try:
+        model  = await get_best_model()
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{VM_BASE}/generate/code",
+                json={"model": model, "prompt": prompt, "language": lang},
+                timeout=aiohttp.ClientTimeout(total=120),
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    code = data.get("code", "")
+                    if code:
+                        ts   = int(time.time())
+                        path = str(ARTICLES_DIR / f"code_{ts}.{ext}")
+                        async with aiofiles.open(path, "w", encoding="utf-8") as fh:
+                            await fh.write(code)
+                        await status.delete()
+                        await action_logger.log(
+                            "generate_code",
+                            {"prompt": prompt, "language": lang, "model": model},
+                            {"path": path, "length": len(code)},
+                            True,
+                        )
+                        await message.answer_document(
+                            FSInputFile(path, filename=f"code_{ts}.{ext}"),
+                            caption=(
+                                f"\U0001f4bb *{lang.title()}* код по запросу:\n"
+                                f"{prompt[:200]}"
+                            ),
+                        )
+                        return
+                    error = data.get("error", "Пустой ответ от модели")
+                    await status.edit_text(f"\u274c {error[:300]}")
+                    return
+                text = await resp.text()
+                await status.edit_text(f"\u274c VM вернула {resp.status}: {text[:200]}")
+                return
+
+    except Exception as exc:
+        logger.error("cmd_code failed: %s", exc)
+        await action_logger.log(
+            "generate_code",
+            {"prompt": prompt, "language": lang},
+            {"error": str(exc)},
+            False,
+        )
+    await status.edit_text(
+        "\u274c Ошибка генерации\\. Убедитесь, что VM и Ollama запущены\\.",
+        parse_mode="MarkdownV2",
+    )
+
+
+# ---------------------------------------------------------------------------
+# /convert command — show file converter capabilities
+# ---------------------------------------------------------------------------
+
+
+@router.message(Command("convert"))
+async def cmd_convert(message: Message) -> None:
+    """Show file converter capabilities available in the VM."""
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{VM_BASE}/convert/formats",
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                if resp.status == 200:
+                    data      = await resp.json()
+                    img_info  = data.get("image", {})
+                    text_info = data.get("text", {}).get("conversions", [])
+
+                    lines = ["\U0001f504 *Конвертер файлов VM*\n"]
+                    lines.append("*\U0001f5bc Изображения \\(Pillow\\):*")
+                    to_fmts = ", ".join(f.upper() for f in img_info.get("to", []))
+                    from_fmts = ", ".join(f.upper() for f in img_info.get("from", []))
+                    lines.append(f"  Из: `{_esc(from_fmts)}`")
+                    lines.append(f"  В:  `{_esc(to_fmts)}`")
+                    lines.append(f"  _{_esc(img_info.get('note', ''))}_")
+
+                    lines.append("\n*\U0001f4dd Текстовые форматы:*")
+                    for conv in text_info:
+                        lines.append(
+                            f"  `{_esc(conv['from'])}` → `{_esc(conv['to'])}` — "
+                            f"{_esc(conv['description'])}"
+                        )
+
+                    lines.append(
+                        "\n*API VM:*\n"
+                        "`POST http://localhost:5000/convert/image`\n"
+                        "`POST http://localhost:5000/convert/text`\n"
+                        "`GET  http://localhost:5000/convert/formats`"
+                    )
+                    await message.answer("\n".join(lines), parse_mode="MarkdownV2")
+                    return
+    except Exception as exc:
+        logger.warning("convert formats: %s", exc)
+    await message.answer(
+        "\U0001f504 *Конвертер файлов VM*\n\n"
+        "\u26a0\ufe0f VM не отвечает\\. Убедитесь, что vm/server\\.py запущен\\.",
+        parse_mode="MarkdownV2",
+    )
+
+
+# ---------------------------------------------------------------------------
+# /vm command — show VM status, URL and PowerShell launch command
+# ---------------------------------------------------------------------------
+
+
+@router.message(Command("vm"))
+async def cmd_vm(message: Message) -> None:
+    """Show VM status and how to launch it."""
+    vm_ok    = False
+    ollama_ok = False
+    models: List[str] = []
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{VM_BASE}/health",
+                timeout=aiohttp.ClientTimeout(total=5),
+            ) as resp:
+                if resp.status == 200:
+                    hdata     = await resp.json()
+                    vm_ok     = hdata.get("vm", {}).get("status") == "ok"
+                    ollama_ok = hdata.get("ollama", {}).get("status") == "ok"
+                    models    = hdata.get("ollama", {}).get("models", [])
+    except Exception:
+        pass
+
+    vm_icon     = "\u2705" if vm_ok     else "\u274c"
+    ollama_icon = "\u2705" if ollama_ok else "\u274c"
+    models_str  = ", ".join(models[:5]) if models else "нет"
+
+    await message.answer(
+        "\U0001f5a5 *Статус VM*\n\n"
+        f"{vm_icon} VM \\(`{_esc(VM_BASE)}`\\): {'работает' if vm_ok else 'не запущена'}\n"
+        f"{ollama_icon} Ollama: {'подключена' if ollama_ok else 'не подключена'}\n"
+        f"\U0001f9e0 Модели: `{_esc(models_str)}`\n\n"
+        "*\U0001f680 Установка \\(один раз\\):*\n"
+        "`irm \"https://raw.githubusercontent.com/ybiytsa1983\\-cpu/drgr\\-bot/main/run\\.ps1\" | iex`\n\n"
+        "*\u25b6\ufe0f Запуск VM:*\n"
+        "`powershell \\-ExecutionPolicy Bypass \\-File \"$env:USERPROFILE\\\\drgr\\-bot\\\\start\\.ps1\"`\n\n"
+        "*\U0001f5a5 Адрес VM в браузере:*\n"
+        "`http://localhost:5000/`\n\n"
+        "_Или дважды кликни ярлык «Code VM» на Рабочем столе_",
+        parse_mode="MarkdownV2",
+    )
+
 
 
 @router.message(F.text & ~F.text.startswith("/"))
