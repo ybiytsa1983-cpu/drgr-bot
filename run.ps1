@@ -1,14 +1,11 @@
-<#
-.SYNOPSIS
-    Code VM — bootstrap / one-liner installer.
-    Usage (from any PowerShell window — no repo needed):
-        irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/copilot/create-monaco-code-generator/run.ps1" | iex
-
-.DESCRIPTION
-    1. Checks that Git is installed.
-    2. Clones or updates the drgr-bot repository to $HOME\drgr-bot.
-    3. Runs install.ps1 from the cloned repo.
-#>
+# Code VM -- bootstrap / one-liner installer.
+# Usage (from any PowerShell window -- no repo needed):
+#   irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/copilot/create-monaco-code-generator/run.ps1" | iex
+#
+# Steps:
+#   1. Checks that Git is installed.
+#   2. Clones or updates the drgr-bot repository to $HOME\drgr-bot.
+#   3. Runs install.ps1 from the cloned repo.
 
 $ErrorActionPreference = "Stop"
 

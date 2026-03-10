@@ -5,6 +5,19 @@ Monaco Editor + Flask + Ollama. Пишешь промпт — получаешь
 
 ---
 
+## ⬇ СКАЧАТЬ ВСЁ (ZIP, без команд)
+
+Если не хочешь вводить команды — просто скачай архив и распакуй:
+
+**[📦 Скачать drgr-bot.zip](https://github.com/ybiytsa1983-cpu/drgr-bot/archive/refs/heads/copilot/create-monaco-code-generator.zip)**
+
+После распаковки:
+1. Открой папку `drgr-bot-copilot-create-monaco-code-generator`
+2. Запусти **PowerShell** в этой папке (Shift+ПКМ → «Открыть окно PowerShell здесь»)
+3. Вставь: `Set-ExecutionPolicy Bypass -Scope Process -Force; .\install.ps1`
+
+---
+
 ## 🆘 НЕТ НИЧЕГО? НЕТ ЯРЛЫКА? НЕТ ФАЙЛОВ? НАЧНИ ЗДЕСЬ
 
 **Нажми Win+X → «Windows PowerShell» и вставь одну строку:**
