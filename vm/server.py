@@ -22,7 +22,8 @@ Endpoints:
   POST /retrain        — manually trigger a self-improvement cycle
   POST /agent/log      — receive action record from the Telegram bot for self-learning
   GET  /agent/stats    — return agent action statistics and current training instructions
-  POST /agent/describe_image — describe an image using Ollama vision model
+  POST /agent/describe_image   — describe an image using Ollama vision model
+  POST /agent/generate_image   — generate an image via local SD (port 7860) or ComfyUI (port 8188); handler for GENERATE_IMAGE agent command
   POST /visor/watch    — SSE: continuously screenshot a URL and report AI-detected changes
   GET  /convert/formats     — list available file conversion formats
   POST /convert/image       — convert image between formats (PNG/JPEG/WEBP/BMP) via Pillow
@@ -262,18 +263,23 @@ _DEFAULT_INSTRUCTIONS: dict = {
                 "Wait for DOM/URL changes",
                 "Basic captcha and modal detection",
                 "React to page errors and unexpected behaviour",
+                "Image generation via local Stable Diffusion or ComfyUI (GENERATE_IMAGE command)",
             ],
             "constraints": [
                 "Do not execute arbitrary system code outside the browser",
                 "Do not attempt to bypass captchas — only report them",
                 "Respect the cycle step limit",
                 "All actions only through formalised commands",
+                "For image generation tasks always use GENERATE_IMAGE — never return NOOP",
             ],
         },
         "cycle": {
             "max_steps": 80,
             "default_wait_timeout_ms": 8000,
-            "commands": ["NAVIGATE", "CLICK", "TYPE", "WAIT", "SWITCH_TAB", "SCROLL", "SCREENSHOT", "NOOP"],
+            "commands": [
+                "NAVIGATE", "CLICK", "TYPE", "WAIT", "SWITCH_TAB",
+                "SCROLL", "SCREENSHOT", "GENERATE_IMAGE", "NOOP",
+            ],
             "termination_conditions": [
                 "Goal achieved",
                 "Captcha detected (status=blocked_captcha)",
@@ -281,6 +287,33 @@ _DEFAULT_INSTRUCTIONS: dict = {
                 "Step limit exceeded (current_step >= max_steps)",
                 "User explicitly stopped execution",
             ],
+        },
+        "command_schemas": {
+            "GENERATE_IMAGE": {
+                "description": (
+                    "Generate an image via the local Stable Diffusion or ComfyUI API "
+                    "(POST /agent/generate_image on the DRGR VM server). "
+                    "Always use this command for any image-generation request — "
+                    "NEVER respond with NOOP for image tasks."
+                ),
+                "fields": {
+                    "prompt":          "Text description of the image to generate (required).",
+                    "negative_prompt": "What to exclude from the image (optional, default empty).",
+                    "width":           "Image width in pixels (optional, default 512).",
+                    "height":          "Image height in pixels (optional, default 512).",
+                    "steps":           "Diffusion steps (optional, default 20).",
+                    "cfg_scale":       "CFG guidance scale (optional, default 7).",
+                    "save_as":         "Filename to save result as (optional).",
+                },
+                "example": {
+                    "type":            "GENERATE_IMAGE",
+                    "prompt":          "A futuristic city at night with neon lights",
+                    "negative_prompt": "blurry, low quality",
+                    "width":           512,
+                    "height":          512,
+                    "steps":           25,
+                },
+            },
         },
         "output_schema": {
             "cycle_state": {
@@ -299,6 +332,11 @@ _DEFAULT_INSTRUCTIONS: dict = {
             "captcha": "Set status=blocked_captcha, take SCREENSHOT, do not attempt to solve.",
             "modal_cookies": "Try CLICK on Accept/OK to close.",
             "error_page": "Log in state_analysis; stop or correct plan; set finished_error if critical.",
+            "image_generation": (
+                "Use GENERATE_IMAGE command with prompt, negative_prompt, width, height, steps. "
+                "The server calls the local Stable Diffusion / ComfyUI API and returns the result. "
+                "Do NOT navigate to external image sites — always prefer the local GENERATE_IMAGE command."
+            ),
         },
     },
 }
@@ -2184,7 +2222,12 @@ _DEFAULT_HTML_SYSTEM_PROMPT = (
     "Ты также знаешь протокол DRGRBrowserAgent v1.0 — автономного агента для управления "
     "браузером через DRGR-визор. Агент работает в цикле: наблюдение → планирование → действие "
     "→ проверка → логирование. Команды агента: NAVIGATE, CLICK, TYPE, WAIT, SWITCH_TAB, "
-    "SCROLL, SCREENSHOT, NOOP. Вывод агента содержит cycle_state (status, current_step, "
+    "SCROLL, SCREENSHOT, GENERATE_IMAGE, NOOP. "
+    "GENERATE_IMAGE — команда для генерации изображений через локальный Stable Diffusion или ComfyUI. "
+    "Поля: prompt (обязательно), negative_prompt, width, height, steps, cfg_scale, save_as. "
+    "ВАЖНО: при задаче генерации изображения ВСЕГДА используй GENERATE_IMAGE — "
+    "никогда не возвращай NOOP для задач генерации изображений. "
+    "Вывод агента содержит cycle_state (status, current_step, "
     "max_steps), thoughts (observation, state_analysis, plan_short, risks) и commands. "
     "Особые состояния: blocked_captcha (обнаружена капча), finished_success/finished_error. "
     "При генерации HTML-визора для браузерного агента учитывай эту схему."
@@ -2666,6 +2709,257 @@ def agent_describe_image():
         return jsonify({"error": "Cannot connect to Ollama"}), 503
     except Exception as exc:  # pylint: disable=broad-except
         return jsonify({"error": str(exc)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Image generation via local Stable Diffusion / ComfyUI
+# ---------------------------------------------------------------------------
+
+# Ports/hosts where local image generation backends are expected.
+_SD_API_URL      = os.environ.get("SD_API_URL",      "http://127.0.0.1:7860")   # Automatic1111 / SD.Next
+_COMFYUI_API_URL = os.environ.get("COMFYUI_API_URL", "http://127.0.0.1:8188")   # ComfyUI
+
+
+def _sd_available(base_url: str) -> bool:
+    """Return True when a Stable Diffusion (A1111/SD.Next) API responds at *base_url*."""
+    try:
+        r = _http.get(f"{base_url}/sdapi/v1/samplers", timeout=3)
+        return r.status_code == 200
+    except Exception:
+        return False
+
+
+def _comfyui_available(base_url: str) -> bool:
+    """Return True when a ComfyUI server responds at *base_url*."""
+    try:
+        r = _http.get(f"{base_url}/system_stats", timeout=3)
+        return r.status_code == 200
+    except Exception:
+        return False
+
+
+def _generate_via_sd(base_url: str, params: dict) -> dict:
+    """Call the Automatic1111 / SD.Next txt2img API and return base64 image + metadata."""
+    import base64 as _b64
+
+    payload = {
+        "prompt":          params.get("prompt", ""),
+        "negative_prompt": params.get("negative_prompt", ""),
+        "width":           int(params.get("width",     512)),
+        "height":          int(params.get("height",    512)),
+        "steps":           int(params.get("steps",      20)),
+        "cfg_scale":       float(params.get("cfg_scale", 7)),
+        "sampler_name":    params.get("sampler_name", "DPM++ 2M Karras"),
+        "batch_size":      1,
+        "n_iter":          1,
+        "save_images":     False,
+        "send_images":     True,
+    }
+    r = _http.post(f"{base_url}/sdapi/v1/txt2img", json=payload, timeout=300)
+    r.raise_for_status()
+    body = r.json()
+    images = body.get("images", [])
+    if not images:
+        raise ValueError("Stable Diffusion returned no images")
+    return {
+        "image_base64": images[0],
+        "backend":      "stable-diffusion",
+        "params":       payload,
+        "info":         body.get("info", ""),
+    }
+
+
+def _generate_via_comfyui(base_url: str, params: dict) -> dict:
+    """Submit a minimal txt2img workflow to ComfyUI and poll for the result."""
+    import base64 as _b64
+    import time as _time
+    import uuid as _uuid
+
+    prompt_text = params.get("prompt", "")
+    negative    = params.get("negative_prompt", "")
+    width       = int(params.get("width",  512))
+    height      = int(params.get("height", 512))
+    steps       = int(params.get("steps",  20))
+    cfg         = float(params.get("cfg_scale", 7))
+    client_id   = str(_uuid.uuid4())
+
+    # Minimal ComfyUI workflow (SDXL-compatible; adapt model name as needed)
+    workflow = {
+        "3": {
+            "class_type": "KSampler",
+            "inputs": {
+                "model":    ["4", 0],
+                "positive": ["6", 0],
+                "negative": ["7", 0],
+                "latent_image": ["5", 0],
+                "seed":     42,
+                "steps":    steps,
+                "cfg":      cfg,
+                "sampler_name": "dpmpp_2m",
+                "scheduler": "karras",
+                "denoise":  1.0,
+            },
+        },
+        "4": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": "v1-5-pruned-emaonly.ckpt"}},
+        "5": {"class_type": "EmptyLatentImage",       "inputs": {"width": width, "height": height, "batch_size": 1}},
+        "6": {"class_type": "CLIPTextEncode",         "inputs": {"text": prompt_text, "clip": ["4", 1]}},
+        "7": {"class_type": "CLIPTextEncode",         "inputs": {"text": negative,    "clip": ["4", 1]}},
+        "8": {"class_type": "VAEDecode",              "inputs": {"samples": ["3", 0], "vae": ["4", 2]}},
+        "9": {"class_type": "SaveImage",              "inputs": {"images": ["8", 0], "filename_prefix": "drgr_agent"}},
+    }
+
+    r = _http.post(f"{base_url}/prompt", json={"prompt": workflow, "client_id": client_id}, timeout=30)
+    r.raise_for_status()
+    prompt_id = r.json().get("prompt_id")
+    if not prompt_id:
+        raise ValueError("ComfyUI did not return a prompt_id")
+
+    # Poll /history until done (up to 5 min)
+    deadline = _time.time() + 300
+    while _time.time() < deadline:
+        hist_r = _http.get(f"{base_url}/history/{prompt_id}", timeout=10)
+        if hist_r.status_code == 200:
+            hist = hist_r.json()
+            if prompt_id in hist:
+                outputs = hist[prompt_id].get("outputs", {})
+                for node_out in outputs.values():
+                    for img_meta in node_out.get("images", []):
+                        filename  = img_meta["filename"]
+                        subfolder = img_meta.get("subfolder", "")
+                        img_r = _http.get(
+                            f"{base_url}/view",
+                            params={"filename": filename, "subfolder": subfolder, "type": "output"},
+                            timeout=30,
+                        )
+                        img_r.raise_for_status()
+                        b64 = _b64.b64encode(img_r.content).decode()
+                        return {"image_base64": b64, "backend": "comfyui", "params": params}
+        _time.sleep(2)
+    raise TimeoutError("ComfyUI job timed out after 5 minutes")
+
+
+@app.route("/agent/generate_image", methods=["POST"])
+def agent_generate_image():
+    """Generate an image via the local Stable Diffusion or ComfyUI API.
+
+    This is the server-side handler for the DRGRBrowserAgent ``GENERATE_IMAGE``
+    command.  The agent must call this endpoint — never return NOOP for image
+    generation tasks.
+
+    Body (JSON):
+      {
+        "prompt":          "A futuristic city at night",   // required
+        "negative_prompt": "blurry, low quality",          // optional
+        "width":           512,                            // optional, default 512
+        "height":          512,                            // optional, default 512
+        "steps":           20,                             // optional, default 20
+        "cfg_scale":       7,                              // optional, default 7
+        "save_as":         "output.png"                    // optional filename hint
+      }
+
+    Returns:
+      {
+        "success":      true,
+        "image_base64": "<base64 PNG>",
+        "backend":      "stable-diffusion" | "comfyui",
+        "prompt":       "...",
+        "width":        512,
+        "height":       512
+      }
+
+    Backend priority: Stable Diffusion (localhost:7860) → ComfyUI (localhost:8188).
+    Override defaults via SD_API_URL / COMFYUI_API_URL environment variables.
+    """
+    import base64 as _b64
+    import time as _t0
+
+    body = request.get_json(silent=True) or {}
+    prompt = (body.get("prompt") or "").strip()
+    if not prompt:
+        return jsonify({"error": "prompt is required"}), 400
+
+    params = {
+        "prompt":          prompt,
+        "negative_prompt": body.get("negative_prompt", ""),
+        "width":           int(body.get("width",     512)),
+        "height":          int(body.get("height",    512)),
+        "steps":           int(body.get("steps",      20)),
+        "cfg_scale":       float(body.get("cfg_scale", 7)),
+        "save_as":         body.get("save_as", ""),
+    }
+
+    t_start = _t0.time()
+    result  = None
+    error   = None
+
+    # ── Try Stable Diffusion first ───────────────────────────────────────────
+    if _sd_available(_SD_API_URL):
+        try:
+            result = _generate_via_sd(_SD_API_URL, params)
+        except Exception as exc:  # pylint: disable=broad-except
+            error = f"SD error: {exc}"
+
+    # ── Fall back to ComfyUI ─────────────────────────────────────────────────
+    if result is None and _comfyui_available(_COMFYUI_API_URL):
+        try:
+            result = _generate_via_comfyui(_COMFYUI_API_URL, params)
+        except Exception as exc:  # pylint: disable=broad-except
+            error = f"ComfyUI error: {exc}"
+
+    # ── No backend available ─────────────────────────────────────────────────
+    if result is None:
+        msg = (
+            "No local image generation backend found. "
+            "Install one of:\n"
+            "  • Stable Diffusion WebUI (AUTOMATIC1111) — starts on port 7860. "
+            "Run: webui.bat --api\n"
+            "  • ComfyUI — starts on port 8188. "
+            "Run: python main.py\n"
+            "Or set SD_API_URL / COMFYUI_API_URL environment variables to point "
+            "to a running instance."
+        )
+        return jsonify({"success": False, "error": msg, "hint": error}), 503
+
+    duration_ms = int((_t0.time() - t_start) * 1000)
+
+    # Optional: save file to projects directory
+    saved_path = ""
+    save_as = params["save_as"]
+    if save_as:
+        projects_dir = os.path.join(_DIR, "projects")
+        os.makedirs(projects_dir, exist_ok=True)
+        save_as = os.path.basename(save_as)  # strip any path traversal
+        if not save_as.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
+            save_as += ".png"
+        saved_path = os.path.join(projects_dir, save_as)
+        try:
+            with open(saved_path, "wb") as fh:
+                fh.write(_b64.b64decode(result["image_base64"]))
+        except Exception:  # pylint: disable=broad-except
+            saved_path = ""
+
+    # Log action for self-learning
+    _record_agent_action({
+        "timestamp":   _now(),
+        "action_type": "generate_image",
+        "input":       {"prompt": prompt[:200], "width": params["width"], "height": params["height"]},
+        "output":      {"backend": result["backend"], "saved_path": saved_path},
+        "success":     True,
+        "duration_ms": duration_ms,
+        "metadata":    {"steps": params["steps"], "cfg_scale": params["cfg_scale"]},
+    })
+
+    return jsonify({
+        "success":      True,
+        "image_base64": result["image_base64"],
+        "backend":      result["backend"],
+        "prompt":       prompt,
+        "width":        params["width"],
+        "height":       params["height"],
+        "steps":        params["steps"],
+        "duration_ms":  duration_ms,
+        "saved_path":   saved_path,
+    })
 
 
 # ---------------------------------------------------------------------------
