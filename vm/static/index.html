@@ -430,6 +430,12 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
   <div id="chat-pane">
     <div id="chat-messages">
       <div class="cm cm-bot">👋 Привет! Я — ИИ-ассистент DRGR VM. Задайте любой вопрос или дайте задание.<br><br>Выберите модель в настройках (кнопка ☰ слева вверху), затем пишите сюда.</div>
+      <div id="chat-no-ollama" class="cm cm-err" style="display:none">
+        ⚠ Ollama не запущена или не обнаружена.<br>
+        Запусти Ollama: <code>ollama serve</code><br>
+        Нужна модель? Скачать: <code>ollama pull qwen3-vl:8b</code><br>
+        Переученная ВМ: перейди на вкладку <b>🧠 Переученная ВМ</b> и нажми кнопку создания.
+      </div>
     </div>
     <div id="chat-input-row">
       <textarea id="chat-input" placeholder="Введите сообщение... (Enter — отправить, Shift+Enter — новая строка)"
@@ -584,9 +590,77 @@ function initMonaco() {
   var idx = 0;
   function tryNext() {
     if (idx >= bases.length) {
-      container.innerHTML = '<div style="padding:20px;color:#888;font-size:13px">'
-        + '⚠ Monaco Editor недоступен.<br>Запустите <code>vm\\bundle_monaco.ps1</code> '
-        + 'или проверьте подключение к интернету.</div>';
+      // ── Fallback: functional textarea editor so the VM works offline ─────
+      container.innerHTML = '';
+      container.style.display = 'flex';
+      container.style.flexDirection = 'column';
+      var notice = document.createElement('div');
+      notice.style.cssText = 'flex-shrink:0;padding:5px 10px;background:#1a3a1a;'
+        + 'color:#7fc27f;font-size:11px;font-family:monospace;'
+        + 'border-bottom:1px solid #2a3a2a;';
+      notice.innerHTML = '⚠ Monaco offline — простой редактор активен. '
+        + 'Для полного Monaco: запусти <code>vm\\bundle_monaco.ps1</code>';
+      var ta = document.createElement('textarea');
+      ta.id = 'editor-textarea';
+      ta.spellcheck = false;
+      ta.style.cssText = 'flex:1;width:100%;background:#1e1e1e;color:#d4d4d4;resize:none;'
+        + 'font-family:"Cascadia Code","Fira Code","Consolas","Courier New",monospace;'
+        + 'font-size:14px;padding:10px 14px;border:none;outline:none;line-height:1.5;'
+        + 'tab-size:2;overflow-wrap:normal;overflow-x:auto;white-space:pre;';
+      container.appendChild(notice);
+      container.appendChild(ta);
+      // ── Minimal editor shim — compatible with Monaco API surface ──────────
+      editor = {
+        getValue: function()  { return ta.value; },
+        setValue: function(v) { ta.value = v; },
+        layout:   function()  {},
+        addCommand: function() {},
+        onDidChangeModelContent: function(fn) {
+          ta.addEventListener('input', fn);
+          return { dispose: function() {} };
+        },
+        getModel: function() { return null; }
+      };
+      // Tab → two spaces (prevent focus change)
+      ta.addEventListener('keydown', function(e) {
+        if (e.key === 'Tab') {
+          e.preventDefault();
+          var s = ta.selectionStart, end = ta.selectionEnd;
+          ta.value = ta.value.slice(0, s) + '  ' + ta.value.slice(end);
+          ta.selectionStart = ta.selectionEnd = s + 2;
+        }
+        if (e.key === 'F5') { e.preventDefault(); runCode(); }
+      });
+      // Live preview on change (debounced, same as Monaco)
+      var previewTimer = null;
+      ta.addEventListener('input', function() {
+        clearTimeout(previewTimer);
+        previewTimer = setTimeout(function() {
+          if (detectLang(ta.value) === 'html') livePreview();
+        }, 600);
+      });
+      // Set initial welcome HTML
+      ta.value = [
+        '<!DOCTYPE html>',
+        '<html lang="ru">',
+        '<head>',
+        '  <meta charset="UTF-8"/>',
+        '  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>',
+        '  <title>DRGR VM</title>',
+        '  <style>',
+        '    body { font-family: sans-serif; background: #0d0d0d; color: #e0e0e0;',
+        '           display: flex; align-items: center; justify-content: center;',
+        '           height: 100vh; margin: 0; }',
+        '    h1 { color: #0e84d4; }',
+        '  </style>',
+        '</head>',
+        '<body>',
+        '  <h1>👋 DRGR VM готов!</h1>',
+        '  <p>Введите запрос внизу и нажмите <b>Генерировать</b></p>',
+        '</body>',
+        '</html>'
+      ].join('\n');
+      livePreview();
       return;
     }
     var base = bases[idx++];
@@ -756,14 +830,26 @@ function browseUrl() {
   var url = document.getElementById('vurl-input').value.trim();
   if (!url) { toast('Введите URL'); return; }
   if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
-  var ph  = document.getElementById('preview-placeholder');
-  var frm = document.getElementById('preview-frame');
-  ph.style.display  = 'none';
-  frm.style.display = 'block';
-  frm.src = url;
-  frm.srcdoc = '';
-  var vpane = document.getElementById('vpane');
-  if (window.getComputedStyle(vpane).display === 'none') setView('both');
+  document.getElementById('vurl-input').value = url;
+  // Local URLs (localhost / 127.0.0.1) load directly in iframe.
+  // External URLs are routed through the server screenshot endpoint because
+  // the vast majority of real websites send X-Frame-Options / CSP headers
+  // that block direct iframe embedding and produce a blank white page.
+  var isLocal = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i.test(url);
+  if (isLocal) {
+    var ph  = document.getElementById('preview-placeholder');
+    var frm = document.getElementById('preview-frame');
+    ph.style.display  = 'none';
+    frm.style.display = 'block';
+    frm.src = url;
+    frm.srcdoc = '';
+    var vpane = document.getElementById('vpane');
+    if (window.getComputedStyle(vpane).display === 'none') setView('both');
+  } else {
+    // For external sites use server-side Playwright screenshot so the
+    // page is always visible regardless of X-Frame-Options restrictions.
+    screenshotAndAnalyze();
+  }
 }
 
 // ── ВИЗОР screenshot + AI analysis ───────────────────────────────────────────
@@ -1015,7 +1101,13 @@ async function loadHealth() {
     document.getElementById('h-url').textContent = (d.ollama&&d.ollama.url)||'—';
     set('h-bot', bot? '✓ Токен есть': '✗ Нет токена', bot ? 'ok' : 'warn');
     document.getElementById('sdot').className = ol ? 'ok' : '';
-  } catch(e) {}
+    // Show/hide "Ollama not running" banner in chat view
+    var noOl = document.getElementById('chat-no-ollama');
+    if (noOl) noOl.style.display = ol ? 'none' : '';
+  } catch(e) {
+    var noOl = document.getElementById('chat-no-ollama');
+    if (noOl) noOl.style.display = '';
+  }
 }
 function set(id, html, cls) {
   var el = document.getElementById(id);

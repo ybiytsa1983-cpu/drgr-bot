@@ -76,7 +76,7 @@ Write-Host ""
 Write-Host "  [OK] Desktop shortcut created!" -ForegroundColor Green
 Write-Host "       $shortcutPath" -ForegroundColor DarkGray
 
-# Also copy ЗАПУСТИТЬ.bat to Desktop as a backup/recovery launcher
+# Also copy launcher bat files to Desktop for easy access
 $batSrc = Join-Path $repoDir 'ЗАПУСТИТЬ.bat'
 if (Test-Path $batSrc) {
     try {
@@ -84,9 +84,31 @@ if (Test-Path $batSrc) {
         Write-Host "  [OK] ЗАПУСТИТЬ.bat also placed on Desktop (backup launcher)." -ForegroundColor Green
     } catch { }
 }
+# Copy ЗАПУСТИТЬ_ВМ.bat (launches VM + auto-creates drgr-visor retrained model)
+$vmBatSrc = Join-Path $repoDir 'ЗАПУСТИТЬ_ВМ.bat'
+if (Test-Path $vmBatSrc) {
+    try {
+        Copy-Item -Path $vmBatSrc -Destination (Join-Path $desktopPath 'ЗАПУСТИТЬ_ВМ.bat') -Force
+        Write-Host "  [OK] ЗАПУСТИТЬ_ВМ.bat placed on Desktop (VM + retrained model)." -ForegroundColor Green
+    } catch { }
+}
+# Copy ПЕРЕУЧИТЬ_ВМ.bat (re-trains / recreates the drgr-visor model)
+$retrainBatSrc = Join-Path $repoDir 'ПЕРЕУЧИТЬ_ВМ.bat'
+if (Test-Path $retrainBatSrc) {
+    try {
+        Copy-Item -Path $retrainBatSrc -Destination (Join-Path $desktopPath 'ПЕРЕУЧИТЬ_ВМ.bat') -Force
+        Write-Host "  [OK] ПЕРЕУЧИТЬ_ВМ.bat placed on Desktop (retrain model)." -ForegroundColor Green
+    } catch { }
+}
 Write-Host ""
 Write-Host "  Double-click 'Code VM' on your Desktop to launch the editor." -ForegroundColor Cyan
 Write-Host "  The Monaco editor opens at http://localhost:5000" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "  Launcher files on Desktop:" -ForegroundColor Yellow
+Write-Host "    Code VM.lnk       — main shortcut (start.ps1)" -ForegroundColor DarkGray
+Write-Host "    ЗАПУСТИТЬ_ВМ.bat  — VM + auto-create drgr-visor retrained model" -ForegroundColor DarkGray
+Write-Host "    ПЕРЕУЧИТЬ_ВМ.bat  — recreate/update drgr-visor model only" -ForegroundColor DarkGray
+Write-Host "    ЗАПУСТИТЬ.bat     — basic launcher (backup)" -ForegroundColor DarkGray
 Write-Host ""
 Write-Host "  Tip: right-click the shortcut -> 'Pin to taskbar'" -ForegroundColor Yellow
 Write-Host ""
