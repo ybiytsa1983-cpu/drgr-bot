@@ -9,7 +9,7 @@ Monaco Editor + Flask + Ollama. Пишешь промпт — получаешь
 
 Если не хочешь вводить команды — просто скачай архив и распакуй:
 
-**[📦 Скачать drgr-bot.zip](https://github.com/ybiytsa1983-cpu/drgr-bot/archive/refs/heads/main.zip)**
+**[📦 Скачать drgr-bot.zip](https://github.com/ybiytsa1983-cpu/drgr-bot/archive/refs/heads/copilot/create-monaco-code-generator.zip)**
 
 После распаковки:
 1. Открой папку `drgr-bot-main` (или переименуй её в `drgr-bot`)
@@ -23,7 +23,7 @@ Monaco Editor + Flask + Ollama. Пишешь промпт — получаешь
 **Нажми Win+X → «Windows PowerShell» и вставь одну строку:**
 
 ```powershell
-irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/run.ps1" | iex
+irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/copilot/create-monaco-code-generator/run.ps1" | iex
 ```
 
 > Это скачает и запустит установщик — он сам склонирует репозиторий, установит зависимости и создаст ярлык.  
@@ -37,7 +37,7 @@ irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/run.ps1" | 
 Открой **PowerShell** (Win+X → Windows PowerShell) и вставь всё сразу:
 
 ```powershell
-$d="$env:USERPROFILE\drgr-bot"; if(Test-Path "$d\.git"){Set-Location $d; git pull}else{git clone https://github.com/ybiytsa1983-cpu/drgr-bot $d; Set-Location $d}; Set-ExecutionPolicy Bypass -Scope Process -Force; .\install.ps1
+$d="$env:USERPROFILE\drgr-bot"; if(Test-Path "$d\.git"){Set-Location $d; git pull}else{git clone -b copilot/create-monaco-code-generator https://github.com/ybiytsa1983-cpu/drgr-bot $d; Set-Location $d}; Set-ExecutionPolicy Bypass -Scope Process -Force; .\install.ps1
 ```
 
 > **Папка уже есть?** Команда автоматически переключит ветку и обновит файлы.
@@ -57,7 +57,7 @@ $d="$env:USERPROFILE\drgr-bot"; if(Test-Path "$d\.git"){Set-Location $d; git pul
 > **Правильный ручной вариант** (или просто используй однострочник выше):
 > ```powershell
 > Set-Location "$env:USERPROFILE"
-> git clone https://github.com/ybiytsa1983-cpu/drgr-bot
+> git clone -b copilot/create-monaco-code-generator https://github.com/ybiytsa1983-cpu/drgr-bot
 > Set-Location drgr-bot
 > .\install.ps1
 > ```
@@ -235,7 +235,7 @@ Set-Location "$env:USERPROFILE\drgr-bot"; .\install.ps1
 ```powershell
 # Правильный способ клонирования — 4 команды:
 Set-Location "$env:USERPROFILE"
-git clone https://github.com/ybiytsa1983-cpu/drgr-bot
+git clone -b copilot/create-monaco-code-generator https://github.com/ybiytsa1983-cpu/drgr-bot
 Set-Location drgr-bot
 .\install.ps1
 ```
@@ -274,7 +274,7 @@ drgr-bot/
 ## 🐧 Linux / macOS
 
 ```bash
-git clone https://github.com/ybiytsa1983-cpu/drgr-bot.git
+git clone -b copilot/create-monaco-code-generator https://github.com/ybiytsa1983-cpu/drgr-bot.git
 cd drgr-bot
 chmod +x start.sh && ./start.sh
 ```

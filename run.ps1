@@ -1,6 +1,6 @@
 # Code VM -- bootstrap / one-liner installer.
 # Usage (from any PowerShell window -- no repo needed):
-#   irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/run.ps1" | iex
+#   irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/copilot/create-monaco-code-generator/run.ps1" | iex
 #
 # Steps:
 #   1. Checks that Git is installed.
@@ -44,7 +44,7 @@ if (Test-Path (Join-Path $repoDir ".git")) {
     Write-Host "Cloning repository to: $repoDir" -ForegroundColor Green
     Push-Location $env:USERPROFILE
     try {
-        git clone $repoUrl
+        git clone -b copilot/create-monaco-code-generator $repoUrl
     } finally {
         Pop-Location
     }
