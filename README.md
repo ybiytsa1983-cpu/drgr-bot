@@ -133,6 +133,18 @@ $d="$env:USERPROFILE\drgr-bot"; if(Test-Path "$d\.git"){Set-Location $d; git pul
 
 ---
 
+## 🖱 ПРОПАЛ ЯРЛЫК НА РАБОЧЕМ СТОЛЕ?
+
+Если ярлык «Code VM» пропал или не работает — пересоздай его одной командой в PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\drgr-bot\vm\create_shortcut.ps1"
+```
+
+Или зайди в папку `drgr-bot` и дважды кликни по **`ЗАПУСТИТЬ_ВМ.bat`** — он пересоздаст ярлыки автоматически.
+
+---
+
 ## ▶ ЗАПУСК (каждый раз после установки)
 
 Вставь в **PowerShell** (Win+X → Windows PowerShell):

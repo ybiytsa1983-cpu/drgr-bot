@@ -280,9 +280,26 @@ def save_instructions(data: dict) -> None:
 # ---------------------------------------------------------------------------
 # Code execution
 # ---------------------------------------------------------------------------
+# Number of characters to inspect when detecting HTML content masquerading as
+# another language.  120 chars is enough for "<!DOCTYPE html>" plus whitespace.
+_HTML_DETECT_PREFIX = 120
+
+
+def _is_html_content(code: str) -> bool:
+    """Return True if code looks like an HTML document (not JS or Python)."""
+    prefix = code.strip()[:_HTML_DETECT_PREFIX].lower()
+    return prefix.startswith("<") or "<!doctype" in prefix
+
+
 _RUNNERS = {
     "python": ["python3"],
     "javascript": ["node"],
+}
+
+# Fallback runtimes tried when the primary runner is not found.
+# Key = primary executable name (runner[0]); value = fallback command list.
+_RUNNER_FALLBACKS = {
+    "python3": ["python"],
 }
 
 
@@ -291,17 +308,23 @@ def _run_code(code: str, language: str) -> dict:
     if runner is None:
         return {"output": "", "error": f"Unsupported language: {language}", "success": False}
 
+    # Guard: if JavaScript code is actually HTML, refuse execution with a clear message
+    if language == "javascript" and _is_html_content(code):
+        return {
+            "output": "",
+            "error": (
+                "Обнаружен HTML вместо JavaScript. "
+                "Выберите язык 'html' или используйте ```html блок."
+            ),
+            "success": False,
+        }
+
     suffix = ".py" if language == "python" else ".js"
     tmp_path = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            suffix=suffix, mode="w", delete=False, encoding="utf-8"
-        ) as tmp:
-            tmp.write(code)
-            tmp_path = tmp.name
 
+    def _exec(cmd: list) -> dict:
         proc = subprocess.run(
-            runner + [tmp_path],
+            cmd + [tmp_path],
             capture_output=True,
             text=True,
             timeout=10,
@@ -312,14 +335,31 @@ def _run_code(code: str, language: str) -> dict:
             "error": proc.stderr[:2048],
             "success": proc.returncode == 0,
         }
+
+    try:
+        with tempfile.NamedTemporaryFile(
+            suffix=suffix, mode="w", delete=False, encoding="utf-8"
+        ) as tmp:
+            tmp.write(code)
+            tmp_path = tmp.name
+
+        try:
+            return _exec(runner)
+        except FileNotFoundError:
+            # Try fallback runtime (e.g. "python" when "python3" is missing)
+            fallback = _RUNNER_FALLBACKS.get(runner[0])
+            if fallback:
+                try:
+                    return _exec(fallback)
+                except FileNotFoundError:
+                    pass
+            return {
+                "output": "",
+                "error": f"Runtime not found: {runner[0]}",
+                "success": False,
+            }
     except subprocess.TimeoutExpired:
         return {"output": "", "error": "Execution timed out (10 s limit)", "success": False}
-    except FileNotFoundError:
-        return {
-            "output": "",
-            "error": f"Runtime not found: {runner[0]}",
-            "success": False,
-        }
     except Exception as exc:  # pylint: disable=broad-except
         return {"output": "", "error": str(exc), "success": False}
     finally:
@@ -890,6 +930,73 @@ _CHALLENGES = [
             "генерирует и запускает JavaScript, самостоятельно исправляет ошибки (до 3 попыток), "
             "сохраняет историю в IndexedDB, читает файлы drag-and-drop. "
             "Работает без интернета, без сервера — только браузер."
+        ),
+        "demo_url": None,
+    },
+    {
+        "id": "android_navigator_apk",
+        "title": "📱 Android Навигатор — структура APK (Kotlin)",
+        "difficulty": "⭐⭐⭐⭐⭐",
+        "language": "kotlin",
+        "prompt": (
+            "Generate complete Android Navigator app source code in Kotlin with Gradle build files. "
+            "Requirements:\n\n"
+            "1. GPS — use FusedLocationProviderClient for multi-satellite positioning "
+            "(GPS, GLONASS, Galileo, BeiDou). Show accuracy, speed, satellites count.\n\n"
+            "2. MAP — use OSMDroid library (no Google Maps API key required) with OpenStreetMap tiles, "
+            "show current position, route polyline, destination marker.\n\n"
+            "3. ROUTING — use OSRM public API (https://router.project-osrm.org) for turn-by-turn "
+            "navigation. Show distance, ETA, next manoeuvre instruction.\n\n"
+            "4. ALTERNATIVE ROUTES — request and display 3 alternative routes, let user pick.\n\n"
+            "5. SAVED ROUTES — store routes in Room database (SQLite). Load on app start.\n\n"
+            "6. TRAFFIC — fetch GIBDD (traffic police) RSS feed "
+            "(https://www.gibdd.ru/rss/news/) and show alerts on map as markers.\n\n"
+            "7. AI ASSISTANT — voice/text assistant using Android SpeechRecognizer + TextToSpeech; "
+            "sends queries to Ollama REST API (configurable base URL).\n\n"
+            "8. 3D / ANIMATION — tilt map to 45° for 3D perspective, animate car icon along route, "
+            "smooth camera follow with bearing rotation.\n\n"
+            "9. UI — Material Design 3, dark theme, bottom sheet with route info, "
+            "floating action buttons for GPS re-centre and route start/stop.\n\n"
+            "Output files:\n"
+            "- app/src/main/AndroidManifest.xml (with all permissions)\n"
+            "- app/src/main/kotlin/com/drgr/navigator/MainActivity.kt\n"
+            "- app/src/main/kotlin/com/drgr/navigator/NavigationService.kt\n"
+            "- app/src/main/kotlin/com/drgr/navigator/RouteRepository.kt\n"
+            "- app/src/main/res/layout/activity_main.xml\n"
+            "- app/build.gradle\n"
+            "- build.gradle (project-level)\n"
+            "- settings.gradle\n"
+            "Wrap each file in a ```kotlin or ```xml code block with a comment showing its path."
+        ),
+        "description": (
+            "Полный Android навигатор на Kotlin: мультиспутниковый GPS (FusedLocation), "
+            "карта OSMDroid, маршрутизация OSRM, альтернативные маршруты, база данных Room, "
+            "мониторинг пробок ГИБДД, ИИ-ассистент (Ollama), 3D анимация машины. "
+            "APK собирается командой: ./gradlew assembleDebug"
+        ),
+        "demo_url": "/navigator/",
+    },
+    {
+        "id": "android_emulator_setup",
+        "title": "🖥 Настройка Android-эмулятора",
+        "difficulty": "⭐⭐⭐",
+        "language": "python",
+        "prompt": (
+            "Write a Python script that automates Android emulator (AVD) setup and launch. "
+            "The script should:\n"
+            "1. Check if ANDROID_HOME / ANDROID_SDK_ROOT is set, guide user if not.\n"
+            "2. List available AVDs via 'emulator -list-avds'.\n"
+            "3. If no AVDs exist, create one using 'avdmanager create avd' with a Pixel 6 profile.\n"
+            "4. Start the emulator: 'emulator -avd <name> -no-snapshot-save'.\n"
+            "5. Wait for boot: poll 'adb shell getprop sys.boot_completed' until '1'.\n"
+            "6. Install an APK if provided via command-line argument: 'adb install -r <apk>'.\n"
+            "7. Print coloured status messages at each step.\n"
+            "Use subprocess, argparse, sys. No external dependencies."
+        ),
+        "description": (
+            "Python-скрипт автоматической настройки Android-эмулятора: "
+            "проверка SDK, создание AVD (Pixel 6), запуск эмулятора, ожидание загрузки, "
+            "установка APK. Работает на Windows/macOS/Linux."
         ),
         "demo_url": None,
     },
@@ -2038,6 +2145,15 @@ _DEFAULT_AUTO_SYSTEM_PROMPT = (
     "со встроенным CSS и JavaScript (```html блок, полный <!DOCTYPE html> документ).\n"
     "Для алгоритмов, скриптов, утилит, обработки данных — Python (```python блок).\n"
     "Для front-end без сервера — JavaScript (```javascript блок).\n"
+    "Для Android приложений — Kotlin/Java (```kotlin или ```java блок). "
+    "APK — это Android Package Kit, исполняемый файл Android-приложения. "
+    "Для создания APK используй Android Studio или Gradle (./gradlew assembleDebug). "
+    "Укажи структуру проекта: app/src/main/AndroidManifest.xml, MainActivity.kt, build.gradle. "
+    "Разрешения GPS: ACCESS_FINE_LOCATION, ACCESS_COARSE_LOCATION в AndroidManifest.xml. "
+    "Android-эмулятор (AVD) запускается через Android Studio или командой: "
+    "emulator -avd <имя_эмулятора>.\n"
+    "Для iOS приложений — Swift/SwiftUI (```swift блок). "
+    "IPA — это iOS App Archive. Для установки на устройство нужен Apple Developer аккаунт.\n"
     "ВСЕГДА возвращай ТОЛЬКО код в соответствующем ``` блоке без пояснений вне кода.\n"
     "НЕ спрашивай уточнений — сразу генерируй полный рабочий код."
 )
@@ -3169,6 +3285,10 @@ def generate_auto_complete():
             language = "python"  # safe default — Python can be executed and tested
 
         code = _extract_code_block(raw, language)
+
+        # Re-check: if extracted code is actually HTML but was labeled as JS/Python, fix it
+        if language in ("javascript", "python") and _is_html_content(code):
+            language = "html"
 
         # 2. HTML: no execution needed — return immediately
         if language == "html":

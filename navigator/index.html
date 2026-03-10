@@ -318,6 +318,120 @@
     .saved-item .si-name { flex: 1; color: var(--hi); }
     .saved-item .si-info { font-size: 11px; color: var(--muted); }
     .saved-del { background: none; border: none; color: var(--danger); cursor: pointer; font-size: 16px; padding: 0 4px; }
+
+    /* ── AI ASSISTANT PANEL ── */
+    #ai-fab {
+      position: absolute;
+      bottom: 200px;
+      right: 14px;
+      z-index: 900;
+      width: 46px;
+      height: 46px;
+      border-radius: 50%;
+      background: #7c3aed;
+      color: #fff;
+      border: none;
+      font-size: 22px;
+      cursor: pointer;
+      box-shadow: 0 4px 16px rgba(0,0,0,.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform .2s;
+      animation: pulse-ai 2s infinite;
+    }
+    @keyframes pulse-ai {
+      0%,100% { box-shadow: 0 4px 16px rgba(124,58,237,.5); }
+      50%      { box-shadow: 0 4px 28px rgba(124,58,237,.9); }
+    }
+    #ai-fab:active { transform: scale(.9); }
+
+    #ai-panel {
+      display: none;
+      position: absolute;
+      bottom: 260px;
+      right: 14px;
+      left: 14px;
+      background: var(--panel);
+      border: 1px solid rgba(124,58,237,.5);
+      border-radius: var(--r);
+      z-index: 1600;
+      padding: 12px;
+      max-height: 60dvh;
+      overflow-y: auto;
+    }
+    #ai-panel.open { display: flex; flex-direction: column; gap: 8px; }
+    #ai-panel h3 { font-size: 13px; color: #a78bfa; margin-bottom: 4px; }
+    #ai-messages { flex: 1; display: flex; flex-direction: column; gap: 6px; max-height: 200px; overflow-y: auto; }
+    .ai-msg { padding: 6px 10px; border-radius: 6px; font-size: 13px; line-height: 1.4; }
+    .ai-msg.user { background: rgba(124,58,237,.3); color: #e9d5ff; align-self: flex-end; max-width: 85%; }
+    .ai-msg.bot  { background: rgba(255,255,255,.07); color: var(--text); align-self: flex-start; max-width: 85%; }
+    .ai-msg.sys  { background: rgba(0,212,255,.1); color: var(--hi); font-size: 11px; text-align: center; align-self: center; }
+    #ai-input-row { display: flex; gap: 6px; }
+    #ai-input { flex: 1; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.2);
+      border-radius: 6px; color: var(--text); padding: 7px 10px; font-size: 13px; }
+    #ai-input:focus { outline: none; border-color: #7c3aed; }
+
+    /* ── TRAFFIC PANEL ── */
+    #traffic-fab {
+      position: absolute;
+      bottom: 255px;
+      right: 14px;
+      z-index: 900;
+      width: 46px;
+      height: 46px;
+      border-radius: 50%;
+      background: #dc2626;
+      color: #fff;
+      border: none;
+      font-size: 20px;
+      cursor: pointer;
+      box-shadow: 0 4px 16px rgba(0,0,0,.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform .2s;
+    }
+    #traffic-fab:active { transform: scale(.9); }
+    #traffic-panel {
+      display: none;
+      position: absolute;
+      bottom: 320px;
+      right: 14px;
+      left: 14px;
+      background: var(--panel);
+      border: 1px solid rgba(220,38,38,.4);
+      border-radius: var(--r);
+      z-index: 1500;
+      padding: 10px;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    #traffic-panel.open { display: block; }
+    #traffic-panel h3 { font-size: 12px; color: #f87171; margin-bottom: 8px; display: flex; justify-content: space-between; }
+    .traffic-item { font-size: 12px; color: var(--text); padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,.07); }
+    .traffic-item:last-child { border-bottom: none; }
+    .traffic-time { font-size: 10px; color: var(--muted); }
+
+    /* ── ALT ROUTES ── */
+    #alt-routes-panel {
+      display: none;
+      flex-direction: column;
+      gap: 4px;
+    }
+    #alt-routes-panel.visible { display: flex; }
+    .alt-route-btn {
+      padding: 5px 10px;
+      border: 1px solid rgba(255,255,255,.15);
+      border-radius: 6px;
+      background: transparent;
+      color: var(--text);
+      font-size: 12px;
+      cursor: pointer;
+      text-align: left;
+      transition: background .15s;
+    }
+    .alt-route-btn:hover, .alt-route-btn.active { background: rgba(0,212,255,.15); border-color: var(--hi); color: var(--hi); }
   </style>
 </head>
 <body>
@@ -344,8 +458,32 @@
 <!-- FAB — recenter -->
 <button id="fab-locate" onclick="recenterMap()" title="Моё местоположение">📍</button>
 
+<!-- FAB — Traffic -->
+<button id="traffic-fab" onclick="toggleTrafficPanel()" title="Дорожная обстановка ГИБДД">🚨</button>
+
+<!-- FAB — AI Assistant -->
+<button id="ai-fab" onclick="toggleAiPanel()" title="ИИ Ассистент">🤖</button>
+
 <!-- TOAST -->
 <div id="toast"></div>
+
+<!-- TRAFFIC PANEL -->
+<div id="traffic-panel">
+  <h3>🚨 ГИБДД онлайн <button onclick="loadTraffic()" style="background:none;border:none;color:var(--hi);cursor:pointer;font-size:11px">↻ Обновить</button></h3>
+  <div id="traffic-list"><div class="traffic-item" style="color:var(--muted)">Загрузка…</div></div>
+</div>
+
+<!-- AI PANEL -->
+<div id="ai-panel">
+  <h3>🤖 ИИ Навигатор-Ассистент</h3>
+  <div id="ai-messages">
+    <div class="ai-msg sys">Привет! Я ваш навигационный ИИ-ассистент.<br>Спросите о маршруте, пробках или дороге.</div>
+  </div>
+  <div id="ai-input-row">
+    <input id="ai-input" type="text" placeholder="Спросите ИИ…" onkeydown="onAiKey(event)" />
+    <button class="btn btn-hi" onclick="sendAiMessage()" style="padding:7px 10px">➤</button>
+  </div>
+</div>
 
 <!-- BOTTOM PANEL -->
 <div class="bottom-panel">
@@ -359,10 +497,14 @@
     <button class="btn btn-green" onclick="saveCurrentRoute()">💾</button>
   </div>
 
+  <!-- Alternative routes -->
+  <div id="alt-routes-panel"></div>
+
   <!-- Action buttons -->
   <div class="action-row">
-    <button class="btn btn-panel" onclick="startSetDestination()">🎯 Указать цель</button>
-    <button class="btn btn-panel" onclick="routeToHere()">📍→🎯 Маршрут</button>
+    <button class="btn btn-panel" onclick="startSetDestination()">🎯 Цель</button>
+    <button class="btn btn-panel" onclick="routeToHere()">🗺 Маршрут</button>
+    <button class="btn btn-panel" onclick="routeAlternatives()">⑂ Альт.</button>
     <div style="flex:1"></div>
     <button class="mode-btn active" id="mode-car"  onclick="setMode('car')">🚗</button>
     <button class="mode-btn"        id="mode-bike" onclick="setMode('bike')">🚲</button>
@@ -374,6 +516,7 @@
 <!-- STATUS BAR -->
 <div class="statusbar">
   <span id="status-gps">📡 GPS…</span>
+  <span id="status-sats" style="color:var(--muted)">🛰 –</span>
   <span id="status-net">🌐 Онлайн</span>
   <span id="status-msg"></span>
 </div>
@@ -524,6 +667,7 @@ function onGpsUpdate(pos) {
   const acc = Math.round(pos.coords.accuracy);
 
   setGpsStatus(`📡 ±${acc}м`, true);
+  updateSatelliteCount(pos);
 
   const latlng = [userLat, userLng];
   if (!userMarker) {
@@ -948,7 +1092,257 @@ function toast(msg) {
   toastTimer = setTimeout(() => el.classList.remove('show'), 3000);
 }
 
-// ── Service Worker registration ───────────────────────────────────────────────
+// ── Alternative routes ────────────────────────────────────────────────────────
+let altRouteLayers = [];
+let altRouteData   = [];
+
+async function routeAlternatives() {
+  if (userLat === null) { toast('Ожидание GPS…'); return; }
+  if (destLat === null) { toast('Сначала укажите цель (🎯 Цель)'); return; }
+
+  setStatus('<span class="spinner"></span>Ищу альтернативы…');
+  const profile = OSRM_PROFILES[currentMode] || 'driving';
+  const url = `${OSRM_BASE}/route/v1/${profile}/` +
+    `${userLng},${userLat};${destLng},${destLat}` +
+    `?overview=full&geometries=geojson&steps=true&alternatives=3`;
+
+  try {
+    const res  = await fetch(url);
+    const data = await res.json();
+    if (data.code !== 'Ok' || !data.routes?.length) {
+      toast('Альтернативы не найдены'); setStatus(''); return;
+    }
+
+    // Clear old alt layers
+    altRouteLayers.forEach((l) => map.removeLayer(l));
+    altRouteLayers = [];
+    altRouteData   = data.routes;
+
+    const colors = ['#00d4ff', '#fbbf24', '#34d399', '#f87171'];
+    const panel  = document.getElementById('alt-routes-panel');
+    panel.innerHTML = '';
+
+    data.routes.forEach((route, i) => {
+      const latLngs = route.geometry.coordinates.map(([lng, lat]) => [lat, lng]);
+      const layer   = L.polyline(latLngs, {
+        color: colors[i] || '#aaa',
+        weight: i === 0 ? 5 : 3,
+        opacity: i === 0 ? .85 : .55,
+        dashArray: i === 0 ? null : '8, 6',
+      }).addTo(map);
+      altRouteLayers.push(layer);
+
+      const dist  = route.distance < 1000
+        ? Math.round(route.distance) + ' м'
+        : (route.distance / 1000).toFixed(1) + ' км';
+      const mins  = Math.round(route.duration / 60);
+      const label = `${i === 0 ? '🟦' : i === 1 ? '🟨' : i === 2 ? '🟩' : '🟥'} Маршрут ${i + 1}: ${dist} · ${mins} мин`;
+
+      const btn = document.createElement('button');
+      btn.className = 'alt-route-btn' + (i === 0 ? ' active' : '');
+      btn.textContent = label;
+      btn.onclick = () => selectAltRoute(i);
+      panel.appendChild(btn);
+    });
+
+    panel.classList.add('visible');
+    map.fitBounds(altRouteLayers[0].getBounds(), { padding: [40, 40] });
+    setStatus('');
+    showRouteInfo(data.routes[0]);
+  } catch (err) {
+    toast('Ошибка: ' + err.message);
+    setStatus('');
+  }
+}
+
+function selectAltRoute(idx) {
+  altRouteLayers.forEach((l, i) => {
+    l.setStyle({ weight: i === idx ? 5 : 3, opacity: i === idx ? .85 : .5, dashArray: i === idx ? null : '8, 6' });
+    l.bringToFront && i === idx && l.bringToFront();
+  });
+  document.querySelectorAll('.alt-route-btn').forEach((b, i) =>
+    b.classList.toggle('active', i === idx)
+  );
+  if (altRouteData[idx]) showRouteInfo(altRouteData[idx]);
+}
+
+// ── Traffic / GIBDD ───────────────────────────────────────────────────────────
+const _GIBDD_PROXY = 'https://api.allorigins.win/get?url=' +
+  encodeURIComponent('https://www.gibdd.ru/rss/news/');
+
+let trafficLoaded = false;
+
+async function loadTraffic() {
+  const list = document.getElementById('traffic-list');
+  list.innerHTML = '<div class="traffic-item" style="color:var(--muted)"><span class="spinner"></span> Загрузка ГИБДД…</div>';
+  try {
+    // AbortSignal.timeout() requires Chrome 103+/Firefox 100+; use manual fallback
+    let signal;
+    let timerId;
+    if (typeof AbortSignal.timeout === 'function') {
+      signal = AbortSignal.timeout(8000);
+    } else {
+      const ctrl = new AbortController();
+      timerId = setTimeout(() => ctrl.abort(), 8000);
+      signal = ctrl.signal;
+    }
+    const res  = await fetch(_GIBDD_PROXY, { signal });
+    if (timerId) clearTimeout(timerId);
+    const json = await res.json();
+    const xml  = new DOMParser().parseFromString(json.contents, 'text/xml');
+    const items = Array.from(xml.querySelectorAll('item')).slice(0, 8);
+
+    if (!items.length) throw new Error('Нет данных');
+
+    list.innerHTML = items.map((item) => {
+      const title = item.querySelector('title')?.textContent || '–';
+      const pub   = item.querySelector('pubDate')?.textContent || '';
+      const date  = pub ? new Date(pub).toLocaleString('ru', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+      return `<div class="traffic-item">
+        <div>${esc(title.substring(0, 90))}</div>
+        ${date ? `<div class="traffic-time">📅 ${date}</div>` : ''}
+      </div>`;
+    }).join('');
+    trafficLoaded = true;
+  } catch (e) {
+    list.innerHTML = `<div class="traffic-item" style="color:var(--muted)">
+      Нет данных ГИБДД (${esc(e.message)}).<br>
+      <a href="https://www.gibdd.ru/news/" target="_blank" style="color:var(--hi)">Открыть сайт ГИБДД →</a>
+    </div>`;
+  }
+}
+
+function toggleTrafficPanel() {
+  const p = document.getElementById('traffic-panel');
+  p.classList.toggle('open');
+  if (p.classList.contains('open') && !trafficLoaded) loadTraffic();
+}
+
+// ── AI Assistant ──────────────────────────────────────────────────────────────
+// Detect if VM server is accessible (localhost, 127.0.0.1, or LAN IPs)
+const AI_BASE = (() => {
+  const h = window.location.hostname;
+  const isLocal = h === 'localhost' || h === '127.0.0.1' ||
+    /^192\.168\./.test(h) || /^10\./.test(h) || /^172\.(1[6-9]|2\d|3[01])\./.test(h);
+  return isLocal ? `${window.location.protocol}//${window.location.host}` : null;
+})();
+
+function toggleAiPanel() {
+  document.getElementById('ai-panel').classList.toggle('open');
+}
+
+function onAiKey(e) {
+  if (e.key === 'Enter') sendAiMessage();
+}
+
+async function sendAiMessage() {
+  const input = document.getElementById('ai-input');
+  const text  = input.value.trim();
+  if (!text) return;
+  input.value = '';
+
+  const msgs = document.getElementById('ai-messages');
+  const addMsg = (cls, html) => {
+    const d = document.createElement('div');
+    d.className = 'ai-msg ' + cls;
+    d.innerHTML = html;
+    msgs.appendChild(d);
+    msgs.scrollTop = msgs.scrollHeight;
+  };
+
+  addMsg('user', esc(text));
+
+  // Build context from current navigation state
+  const ctx = [
+    userLat !== null ? `Текущее положение: ${userLat.toFixed(5)}, ${userLng.toFixed(5)}` : '',
+    destLat !== null ? `Цель: ${destLat.toFixed(5)}, ${destLng.toFixed(5)}` : '',
+    document.getElementById('route-dist').textContent !== '–'
+      ? `Маршрут: ${document.getElementById('route-dist').textContent}, ${document.getElementById('route-time').textContent}`
+      : '',
+  ].filter(Boolean).join('. ');
+
+  const prompt = ctx
+    ? `Ты навигационный ИИ-ассистент. Контекст: ${ctx}. Вопрос: ${text}`
+    : `Ты навигационный ИИ-ассистент. Вопрос: ${text}`;
+
+  // Try local Ollama if available
+  if (AI_BASE) {
+    const thinking = document.createElement('div');
+    thinking.className = 'ai-msg bot';
+    thinking.innerHTML = '<span class="spinner"></span> Думаю…';
+    msgs.appendChild(thinking);
+    msgs.scrollTop = msgs.scrollHeight;
+
+    try {
+      const resp = await fetch(`${AI_BASE}/chat/stream`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: prompt }),
+      });
+      if (!resp.ok) throw new Error(resp.statusText);
+
+      thinking.innerHTML = '';
+      const reader = resp.body.getReader();
+      const dec    = new TextDecoder();
+      let   buf    = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop();
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const raw = line.slice(6).trim();
+          if (raw === '[DONE]') break;
+          try {
+            const obj = JSON.parse(raw);
+            if (obj.token) thinking.innerHTML += esc(obj.token).replace(/\n/g, '<br>');
+          } catch { /* */ }
+        }
+        msgs.scrollTop = msgs.scrollHeight;
+      }
+      return;
+    } catch (e) {
+      thinking.remove();
+    }
+  }
+
+  // Offline built-in responses
+  const answer = builtinAiAnswer(text.toLowerCase());
+  addMsg('bot', answer);
+}
+
+function builtinAiAnswer(q) {
+  if (q.includes('маршрут') || q.includes('проехать') || q.includes('дорога'))
+    return 'Нажмите <b>🎯 Цель</b> чтобы указать пункт назначения, затем <b>🗺 Маршрут</b> для построения пути. Кнопка <b>⑂ Альт.</b> покажет альтернативные маршруты.';
+  if (q.includes('gps') || q.includes('спутник') || q.includes('геолок'))
+    return 'Навигатор использует GPS, ГЛОНАСС, Galileo и BeiDou через браузерный Geolocation API. Точность зависит от видимости неба.';
+  if (q.includes('пробк') || q.includes('гибдд') || q.includes('трафик'))
+    return 'Нажмите 🚨 справа на карте для просмотра сводок ГИБДД онлайн.';
+  if (q.includes('сохран'))
+    return 'Для сохранения маршрута нажмите 💾 в полосе маршрута. Сохранённые маршруты — кнопка 📌.';
+  if (q.includes('карта') || q.includes('тайл') || q.includes('осм'))
+    return 'Карта загружается с OpenStreetMap (OSM). Переключить тему карты можно через кнопку слоёв (⧉) в правом верхнем углу.';
+  if (q.includes('оффлайн') || q.includes('без интернет'))
+    return 'В офлайн-режиме загруженные тайлы кэшируются Service Worker. Новые территории требуют интернета.';
+  return `Не могу ответить на: «${esc(q.substring(0, 60))}». Убедитесь что сервер VM запущен для ИИ-ответов, или спросите о маршруте, GPS, картах, пробках.`;
+}
+
+// ── Satellite count from GPS ──────────────────────────────────────────────────
+function updateSatelliteCount(pos) {
+  // Standard Geolocation API doesn't expose satellite count directly
+  // Show accuracy as proxy (better accuracy ≈ more satellites)
+  const acc = pos.coords.accuracy;
+  const satEl = document.getElementById('status-sats');
+  if (acc <= 5)       satEl.textContent = '🛰 8+ сп.';
+  else if (acc <= 10) satEl.textContent = '🛰 6+ сп.';
+  else if (acc <= 20) satEl.textContent = '🛰 4+ сп.';
+  else if (acc <= 50) satEl.textContent = '🛰 2-3 сп.';
+  else                satEl.textContent = '🛰 слаб.';
+  satEl.title = `Точность GPS: ±${Math.round(acc)} м`;
+}
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').then(() => {
     console.log('[DRGRNav] Service Worker registered');
