@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     Code VM — bootstrap / one-liner installer.
     Usage (from any PowerShell window — no repo needed):
