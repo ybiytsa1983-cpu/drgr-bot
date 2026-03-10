@@ -1622,12 +1622,103 @@ def ollama_pull():
     )
 
 
+def _parse_modelfile(content: str) -> dict:
+    """Parse a Modelfile into a dict for Ollama's structured /api/create API.
+
+    Supports FROM, SYSTEM (triple-quoted or single-quoted), and PARAMETER
+    directives.  Returns::
+
+        {
+            "from": "base-model-name",   # required by new Ollama API
+            "system": "system prompt",   # optional
+            "parameters": {"temperature": 0.3, ...},  # optional
+        }
+
+    The new-style API (Ollama ≥ 0.6) uses these fields instead of the
+    deprecated ``modelfile`` string parameter.
+    """
+    result: dict = {"from": None, "system": None, "parameters": {}}
+    lines = content.splitlines()
+    i = 0
+    while i < len(lines):
+        line = lines[i].strip()
+        if not line or line.startswith("#"):
+            i += 1
+            continue
+        upper = line.upper()
+        if upper.startswith("FROM "):
+            result["from"] = line[5:].strip()
+        elif upper.startswith("SYSTEM"):
+            rest = line[6:].strip()
+            if rest.startswith('"""'):
+                # Triple-quoted block — may span multiple lines
+                rest = rest[3:]
+                parts = []
+                if '"""' in rest:
+                    result["system"] = rest[:rest.index('"""')]
+                    i += 1
+                    continue
+                parts.append(rest)
+                while i + 1 < len(lines):
+                    i += 1
+                    chunk = lines[i]
+                    if '"""' in chunk:
+                        parts.append(chunk[:chunk.index('"""')])
+                        break
+                    parts.append(chunk)
+                result["system"] = "\n".join(parts)
+            elif rest.startswith('"'):
+                result["system"] = rest.strip('"')
+            else:
+                result["system"] = rest
+        elif upper.startswith("PARAMETER "):
+            parts = line.split(None, 2)
+            if len(parts) >= 3:
+                param_name = parts[1].lower()
+                param_val  = parts[2]
+                try:
+                    result["parameters"][param_name] = int(param_val)
+                except ValueError:
+                    try:
+                        result["parameters"][param_name] = float(param_val)
+                    except ValueError:
+                        result["parameters"][param_name] = param_val
+        i += 1
+    return result
+
+
+def _ollama_create_payload(model_name: str, modelfile: str) -> dict:
+    """Build the best Ollama /api/create payload for the given Modelfile.
+
+    Newer Ollama versions (≥ 0.6) removed support for the ``modelfile``
+    string parameter and instead require ``from`` (base model), ``system``,
+    and ``parameters`` as top-level fields.  This helper always produces
+    the new-style payload so creation works on both old and new Ollama.
+
+    If the Modelfile does not contain a FROM directive the function falls back
+    to the legacy ``name``/``modelfile`` payload format so that older Ollama
+    installations can still attempt creation.
+    """
+    parsed = _parse_modelfile(modelfile)
+    if not parsed.get("from"):
+        # Legacy fallback: Modelfile has no FROM line — send raw string.
+        return {"name": model_name, "modelfile": modelfile, "stream": True}
+    payload: dict = {"model": model_name, "from": parsed["from"], "stream": True}
+    if parsed.get("system"):
+        payload["system"] = parsed["system"]
+    if parsed.get("parameters"):
+        payload["parameters"] = parsed["parameters"]
+    return payload
+
+
 @app.route("/ollama/create", methods=["POST"])
 def ollama_create():
     """Create a custom Ollama model from a Modelfile string.
 
     Body: {"name": "my-coder", "modelfile": "FROM qwen:latest\\nSYSTEM ..."}
     Returns a streaming text/event-stream response with progress lines.
+    Supports both the new Ollama ≥ 0.6 structured API and the legacy
+    ``modelfile`` string parameter.
     """
     body = request.get_json(silent=True) or {}
     name      = body.get("name", "").strip()
@@ -1637,11 +1728,13 @@ def ollama_create():
     if not modelfile:
         return jsonify({"error": "modelfile content required"}), 400
 
+    payload = _ollama_create_payload(name, modelfile)
+
     def _stream():
         try:
             with _http.post(
                 f"{OLLAMA_BASE}/api/create",
-                json={"name": name, "modelfile": modelfile, "stream": True},
+                json=payload,
                 stream=True,
                 timeout=3600,
             ) as r:
@@ -1652,11 +1745,7 @@ def ollama_create():
                         obj = json.loads(raw_line)
                     except ValueError:
                         continue
-                    payload = json.dumps({
-                        "status": obj.get("status", ""),
-                        "error":  obj.get("error", ""),
-                    })
-                    yield f"data: {payload}\n\n"
+                    yield f"data: {json.dumps({'status': obj.get('status', ''), 'error': obj.get('error', '')})}\n\n"
             yield f"data: {{\"status\":\"Model '{name}' created successfully!\",\"done\":true}}\n\n"
         except _http.exceptions.ConnectionError:
             yield "data: {\"error\":\"Cannot connect to Ollama\"}\n\n"
@@ -2683,13 +2772,14 @@ def create_visor_vm():
         return jsonify({"error": f"Modelfile not found: {modelfile_path}"}), 500
 
     model_name = "drgr-visor"
+    payload    = _ollama_create_payload(model_name, modelfile_content)
 
     def _stream():
         yield f"data: {{\"status\":\"Creating model '{model_name}' from qwen3-vl:8b...\"}}\n\n"
         try:
             with _http.post(
                 f"{OLLAMA_BASE}/api/create",
-                json={"name": model_name, "modelfile": modelfile_content, "stream": True},
+                json=payload,
                 stream=True,
                 timeout=3600,
             ) as r:
@@ -2700,10 +2790,9 @@ def create_visor_vm():
                         obj = json.loads(raw_line)
                     except ValueError:
                         continue
-                    status  = obj.get("status", "")
-                    error   = obj.get("error", "")
-                    payload = json.dumps({"status": status, "error": error})
-                    yield f"data: {payload}\n\n"
+                    status = obj.get("status", "")
+                    error  = obj.get("error", "")
+                    yield f"data: {json.dumps({'status': status, 'error': error})}\n\n"
             yield (
                 f"data: {{\"status\":\"✅ Модель '{model_name}' создана! "
                 f"Используй её в настройках как '{model_name}'\",\"done\":true}}\n\n"
