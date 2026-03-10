@@ -28,6 +28,7 @@ Endpoints:
   POST /convert/image       — convert image between formats (PNG/JPEG/WEBP/BMP) via Pillow
   POST /convert/text        — convert text between formats (JSON↔CSV, HTML→text, MD→HTML)
   POST /browse/screenshot   — screenshot a URL and analyse with qwen3-vl / drgr-visor
+  POST /patch/stream        — stream edited code (patch existing code based on user request)
 """
 
 import ast
@@ -2128,6 +2129,93 @@ def chat_stream():
                 if token:
                     yield f"data: {json.dumps({'token': token})}\n\n"
                 if chunk.get("done"):
+                    yield "data: [DONE]\n\n"
+                    return
+        except _http.exceptions.ConnectionError:
+            yield 'data: {"error":"Нет соединения с Ollama — запустите \'ollama serve\'"}\n\n'
+        except Exception as exc:  # pylint: disable=broad-except
+            yield f"data: {json.dumps({'error': str(exc)})}\n\n"
+
+    return Response(
+        stream_with_context(_stream()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Code patch / edit endpoint — edit existing code based on a user request
+# ---------------------------------------------------------------------------
+_DEFAULT_PATCH_SYSTEM_PROMPT = (
+    "Ты DRGR Code Patcher — эксперт-программист на базе Qwen.\n"
+    "Тебе дадут СУЩЕСТВУЮЩИЙ код и ЗАПРОС на изменение.\n"
+    "ЗАДАЧА: внести минимально необходимые правки в код согласно запросу.\n"
+    "ПРАВИЛА:\n"
+    "- НЕ переписывай весь код заново — только вноси необходимые изменения\n"
+    "- Сохраняй структуру, стиль и логику исходного кода\n"
+    "- Верни ТОЛЬКО полный итоговый код в ``` блоке (того же языка)\n"
+    "- НЕ давай пояснений вне кода\n"
+    "- Если код HTML — верни полный <!DOCTYPE html> документ с внесёнными правками"
+)
+
+
+@app.route("/patch/stream", methods=["POST"])
+def patch_stream():
+    """Stream patched/edited code based on existing code + user change request.
+
+    Body: {"prompt": "...", "code": "...", "model": "..."}
+    Streams SSE tokens ending with data: [DONE]
+    The model edits the existing code minimally rather than regenerating from scratch.
+    """
+    body   = request.get_json(silent=True) or {}
+    model  = body.get("model", "").strip()
+    prompt = body.get("prompt", "").strip()
+    code   = body.get("code", "").strip()
+
+    if not model:
+        def _no_model():
+            yield 'data: {"error":"Модель не выбрана — выберите модель в настройках (☰)"}\n\n'
+        return Response(stream_with_context(_no_model()), mimetype="text/event-stream")
+
+    if not prompt:
+        def _no_prompt():
+            yield 'data: {"error":"Введите запрос на правки"}\n\n'
+        return Response(stream_with_context(_no_prompt()), mimetype="text/event-stream")
+
+    if not code:
+        def _no_code():
+            yield 'data: {"error":"Редактор пуст — нечего редактировать"}\n\n'
+        return Response(stream_with_context(_no_code()), mimetype="text/event-stream")
+
+    data       = load_instructions()
+    sys_prompt = data.get("patch_system_prompt", "").strip() or _DEFAULT_PATCH_SYSTEM_PROMPT
+    full_prompt = (
+        f"{sys_prompt}\n\n"
+        f"СУЩЕСТВУЮЩИЙ КОД:\n```\n{code}\n```\n\n"
+        f"ЗАПРОС НА ИЗМЕНЕНИЕ: {prompt}"
+    )
+
+    def _stream():
+        try:
+            resp = _http.post(
+                f"{OLLAMA_BASE}/api/generate",
+                json={"model": model, "prompt": full_prompt, "stream": True},
+                stream=True,
+                timeout=int(os.environ.get("OLLAMA_TIMEOUT", 300)),
+            )
+            resp.raise_for_status()
+            for raw_line in resp.iter_lines():
+                if not raw_line:
+                    continue
+                try:
+                    chunk = json.loads(raw_line)
+                except ValueError:
+                    continue
+                token = chunk.get("response", "")
+                if token:
+                    yield f"data: {json.dumps({'token': token})}\n\n"
+                if chunk.get("done"):
+                    _record_generation("patch", model, prompt)
                     yield "data: [DONE]\n\n"
                     return
         except _http.exceptions.ConnectionError:

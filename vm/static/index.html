@@ -154,6 +154,15 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
   white-space:nowrap;transition:filter .15s;flex-shrink:0}
 #btn-gen:hover{filter:brightness(1.15)}
 #btn-gen:disabled{background:#333;cursor:not-allowed;filter:none}
+#btn-patch{background:#2a5c8f;border:none;color:#fff;padding:8px 14px;
+  border-radius:8px;cursor:pointer;font-size:13px;font-weight:700;
+  white-space:nowrap;transition:filter .15s;flex-shrink:0}
+#btn-patch:hover{filter:brightness(1.2)}
+#btn-patch:disabled{background:#333;cursor:not-allowed;filter:none}
+#btn-open-browser{background:#2a6b3a;border:none;color:#fff;padding:8px 14px;
+  border-radius:8px;cursor:pointer;font-size:13px;font-weight:700;
+  white-space:nowrap;transition:filter .15s;flex-shrink:0}
+#btn-open-browser:hover{filter:brightness(1.2)}
 #gen-status{font-size:11px;color:var(--text2);min-height:16px}
 .gs-ok{color:var(--accent2)}.gs-err{color:var(--danger)}
 
@@ -410,7 +419,7 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
         <div style="font-size:11px">Введите запрос внизу и нажмите <b>Генерировать</b><br>или введите URL выше и нажмите <b>Перейти</b><br>или откройте HTML-файл в редакторе и нажмите <b>Обновить</b></div>
       </div>
       <iframe id="preview-frame" style="display:none"
-        sandbox="allow-scripts allow-forms allow-modals allow-popups allow-same-origin allow-top-navigation-by-user-activation"></iframe>
+        sandbox="allow-scripts allow-forms allow-modals allow-popups allow-top-navigation-by-user-activation"></iframe>
     </div>
   </div>
 
@@ -422,6 +431,8 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
         onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();generateCode()}"
         oninput="autoResize(this)"></textarea>
       <button id="btn-gen" onclick="generateCode()">▶ Сгенерировать</button>
+      <button id="btn-patch" onclick="patchCode()" title="Внести правки в существующий код по запросу">✏ Правки</button>
+      <button id="btn-open-browser" onclick="openInBrowser()" title="Открыть текущий код в новой вкладке браузера">🌐 Открыть</button>
     </div>
     <div id="gen-status"></div>
   </div>
@@ -484,16 +495,23 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
           <li><code>ПЕРЕУЧИТЬ_ВМ.bat</code> — только переучить (создать/обновить drgr-visor)</li>
           <li><code>Code VM.lnk</code> — основной ярлык запуска</li>
         </ul>
-        <p style="margin-top:8px">Если файлов нет — вставь в <b>PowerShell</b> (Win+X → Windows PowerShell):</p>
+        <p style="margin-top:8px"><b>Если значков нет на рабочем столе</b> — вставь в <b>PowerShell</b> (Win+X → Windows PowerShell):</p>
+        <p style="margin-top:4px;color:var(--text2);font-size:11px">Шаг 1 — первая установка (загружает всё необходимое):</p>
         <div class="vm-ps" onclick="copyText(this.querySelector('code').textContent)" title="Нажми для копирования">
           <code>irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/run.ps1" | iex</code>
           <span style="color:var(--text2);font-size:9px;flex-shrink:0">📋</span>
         </div>
-        <p style="margin-top:8px">Или для запуска переученной ВМ напрямую:</p>
+        <p style="margin-top:8px;color:var(--text2);font-size:11px">Шаг 2 — после установки, запуск переученной ВМ (папка уже есть):</p>
         <div class="vm-ps" onclick="copyText(this.querySelector('code').textContent)" title="Нажми для копирования">
           <code>powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\drgr-bot\ЗАПУСТИТЬ_ВМ.ps1"</code>
           <span style="color:var(--text2);font-size:9px;flex-shrink:0">📋</span>
         </div>
+        <p style="margin-top:8px;color:var(--text2);font-size:11px">Или просто запустить VM без переобучения:</p>
+        <div class="vm-ps" onclick="copyText(this.querySelector('code').textContent)" title="Нажми для копирования">
+          <code>powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\drgr-bot\vm.ps1"</code>
+          <span style="color:var(--text2);font-size:9px;flex-shrink:0">📋</span>
+        </div>
+        <p style="margin-top:8px;color:var(--text2);font-size:11px">После запуска откройте браузер: <a href="http://127.0.0.1:5000" target="_blank" style="color:var(--accent)">http://127.0.0.1:5000</a></p>
       </div>
 
       <div class="vm-card">
@@ -517,7 +535,7 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
     <button onclick="closeFullscreen()" style="background:#d94040;border:none;color:#fff;padding:4px 12px;border-radius:4px;cursor:pointer;font-size:12px">✕ Закрыть</button>
   </div>
   <iframe id="fs-frame" style="flex:1;border:none;width:100%"
-    sandbox="allow-scripts allow-forms allow-modals allow-popups allow-same-origin"></iframe>
+    sandbox="allow-scripts allow-forms allow-modals allow-popups"></iframe>
 </div>
 
 <script>
@@ -1065,6 +1083,107 @@ async function generateCode() {
 
 // keep old name as alias for compatibility
 function generateHtml() { return generateCode(); }
+
+// ── Qwen Code Patcher (patch existing code based on user request) ────────────
+async function patchCode() {
+  if (genBusy) return;
+  var prompt = document.getElementById('gen-input').value.trim();
+  if (!prompt) { toast('Введите запрос на правки'); return; }
+  if (!curModel) { toast('Выберите модель в настройках ☰'); openPanel(); return; }
+  if (!editor) return;
+  var currentCode = editor.getValue().trim();
+  if (!currentCode) { toast('Редактор пуст — нечего редактировать'); return; }
+
+  genBusy = true;
+  var btnGen   = document.getElementById('btn-gen');
+  var btnPatch = document.getElementById('btn-patch');
+  var status   = document.getElementById('gen-status');
+  if (btnGen)   { btnGen.disabled   = true; }
+  if (btnPatch) { btnPatch.disabled = true; btnPatch.textContent = '⏳ Правлю...'; }
+  status.innerHTML = '<span style="color:var(--warn)">⏳ ИИ вносит правки в код...</span>';
+
+  var accumulated = '';
+  var done = false;
+
+  try {
+    var resp = await fetch('/patch/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt: prompt, code: currentCode, model: curModel })
+    });
+
+    if (!resp.ok) { throw new Error('HTTP ' + resp.status); }
+
+    var reader = resp.body.getReader();
+    var dec = new TextDecoder();
+    var buf = '';
+    var lastEditorUpdate = 0;
+
+    function flushToEditor() {
+      var now = Date.now();
+      if (editor && (now - lastEditorUpdate) > 150) {
+        var partial = extractCode(accumulated);
+        editor.setValue(partial);
+        lastEditorUpdate = now;
+      }
+    }
+
+    while (!done) {
+      var result = await reader.read();
+      if (result.done) break;
+      buf += dec.decode(result.value, { stream: true });
+      var lines = buf.split('\n'); buf = lines.pop();
+      for (var i = 0; i < lines.length; i++) {
+        var line = lines[i];
+        if (!line.startsWith('data: ')) continue;
+        var payload = line.slice(6).trim();
+        if (payload === '[DONE]') { done = true; break; }
+        try {
+          var obj = JSON.parse(payload);
+          if (obj.error) {
+            status.innerHTML = '<span class="gs-err">⚠ ' + esc(obj.error) + '</span>';
+            done = true; break;
+          }
+          if (obj.token) {
+            accumulated += obj.token;
+            flushToEditor();
+          }
+        } catch(e) {}
+      }
+    }
+
+    if (done && accumulated) {
+      var code = extractCode(accumulated);
+      var lang = detectLang(code);
+      if (editor) editor.setValue(code);
+      setLangBadge(lang);
+      showPreview(lang === 'html' ? code : wrapForVisor(code, lang));
+      status.innerHTML = '<span class="gs-ok">✓ Правки внесены! Визор обновлён.</span>';
+    }
+  } catch(e) {
+    status.innerHTML = '<span class="gs-err">⚠ Ошибка: ' + esc(e.message) + '</span>';
+  }
+
+  genBusy = false;
+  if (btnGen)   { btnGen.disabled   = false; }
+  if (btnPatch) { btnPatch.disabled = false; btnPatch.textContent = '✏ Правки'; }
+}
+
+// ── Open current code in a new browser tab ───────────────────────────────────
+function openInBrowser() {
+  if (!editor) { toast('Редактор не готов'); return; }
+  var code = editor.getValue().trim();
+  if (!code) { toast('Редактор пуст'); return; }
+  var lang = detectLang(code);
+  var content = lang === 'html' ? code : wrapForVisor(code, lang);
+  var blob = new Blob([content], { type: 'text/html' });
+  var url  = URL.createObjectURL(blob);
+  var win  = window.open(url, '_blank');
+  if (!win) { toast('Браузер заблокировал открытие — разрешите всплывающие окна'); URL.revokeObjectURL(url); return; }
+  // Revoke object URL after a delay to free memory (fallback if load event doesn't fire)
+  setTimeout(function() { URL.revokeObjectURL(url); }, 60000);
+  toast('✓ Открыто в новой вкладке');
+}
 
 function extractCode(raw) {
   // Try ```<lang> ... ``` (named fence)
