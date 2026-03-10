@@ -5,6 +5,36 @@ Monaco Editor + Flask + Ollama. Пишешь промпт — получаешь
 
 ---
 
+## 🚀 ОДНА КОМАНДА — УСТАНОВКА И ЗАПУСК
+
+**Открой PowerShell (Win+X → Windows PowerShell) и вставь:**
+
+```powershell
+irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/copilot/create-monaco-code-generator/run.ps1" | iex
+```
+
+> Это **единственная команда**, которую нужно знать.  
+> Она сама: скачает репозиторий, установит Python-зависимости, создаст ярлык «Code VM» на Рабочем столе и запустит VM.  
+> **Git не установлен?** → Сначала: https://git-scm.com/download/win — потом повтори команду выше.
+
+---
+
+## 🖱 ЗАПУСК С РАБОЧЕГО СТОЛА (после установки)
+
+После установки на Рабочем столе появятся два ярлыка:
+
+| Файл | Описание |
+|------|----------|
+| **`Code VM`** | Основной ярлык — двойной клик запускает всё |
+| **`ЗАПУСТИТЬ.bat`** | Резервный — находит repo сам и запускает VM |
+
+Или из PowerShell (всегда работает):
+```powershell
+powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\drgr-bot\start.ps1"
+```
+
+---
+
 ## ⬇ СКАЧАТЬ ВСЁ (ZIP, без команд)
 
 Если не хочешь вводить команды — просто скачай архив и распакуй:

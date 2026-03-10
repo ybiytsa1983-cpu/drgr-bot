@@ -71,7 +71,25 @@ if (-not $FOUND) {
             Write-Host "  git clone -> $dest" -ForegroundColor Cyan
             git clone https://github.com/ybiytsa1983-cpu/drgr-bot $dest
         }
+        # If main is empty/incomplete (pre-merge), switch to the dev branch
         $installPs = Join-Path $dest 'install.ps1'
+        if (-not (Test-Path $installPs)) {
+            Write-Host '  Главная ветка пустая — ищем ветку с кодом...' -ForegroundColor Yellow
+            Push-Location $dest
+            try {
+                git fetch --all 2>$null
+                $branches = & git branch -r 2>$null | Where-Object { $_ -notmatch 'HEAD' } |
+                    ForEach-Object { $_.Trim() -replace '^origin/', '' }
+                foreach ($br in $branches) {
+                    if ($br -eq 'main') { continue }   # already tried main — it was empty
+                    $null = & git checkout -B $br "origin/$br" --quiet 2>&1
+                    if (Test-Path $installPs) {
+                        Write-Host "  Нашли код на ветке: $br" -ForegroundColor Green
+                        break
+                    }
+                }
+            } finally { Pop-Location }
+        }
         $startPs   = Join-Path $dest 'start.ps1'
         if (Test-Path $installPs) {
             Write-Host '  Установка зависимостей...' -ForegroundColor Cyan

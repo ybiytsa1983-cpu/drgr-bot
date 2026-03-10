@@ -52,6 +52,13 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
   "    git clone https://github.com/ybiytsa1983-cpu/drgr-bot \"$dest\" " ^
   "  }; " ^
   "  $inst = Join-Path $dest 'install.ps1'; " ^
+  "  if (-not (Test-Path $inst)) { " ^
+  "    Write-Host '  Главная ветка пустая — ищем ветку с кодом...' -ForegroundColor Yellow; " ^
+  "    Push-Location $dest; git fetch --all 2>`$null; " ^
+  "    $brs = & git branch -r 2>`$null | Where-Object { `$_ -notmatch 'HEAD' } | ForEach-Object { `$_.Trim() -replace '^origin/','' }; " ^
+  "    foreach (`$br in `$brs) { if (`$br -eq 'main') { continue }; `$null = & git checkout -B `$br \"origin/`$br\" --quiet 2>&1; if (Test-Path `$inst) { Write-Host \"  Нашли код на ветке: `$br\" -ForegroundColor Green; break } }; " ^
+  "    Pop-Location " ^
+  "  }; " ^
   "  $st   = Join-Path $dest 'start.ps1'; " ^
   "  if (Test-Path $inst) { Write-Host '  Установка зависимостей...' -ForegroundColor Cyan; Push-Location $dest; & $inst; Pop-Location }; " ^
   "  if (Test-Path $st) { Write-Host '  Запуск Code VM...' -ForegroundColor Green; Push-Location $dest; & $st } " ^
@@ -120,7 +127,21 @@ if (Get-Command git -ErrorAction SilentlyContinue) {
         Write-Host "  git clone -> $dest" -ForegroundColor Cyan
         git clone https://github.com/ybiytsa1983-cpu/drgr-bot $dest
     }
+    # If main is empty (pre-merge), find branch with the actual code
     $installPs = Join-Path $dest 'install.ps1'
+    if (-not (Test-Path $installPs)) {
+        Write-Host '  Главная ветка пустая — ищем ветку с кодом...' -ForegroundColor Yellow
+        Push-Location $dest
+        git fetch --all 2>$null
+        $branches = & git branch -r 2>$null | Where-Object { $_ -notmatch 'HEAD' } |
+            ForEach-Object { $_.Trim() -replace '^origin/', '' }
+        foreach ($br in $branches) {
+            if ($br -eq 'main') { continue }
+            $null = & git checkout -B $br "origin/$br" --quiet 2>&1
+            if (Test-Path $installPs) { Write-Host "  Нашли код на ветке: $br" -ForegroundColor Green; break }
+        }
+        Pop-Location
+    }
     $startPs   = Join-Path $dest 'start.ps1'
     if (Test-Path $installPs) {
         Write-Host '  Установка зависимостей...' -ForegroundColor Cyan
