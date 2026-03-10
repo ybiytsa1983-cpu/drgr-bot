@@ -1455,6 +1455,42 @@ def save_settings():
 
     return jsonify({"ok": True})
 
+
+@app.route("/bot/test", methods=["POST"])
+def bot_test():
+    """Test a Telegram bot token by calling the Telegram getMe API.
+
+    Body: {"bot_token": "..."}
+    Returns: {"ok": true, "username": "...", "first_name": "..."} or {"ok": false, "error": "..."}
+    """
+    body = request.get_json(silent=True) or {}
+    token = body.get("bot_token", "").strip()
+    if not token:
+        return jsonify({"ok": False, "error": "Токен не указан"})
+    try:
+        resp = _http.get(
+            f"https://api.telegram.org/bot{token}/getMe",
+            timeout=10,
+        )
+        data = resp.json()
+        if data.get("ok"):
+            result = data.get("result", {})
+            return jsonify({
+                "ok": True,
+                "username": result.get("username", ""),
+                "first_name": result.get("first_name", ""),
+                "id": result.get("id"),
+            })
+        description = data.get("description", "Неверный токен или Telegram API недоступен")
+        return jsonify({"ok": False, "error": description})
+    except _http.exceptions.ConnectionError:
+        return jsonify({"ok": False, "error": "Нет доступа к api.telegram.org — проверьте интернет-соединение"})
+    except _http.exceptions.Timeout:
+        return jsonify({"ok": False, "error": "Таймаут запроса к Telegram API (>10 сек)"})
+    except Exception:  # pylint: disable=broad-except
+        return jsonify({"ok": False, "error": "Ошибка при проверке токена — попробуйте позже"})
+
+
 @app.route("/ollama/models", methods=["GET"])
 def ollama_models():
     """Return the list of models available in the local Ollama instance."""

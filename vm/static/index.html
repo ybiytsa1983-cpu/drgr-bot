@@ -280,8 +280,10 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
       <input type="password" id="tok-inp" placeholder="1234567890:ABC..." autocomplete="off"/>
       <div class="pr" style="margin-top:4px">
         <button class="pb pb-s" style="flex:1" onclick="saveBotToken()">💾 Сохранить токен</button>
+        <button class="pb pb-p" style="flex:1" onclick="testBotToken()" title="Проверить подключение к Telegram">🔗 Проверить</button>
         <button class="pb pb-m" title="Показать/скрыть" onclick="var i=document.getElementById('tok-inp');i.type=i.type==='password'?'text':'password'">👁</button>
       </div>
+      <div id="bot-test-status" style="font-size:10px;margin-top:2px"></div>
       <div style="font-size:10px;color:var(--text2)">Получить у @BotFather в Telegram</div>
     </div>
 
@@ -808,13 +810,30 @@ function previewFromEditor() {
   showPreview(lang === 'html' ? code : wrapForVisor(code, lang));
 }
 
+// Strip allow-same-origin from iframe sandbox when allow-scripts is also present.
+// Having both flags together lets sandboxed scripts remove the sandbox attribute,
+// escaping the sandbox entirely (browser security warning CWE-693 / GHSA iframe).
+function sanitizeSandboxAttrs(html) {
+  return html.replace(/(<iframe\b[^>]*\bsandbox\s*=\s*)(["'])([^"']*)\2/gi, function(match, pre, q, val) {
+    var flags = val.split(/\s+/).filter(Boolean);
+    var hasScripts = flags.indexOf('allow-scripts') !== -1;
+    var hasSameOrigin = flags.indexOf('allow-same-origin') !== -1;
+    if (hasScripts && hasSameOrigin) {
+      flags = flags.filter(function(f){ return f !== 'allow-same-origin'; });
+    }
+    return pre + q + flags.join(' ') + q;
+  });
+}
+
 function showPreview(html) {
   var ph  = document.getElementById('preview-placeholder');
   var frm = document.getElementById('preview-frame');
   ph.style.display  = 'none';
   frm.style.display = 'block';
+  // Sanitize nested iframe sandbox attrs before rendering to prevent sandbox escape
+  var safeHtml = sanitizeSandboxAttrs(html);
   // Assign srcdoc with unique timestamp comment to force re-render every call
-  frm.srcdoc = html + '\n<!-- t' + Date.now() + ' -->';
+  frm.srcdoc = safeHtml + '\n<!-- t' + Date.now() + ' -->';
   var vpane = document.getElementById('vpane');
   if (window.getComputedStyle(vpane).display === 'none') setView('both');
 }
@@ -836,7 +855,8 @@ function openFullscreen() {
   var html = editor.getValue();
   if (!html.trim()) { toast('Редактор пуст'); return; }
   var ov = document.getElementById('fs-overlay');
-  document.getElementById('fs-frame').srcdoc = html;
+  // Sanitize nested iframe sandbox attrs before full-screen rendering
+  document.getElementById('fs-frame').srcdoc = sanitizeSandboxAttrs(html);
   ov.style.display = 'flex';
 }
 function closeFullscreen() {
@@ -1296,6 +1316,34 @@ async function saveBotToken() {
       setTimeout(loadHealth, 1000);
     } else { toast('⚠ ' + (d.error||'Ошибка сохранения токена')); }
   } catch(e) { toast('⚠ Ошибка сети: ' + e.message); }
+}
+
+async function testBotToken() {
+  var tok = document.getElementById('tok-inp').value.trim();
+  var statusEl = document.getElementById('bot-test-status');
+  if (!tok) { toast('Введите токен для проверки'); return; }
+  if (!/^\d+:[A-Za-z0-9_-]{20,}$/.test(tok)) {
+    toast('⚠ Неверный формат токена'); return;
+  }
+  if (statusEl) statusEl.innerHTML = '<span style="color:var(--warn)">⏳ Проверяю...</span>';
+  try {
+    var r = await fetch('/bot/test', { method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ bot_token: tok }) });
+    var d = await r.json();
+    if (d.ok) {
+      var name = d.username ? '@' + d.username : d.first_name || 'Бот';
+      if (statusEl) statusEl.innerHTML = '<span style="color:var(--accent2)">✅ Подключён: ' + esc(name) + '</span>';
+      toast('✅ Бот подключён: ' + name);
+    } else {
+      var msg = d.error || 'Ошибка подключения';
+      if (statusEl) statusEl.innerHTML = '<span style="color:var(--danger)">✗ ' + esc(msg) + '</span>';
+      toast('⚠ ' + msg);
+    }
+  } catch(e) {
+    if (statusEl) statusEl.innerHTML = '<span style="color:var(--danger)">✗ Ошибка сети</span>';
+    toast('⚠ Ошибка сети: ' + e.message);
+  }
 }
 
 // ── Chat ID ───────────────────────────────────────────────────────────────────
