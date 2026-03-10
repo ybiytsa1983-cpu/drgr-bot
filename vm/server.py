@@ -70,8 +70,10 @@ _lock             = threading.Lock()
 _actions_lock     = threading.Lock()
 _img_desc_lock    = threading.Lock()
 
-# Ollama service base URL (override via OLLAMA_HOST env var)
-OLLAMA_BASE = os.environ.get("OLLAMA_HOST", "http://localhost:11435")
+# Ollama service base URL (override via OLLAMA_HOST env var).
+# Default is the standard Ollama port 11434; auto-discovery scans 11434-11444
+# as a fallback, so non-standard ports still work automatically.
+OLLAMA_BASE = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 
 # Heartbeat configuration
 _OLLAMA_HEARTBEAT_INTERVAL = 60   # seconds between liveness pings
@@ -83,8 +85,8 @@ _OLLAMA_HEARTBEAT_TIMEOUT  = 2    # seconds to wait for each Ollama response
 # Runs once in a background thread at startup.  First tries the configured
 # OLLAMA_BASE URL; if unreachable, scans localhost ports 11434-11444 to
 # find where Ollama is actually listening.  This handles users who run
-# Ollama on a non-default port (e.g. 11435) even when the launcher has
-# set OLLAMA_HOST=http://localhost:11434 as a default.
+# Ollama on a non-default port (e.g. 11435) even when the standard default
+# port 11434 is used.
 _OLLAMA_SCANNED = False
 _OLLAMA_SCAN_LOCK = threading.Lock()
 
@@ -103,8 +105,8 @@ def _autodiscover_ollama() -> None:
         except Exception:  # pylint: disable=broad-except
             pass
         # 2. Fall back: scan localhost ports 11434-11444.
-        #    Covers cases where the launcher set a default of 11434 but
-        #    Ollama is actually listening on a different port (e.g. 11435).
+        #    Covers cases where Ollama is listening on a non-default port
+        #    (e.g. 11435) even though the configured default is 11434.
         parsed = urllib.parse.urlparse(OLLAMA_BASE)
         scheme = parsed.scheme or "http"
         host = parsed.hostname or "localhost"

@@ -53,8 +53,48 @@ if (Test-Path (Join-Path $repoDir ".git")) {
     }
 }
 
-# --- Run install ---
+# --- Ensure we have the full codebase (main may be empty before PR merge) ---
+# If install.ps1 is absent, fetch all remote branches and checkout the first
+# one that contains it.  This is fully automatic and handles both pre-merge
+# (code lives on a dev branch) and post-merge (code lives on main) scenarios.
 $installScript = Join-Path $repoDir "install.ps1"
+if (-not (Test-Path $installScript)) {
+    Write-Host ""
+    Write-Host "  The default branch appears incomplete — searching all branches for the full code..." -ForegroundColor Yellow
+    Push-Location $repoDir
+    try {
+        # Fetch every remote branch (non-fatal — we may still have what we need locally)
+        $fetchOutput = & git fetch --all 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "  Warning: git fetch failed — trying locally cached branches." -ForegroundColor Yellow
+        }
+        $remoteBranches = & git branch -r 2>&1 |
+            Where-Object { $_ -notmatch 'HEAD' } |
+            ForEach-Object { $_.Trim() -replace '^origin/', '' }
+        $found = $false
+        foreach ($branch in $remoteBranches) {
+            if ($branch -eq 'main') { continue }   # already tried main
+            $checkoutOutput = & git checkout -B $branch "origin/$branch" --quiet 2>&1
+            if ($LASTEXITCODE -ne 0) { continue }   # branch not accessible — try next
+            if (Test-Path $installScript) {
+                Write-Host "  Found full code on branch: $branch" -ForegroundColor Green
+                $found = $true
+                break
+            }
+        }
+        if (-not $found) {
+            Write-Host ""
+            Write-Host "  ERROR: Could not find install.ps1 in any branch." -ForegroundColor Red
+            Write-Host "  Please try again in a few minutes, or visit:" -ForegroundColor Yellow
+            Write-Host "    https://github.com/ybiytsa1983-cpu/drgr-bot" -ForegroundColor Cyan
+            exit 1
+        }
+    } finally {
+        Pop-Location
+    }
+}
+
+# --- Run install ---
 if (-not (Test-Path $installScript)) {
     Write-Host "ERROR: install.ps1 not found at $installScript" -ForegroundColor Red
     exit 1

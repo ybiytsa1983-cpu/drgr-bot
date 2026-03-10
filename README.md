@@ -24,8 +24,14 @@ irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/run.ps1" | 
 Открой **PowerShell** (Win+X → Windows PowerShell) и вставь всё сразу:
 
 ```powershell
-$d="$env:USERPROFILE\drgr-bot"; if(Test-Path $d){Set-Location $d; git pull}else{Set-Location "$env:USERPROFILE"; git clone https://github.com/ybiytsa1983-cpu/drgr-bot; Set-Location drgr-bot}; .\install.ps1
+$d="$env:USERPROFILE\drgr-bot"; if(Test-Path "$d\.git"){Set-Location $d; git pull}else{Set-Location "$env:USERPROFILE"; git clone https://github.com/ybiytsa1983-cpu/drgr-bot; Set-Location drgr-bot}; Set-ExecutionPolicy Bypass -Scope Process -Force; .\install.ps1
 ```
+
+> **Если `install.ps1` не найден** (папка пустая — основная ветка репозитория ещё обновляется), выполни вместо этого:
+> ```powershell
+> irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/copilot/create-monaco-code-generator/run.ps1" | iex
+> ```
+> *(Эта ссылка ведёт на ветку разработки — актуально до слияния PR с основной веткой)*
 
 > **Папка уже есть?** Команда автоматически сделает `git pull` и обновит файлы вместо повторного клонирования.
 
