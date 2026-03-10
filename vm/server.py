@@ -99,6 +99,8 @@ def _autodiscover_ollama() -> None:
 
     Scans both 127.0.0.1 and localhost because on Windows, 'localhost' may
     resolve to ::1 (IPv6) while Ollama listens on 127.0.0.1 only.
+    Checks HTTP 200 status to confirm it is actually Ollama (not some other
+    service that happens to accept connections on the same port).
     """
     global OLLAMA_BASE, _OLLAMA_SCANNED
     with _OLLAMA_SCAN_LOCK:
@@ -107,8 +109,9 @@ def _autodiscover_ollama() -> None:
         _OLLAMA_SCANNED = True
         # 1. Try the already-configured base URL first.
         try:
-            _http.get(f"{OLLAMA_BASE}/api/tags", timeout=1)
-            return  # configured URL is reachable — done
+            r = _http.get(f"{OLLAMA_BASE}/api/tags", timeout=1)
+            if r.status_code == 200:
+                return  # configured URL is reachable — done
         except Exception:  # pylint: disable=broad-except
             pass
         # 2. Fall back: scan 127.0.0.1 first (avoids IPv6 issues on Windows),
@@ -117,9 +120,10 @@ def _autodiscover_ollama() -> None:
             for port in range(11434, 11445):
                 url = f"http://{host}:{port}"
                 try:
-                    _http.get(f"{url}/api/tags", timeout=1)
-                    OLLAMA_BASE = url   # update global for all subsequent requests
-                    return
+                    r = _http.get(f"{url}/api/tags", timeout=1)
+                    if r.status_code == 200:
+                        OLLAMA_BASE = url   # update global for all subsequent requests
+                        return
                 except Exception:  # pylint: disable=broad-except
                     continue
 
@@ -137,7 +141,9 @@ def _ollama_heartbeat() -> None:
     while True:
         time.sleep(_OLLAMA_HEARTBEAT_INTERVAL)
         try:
-            _http.get(f"{OLLAMA_BASE}/api/tags", timeout=_OLLAMA_HEARTBEAT_TIMEOUT)
+            r = _http.get(f"{OLLAMA_BASE}/api/tags", timeout=_OLLAMA_HEARTBEAT_TIMEOUT)
+            if r.status_code != 200:
+                raise ValueError(f"Ollama returned HTTP {r.status_code}")
         except Exception:  # pylint: disable=broad-except
             # Ollama appears to be gone — allow a fresh scan
             with _OLLAMA_SCAN_LOCK:
@@ -1341,8 +1347,31 @@ def update_instructions():
 # ---------------------------------------------------------------------------
 @app.route("/settings", methods=["GET"])
 def get_settings():
-    """Return current runtime settings so the UI can pre-fill fields."""
-    return jsonify({"ollama_url": OLLAMA_BASE})
+    """Return current runtime settings so the UI can pre-fill fields.
+
+    Triggers Ollama auto-discovery synchronously so the returned URL
+    reflects the actual detected port (e.g. 11435) rather than the
+    initial default value.
+    """
+    _autodiscover_ollama()  # ensure OLLAMA_BASE is up-to-date before responding
+
+    bot_token_set = False
+    try:
+        env_path = os.path.join(os.path.dirname(_DIR), ".env")
+        if os.path.exists(env_path):
+            with open(env_path, "r", encoding="utf-8") as fh:
+                for line in fh:
+                    line = line.strip()
+                    if line.startswith("BOT_TOKEN="):
+                        val = line.split("=", 1)[1].strip().strip('"').strip("'")
+                        bot_token_set = bool(val and val != "your_telegram_bot_token_here")
+                        break
+        if not bot_token_set and os.environ.get("BOT_TOKEN"):
+            bot_token_set = True
+    except Exception:  # pylint: disable=broad-except
+        pass
+
+    return jsonify({"ollama_url": OLLAMA_BASE, "bot_token_set": bot_token_set})
 
 
 @app.route("/settings", methods=["POST"])
@@ -1826,6 +1855,78 @@ def generate_html_stream():
                     yield f"data: {json.dumps({'token': token})}\n\n"
                 if chunk.get("done"):
                     _record_generation("html", model, prompt)
+                    yield "data: [DONE]\n\n"
+                    return
+        except _http.exceptions.ConnectionError:
+            yield 'data: {"error":"Нет соединения с Ollama — запустите \'ollama serve\'"}\n\n'
+        except Exception as exc:  # pylint: disable=broad-except
+            yield f"data: {json.dumps({'error': str(exc)})}\n\n"
+
+    return Response(
+        stream_with_context(_stream()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Simple chat endpoint — plain text conversation with Ollama (no HTML wrapping)
+# ---------------------------------------------------------------------------
+@app.route("/chat/stream", methods=["POST"])
+def chat_stream():
+    """Stream a plain chat response from Ollama.
+
+    Body: {"message": "...", "model": "...", "history": [...optional chat history...]}
+    Streams SSE tokens ending with data: [DONE]
+    Unlike /generate/html/stream this returns raw model text without any
+    HTML-generation system prompt so it works for any question.
+    """
+    body    = request.get_json(silent=True) or {}
+    model   = body.get("model", "").strip()
+    message = body.get("message", "").strip()
+    history = body.get("history", [])  # list of {"role": "user"|"assistant", "text": "..."}
+
+    if not model:
+        def _no_model():
+            yield 'data: {"error":"Модель не выбрана — выберите модель в настройках (☰)"}\n\n'
+        return Response(stream_with_context(_no_model()), mimetype="text/event-stream")
+
+    if not message:
+        def _no_msg():
+            yield 'data: {"error":"Введите сообщение"}\n\n'
+        return Response(stream_with_context(_no_msg()), mimetype="text/event-stream")
+
+    # Build a prompt with chat history context
+    lines = []
+    for entry in history[-20:]:  # keep last 20 turns to avoid context overflow
+        role = entry.get("role", "user")
+        text = entry.get("text", "").strip()
+        if text:
+            lines.append(f"{'Пользователь' if role == 'user' else 'Ассистент'}: {text}")
+    lines.append(f"Пользователь: {message}")
+    lines.append("Ассистент:")
+    full_prompt = "\n".join(lines)
+
+    def _stream():
+        try:
+            resp = _http.post(
+                f"{OLLAMA_BASE}/api/generate",
+                json={"model": model, "prompt": full_prompt, "stream": True},
+                stream=True,
+                timeout=int(os.environ.get("OLLAMA_TIMEOUT", 240)),
+            )
+            resp.raise_for_status()
+            for raw_line in resp.iter_lines():
+                if not raw_line:
+                    continue
+                try:
+                    chunk = json.loads(raw_line)
+                except ValueError:
+                    continue
+                token = chunk.get("response", "")
+                if token:
+                    yield f"data: {json.dumps({'token': token})}\n\n"
+                if chunk.get("done"):
                     yield "data: [DONE]\n\n"
                     return
         except _http.exceptions.ConnectionError:
