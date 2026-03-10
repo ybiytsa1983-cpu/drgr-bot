@@ -188,7 +188,7 @@ for ($i = 0; $i -lt 20; $i++) {
     try {
         # Use 127.0.0.1 (not localhost) to avoid IPv6 resolution on Windows.
         # Use /health endpoint (small JSON) rather than / (full HTML page).
-        $null = Invoke-WebRequest -Uri "http://127.0.0.1:$Port/health" -UseBasicParsing -TimeoutSec 2
+        $null = Invoke-WebRequest -Uri "http://127.0.0.1:$Port/health" -UseBasicParsing -TimeoutSec 3
         $ready = $true
         break
     } catch [System.Net.WebException] {

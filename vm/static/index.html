@@ -547,6 +547,16 @@ async function generateHtml() {
     var dec = new TextDecoder();
     var buf = '';
 
+    // Throttle editor updates to max once every 150 ms to avoid re-render storm
+    var lastEditorUpdate = 0;
+    function flushToEditor() {
+      var now = Date.now();
+      if (editor && (now - lastEditorUpdate) > 150) {
+        editor.setValue(accumulated);
+        lastEditorUpdate = now;
+      }
+    }
+
     while (!done) {
       var result = await reader.read();
       if (result.done) break;
@@ -565,8 +575,7 @@ async function generateHtml() {
           }
           if (obj.token) {
             accumulated += obj.token;
-            // Update editor in real-time (debounced via value set)
-            if (editor) editor.setValue(accumulated);
+            flushToEditor();
           }
         } catch(e) {}
       }
