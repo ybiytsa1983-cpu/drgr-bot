@@ -37,6 +37,7 @@ import logging
 import os
 import re
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -240,6 +241,66 @@ _DEFAULT_INSTRUCTIONS: dict = {
         "article_topics": [],           # last 50 article titles
         "actions_since_last_retrain": 0,
     },
+    # ── Browser-agent specification ───────────────────────────────────────────
+    # Autonomous browser-control protocol used by the DRGR visor agent.
+    # Stored here so the model can learn the command schema and improve
+    # its browser-automation suggestions over time.
+    "browser_agent_instructions": {
+        "agent": {
+            "name": "DRGRBrowserAgent",
+            "version": "1.0",
+            "description": (
+                "Autonomous agent controlling the browser through the DRGR visor "
+                "in multiple steps: observe → plan → act → verify → log."
+            ),
+            "capabilities": [
+                "Multi-tab management via visor",
+                "URL navigation",
+                "Element search and click",
+                "Text input into fields",
+                "Page scroll",
+                "Wait for DOM/URL changes",
+                "Basic captcha and modal detection",
+                "React to page errors and unexpected behaviour",
+            ],
+            "constraints": [
+                "Do not execute arbitrary system code outside the browser",
+                "Do not attempt to bypass captchas — only report them",
+                "Respect the cycle step limit",
+                "All actions only through formalised commands",
+            ],
+        },
+        "cycle": {
+            "max_steps": 80,
+            "default_wait_timeout_ms": 8000,
+            "commands": ["NAVIGATE", "CLICK", "TYPE", "WAIT", "SWITCH_TAB", "SCROLL", "SCREENSHOT", "NOOP"],
+            "termination_conditions": [
+                "Goal achieved",
+                "Captcha detected (status=blocked_captcha)",
+                "Critical HTTP error or ban",
+                "Step limit exceeded (current_step >= max_steps)",
+                "User explicitly stopped execution",
+            ],
+        },
+        "output_schema": {
+            "cycle_state": {
+                "status": "running | finished_success | finished_error | blocked_captcha | user_input_required",
+                "current_step": "number",
+                "max_steps": "number",
+            },
+            "thoughts": {
+                "observation": "Brief description of what the agent sees now.",
+                "state_analysis": "What is happening: login, redirect, error, form, captcha, modal.",
+                "plan_short": "Next step or short sequence of actions (1-3 steps).",
+                "risks": "Possible problems: captcha, ban, wrong input, infinite redirect.",
+            },
+        },
+        "special_states": {
+            "captcha": "Set status=blocked_captcha, take SCREENSHOT, do not attempt to solve.",
+            "modal_cookies": "Try CLICK on Accept/OK to close.",
+            "error_page": "Log in state_analysis; stop or correct plan; set finished_error if critical.",
+        },
+    },
 }
 
 
@@ -256,7 +317,13 @@ def load_instructions() -> dict:
         if os.path.exists(INSTRUCTIONS_FILE):
             try:
                 with open(INSTRUCTIONS_FILE, "r", encoding="utf-8") as fh:
-                    return json.load(fh)
+                    data = json.load(fh)
+                # Back-fill any keys added after the file was first created
+                # (e.g. browser_agent_instructions added in a later version).
+                for key, default_val in _DEFAULT_INSTRUCTIONS.items():
+                    if key not in data:
+                        data[key] = _deep_copy(default_val) if isinstance(default_val, (dict, list)) else default_val
+                return data
             except (json.JSONDecodeError, OSError):
                 pass
         data = _deep_copy(_DEFAULT_INSTRUCTIONS)
@@ -351,6 +418,13 @@ def _run_code(code: str, language: str) -> dict:
             if fallback:
                 try:
                     return _exec(fallback)
+                except FileNotFoundError:
+                    pass
+            # Ultimate fallback for Python: use the same interpreter that runs
+            # this server (guaranteed to be available regardless of PATH).
+            if language == "python":
+                try:
+                    return _exec([sys.executable])
                 except FileNotFoundError:
                     pass
             return {
@@ -1329,6 +1403,13 @@ def launch_help():
 <body>
 <h1>⚡ Code VM — Как запустить</h1>
 <p style="color:#858585;margin-bottom:16px">Ты видишь эту страницу — значит сервер уже запущен! <span class="ok">✅</span></p>
+
+<h2>🪟 Windows — пересоздать ярлык на рабочем столе</h2>
+<div class="card">
+<span class="tag win">PowerShell</span>
+<pre>powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\\drgr-bot\\vm\\create_shortcut.ps1"</pre>
+<p class="note">Запусти если ярлык «Code VM» пропал с рабочего стола. Также поместит «ЗАПУСТИТЬ_ВМ.bat» и «ПЕРЕУЧИТЬ_ВМ.bat» на рабочий стол.</p>
+</div>
 
 <h2>🪟 Windows — один раз (установка + ярлык)</h2>
 <div class="card">
