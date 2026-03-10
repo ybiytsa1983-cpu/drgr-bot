@@ -258,60 +258,60 @@ Write-Host "  =============================================" -ForegroundColor Wh
 Write-Host ""
 
 Info "Creating 'Code VM' shortcut on your Desktop..."
-$desktopPath  = [Environment]::GetFolderPath("Desktop")
-$shortcutPath = Join-Path $desktopPath "Code VM.lnk"
-# Target powershell.exe directly to avoid .bat-file association issues on
-# Windows 11 (Windows Terminal can open .bat shortcuts in a PS profile,
-# causing PowerShell to parse batch syntax and fail with %~dp0 errors).
-$startPs1     = Join-Path $repoDir "start.ps1"
-$psExe        = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
-if (-not (Test-Path $psExe)) { $psExe = "powershell.exe" }
-
+$desktopPath     = [Environment]::GetFolderPath("Desktop")
+$startPs1        = Join-Path $repoDir "start.ps1"
+$createShortcut  = Join-Path $repoDir "vm\create_shortcut.ps1"
 $shortcutOk = $false
-try {
-    $shell    = New-Object -ComObject WScript.Shell
-    $shortcut = $shell.CreateShortcut($shortcutPath)
-    $shortcut.TargetPath       = $psExe
-    $shortcut.Arguments        = "-NoProfile -ExecutionPolicy Bypass -File `"$startPs1`""
-    $shortcut.WorkingDirectory = $repoDir
-    $shortcut.Description      = "Launch Code VM - Monaco Editor with Ollama AI"
-    $shortcut.WindowStyle      = 1   # Normal window so progress and errors are visible
-    # Prefer bundled custom icon; fall back to a reliably-visible system icon
-    $customIco = Join-Path $repoDir "vm\static\code_vm.ico"
-    if (Test-Path $customIco) {
-        $shortcut.IconLocation = "$customIco,0"
-    } else {
-        $icoLib = Join-Path $env:SystemRoot "System32\shell32.dll"
-        $shortcut.IconLocation = if (Test-Path $icoLib) { "$icoLib,77" } else { "$psExe,0" }
-    }
-    $shortcut.Save()
-    $shortcutOk = $true
-    Ok "Desktop shortcut created - 'Code VM' icon is on your Desktop"
-} catch {
-    Warn "WScript.Shell shortcut failed ($_). Creating .bat fallback on Desktop..."
+if (Test-Path $createShortcut) {
     try {
-        $fallbackPath = Join-Path $desktopPath "Code VM.bat"
-        # Polyglot: works in both cmd.exe and PowerShell (Windows Terminal may open
-        # .bat shortcuts in a PS profile on Windows 11, causing @echo off to fail).
-        $polyglot  = "<# 2>nul`r`n"
-        $polyglot += "@echo off`r`n"
-        $polyglot += "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$startPs1`"`r`n"
-        $polyglot += "exit /b`r`n"
-        $polyglot += "#>`r`n"
-        $polyglot += "`$f = if (`$PSScriptRoot) { `$PSScriptRoot } else { (Get-Location).Path }`r`n"
-        $polyglot += "& (Join-Path `$f 'start.ps1') @args`r`n"
-        [System.IO.File]::WriteAllText($fallbackPath, $polyglot, [System.Text.Encoding]::ASCII)
-        $shortcutOk = $true
-        Ok "Desktop launcher created: '$fallbackPath' - double-click it to launch Code VM"
+        $psExeLocal = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
+        if (-not (Test-Path $psExeLocal)) { $psExeLocal = "powershell.exe" }
+        $proc = Start-Process -FilePath $psExeLocal `
+            -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$createShortcut`" -NoLaunch" `
+            -WorkingDirectory $repoDir -Wait -PassThru -ErrorAction Stop
+        if ($proc.ExitCode -eq 0) {
+            $shortcutOk = $true
+            Ok "Desktop shortcut created - 'Code VM' icon is on your Desktop"
+        } else {
+            Warn "create_shortcut.ps1 exited with code $($proc.ExitCode)."
+        }
     } catch {
-        Warn "Could not create Desktop shortcut: $_"
-        Warn "Run manually later: powershell -ExecutionPolicy Bypass -File vm\create_shortcut.ps1"
+        Warn "Shortcut creation failed: $_"
     }
 }
 
-# -- 8. Copy self-discovering launcher to Desktop ------------------------------
+# Fallback: inline shortcut creation if the script approach failed
+if (-not $shortcutOk) {
+    Warn "Trying inline shortcut creation as fallback..."
+    $psExe    = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
+    if (-not (Test-Path $psExe)) { $psExe = "powershell.exe" }
+    $shortcutPath = Join-Path $desktopPath "Code VM.lnk"
+    try {
+        $shell    = New-Object -ComObject WScript.Shell
+        $shortcut = $shell.CreateShortcut($shortcutPath)
+        $shortcut.TargetPath       = $psExe
+        $shortcut.Arguments        = "-NoProfile -ExecutionPolicy Bypass -File `"$startPs1`""
+        $shortcut.WorkingDirectory = $repoDir
+        $shortcut.Description      = "Launch Code VM - Monaco Editor with Ollama AI"
+        $shortcut.WindowStyle      = 1
+        $customIco = Join-Path $repoDir "vm\static\code_vm.ico"
+        if (Test-Path $customIco) {
+            $shortcut.IconLocation = "$customIco,0"
+        } else {
+            $icoLib = Join-Path $env:SystemRoot "System32\shell32.dll"
+            $shortcut.IconLocation = if (Test-Path $icoLib) { "$icoLib,77" } else { "$psExe,0" }
+        }
+        $shortcut.Save()
+        $shortcutOk = $true
+        Ok "Desktop shortcut created (fallback) - 'Code VM' icon is on your Desktop"
+    } catch {
+        Warn "Inline shortcut creation also failed: $_"
+    }
+}
+
+# -- 8. Copy self-discovering launcher to Desktop------------------------------
 $launcherSrc  = Join-Path $repoDir "ЗАПУСТИТЬ.bat"
-$launcherDest = Join-Path ([Environment]::GetFolderPath("Desktop")) "ЗАПУСТИТЬ.bat"
+$launcherDest = Join-Path $desktopPath "ЗАПУСТИТЬ.bat"
 if (Test-Path $launcherSrc) {
     try {
         Copy-Item -Path $launcherSrc -Destination $launcherDest -Force
@@ -322,7 +322,7 @@ if (Test-Path $launcherSrc) {
 }
 # Also copy the PS1 helper script that ЗАПУСТИТЬ.bat delegates to
 $zapustitPsSrc  = Join-Path $repoDir "zapustit.ps1"
-$zapustitPsDest = Join-Path ([Environment]::GetFolderPath("Desktop")) "zapustit.ps1"
+$zapustitPsDest = Join-Path $desktopPath "zapustit.ps1"
 if (Test-Path $zapustitPsSrc) {
     try {
         Copy-Item -Path $zapustitPsSrc -Destination $zapustitPsDest -Force
@@ -337,10 +337,18 @@ Write-Host "  =============================================" -ForegroundColor Gr
 Write-Host "   Setup complete!                            " -ForegroundColor Green
 Write-Host "  =============================================" -ForegroundColor Green
 Write-Host ""
-Write-Host "  Two launchers are on your Desktop:" -ForegroundColor White
-Write-Host "    'Code VM'        - main shortcut (double-click to launch)" -ForegroundColor Cyan
-Write-Host "    'ЗАПУСТИТЬ.bat'  - backup launcher (double-click in File Explorer)" -ForegroundColor Cyan
-Write-Host "                       (from a PowerShell terminal: .\ЗАПУСТИТЬ.bat)" -ForegroundColor DarkGray
+if ($shortcutOk) {
+    Write-Host "  Two launchers are on your Desktop:" -ForegroundColor White
+    Write-Host "    'Code VM'        - main shortcut (double-click to launch)" -ForegroundColor Cyan
+    Write-Host "    'ЗАПУСТИТЬ.bat'  - backup launcher (double-click in File Explorer)" -ForegroundColor Cyan
+    Write-Host "                       (from a PowerShell terminal: .\ЗАПУСТИТЬ.bat)" -ForegroundColor DarkGray
+} else {
+    Write-Host "  [!!] Desktop shortcut could not be created automatically." -ForegroundColor Yellow
+    Write-Host "  To create the 'Code VM' icon on your Desktop, run this command:" -ForegroundColor Yellow
+    Write-Host "    powershell -ExecutionPolicy Bypass -File `"$repoDir\vm\create_shortcut.ps1`"" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "  Backup launcher 'ЗАПУСТИТЬ.bat' may still be on your Desktop." -ForegroundColor White
+}
 Write-Host ""
 Write-Host "  Or launch directly from PowerShell (paste this):" -ForegroundColor White
 Write-Host "    powershell -ExecutionPolicy Bypass -File `"$repoDir\start.ps1`"" -ForegroundColor Yellow
@@ -348,6 +356,11 @@ Write-Host ""
 Write-Host "  Then open in browser:" -ForegroundColor White
 Write-Host "    http://localhost:5000/" -ForegroundColor Cyan
 Write-Host ""
+if ($shortcutOk) {
+    Write-Host "  Tip: to recreate the shortcut at any time, run:" -ForegroundColor DarkGray
+    Write-Host "    powershell -ExecutionPolicy Bypass -File `"$repoDir\vm\create_shortcut.ps1`"" -ForegroundColor DarkGray
+    Write-Host ""
+}
 
 # -- 10. Auto-launch the VM so browser opens immediately after first-time setup ---
 # Skip auto-launch only when the caller passes -NoLaunch (e.g., CI/test runs).

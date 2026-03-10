@@ -16,6 +16,10 @@
     You can also pin it to the taskbar by right-clicking and choosing
     "Pin to taskbar" after it appears on the Desktop.
 #>
+param(
+    # Pass -NoLaunch to create/update the shortcut without starting the server.
+    [switch]$NoLaunch
+)
 
 $ErrorActionPreference = "Stop"
 
@@ -88,8 +92,11 @@ Write-Host "  Tip: right-click the shortcut -> 'Pin to taskbar'" -ForegroundColo
 Write-Host ""
 
 # -- Launch the server now so localhost:5000 is immediately reachable ---------
-Write-Host "  [-->] Starting Code VM now..." -ForegroundColor Cyan
-Start-Process -FilePath $psExe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$startPs1`"" -WorkingDirectory $repoDir
-Write-Host "  [OK] Code VM is starting - browser will open in a few seconds." -ForegroundColor Green
-Write-Host "       http://localhost:5000" -ForegroundColor Cyan
-Write-Host ""
+# Skip auto-launch when called with -NoLaunch (e.g. from install.ps1 or repair runs).
+if (-not $NoLaunch) {
+    Write-Host "  [-->] Starting Code VM now..." -ForegroundColor Cyan
+    Start-Process -FilePath $psExe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$startPs1`"" -WorkingDirectory $repoDir
+    Write-Host "  [OK] Code VM is starting - browser will open in a few seconds." -ForegroundColor Green
+    Write-Host "       http://localhost:5000" -ForegroundColor Cyan
+    Write-Host ""
+}
