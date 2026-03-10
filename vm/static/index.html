@@ -199,8 +199,15 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
 #chat-messages::-webkit-scrollbar-thumb{background:#333;border-radius:2px}
 .cm{max-width:85%;padding:9px 13px;border-radius:10px;font-size:13px;line-height:1.5;white-space:pre-wrap;word-break:break-word}
 .cm-user{background:var(--accent);color:#fff;align-self:flex-end;border-bottom-right-radius:3px}
-.cm-bot{background:var(--bg3);color:var(--text);align-self:flex-start;border-bottom-left-radius:3px;border:1px solid var(--border)}
-.cm-bot.streaming{border-color:var(--accent)}
+.cm-bot{background:var(--bg3);color:var(--text);align-self:flex-start;border-bottom-left-radius:3px;border:1px solid var(--border);white-space:normal}
+.cm-bot.streaming{border-color:var(--accent);white-space:pre-wrap}
+.cm-bot pre{background:var(--bg4);padding:8px 10px;border-radius:6px;overflow-x:auto;margin:6px 0;font-size:11px;line-height:1.5;white-space:pre}
+.cm-bot code{background:var(--bg4);padding:1px 5px;border-radius:3px;font-family:monospace;font-size:11px}
+.cm-bot pre code{background:none;padding:0}
+.cm-bot strong{color:var(--text);font-weight:700}
+.cm-bot ul,.cm-bot ol{padding-left:18px;margin:4px 0}
+.cm-bot li{margin:2px 0}
+.cm-bot h1,.cm-bot h2,.cm-bot h3{font-size:13px;font-weight:700;margin:8px 0 3px;color:var(--accent)}
 .cm-err{background:#3a1a1a;color:var(--danger);align-self:flex-start;border:1px solid var(--danger)}
 #chat-input-row{display:flex;gap:8px;padding:10px 14px;background:var(--bg2);border-top:1px solid var(--border);flex-shrink:0}
 #chat-input{flex:1;background:var(--bg3);border:1px solid var(--border);color:var(--text);
@@ -1062,16 +1069,22 @@ async function saveSystemPrompt() {
 async function saveBotToken() {
   var tok = document.getElementById('tok-inp').value.trim();
   if (!tok) { toast('Введите токен'); return; }
+  if (!/^\d+:[A-Za-z0-9_-]{20,}$/.test(tok)) {
+    toast('⚠ Неверный формат токена (пример: 123456789:ABCdef...)'); return;
+  }
   try {
     var r = await fetch('/settings', { method:'POST',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ bot_token: tok }) });
     var d = await r.json();
     if (d.ok) {
-      toast('✓ Токен сохранён — перезапустите start.ps1 для Telegram бота');
+      toast('✅ Токен бота сохранён в .env');
       document.getElementById('tok-inp').value = '';
-      loadHealth();
-    } else { toast('⚠ ' + (d.error||'Ошибка')); }
+      // Update health indicator immediately
+      var el = document.getElementById('h-bot');
+      if (el) { el.textContent = '✓ Токен есть'; el.className = 'hv ok'; }
+      setTimeout(loadHealth, 1000);
+    } else { toast('⚠ ' + (d.error||'Ошибка сохранения токена')); }
   } catch(e) { toast('⚠ Ошибка сети: ' + e.message); }
 }
 
@@ -1341,6 +1354,49 @@ async function toggleWatchPage() {
   watchAbort = null;
   if (btn) { btn.textContent = '👁 Watch'; btn.style.background = ''; }
 }
+// ── Markdown → safe HTML renderer for chat bubbles ────────────────────────────
+function mdToHtml(text) {
+  // Escape HTML first
+  var s = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+  // Save fenced code blocks to placeholders so their content isn't modified
+  var blocks = [];
+  s = s.replace(/```(\w*)\n?([\s\S]*?)```/g, function(m, lang, code) {
+    var l = lang ? ' data-lang="' + lang + '"' : '';
+    blocks.push('<pre' + l + '><code>' + code.trim() + '</code></pre>');
+    return '\x00BLOCK' + (blocks.length - 1) + '\x00';
+  });
+  // Inline code
+  s = s.replace(/`([^`\n]+)`/g, '<code>$1</code>');
+  // Bold (**text** or __text__) — process before italic to avoid partial matches
+  s = s.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+  s = s.replace(/__([^_\n]+)__/g, '<strong>$1</strong>');
+  // Italic (*text* or _text_) — single asterisk/underscore, not adjacent to another
+  s = s.replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, '<em>$1</em>');
+  s = s.replace(/(?<!_)_([^_\n]+)_(?!_)/g, '<em>$1</em>');
+  // Headers — most specific first to avoid partial matches
+  s = s.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+  s = s.replace(/^## (?!#)(.+)$/gm, '<h2>$1</h2>');
+  s = s.replace(/^# (?!#)(.+)$/gm, '<h1>$1</h1>');
+  // Unordered list items — convert then group consecutive items into <ul>
+  s = s.replace(/^[-*+] (.+)$/gm, '<li>$1</li>');
+  s = s.replace(/(?:<li>[^\n]*<\/li>(?:\n|$))+/g, function(m) {
+    return '<ul>' + m.replace(/\n/g, '') + '</ul>';
+  });
+  // Numbered list items — group consecutive items into <ol>
+  s = s.replace(/^\d+\. (.+)$/gm, '<oli>$1</oli>');
+  s = s.replace(/(?:<oli>[^\n]*<\/oli>(?:\n|$))+/g, function(m) {
+    return '<ol>' + m.replace(/<oli>/g,'<li>').replace(/<\/oli>/g,'</li>').replace(/\n/g,'') + '</ol>';
+  });
+  // Newlines → <br>
+  s = s.replace(/\n/g, '<br>');
+  // Restore code blocks
+  s = s.replace(/\x00BLOCK(\d+)\x00/g, function(m, i) { return blocks[+i]; });
+  return s;
+}
+
 async function sendChat() {
   if (chatBusy) return;
   var input = document.getElementById('chat-input');
@@ -1394,6 +1450,7 @@ async function sendChat() {
           }
           if (obj.token) {
             accumulated += obj.token;
+            // During streaming show plain text (pre-wrap handles newlines)
             botBubble.textContent = accumulated;
             botBubble.className = 'cm cm-bot streaming';
             msgs.scrollTop = msgs.scrollHeight;
@@ -1402,6 +1459,8 @@ async function sendChat() {
       });
     }
     if (accumulated) {
+      // When streaming completes, render full markdown
+      botBubble.innerHTML = mdToHtml(accumulated);
       botBubble.className = 'cm cm-bot';
       chatHistory.push({role:'user', text: msg});
       chatHistory.push({role:'assistant', text: accumulated});

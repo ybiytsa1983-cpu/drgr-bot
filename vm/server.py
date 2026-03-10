@@ -1446,12 +1446,13 @@ def save_settings():
             _OLLAMA_SCANNED = False
         threading.Thread(target=_autodiscover_ollama, daemon=True).start()
 
-    with open(env_path, "w", encoding="utf-8") as f:
-        f.writelines(lines)
+    try:
+        with open(env_path, "w", encoding="utf-8") as f:
+            f.writelines(lines)
+    except OSError as exc:
+        return jsonify({"ok": False, "error": f"Не удалось записать .env: {exc}"})
 
     return jsonify({"ok": True})
-
-
 
 @app.route("/ollama/models", methods=["GET"])
 def ollama_models():
