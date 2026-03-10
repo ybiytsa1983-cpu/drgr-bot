@@ -1379,13 +1379,14 @@ def get_settings():
 
 @app.route("/settings", methods=["POST"])
 def save_settings():
-    """Save settings (Telegram bot token, Ollama URL) to .env."""
+    """Save settings (Telegram bot token, chat ID, Ollama URL) to .env."""
     global OLLAMA_BASE, _OLLAMA_SCANNED  # noqa: PLW0603
     body = request.get_json(silent=True) or {}
     bot_token  = body.get("bot_token",  "").strip()
+    chat_id    = body.get("chat_id",    "").strip()
     ollama_url = body.get("ollama_url", "").strip()
 
-    if not bot_token and not ollama_url:
+    if not bot_token and not chat_id and not ollama_url:
         return jsonify({"ok": False, "error": "Nothing to save"})
 
     env_path = os.path.join(os.path.dirname(_DIR), ".env")
@@ -1408,6 +1409,18 @@ def save_settings():
             lines.append(f"BOT_TOKEN={bot_token}\n")
         # Apply to current process so /health reflects the change immediately
         os.environ["BOT_TOKEN"] = bot_token
+
+    if chat_id:
+        # Update or append TELEGRAM_CHAT_ID line
+        cid_found = False
+        for i, line in enumerate(lines):
+            if line.startswith("TELEGRAM_CHAT_ID="):
+                lines[i] = f"TELEGRAM_CHAT_ID={chat_id}\n"
+                cid_found = True
+                break
+        if not cid_found:
+            lines.append(f"TELEGRAM_CHAT_ID={chat_id}\n")
+        os.environ["TELEGRAM_CHAT_ID"] = chat_id
 
     if ollama_url:
         # Update or append OLLAMA_HOST line

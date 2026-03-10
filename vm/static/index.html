@@ -215,6 +215,14 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
       <div style="font-size:10px;color:var(--text2)">Получить у @BotFather в Telegram</div>
     </div>
 
+    <!-- Chat ID -->
+    <div>
+      <div class="pl">💬 Telegram Chat ID</div>
+      <input type="text" id="chatid-inp" placeholder="-1001234567890" autocomplete="off"/>
+      <button class="pb pb-s pb-f" style="margin-top:4px" onclick="saveChatId()">💾 Сохранить Chat ID</button>
+      <div style="font-size:10px;color:var(--text2)">ID чата/группы для уведомлений бота (узнать: /start у @userinfobot)</div>
+    </div>
+
     <!-- Model -->
     <div>
       <div class="pl">🤖 Модель Qwen / Ollama</div>
@@ -486,7 +494,7 @@ function createEditor(container) {
     clearTimeout(previewTimer);
     previewTimer = setTimeout(function(){
       if(document.getElementById('lang-sel').value === 'html') livePreview();
-    }, 1200);
+    }, 600);
   });
   // Show initial placeholder preview
   livePreview();
@@ -529,9 +537,12 @@ function showPreview(html) {
   var frm = document.getElementById('preview-frame');
   ph.style.display  = 'none';
   frm.style.display = 'block';
-  frm.srcdoc = html;
-  // If preview pane hidden, switch to both
-  if (document.getElementById('vpane').style.display === 'none') setView('both');
+  // Force re-render: remove attribute first, then set on next tick
+  frm.removeAttribute('srcdoc');
+  setTimeout(function() { frm.srcdoc = html; }, 0);
+  // If preview pane is not visible, switch to editor+preview view
+  var vpane = document.getElementById('vpane');
+  if (window.getComputedStyle(vpane).display === 'none') setView('both');
 }
 
 function openFullscreen() {
@@ -750,6 +761,22 @@ async function saveBotToken() {
       toast('✓ Токен сохранён — перезапустите start.ps1 для Telegram бота');
       document.getElementById('tok-inp').value = '';
       loadHealth();
+    } else { toast('⚠ ' + (d.error||'Ошибка')); }
+  } catch(e) { toast('⚠ Ошибка сети: ' + e.message); }
+}
+
+// ── Chat ID ───────────────────────────────────────────────────────────────────
+async function saveChatId() {
+  var cid = document.getElementById('chatid-inp').value.trim();
+  if (!cid) { toast('⚠ Введите Chat ID'); return; }
+  try {
+    var r = await fetch('/settings', { method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ chat_id: cid }) });
+    var d = await r.json();
+    if (d.ok) {
+      toast('✓ Chat ID сохранён — перезапустите start.ps1 для Telegram бота');
+      document.getElementById('chatid-inp').value = '';
     } else { toast('⚠ ' + (d.error||'Ошибка')); }
   } catch(e) { toast('⚠ Ошибка сети: ' + e.message); }
 }
