@@ -1141,7 +1141,7 @@ async def cmd_visor(message: Message) -> None:
             if change:
                 report += f"🔄 {change}\n"
             report += "\n"
-        report += f"⏱ {dur // 1000} сек | модель: {results[0].get('model', '?')}"
+        report += f"⏱ {dur // 1000} сек | модель: {results[0].get('model', '?') if results else '?'}"
 
         try:
             await message.answer(report[:4096])
@@ -1205,7 +1205,7 @@ async def cmd_visor(message: Message) -> None:
         await message.answer(f"🖥 ВИЗОР: {url}\n\n{desc[:3000]}")
 
 
-
+async def cmd_generate(message: Message) -> None:
     parts = (message.text or "").split(maxsplit=1)
     if len(parts) < 2:
         await message.answer("Использование: `/generate <описание>`", parse_mode="MarkdownV2")

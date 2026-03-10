@@ -50,8 +50,8 @@ if (Test-Path $createShortcut) {
 $batSrc = Join-Path $repoDir 'ЗАПУСТИТЬ_ВМ.bat'
 if (Test-Path $batSrc) {
     try {
-        Copy-Item -Path $batSrc -Destination (Join-Path $desktopPath 'ЗАПУСТИТЬ ВМ.bat') -Force
-        Ok "Ярлык 'ЗАПУСТИТЬ ВМ.bat' скопирован на рабочий стол"
+        Copy-Item -Path $batSrc -Destination (Join-Path $desktopPath 'ЗАПУСТИТЬ_ВМ.bat') -Force
+        Ok "Ярлык 'ЗАПУСТИТЬ_ВМ.bat' скопирован на рабочий стол"
     } catch { Warn "Не удалось скопировать ЗАПУСТИТЬ_ВМ.bat: $_" }
 }
 

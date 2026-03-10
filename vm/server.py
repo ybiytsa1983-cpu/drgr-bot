@@ -2822,9 +2822,15 @@ def visor_watch():
                 if _r.status_code == 200:
                     description = _r.json().get("response", "")
                     if prev_description and description:
+                        # Compute word-level overlap as a similarity proxy
+                        prev_words = set(prev_description.lower().split())
+                        curr_words = set(description.lower().split())
+                        overlap = len(prev_words & curr_words)
+                        total   = max(len(prev_words | curr_words), 1)
+                        similarity = overlap / total
                         change_summary = (
-                            "Нет изменений" if description[:200] == prev_description[:200]
-                            else "Обнаружены изменения на странице"
+                            "Нет значимых изменений" if similarity > 0.85
+                            else f"Обнаружены изменения на странице (сходство: {similarity:.0%})"
                         )
             except Exception as exc:
                 description = f"Ошибка AI анализа: {exc}"
@@ -2837,7 +2843,6 @@ def visor_watch():
                 "model":       vis_model,
                 "description": description[:1000],
                 "change":      change_summary,
-                "screenshot_base64": screenshot_b64[:200] + "...",  # truncated for SSE
                 "done":        snap_n == max_snaps,
             })
             yield f"data: {payload}\n\n"

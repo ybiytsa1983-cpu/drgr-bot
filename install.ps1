@@ -333,11 +333,11 @@ if (Test-Path $zapustitPsSrc) {
 
 # Copy ЗАПУСТИТЬ_ВМ.bat (launcher for retrained VM with drgr-visor model)
 $vmLauncherSrc  = Join-Path $repoDir "ЗАПУСТИТЬ_ВМ.bat"
-$vmLauncherDest = Join-Path $desktopPath "ЗАПУСТИТЬ ВМ.bat"
+$vmLauncherDest = Join-Path $desktopPath "ЗАПУСТИТЬ_ВМ.bat"
 if (Test-Path $vmLauncherSrc) {
     try {
         Copy-Item -Path $vmLauncherSrc -Destination $vmLauncherDest -Force
-        Ok "Visor VM launcher copied: 'ЗАПУСТИТЬ ВМ.bat' on Desktop"
+        Ok "Visor VM launcher copied: 'ЗАПУСТИТЬ_ВМ.bat' on Desktop"
     } catch {
         Warn "Could not copy ЗАПУСТИТЬ_ВМ.bat to Desktop: $_"
     }
@@ -353,8 +353,8 @@ if ($shortcutOk) {
     Write-Host "  Three launchers are on your Desktop:" -ForegroundColor White
     Write-Host "    'Code VM'          - main shortcut (double-click to launch)" -ForegroundColor Cyan
     Write-Host "    'ЗАПУСТИТЬ.bat'    - backup launcher (double-click in File Explorer)" -ForegroundColor Cyan
-    Write-Host "    'ЗАПУСТИТЬ ВМ.bat' - Visor VM launcher (creates drgr-visor model)" -ForegroundColor Green
-    Write-Host "                         (from a PowerShell terminal: .\ЗАПУСТИТЬ_ВМ.bat)" -ForegroundColor DarkGray
+    Write-Host "    'ЗАПУСТИТЬ_ВМ.bat' - Visor VM launcher (creates drgr-visor model)" -ForegroundColor Green
+    Write-Host "                          (from a PowerShell terminal: .\ЗАПУСТИТЬ_ВМ.bat)" -ForegroundColor DarkGray
 } else {
     Write-Host "  [!!] Desktop shortcut could not be created automatically." -ForegroundColor Yellow
     Write-Host "  To create the 'Code VM' icon on your Desktop, run this command:" -ForegroundColor Yellow
