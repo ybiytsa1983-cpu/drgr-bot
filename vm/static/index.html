@@ -599,7 +599,7 @@ function initMonaco() {
         + 'color:#7fc27f;font-size:11px;font-family:monospace;'
         + 'border-bottom:1px solid #2a3a2a;';
       notice.innerHTML = '⚠ Monaco offline — простой редактор активен. '
-        + 'Для полного Monaco: запусти <code>vm\\bundle_monaco.ps1</code>';
+        + 'Для полного Monaco: запусти <code>vm/bundle_monaco.ps1</code>';
       var ta = document.createElement('textarea');
       ta.id = 'editor-textarea';
       ta.spellcheck = false;
@@ -831,11 +831,11 @@ function browseUrl() {
   if (!url) { toast('Введите URL'); return; }
   if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
   document.getElementById('vurl-input').value = url;
-  // Local URLs (localhost / 127.0.0.1) load directly in iframe.
-  // External URLs are routed through the server screenshot endpoint because
+  // Local URLs (localhost, 127.0.0.1, ::1, 0.0.0.0) load directly in iframe.
+  // All other external URLs are routed through the server screenshot endpoint because
   // the vast majority of real websites send X-Frame-Options / CSP headers
   // that block direct iframe embedding and produce a blank white page.
-  var isLocal = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i.test(url);
+  var isLocal = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0)(:\d+)?/i.test(url);
   if (isLocal) {
     var ph  = document.getElementById('preview-placeholder');
     var frm = document.getElementById('preview-frame');
@@ -1093,6 +1093,7 @@ function closePanel() { document.getElementById('panel').classList.remove('open'
 
 // ── Health ────────────────────────────────────────────────────────────────────
 async function loadHealth() {
+  var noOl = document.getElementById('chat-no-ollama');
   try {
     var r = await fetch('/health'); var d = await r.json();
     var vm=d.vm&&d.vm.status==='ok', ol=d.ollama&&d.ollama.status==='ok', bot=d.bot&&d.bot.token_set;
@@ -1102,11 +1103,9 @@ async function loadHealth() {
     set('h-bot', bot? '✓ Токен есть': '✗ Нет токена', bot ? 'ok' : 'warn');
     document.getElementById('sdot').className = ol ? 'ok' : '';
     // Show/hide "Ollama not running" banner in chat view
-    var noOl = document.getElementById('chat-no-ollama');
-    if (noOl) noOl.style.display = ol ? 'none' : '';
+    noOl.style.display = ol ? 'none' : '';
   } catch(e) {
-    var noOl = document.getElementById('chat-no-ollama');
-    if (noOl) noOl.style.display = '';
+    noOl.style.display = '';
   }
 }
 function set(id, html, cls) {
