@@ -208,6 +208,38 @@ if (-not (Test-Path $venvPython)) {
     Write-Host ""
 }
 
+# -- Always ensure Desktop shortcut exists (re-run or fresh machine) ----------
+try {
+    $desktopCheck  = [Environment]::GetFolderPath("Desktop")
+    $shortcutCheck = Join-Path $desktopCheck "Code VM.lnk"
+    if (-not (Test-Path $shortcutCheck)) {
+        $startPs1Lnk = Join-Path $scriptRoot "start.ps1"
+        $psExeLnk    = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
+        if (-not (Test-Path $psExeLnk)) { $psExeLnk = "powershell.exe" }
+        $shellLnk    = New-Object -ComObject WScript.Shell
+        $sc          = $shellLnk.CreateShortcut($shortcutCheck)
+        $sc.TargetPath       = $psExeLnk
+        $sc.Arguments        = "-NoProfile -ExecutionPolicy Bypass -File `"$startPs1Lnk`""
+        $sc.WorkingDirectory = $scriptRoot
+        $sc.Description      = "Launch Code VM - Monaco Editor with Ollama AI"
+        $sc.WindowStyle      = 1
+        $customIcoLnk = Join-Path $scriptRoot "vm\static\code_vm.ico"
+        if (Test-Path $customIcoLnk) {
+            $sc.IconLocation = "$customIcoLnk,0"
+        } else {
+            $icoLibLnk = Join-Path $env:SystemRoot "System32\shell32.dll"
+            $sc.IconLocation = if (Test-Path $icoLibLnk) { "$icoLibLnk,77" } else { "$psExeLnk,0" }
+        }
+        $sc.Save()
+        Write-Host "  [OK] Ярлык 'Code VM' создан на Рабочем столе" -ForegroundColor Green
+        # Also copy bat backup
+        $batBak = Join-Path $scriptRoot 'ЗАПУСТИТЬ.bat'
+        if (Test-Path $batBak) {
+            Copy-Item -Path $batBak -Destination (Join-Path $desktopCheck 'ЗАПУСТИТЬ.bat') -Force -ErrorAction SilentlyContinue
+        }
+    }
+} catch { }
+
 # -- Launch the VM server so browser opens (Normal window so errors are visible) --
 $vmPs1 = Join-Path $scriptRoot "vm.ps1"
 Write-Host "  [-->] Запуск Code VM..." -ForegroundColor Cyan

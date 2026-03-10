@@ -9,744 +9,736 @@
 :root{
   --bg:#0d0d0d;--bg2:#161616;--bg3:#1e1e1e;--bg4:#252525;
   --border:#2a2a2a;--accent:#0e84d4;--accent2:#1aad5a;
-  --text:#e0e0e0;--text2:#999;--danger:#d94040;
-  --panel-w:340px;
+  --text:#e0e0e0;--text2:#888;--danger:#d94040;--warn:#e8a020;
+  --panel-w:310px;
 }
-html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-family:"Segoe UI",system-ui,sans-serif}
+html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);
+  font-family:"Segoe UI",system-ui,sans-serif}
 
-/* ── Side panel ─────────────────────────────────────────────────────────── */
-#panel{position:fixed;top:0;left:0;height:100%;width:var(--panel-w);background:var(--bg2);border-right:1px solid var(--border);transform:translateX(calc(-1 * var(--panel-w)));transition:transform .25s ease;z-index:100;display:flex;flex-direction:column;overflow:hidden}
+/* ── Side panel ── */
+#panel{position:fixed;top:0;left:0;height:100%;width:var(--panel-w);
+  background:var(--bg2);border-right:1px solid var(--border);
+  transform:translateX(calc(-1 * var(--panel-w)));transition:transform .25s;
+  z-index:200;display:flex;flex-direction:column}
 #panel.open{transform:translateX(0)}
-#panel-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:99;display:none}
+#panel-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:199;display:none}
 #panel-overlay.show{display:block}
-.panel-header{display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--border);flex-shrink:0}
-.panel-header h2{font-size:14px;font-weight:700;color:var(--accent);letter-spacing:.5px;flex:1}
-#btn-close-panel{background:none;border:none;color:var(--text2);cursor:pointer;font-size:18px;padding:2px 6px}
-#btn-close-panel:hover{color:var(--text)}
-.panel-scroll{flex:1;overflow-y:auto;padding:12px 16px;display:flex;flex-direction:column;gap:16px}
-.panel-scroll::-webkit-scrollbar{width:4px}
-.panel-scroll::-webkit-scrollbar-thumb{background:#333;border-radius:2px}
-.p-label{font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px}
-.p-row{display:flex;gap:8px;align-items:center;margin-bottom:6px}
-select,input[type=text],textarea{width:100%;padding:7px 10px;background:var(--bg4);color:var(--text);border:1px solid var(--border);border-radius:6px;font-size:13px;outline:none;transition:border-color .15s}
-select:focus,input[type=text]:focus,textarea:focus{border-color:var(--accent)}
-textarea{resize:vertical;min-height:80px}
-.pbtn{padding:7px 14px;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;transition:filter .15s;white-space:nowrap}
-.pbtn:hover{filter:brightness(1.15)}
-.pbtn-primary{background:var(--accent);color:#fff}
-.pbtn-success{background:var(--accent2);color:#fff}
-.pbtn-danger{background:var(--danger);color:#fff}
-.pbtn-muted{background:var(--bg4);color:var(--text);border:1px solid var(--border)}
-.pbtn-full{width:100%;margin-bottom:6px}
-#health-box{background:var(--bg3);border-radius:6px;padding:10px;font-size:12px;display:flex;flex-direction:column;gap:5px}
-.h-row{display:flex;justify-content:space-between;align-items:center}
-.h-key{color:var(--text2)}
-.h-val{font-weight:600}
-.ok{color:var(--accent2)}.fail{color:var(--danger)}.warn{color:#e8a020}
-#workshop-log{background:var(--bg3);border-radius:6px;padding:8px;font-size:11px;font-family:monospace;color:var(--text2);max-height:120px;overflow-y:auto;white-space:pre-wrap;word-break:break-all}
+.ph{display:flex;align-items:center;gap:10px;padding:12px 14px;
+  border-bottom:1px solid var(--border);flex-shrink:0}
+.ph h2{font-size:13px;font-weight:700;color:var(--accent);flex:1}
+.ph button{background:none;border:none;color:var(--text2);cursor:pointer;font-size:17px;padding:2px 5px}
+.ph button:hover{color:var(--text)}
+.ps{flex:1;overflow-y:auto;padding:10px 14px;display:flex;flex-direction:column;gap:12px}
+.ps::-webkit-scrollbar{width:3px}
+.ps::-webkit-scrollbar-thumb{background:#333;border-radius:2px}
+.pl{font-size:10px;font-weight:700;color:var(--text2);text-transform:uppercase;
+  letter-spacing:.7px;margin-bottom:4px}
+select,input[type=text],input[type=password],textarea{
+  width:100%;padding:6px 9px;background:var(--bg4);color:var(--text);
+  border:1px solid var(--border);border-radius:5px;font-size:12px;outline:none;
+  transition:border-color .15s}
+select:focus,input:focus,textarea:focus{border-color:var(--accent)}
+textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
+.pb{padding:6px 12px;border:none;border-radius:5px;cursor:pointer;
+  font-size:12px;font-weight:600;transition:filter .15s;white-space:nowrap}
+.pb:hover{filter:brightness(1.15)}
+.pb-p{background:var(--accent);color:#fff}
+.pb-s{background:var(--accent2);color:#fff}
+.pb-d{background:var(--danger);color:#fff}
+.pb-m{background:var(--bg4);color:var(--text);border:1px solid var(--border)}
+.pb-f{width:100%;margin-bottom:4px;text-align:center}
+.pr{display:flex;gap:6px;align-items:center;margin-bottom:4px}
+#hbox{background:var(--bg3);border-radius:5px;padding:8px;font-size:11px;
+  display:flex;flex-direction:column;gap:4px}
+.hr{display:flex;justify-content:space-between;align-items:center}
+.hk{color:var(--text2)}.hv{font-weight:600}
+.ok{color:var(--accent2)}.fail{color:var(--danger)}.warn{color:var(--warn)}
+#wlog{background:var(--bg3);border-radius:4px;padding:6px 8px;font-size:10px;
+  font-family:monospace;color:var(--text2);max-height:90px;overflow-y:auto;
+  white-space:pre-wrap;margin-top:4px}
 
-/* ── Main app layout ─────────────────────────────────────────────────────── */
+/* ── Topbar ── */
 #app{height:100%;display:flex;flex-direction:column}
-#topbar{display:flex;align-items:center;gap:10px;padding:8px 14px;background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0}
-#btn-menu{background:none;border:none;color:var(--text2);cursor:pointer;font-size:20px;padding:4px 8px;line-height:1}
+#topbar{display:flex;align-items:center;gap:8px;padding:6px 12px;
+  background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0}
+#btn-menu{background:none;border:none;color:var(--text2);cursor:pointer;
+  font-size:18px;padding:3px 7px;line-height:1}
 #btn-menu:hover{color:var(--text)}
-#topbar-title{font-size:14px;font-weight:700;color:var(--accent);flex:1}
-#model-badge{font-size:11px;background:var(--bg4);border:1px solid var(--border);color:var(--text2);padding:3px 10px;border-radius:12px;cursor:default;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-#status-dot{width:8px;height:8px;border-radius:50%;background:var(--danger);flex-shrink:0}
-#status-dot.ok{background:var(--accent2)}
+#topbar-title{font-size:14px;font-weight:700;color:var(--accent)}
+.tb-sep{flex:1}
+#model-badge{font-size:11px;background:var(--bg4);border:1px solid var(--border);
+  color:var(--text2);padding:3px 9px;border-radius:11px;cursor:default;
+  max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#sdot{width:8px;height:8px;border-radius:50%;background:var(--danger);flex-shrink:0}
+#sdot.ok{background:var(--accent2)}
+.tv-btn{background:none;border:1px solid var(--border);color:var(--text2);
+  cursor:pointer;font-size:11px;padding:4px 9px;border-radius:4px;
+  transition:background .15s,color .15s}
+.tv-btn.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.tv-btn:hover:not(.on){background:var(--bg4);color:var(--text)}
 
-/* ── Chat area ──────────────────────────────────────────────────────────── */
-#chat-area{flex:1;overflow-y:auto;padding:16px 20px;display:flex;flex-direction:column;gap:12px}
-#chat-area::-webkit-scrollbar{width:6px}
-#chat-area::-webkit-scrollbar-thumb{background:#2a2a2a;border-radius:3px}
-.msg{max-width:100%;animation:fadein .2s ease}
-@keyframes fadein{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
-.msg-user{align-self:flex-end;background:var(--accent);color:#fff;padding:10px 14px;border-radius:12px 12px 2px 12px;font-size:14px;max-width:70%}
-.msg-bot{align-self:flex-start;background:var(--bg3);border:1px solid var(--border);border-radius:2px 12px 12px 12px;padding:12px 16px;font-size:14px;line-height:1.6;width:100%;max-width:100%}
-.msg-bot img{max-width:100%;border-radius:6px;margin:6px 0}
-.msg-bot pre{background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:10px;overflow-x:auto;font-size:12px;margin:8px 0}
-.msg-bot code{background:var(--bg);padding:1px 5px;border-radius:3px;font-size:12px}
-.msg-bot a{color:var(--accent);text-decoration:underline}
-.msg-bot table{border-collapse:collapse;width:100%;margin:8px 0}
-.msg-bot th,.msg-bot td{border:1px solid var(--border);padding:6px 10px;font-size:13px}
-.msg-bot th{background:var(--bg4)}
-.msg-html-frame{width:100%;border-radius:6px;overflow:hidden;border:1px solid var(--border);margin-top:6px;background:#fff}
-.msg-html-frame iframe{width:100%;border:none;min-height:300px}
+/* ── Main split ── */
+#main{flex:1;display:flex;overflow:hidden;min-height:0}
 
-/* streaming cursor blink */
-.streaming-cursor::after{content:'▌';animation:blink .7s step-end infinite;color:var(--accent)}
-@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+/* ── Editor pane ── */
+#epane{display:flex;flex-direction:column;flex:1;min-width:0}
+#etb{display:flex;align-items:center;gap:6px;padding:4px 8px;
+  background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0;flex-wrap:wrap}
+#etb select{width:auto;padding:4px 7px;font-size:11px}
+.ei{background:none;border:1px solid var(--border);color:var(--text);
+  cursor:pointer;font-size:11px;padding:4px 9px;border-radius:4px;
+  transition:background .15s}
+.ei:hover{background:var(--bg4)}
+.ei.run{border-color:var(--accent2);color:var(--accent2)}
+.ei.run:hover{background:var(--accent2);color:#fff}
+#monaco-box{flex:1;min-height:0}
+#outbar{background:var(--bg3);border-top:1px solid var(--border);
+  font-size:11px;font-family:monospace;max-height:140px;overflow-y:auto;
+  flex-shrink:0;display:none}
+#outbar.show{display:block}
+.out-hdr{display:flex;align-items:center;gap:6px;padding:3px 10px;
+  background:var(--bg2);border-bottom:1px solid var(--border)}
+.out-hdr span{font-size:10px;color:var(--text2);font-weight:700;flex:1}
+.out-hdr button{background:none;border:none;color:var(--text2);cursor:pointer;font-size:13px}
+#outc{padding:6px 10px;white-space:pre-wrap;word-break:break-all}
+.o-ok{color:var(--accent2)}.o-err{color:var(--danger)}
 
-.typing{display:flex;gap:5px;align-items:center;padding:10px 14px}
-.typing span{width:7px;height:7px;border-radius:50%;background:var(--text2);animation:bounce .9s infinite}
-.typing span:nth-child(2){animation-delay:.15s}
-.typing span:nth-child(3){animation-delay:.3s}
-@keyframes bounce{0%,80%,100%{transform:none}40%{transform:translateY(-6px)}}
-#chat-area.dragover{outline:3px dashed var(--accent);outline-offset:-4px;background:color-mix(in srgb,var(--accent) 6%,transparent)}
+/* ── Resize handle ── */
+#rh{width:4px;background:var(--border);cursor:col-resize;flex-shrink:0;
+  transition:background .15s}
+#rh:hover{background:var(--accent)}
 
-/* ── Web preview overlay ─────────────────────────────────────────────────── */
-#web-preview{position:fixed;inset:0;z-index:200;background:var(--bg);display:none;flex-direction:column}
-#web-preview.show{display:flex}
-#web-preview-bar{display:flex;align-items:center;gap:10px;padding:8px 14px;background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0}
-#web-preview-url{flex:1;font-size:12px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-#btn-close-web{background:var(--danger);border:none;color:#fff;padding:5px 12px;border-radius:4px;cursor:pointer;font-size:12px}
-#web-preview iframe{flex:1;border:none;width:100%}
+/* ── Preview pane (ВИЗОР) ── */
+#vpane{display:flex;flex-direction:column;width:48%;min-width:240px;
+  border-left:1px solid var(--border)}
+#vtb{display:flex;align-items:center;gap:6px;padding:4px 8px;
+  background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0}
+#vtb span{font-size:11px;font-weight:700;color:var(--text2);flex:1}
+#preview-frame{flex:1;border:none;background:#fff}
+#preview-placeholder{flex:1;display:flex;align-items:center;justify-content:center;
+  flex-direction:column;gap:10px;color:var(--text2);font-size:13px;
+  background:var(--bg3);text-align:center;padding:20px}
+#preview-placeholder .big{font-size:40px}
 
-/* ── Input bar ──────────────────────────────────────────────────────────── */
-#input-bar{padding:12px 16px;background:var(--bg2);border-top:1px solid var(--border);flex-shrink:0}
-.input-wrap{display:flex;align-items:flex-end;gap:8px;background:var(--bg3);border:1px solid var(--border);border-radius:12px;padding:6px 6px 6px 14px;transition:border-color .15s}
-.input-wrap:focus-within{border-color:var(--accent)}
-#user-input{flex:1;background:none;border:none;color:var(--text);font-size:14px;resize:none;outline:none;min-height:22px;max-height:150px;line-height:1.5;font-family:inherit;overflow-y:auto}
-#user-input::placeholder{color:var(--text2)}
-#btn-send{background:var(--accent);border:none;color:#fff;width:36px;height:36px;border-radius:8px;cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:filter .15s}
-#btn-send:hover{filter:brightness(1.15)}
-#btn-send:disabled{background:#333;cursor:not-allowed;filter:none}
-#input-hint{font-size:11px;color:var(--text2);margin-top:5px;padding:0 4px}
+/* ── Prompt bar (HTML generator) ── */
+#pbar{padding:8px 12px;background:var(--bg2);border-top:1px solid var(--border);
+  flex-shrink:0;display:flex;flex-direction:column;gap:5px}
+.pbar-row{display:flex;gap:8px;align-items:flex-end}
+#gen-input{flex:1;background:var(--bg3);border:1px solid var(--border);
+  color:var(--text);padding:8px 12px;border-radius:8px;font-size:13px;
+  outline:none;resize:none;min-height:36px;max-height:90px;font-family:inherit;
+  line-height:1.4;overflow-y:auto;transition:border-color .15s}
+#gen-input:focus{border-color:var(--accent)}
+#gen-input::placeholder{color:var(--text2)}
+#btn-gen{background:var(--accent);border:none;color:#fff;padding:8px 16px;
+  border-radius:8px;cursor:pointer;font-size:13px;font-weight:700;
+  white-space:nowrap;transition:filter .15s;flex-shrink:0}
+#btn-gen:hover{filter:brightness(1.15)}
+#btn-gen:disabled{background:#333;cursor:not-allowed;filter:none}
+#gen-status{font-size:11px;color:var(--text2);min-height:16px}
+.gs-ok{color:var(--accent2)}.gs-err{color:var(--danger)}
+
+/* ── Toast ── */
+#toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);
+  background:#2a2a2a;color:#fff;padding:7px 16px;border-radius:7px;
+  font-size:12px;z-index:999;pointer-events:none;
+  transition:opacity .3s;opacity:0;border:1px solid var(--border)}
 </style>
 </head>
 <body>
 
-<!-- Side panel overlay -->
 <div id="panel-overlay" onclick="closePanel()"></div>
-
-<!-- Side panel (slide-in) -->
 <div id="panel">
-  <div class="panel-header">
-    <h2>&#9881; DRGR VM</h2>
-    <button id="btn-close-panel" onclick="closePanel()">&#10005;</button>
+  <div class="ph">
+    <h2>⚙ DRGR VM</h2>
+    <button onclick="closePanel()">✕</button>
   </div>
-  <div class="panel-scroll">
+  <div class="ps">
+
     <!-- Status -->
     <div>
-      <div class="p-label">&#128312; Статус</div>
-      <div id="health-box">
-        <div class="h-row"><span class="h-key">VM</span><span id="h-vm" class="h-val">&#8212;</span></div>
-        <div class="h-row"><span class="h-key">Ollama</span><span id="h-ollama" class="h-val">&#8212;</span></div>
-        <div class="h-row"><span class="h-key">URL</span><span id="h-url" class="h-val" style="font-size:10px">&#8212;</span></div>
-        <div class="h-row"><span class="h-key">&#128241; TG Bot</span><span id="h-bot" class="h-val">&#8212;</span></div>
+      <div class="pl">🔸 Статус</div>
+      <div id="hbox">
+        <div class="hr"><span class="hk">VM</span><span id="h-vm" class="hv">—</span></div>
+        <div class="hr"><span class="hk">Ollama</span><span id="h-ol" class="hv">—</span></div>
+        <div class="hr"><span class="hk">URL</span><span id="h-url" class="hv" style="font-size:9px">—</span></div>
+        <div class="hr"><span class="hk">📱 TG Bot</span><span id="h-bot" class="hv">—</span></div>
       </div>
-      <div style="margin-top:8px">
-        <button class="pbtn pbtn-muted pbtn-full" onclick="loadHealth()">&#8635; Обновить</button>
+      <div style="margin-top:5px">
+        <button class="pb pb-m pb-f" onclick="loadHealth()">↻ Обновить</button>
       </div>
     </div>
+
+    <!-- Bot token -->
+    <div>
+      <div class="pl">📱 Telegram Bot Token</div>
+      <input type="password" id="tok-inp" placeholder="1234567890:ABC..." autocomplete="off"/>
+      <div class="pr" style="margin-top:4px">
+        <button class="pb pb-s" style="flex:1" onclick="saveBotToken()">💾 Сохранить токен</button>
+        <button class="pb pb-m" title="Показать/скрыть" onclick="var i=document.getElementById('tok-inp');i.type=i.type==='password'?'text':'password'">👁</button>
+      </div>
+      <div style="font-size:10px;color:var(--text2)">Получить у @BotFather в Telegram</div>
+    </div>
+
     <!-- Model -->
     <div>
-      <div class="p-label">&#129302; Модель</div>
-      <div class="p-row">
-        <select id="sel-model" onchange="updateModelBadge()"><option value="">загрузка...</option></select>
-        <button class="pbtn pbtn-muted" onclick="loadModels()">&#8635;</button>
+      <div class="pl">🤖 Модель Qwen / Ollama</div>
+      <div class="pr">
+        <select id="sel-model" onchange="curModel=this.value;updateBadge()"><option value="">загрузка...</option></select>
+        <button class="pb pb-m" onclick="loadModels()">↻</button>
       </div>
     </div>
-    <!-- Mode -->
+
+    <!-- System prompt -->
     <div>
-      <div class="p-label">&#128196; Режим</div>
-      <select id="sel-mode">
-        <option value="chat">&#128172; Чат / ИИ</option>
-        <option value="code">&#128187; Генерация кода</option>
-        <option value="html">&#127760; Генерация HTML</option>
-        <option value="project">&#127959; Генерация проекта</option>
-        <option value="exec">&#9654; Выполнить код</option>
-      </select>
+      <div class="pl">📝 Системный промпт</div>
+      <textarea id="ta-sys" rows="4" placeholder="Инструкции для ИИ (Qwen HTML генератор)..."></textarea>
+      <button class="pb pb-s pb-f" style="margin-top:4px" onclick="saveSystemPrompt()">💾 Сохранить</button>
     </div>
-    <!-- Instructions -->
-    <div>
-      <div class="p-label">&#128221; Инструкции</div>
-      <textarea id="ta-instructions" rows="4" placeholder="Загрузка..."></textarea>
-      <button class="pbtn pbtn-success pbtn-full" style="margin-top:6px" onclick="saveInstructions()">&#128190; Сохранить</button>
-    </div>
+
     <!-- Workshop -->
     <div>
-      <div class="p-label">&#128736; Мастерская</div>
-      <div class="p-row">
-        <input type="text" id="wk-model-name" placeholder="llama3:8b" style="flex:1"/>
-        <button class="pbtn pbtn-primary" onclick="pullModel()">&#8595; Pull</button>
+      <div class="pl">🛠 Управление моделями</div>
+      <div class="pr">
+        <input type="text" id="wk-pull" placeholder="qwen2.5-coder:7b" style="flex:1"/>
+        <button class="pb pb-p" onclick="pullModel()">↓ Pull</button>
       </div>
-      <div class="p-row">
-        <input type="text" id="wk-del-name" placeholder="model:tag" style="flex:1"/>
-        <button class="pbtn pbtn-danger" onclick="deleteModel()">&#10005; Del</button>
+      <div class="pr">
+        <input type="text" id="wk-del" placeholder="model:tag" style="flex:1"/>
+        <button class="pb pb-d" onclick="deleteModel()">✕ Del</button>
       </div>
-      <div id="workshop-log">Лог операций...</div>
+      <div id="wlog">Лог операций...</div>
     </div>
-    <div>
-      <button class="pbtn pbtn-muted pbtn-full" onclick="retrain()">&#128260; Retrain</button>
-    </div>
-    <!-- Projects -->
-    <div>
-      <div class="p-label">&#127959; Проекты</div>
-      <button class="pbtn pbtn-muted pbtn-full" onclick="loadProjectsList()">&#128196; Список проектов</button>
-      <div id="projects-list" style="margin-top:6px;font-size:12px;color:var(--text2)"></div>
-    </div>
-    <div>
-      <button class="pbtn pbtn-danger pbtn-full" onclick="clearChat()">&#128465; Очистить чат</button>
-    </div>
+
+    <button class="pb pb-m pb-f" onclick="retrain()">🔄 Retrain (самообучение)</button>
+    <button class="pb pb-d pb-f" onclick="clearOutput()">🗑 Очистить вывод</button>
   </div>
 </div>
 
-<!-- Full-screen web preview -->
-<div id="web-preview">
-  <div id="web-preview-bar">
-    <span id="web-preview-url"></span>
-    <button id="btn-close-web" onclick="closeWebPreview()">&#10005; Закрыть</button>
-  </div>
-  <iframe id="web-preview-iframe" sandbox="allow-scripts allow-forms allow-popups"></iframe>
-</div>
-
-<!-- Main app -->
 <div id="app">
   <div id="topbar">
-    <button id="btn-menu" onclick="openPanel()">&#9776;</button>
+    <button id="btn-menu" onclick="openPanel()">☰</button>
     <span id="topbar-title">DRGR VM</span>
-    <span id="model-badge">загрузка...</span>
-    <div id="status-dot" title="Ollama"></div>
+    &nbsp;
+    <button class="tv-btn on" id="tv-both" onclick="setView('both')">⬜ Редактор + Визор</button>
+    <button class="tv-btn" id="tv-editor" onclick="setView('editor')">📝 Редактор</button>
+    <button class="tv-btn" id="tv-preview" onclick="setView('preview')">🖥 Визор</button>
+    <span class="tb-sep"></span>
+    <span id="model-badge">нет модели</span>
+    <div id="sdot" title="Ollama"></div>
   </div>
 
-  <!-- Chat / answer area -->
-  <div id="chat-area">
-    <div class="msg msg-bot">
-      &#128075; Привет! Введите вопрос или команду.<br><br>
-      <b>Возможности:</b><br>
-      &#8226; Любой вопрос &rarr; ИИ отвечает (потоковый вывод)<br>
-      &#8226; <code>открой https://site.ru</code> &rarr; открывает сайт во встроенном браузере<br>
-      &#8226; <code>сгенерируй html...</code> &rarr; живой HTML-превью<br>
-      &#8226; <b>Режим «Генерация проекта»</b> &rarr; создаёт полный веб-проект и сохраняет файлы<br>
-      &#8226; Перетащите файл/картинку &rarr; анализ ИИ<br>
-      &#8226; <b>Enter</b> &mdash; отправить, <b>Shift+Enter</b> &mdash; новая строка<br>
-      &#8226; <b>&#9776;</b> &mdash; настройки, модели, статус
+  <div id="main">
+    <!-- Monaco Editor pane -->
+    <div id="epane">
+      <div id="etb">
+        <select id="lang-sel" onchange="changeLang(this.value)" title="Язык">
+          <option value="html">🌐 HTML</option>
+          <option value="javascript">�� JavaScript</option>
+          <option value="css">🎨 CSS</option>
+          <option value="python">🐍 Python</option>
+          <option value="typescript">🔷 TypeScript</option>
+          <option value="json">📋 JSON</option>
+          <option value="markdown">📄 Markdown</option>
+          <option value="sql">🗄 SQL</option>
+          <option value="plaintext">📝 Текст</option>
+        </select>
+        <button class="ei run" onclick="runCode()" title="Запустить (F5)">▶ Запустить</button>
+        <button class="ei" onclick="previewFromEditor()" title="Обновить визор">🖥 Обновить визор</button>
+        <button class="ei" onclick="copyEditorCode()" title="Копировать весь код">📋 Копировать</button>
+        <button class="ei" onclick="clearEditor()" title="Очистить">🗑</button>
+      </div>
+      <div id="monaco-box"></div>
+      <div id="outbar">
+        <div class="out-hdr">
+          <span>ВЫВОД</span>
+          <button onclick="document.getElementById('outbar').classList.remove('show')">✕</button>
+        </div>
+        <div id="outc"></div>
+      </div>
+    </div>
+
+    <!-- Resize handle -->
+    <div id="rh" title="Тяните для изменения размера"></div>
+
+    <!-- Preview pane (ВИЗОР) -->
+    <div id="vpane">
+      <div id="vtb">
+        <span>🖥 ВИЗОР — Живой предпросмотр HTML</span>
+        <button class="ei" onclick="previewFromEditor()" title="Обновить из редактора">↻ Обновить</button>
+        <button class="ei" onclick="openFullscreen()" title="Открыть на весь экран">⛶</button>
+      </div>
+      <div id="preview-placeholder">
+        <div class="big">🖥</div>
+        <div>Здесь будет живой предпросмотр HTML</div>
+        <div style="font-size:11px">Введите запрос внизу и нажмите <b>Генерировать</b><br>или откройте HTML-файл в редакторе и нажмите <b>Обновить визор</b></div>
+      </div>
+      <iframe id="preview-frame" style="display:none"
+        sandbox="allow-scripts allow-forms allow-modals allow-popups allow-same-origin"></iframe>
     </div>
   </div>
 
-  <!-- Input bar -->
-  <div id="input-bar">
-    <div class="input-wrap">
-      <textarea id="user-input" rows="1"
-        placeholder="Сообщение... (Enter — отправить; режим «Проект» — описание задачи)"
-        oninput="autoResize(this)"
-        onkeydown="onInputKey(event)"></textarea>
-      <button id="btn-send" onclick="sendMessage()">&#10148;</button>
+  <!-- Qwen HTML Generator prompt bar -->
+  <div id="pbar">
+    <div class="pbar-row">
+      <textarea id="gen-input" placeholder="Опишите HTML страницу: лендинг, форма, игра, дашборд... (Enter — генерировать, Shift+Enter — новая строка)"
+        rows="1"
+        onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();generateHtml()}"
+        oninput="autoResize(this)"></textarea>
+      <button id="btn-gen" onclick="generateHtml()">▶ Генерировать HTML</button>
     </div>
-    <div id="input-hint">Enter &mdash; отправить &nbsp;|&nbsp; Shift+Enter &mdash; новая строка &nbsp;|&nbsp; &#128196; перетащите файл в чат</div>
+    <div id="gen-status"></div>
   </div>
+</div>
+
+<div id="toast"></div>
+
+<!-- Fullscreen overlay for preview -->
+<div id="fs-overlay" style="display:none;position:fixed;inset:0;z-index:300;background:#fff;flex-direction:column">
+  <div style="display:flex;align-items:center;gap:8px;padding:6px 12px;background:#1a1a1a;border-bottom:1px solid #333;flex-shrink:0">
+    <span style="font-size:12px;color:#888;flex:1">DRGR VM — Полноэкранный предпросмотр</span>
+    <button onclick="closeFullscreen()" style="background:#d94040;border:none;color:#fff;padding:4px 12px;border-radius:4px;cursor:pointer;font-size:12px">✕ Закрыть</button>
+  </div>
+  <iframe id="fs-frame" style="flex:1;border:none;width:100%"
+    sandbox="allow-scripts allow-forms allow-modals allow-popups allow-same-origin"></iframe>
 </div>
 
 <script>
-// ── State ──────────────────────────────────────────────────────────────────
-var currentModel = '';
-var busy = false;
+// ── Globals ─────────────────────────────────────────────────────────────────
+var editor = null;
+var curModel = '';
+var genBusy = false;
+var MONACO_LOCAL = '/static/vendor/monaco/vs';
+var MONACO_CDN   = 'https://cdn.jsdelivr.net/npm/monaco-editor@0.44.0/min/vs';
 
-// ── Panel ──────────────────────────────────────────────────────────────────
-function openPanel(){
-  document.getElementById('panel').classList.add('open');
-  document.getElementById('panel-overlay').classList.add('show');
-  loadHealth(); loadModels(); loadInstructions();
-}
-function closePanel(){
-  document.getElementById('panel').classList.remove('open');
-  document.getElementById('panel-overlay').classList.remove('show');
-}
-
-// ── Input helpers ──────────────────────────────────────────────────────────
-function autoResize(el){
-  el.style.height = 'auto';
-  el.style.height = Math.min(el.scrollHeight, 150) + 'px';
-}
-function onInputKey(e){
-  if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); sendMessage(); }
-}
-
-// ── Scroll ─────────────────────────────────────────────────────────────────
-function scrollBottom(){
-  var c = document.getElementById('chat-area');
-  c.scrollTop = c.scrollHeight;
-}
-
-// ── Message builders ───────────────────────────────────────────────────────
-function addUserMsg(text){
-  var d = document.createElement('div');
-  d.className = 'msg msg-user';
-  d.textContent = text;
-  document.getElementById('chat-area').appendChild(d);
-  scrollBottom();
-}
-
-function addTyping(){
-  var d = document.createElement('div');
-  d.className = 'msg msg-bot typing';
-  d.id = 'typing-indicator';
-  d.innerHTML = '<span></span><span></span><span></span>';
-  document.getElementById('chat-area').appendChild(d);
-  scrollBottom();
-  return d;
-}
-function removeTyping(){
-  var t = document.getElementById('typing-indicator');
-  if(t) t.remove();
-}
-
-// Create an empty streaming bot bubble and return it
-function addStreamingBubble(){
-  removeTyping();
-  var d = document.createElement('div');
-  d.className = 'msg msg-bot streaming-cursor';
-  document.getElementById('chat-area').appendChild(d);
-  scrollBottom();
-  return d;
-}
-
-function _esc(s){
-  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-          .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
-}
-
-function formatText(t){
-  var blocks = [];
-  t = t.replace(/```[\w]*\n?([\s\S]*?)```/g, function(_, c){
-    var i = blocks.length; blocks.push(c); return '\x00CODE' + i + '\x00';
+// ── View switching ───────────────────────────────────────────────────────────
+function setView(v) {
+  var ep = document.getElementById('epane');
+  var rh = document.getElementById('rh');
+  var vp = document.getElementById('vpane');
+  ['both','editor','preview'].forEach(function(x){
+    document.getElementById('tv-'+x).classList.toggle('on', x===v);
   });
-  t = _esc(t);
-  t = t.replace(/\x00CODE(\d+)\x00/g, function(_, i){
-    return '<pre><code>' + _esc(blocks[+i]) + '</code></pre>';
-  });
-  t = t.replace(/`([^`]+)`/g, '<code>$1</code>');
-  t = t.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
-  t = t.replace(/\*(.+?)\*/g, '<em>$1</em>');
-  t = t.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g,
-    '<a href="$2" target="_blank">$1</a>');
-  t = t.replace(/(https?:\/\/[^\s<>"]+)/g, function(url){
-    var safe = _esc(url);
-    return '<a href="' + safe + '" target="_blank" data-u="' + safe +
-           '" onclick="openWebPreview(this.dataset.u);return false;">' + safe + '</a>';
-  });
-  t = t.replace(/\n/g, '<br>');
-  return t;
+  if (v === 'both')    { ep.style.display='flex'; rh.style.display='block'; vp.style.display='flex'; }
+  if (v === 'editor')  { ep.style.display='flex'; rh.style.display='none';  vp.style.display='none'; }
+  if (v === 'preview') { ep.style.display='none'; rh.style.display='none';  vp.style.display='flex'; }
+  if (editor) editor.layout();
 }
 
-function addBotMsg(content, isHtml){
-  removeTyping();
-  var d = document.createElement('div');
-  d.className = 'msg msg-bot';
-  if(isHtml === 'raw'){
-    d.innerHTML = content;
-  } else if(isHtml){
-    var wrap = document.createElement('div');
-    wrap.className = 'msg-html-frame';
-    var fr = document.createElement('iframe');
-    fr.sandbox = 'allow-scripts';
-    var blob = new Blob([content], {type:'text/html'});
-    fr.src = URL.createObjectURL(blob);
-    fr.onload = function(){ try{ fr.style.height = fr.contentDocument.body.scrollHeight + 20 + 'px'; }catch{} };
-    wrap.appendChild(fr);
-    d.appendChild(wrap);
-    var btn = document.createElement('button');
-    btn.className = 'pbtn pbtn-muted';
-    btn.style = 'margin-top:8px;font-size:11px;padding:4px 10px';
-    btn.textContent = 'Копировать HTML';
-    btn.onclick = function(){ navigator.clipboard.writeText(content); };
-    d.appendChild(btn);
-  } else {
-    d.innerHTML = formatText(content);
+// ── Resize handle ────────────────────────────────────────────────────────────
+(function(){
+  var h = document.getElementById('rh'), drag=false, sx=0, sw=0;
+  h.addEventListener('mousedown', function(e){
+    drag=true; sx=e.clientX;
+    sw=document.getElementById('vpane').offsetWidth;
+    document.body.style.cursor='col-resize';
+    document.body.style.userSelect='none';
+  });
+  document.addEventListener('mousemove', function(e){
+    if(!drag) return;
+    var vp=document.getElementById('vpane');
+    vp.style.width = Math.max(200, Math.min(window.innerWidth*0.75, sw+(sx-e.clientX))) + 'px';
+    if(editor) editor.layout();
+  });
+  document.addEventListener('mouseup', function(){
+    if(drag){ drag=false; document.body.style.cursor=''; document.body.style.userSelect=''; }
+  });
+})();
+
+// ── Monaco loader ────────────────────────────────────────────────────────────
+function initMonaco() {
+  var container = document.getElementById('monaco-box');
+  var bases = [MONACO_LOCAL, MONACO_CDN];
+  var idx = 0;
+  function tryNext() {
+    if (idx >= bases.length) {
+      container.innerHTML = '<div style="padding:20px;color:#888;font-size:13px">'
+        + '⚠ Monaco Editor недоступен.<br>Запустите <code>vm\\bundle_monaco.ps1</code> '
+        + 'или проверьте подключение к интернету.</div>';
+      return;
+    }
+    var base = bases[idx++];
+    var s = document.createElement('script');
+    s.src = base + '/loader.js';
+    s.onload = function() {
+      try {
+        require.config({ paths: { vs: base } });
+        require(['vs/editor/editor.main'], function() {
+          if (typeof monaco !== 'undefined') createEditor(container);
+          else tryNext();
+        });
+      } catch(e) { tryNext(); }
+    };
+    s.onerror = tryNext;
+    document.head.appendChild(s);
   }
-  document.getElementById('chat-area').appendChild(d);
-  scrollBottom();
+  tryNext();
 }
 
-function addErrMsg(msg){
-  removeTyping();
-  var d = document.createElement('div');
-  d.className = 'msg msg-bot';
-  d.innerHTML = '<span style="color:var(--danger)">&#9888; ' + msg + '</span>';
-  document.getElementById('chat-area').appendChild(d);
-  scrollBottom();
+function createEditor(container) {
+  editor = monaco.editor.create(container, {
+    value: [
+      '<!DOCTYPE html>',
+      '<html lang="ru">',
+      '<head>',
+      '  <meta charset="UTF-8"/>',
+      '  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>',
+      '  <title>DRGR VM</title>',
+      '  <style>',
+      '    body { font-family: sans-serif; background: #0d0d0d; color: #e0e0e0;',
+      '           display: flex; align-items: center; justify-content: center;',
+      '           height: 100vh; margin: 0; }',
+      '    h1 { color: #0e84d4; }',
+      '  </style>',
+      '</head>',
+      '<body>',
+      '  <h1>👋 DRGR VM готов!</h1>',
+      '  <p>Введите запрос внизу и нажмите <b>Генерировать HTML</b></p>',
+      '</body>',
+      '</html>'
+    ].join('\n'),
+    language: 'html',
+    theme: 'vs-dark',
+    fontSize: 14,
+    minimap: { enabled: false },
+    wordWrap: 'on',
+    scrollBeyondLastLine: false,
+    automaticLayout: true,
+    fontFamily: "'Cascadia Code','Fira Code','Consolas','Courier New',monospace",
+    fontLigatures: true,
+    cursorSmoothCaretAnimation: 'on',
+    smoothScrolling: true,
+    padding: { top: 8 },
+    folding: true,
+    lineNumbers: 'on',
+    renderLineHighlight: 'all'
+  });
+  // F5 = run
+  editor.addCommand(monaco.KeyCode.F5, runCode);
+  editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, runCode);
+  // Auto-preview HTML on change (debounced)
+  var previewTimer = null;
+  editor.onDidChangeModelContent(function(){
+    clearTimeout(previewTimer);
+    previewTimer = setTimeout(function(){
+      if(document.getElementById('lang-sel').value === 'html') livePreview();
+    }, 1200);
+  });
+  // Show initial placeholder preview
+  livePreview();
 }
 
-function clearChat(){ document.getElementById('chat-area').innerHTML = ''; }
-
-// ── Web preview ────────────────────────────────────────────────────────────
-function openWebPreview(url){
-  document.getElementById('web-preview-url').textContent = url;
-  document.getElementById('web-preview-iframe').src = url;
-  document.getElementById('web-preview').classList.add('show');
+// ── Language ─────────────────────────────────────────────────────────────────
+function changeLang(lang) {
+  if (!editor) return;
+  var ml = lang === 'bash' ? 'shell' : lang;
+  monaco.editor.setModelLanguage(editor.getModel(), ml);
 }
-function openHtmlPreview(html){
-  document.getElementById('web-preview-url').textContent = '(локальный HTML-проект)';
-  var iframe = document.getElementById('web-preview-iframe');
-  iframe.src = 'about:blank';
-  iframe.removeAttribute('src');
-  iframe.srcdoc = html;
-  document.getElementById('web-preview').classList.add('show');
+function clearEditor() {
+  if (editor) editor.setValue('');
 }
-function closeWebPreview(){
-  document.getElementById('web-preview').classList.remove('show');
-  var iframe = document.getElementById('web-preview-iframe');
-  iframe.src = 'about:blank';
-  iframe.removeAttribute('srcdoc');
-}
-async function loadProjectsList(){
-  var box = document.getElementById('projects-list');
-  box.textContent = 'Загрузка...';
-  try{
-    var r = await fetch('/project/list'); var d = await r.json();
-    if(!d.projects || !d.projects.length){ box.textContent = 'Проектов ещё нет.'; return; }
-    box.innerHTML = '';
-    d.projects.slice(0,10).forEach(function(p){
-      var row = document.createElement('div');
-      row.style.cssText = 'background:var(--bg3);border-radius:5px;padding:6px 8px;margin-bottom:5px;cursor:pointer';
-      var name = document.createElement('div');
-      name.style.cssText = 'font-weight:700;color:var(--text);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
-      var fullName = p.name || p.id;
-      name.textContent = fullName.slice(0,50) + (fullName.length > 50 ? '…' : '');
-      name.title = fullName;
-      var meta = document.createElement('div');
-      meta.style.cssText = 'font-size:10px;color:var(--text2);margin-top:2px';
-      meta.textContent = (p.created||'').slice(0,16) + ' · ' + (p.files||[]).join(', ');
-      var previewBtn = document.createElement('a');
-      previewBtn.href = '/project/' + p.id + '/index.html';
-      previewBtn.target = '_blank';
-      previewBtn.className = 'pbtn pbtn-primary';
-      previewBtn.style.cssText = 'font-size:10px;padding:3px 8px;margin-top:4px;display:inline-block;text-decoration:none';
-      previewBtn.textContent = '▶ Открыть';
-      row.appendChild(name); row.appendChild(meta); row.appendChild(previewBtn);
-      box.appendChild(row);
-    });
-  } catch(e){ box.textContent = 'Ошибка: ' + e.message; }
-}
-function detectOpenCmd(text){
-  var m = text.match(/(?:открой|open|перейди|go to|зайди на|show)\s+(https?:\/\/\S+)/i);
-  if(m) return m[1];
-  if(/^https?:\/\/\S+$/.test(text.trim())) return text.trim();
-  return null;
+function copyEditorCode() {
+  if (!editor) return;
+  navigator.clipboard.writeText(editor.getValue())
+    .then(function(){ toast('📋 Скопировано'); })
+    .catch(function(){ toast('Ошибка копирования'); });
 }
 
-// ── Model badge ────────────────────────────────────────────────────────────
-function updateModelBadge(){
-  var sel = document.getElementById('sel-model');
-  currentModel = sel.value;
-  document.getElementById('model-badge').textContent = currentModel || 'нет модели';
+// ── Preview (ВИЗОР) ──────────────────────────────────────────────────────────
+function livePreview() {
+  var lang = document.getElementById('lang-sel').value;
+  if (lang !== 'html' || !editor) return;
+  var html = editor.getValue();
+  if (!html.trim()) return;
+  showPreview(html);
 }
 
-// ── setBusy ────────────────────────────────────────────────────────────────
-function setBusy(v){
-  busy = v;
-  document.getElementById('btn-send').disabled = v;
+function previewFromEditor() {
+  if (!editor) return;
+  var html = editor.getValue();
+  if (!html.trim()) { toast('Редактор пуст'); return; }
+  showPreview(html);
 }
 
-// ── Streaming chat ─────────────────────────────────────────────────────────
-function streamChat(prompt){
-  return new Promise(function(resolve){
-    var bubble = addStreamingBubble();
-    var accumulated = '';
-    var done = false; // guard against double-resolve
+function showPreview(html) {
+  var ph  = document.getElementById('preview-placeholder');
+  var frm = document.getElementById('preview-frame');
+  ph.style.display  = 'none';
+  frm.style.display = 'block';
+  frm.srcdoc = html;
+  // If preview pane hidden, switch to both
+  if (document.getElementById('vpane').style.display === 'none') setView('both');
+}
 
-    function finish(){
-      if(done) return; done = true;
-      bubble.classList.remove('streaming-cursor');
-      bubble.innerHTML = formatText(accumulated);
-      scrollBottom();
-      resolve();
-    }
-    function finishErr(msg){
-      if(done) return; done = true;
-      bubble.classList.remove('streaming-cursor');
-      bubble.remove(); // remove empty streaming bubble
-      addErrMsg(msg);
-      resolve();
-    }
+function openFullscreen() {
+  if (!editor) return;
+  var html = editor.getValue();
+  if (!html.trim()) { toast('Редактор пуст'); return; }
+  var ov = document.getElementById('fs-overlay');
+  document.getElementById('fs-frame').srcdoc = html;
+  ov.style.display = 'flex';
+}
+function closeFullscreen() {
+  document.getElementById('fs-overlay').style.display = 'none';
+}
 
-    var body = JSON.stringify({prompt: prompt, model: currentModel || undefined});
+// ── Run code (Python/JS output) ───────────────────────────────────────────────
+async function runCode() {
+  if (!editor) return;
+  var code = editor.getValue().trim();
+  if (!code) { toast('Редактор пуст'); return; }
+  var lang = document.getElementById('lang-sel').value;
+  if (lang === 'html') { previewFromEditor(); return; }
+  var out = document.getElementById('outc');
+  var bar = document.getElementById('outbar');
+  out.innerHTML = '<span style="color:#888">Выполняю...</span>';
+  bar.classList.add('show');
+  try {
+    var r = await fetch('/execute', { method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ code: code, language: lang }) });
+    var d = await r.json();
+    var html = '';
+    if (d.stdout) html += '<span class="o-ok">' + esc(d.stdout) + '</span>';
+    if (d.stderr) html += '<span class="o-err">' + esc(d.stderr) + '</span>';
+    if (d.error && !d.stderr) html += '<span class="o-err">' + esc(d.error) + '</span>';
+    if (!html) html = '<span style="color:#888">(выполнено, нет вывода)</span>';
+    out.innerHTML = html;
+  } catch(e) {
+    out.innerHTML = '<span class="o-err">Ошибка: ' + esc(e.message) + '</span>';
+  }
+}
 
-    // Use fetch + ReadableStream instead of EventSource (POST support)
-    fetch('/ollama/ask/stream', {
+function clearOutput() {
+  document.getElementById('outbar').classList.remove('show');
+  document.getElementById('outc').innerHTML = '';
+}
+
+// ── Qwen HTML Generator (streaming) ─────────────────────────────────────────
+async function generateHtml() {
+  if (genBusy) return;
+  var prompt = document.getElementById('gen-input').value.trim();
+  if (!prompt) { toast('Введите описание страницы'); return; }
+  if (!curModel) { toast('Выберите модель в настройках ☰'); openPanel(); return; }
+
+  genBusy = true;
+  var btn = document.getElementById('btn-gen');
+  var status = document.getElementById('gen-status');
+  btn.disabled = true;
+  btn.textContent = '⏳ Генерирую...';
+  status.innerHTML = '<span style="color:var(--warn)">⏳ Qwen генерирует HTML — ждите...</span>';
+
+  var accumulated = '';
+  var done = false;
+
+  // Show streaming in editor in real time
+  if (editor) editor.setValue('');
+
+  try {
+    var resp = await fetch('/generate/html/stream', {
       method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: body
-    }).then(function(resp){
-      if(!resp.ok){ finishErr('HTTP ' + resp.status); return; }
-      var reader = resp.body.getReader();
-      var dec = new TextDecoder();
-      var buf = '';
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt: prompt, model: curModel })
+    });
 
-      function pump(){
-        if(done) return;
-        reader.read().then(function(result){
-          if(result.done){ finish(); return; }
-          buf += dec.decode(result.value, {stream: true});
-          var lines = buf.split('\n');
-          buf = lines.pop(); // keep incomplete line
-          for(var i = 0; i < lines.length; i++){
-            if(done) break;
-            var line = lines[i];
-            if(!line.startsWith('data: ')) continue;
-            var payload = line.slice(6).trim();
-            if(payload === '[DONE]'){ finish(); return; }
-            try{
-              var obj = JSON.parse(payload);
-              if(obj.error){ finishErr(obj.error); return; }
-              if(obj.token){
-                accumulated += obj.token;
-                bubble.textContent = accumulated;
-                bubble.classList.add('streaming-cursor');
-                scrollBottom();
-              }
-            } catch(e){}
+    if (!resp.ok) { throw new Error('HTTP ' + resp.status); }
+
+    var reader = resp.body.getReader();
+    var dec = new TextDecoder();
+    var buf = '';
+
+    while (!done) {
+      var result = await reader.read();
+      if (result.done) break;
+      buf += dec.decode(result.value, { stream: true });
+      var lines = buf.split('\n'); buf = lines.pop();
+      for (var i = 0; i < lines.length; i++) {
+        var line = lines[i];
+        if (!line.startsWith('data: ')) continue;
+        var payload = line.slice(6).trim();
+        if (payload === '[DONE]') { done = true; break; }
+        try {
+          var obj = JSON.parse(payload);
+          if (obj.error) {
+            status.innerHTML = '<span class="gs-err">⚠ ' + esc(obj.error) + '</span>';
+            done = true; break;
           }
-          pump();
-        }).catch(function(e){ finishErr('Ошибка чтения потока: ' + e.message); });
+          if (obj.token) {
+            accumulated += obj.token;
+            // Update editor in real-time (debounced via value set)
+            if (editor) editor.setValue(accumulated);
+          }
+        } catch(e) {}
       }
-      pump();
-    }).catch(function(e){ finishErr('Ошибка сети: ' + e.message); });
-  });
-}
-
-// ── Send message ───────────────────────────────────────────────────────────
-async function sendMessage(){
-  var inp = document.getElementById('user-input');
-  var text = inp.value.trim();
-  if(!text || busy) return;
-  inp.value = ''; inp.style.height = 'auto';
-
-  // Detect URL-open commands
-  var openUrl = detectOpenCmd(text);
-  if(openUrl){
-    addUserMsg(text);
-    var msgEl = document.createElement('div');
-    msgEl.className = 'msg msg-bot';
-    var a = document.createElement('a');
-    a.href = openUrl; a.target = '_blank'; a.textContent = openUrl;
-    a.dataset.u = openUrl;
-    a.onclick = function(){ openWebPreview(this.dataset.u); return false; };
-    msgEl.appendChild(document.createTextNode('\uD83C\uDF10 Открываю: '));
-    msgEl.appendChild(a);
-    document.getElementById('chat-area').appendChild(msgEl);
-    scrollBottom();
-    openWebPreview(openUrl);
-    return;
-  }
-
-  addUserMsg(text);
-  var mode = document.getElementById('sel-mode').value;
-  setBusy(true);
-
-  try{
-    if(mode === 'chat'){
-      // Streaming chat
-      if(!currentModel){ addErrMsg('Выберите модель Ollama в настройках (☰)'); }
-      else { await streamChat(text); }
-    } else if(mode === 'code'){
-      addTyping();
-      var r = await fetch('/generate/code', {method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({prompt:text, model:currentModel||undefined})});
-      var d = await r.json(); addBotMsg(d.code || d.error || '(нет ответа)');
-    } else if(mode === 'html'){
-      addTyping();
-      var r = await fetch('/generate/html', {method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({prompt:text, model:currentModel||undefined})});
-      var d = await r.json();
-      if(d.html) addBotMsg(d.html, true);
-      else addErrMsg(d.error || 'Ошибка генерации HTML');
-    } else if(mode === 'project'){
-      addTyping();
-      var r = await fetch('/project/generate', {method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({prompt:text, model:currentModel||undefined, name:text.slice(0,60)})});
-      var d = await r.json();
-      removeTyping();
-      if(d.success){
-        var pid = d.project_id;
-        var html = d.files && d.files['index.html'] ? d.files['index.html'] : '';
-        var msgEl = document.createElement('div'); msgEl.className = 'msg msg-bot';
-        msgEl.innerHTML = '<b>&#127959; Проект создан:</b> <code>' + pid + '</code><br><small style="color:var(--text2)">Файлы: ' + Object.keys(d.files||{}).join(', ') + '</small>';
-        if(html){
-          var fr = document.createElement('div'); fr.className = 'msg-html-frame';
-          var iframe = document.createElement('iframe');
-          iframe.srcdoc = html; iframe.sandbox = 'allow-scripts allow-same-origin';
-          var openBtn = document.createElement('button');
-          openBtn.className='pbtn pbtn-primary'; openBtn.style.cssText='margin:6px 0 4px;font-size:12px';
-          openBtn.textContent='Открыть на весь экран';
-          openBtn.onclick = (function(h){ return function(){ openHtmlPreview(h); }; })(html);
-          var dlBtn = document.createElement('a');
-          dlBtn.className='pbtn pbtn-muted'; dlBtn.style.cssText='margin:6px 0 4px 6px;font-size:12px;text-decoration:none;display:inline-block';
-          dlBtn.textContent='Скачать index.html';
-          dlBtn.href = '/project/' + pid + '/index.html';
-          dlBtn.download = 'index.html';
-          fr.appendChild(iframe);
-          msgEl.appendChild(document.createElement('br'));
-          msgEl.appendChild(openBtn); msgEl.appendChild(dlBtn);
-          msgEl.appendChild(fr);
-        }
-        document.getElementById('chat-area').appendChild(msgEl);
-        scrollBottom();
-      } else {
-        addErrMsg(d.error || 'Ошибка генерации проекта');
-      }
-    } else if(mode === 'exec'){
-      addTyping();
-      var r = await fetch('/execute', {method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({code:text, language:'python'})});
-      var d = await r.json();
-      var out = d.stdout || d.output || '';
-      var err = d.stderr || d.error || '';
-      addBotMsg(
-        (out ? '<pre>' + out + '</pre>' : '') +
-        (err ? '<pre style="color:var(--danger)">' + err + '</pre>' : '') +
-        ((!out && !err) ? '(выполнено)' : ''),
-        'raw'
-      );
     }
-  } catch(e){ addErrMsg('Ошибка: ' + e.message); }
 
-  setBusy(false);
-}
-
-// ── Drag-and-drop file handling ────────────────────────────────────────────
-var chatArea = document.getElementById('chat-area');
-chatArea.addEventListener('dragover', function(e){
-  e.preventDefault(); chatArea.classList.add('dragover');
-});
-chatArea.addEventListener('dragleave', function(){
-  chatArea.classList.remove('dragover');
-});
-chatArea.addEventListener('drop', function(e){
-  e.preventDefault(); chatArea.classList.remove('dragover');
-  var files = Array.from(e.dataTransfer.files);
-  if(!files.length) return;
-  files.forEach(function(f){ handleFile(f); });
-});
-
-async function handleFile(f){
-  addUserMsg('\uD83D\uDCCE ' + f.name + ' (' + (f.size/1024).toFixed(1) + ' KB)');
-  setBusy(true); addTyping();
-  var isImg = f.type.startsWith('image/');
-  var safeName = f.name.replace(/[^\w.\-\s]/g,'_').slice(0,80);
-  if(isImg){
-    var b64 = await fileToBase64(f);
-    var imgDiv = document.createElement('div'); imgDiv.className = 'msg msg-bot';
-    var imgEl = document.createElement('img'); imgEl.style.maxHeight = '300px';
-    imgEl.alt = safeName; imgEl.src = b64;
-    imgDiv.appendChild(imgEl);
-    document.getElementById('chat-area').appendChild(imgDiv);
-    scrollBottom();
-    try{
-      var commaIdx = b64.indexOf(',');
-      var b64data = commaIdx >= 0 ? b64.slice(commaIdx+1) : b64;
-      var r = await fetch('/agent/describe_image', {method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({image_base64:b64data, filename:safeName})});
-      var d = await r.json();
-      removeTyping(); addBotMsg(d.description || d.error || '(описание недоступно)');
-    } catch(ex){ addErrMsg('Ошибка: ' + ex.message); }
-  } else {
-    try{
-      var txt = await f.text();
-      var r = await fetch('/ollama/ask', {method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({prompt:'Проанализируй файл "'+safeName+'":\n\n'+txt.slice(0,4000),
-          model:currentModel||undefined})});
-      var d = await r.json();
-      removeTyping(); addBotMsg(d.response || d.error || '(нет ответа)');
-    } catch(ex){ addErrMsg('Ошибка: ' + ex.message); }
+    if (done && accumulated) {
+      // Extract HTML from code fence if present
+      var html = extractHtml(accumulated);
+      if (editor) editor.setValue(html);
+      showPreview(html);
+      status.innerHTML = '<span class="gs-ok">✓ Готово! Предпросмотр обновлён.</span>';
+    }
+  } catch(e) {
+    status.innerHTML = '<span class="gs-err">⚠ Ошибка: ' + esc(e.message) + '</span>';
   }
-  setBusy(false);
+
+  genBusy = false;
+  btn.disabled = false;
+  btn.textContent = '▶ Генерировать HTML';
 }
 
-function fileToBase64(file){
-  return new Promise(function(res, rej){
-    var r = new FileReader(); r.onload = function(){ res(r.result); }; r.onerror = rej;
-    r.readAsDataURL(file);
-  });
+function extractHtml(raw) {
+  // Try ```html ... ```
+  var m = raw.match(/```html\s*([\s\S]*?)```/i);
+  if (m) return m[1].trim();
+  // Try ``` ... ``` (any fence)
+  m = raw.match(/```\s*([\s\S]*?)```/);
+  if (m) return m[1].trim();
+  // If it looks like HTML already
+  if (/<html[\s>]/i.test(raw) || /<!DOCTYPE/i.test(raw)) return raw.trim();
+  return raw.trim();
 }
 
-// ── API helpers ────────────────────────────────────────────────────────────
-async function loadHealth(){
-  try{
+// ── Panel ─────────────────────────────────────────────────────────────────────
+function openPanel()  { document.getElementById('panel').classList.add('open'); document.getElementById('panel-overlay').classList.add('show'); }
+function closePanel() { document.getElementById('panel').classList.remove('open'); document.getElementById('panel-overlay').classList.remove('show'); }
+
+// ── Health ────────────────────────────────────────────────────────────────────
+async function loadHealth() {
+  try {
     var r = await fetch('/health'); var d = await r.json();
-    var vm = d.vm && d.vm.status === 'ok';
-    var ol = d.ollama && d.ollama.status === 'ok';
-    var bot = d.bot && d.bot.token_set;
-    document.getElementById('h-vm').innerHTML = vm ? '&#10003; OK' : '&#10007; Ошибка';
-    document.getElementById('h-vm').className = 'h-val ' + (vm ? 'ok' : 'fail');
-    document.getElementById('h-ollama').innerHTML = ol ? '&#10003; OK' : '&#10007; Недоступна';
-    document.getElementById('h-ollama').className = 'h-val ' + (ol ? 'ok' : 'fail');
-    document.getElementById('h-url').textContent = (d.ollama && d.ollama.url) || '—';
-    document.getElementById('h-bot').innerHTML = bot ? '&#10003; Токен есть' : '&#10007; Нет токена';
-    document.getElementById('h-bot').className = 'h-val ' + (bot ? 'ok' : 'warn');
-    document.getElementById('status-dot').className = 'status-dot' + (ol ? ' ok' : '');
-  } catch(e){}
+    var vm=d.vm&&d.vm.status==='ok', ol=d.ollama&&d.ollama.status==='ok', bot=d.bot&&d.bot.token_set;
+    set('h-vm',  vm ? '✓ OK'        : '✗ Ошибка',    vm  ? 'ok' : 'fail');
+    set('h-ol',  ol ? '✓ OK'        : '✗ Недоступна', ol  ? 'ok' : 'fail');
+    document.getElementById('h-url').textContent = (d.ollama&&d.ollama.url)||'—';
+    set('h-bot', bot? '✓ Токен есть': '✗ Нет токена', bot ? 'ok' : 'warn');
+    document.getElementById('sdot').className = ol ? 'ok' : '';
+  } catch(e) {}
+}
+function set(id, html, cls) {
+  var el = document.getElementById(id);
+  el.innerHTML = html; el.className = 'hv ' + (cls||'');
 }
 
-async function loadModels(){
-  try{
+// ── Models ────────────────────────────────────────────────────────────────────
+async function loadModels() {
+  try {
     var r = await fetch('/ollama/models'); var d = await r.json();
-    var models = d.models || []; var sel = document.getElementById('sel-model'); var prev = sel.value;
+    var models = d.models||[], sel = document.getElementById('sel-model'), prev = sel.value;
     sel.innerHTML = '';
-    if(!models.length){ sel.innerHTML = '<option value="">Нет моделей</option>'; }
-    else{
-      models.forEach(function(m){
-        var o = document.createElement('option'); o.value = m; o.textContent = m;
-        if(m === prev) o.selected = true; sel.appendChild(o);
+    if (!models.length) { sel.innerHTML = '<option value="">Нет моделей — pull модель ниже</option>'; }
+    else {
+      models.forEach(function(m) {
+        var o = document.createElement('option'); o.value=m; o.textContent=m;
+        if(m===prev) o.selected=true; sel.appendChild(o);
       });
-      if(!sel.value) sel.selectedIndex = 0;
+      // Prefer Qwen or any default
+      if (!sel.value || !models.includes(sel.value)) {
+        var pref = d.preferred || '';
+        if (pref && models.includes(pref)) sel.value = pref;
+        else sel.selectedIndex = 0;
+      }
     }
-    updateModelBadge();
-  } catch(e){}
+    curModel = sel.value; updateBadge();
+  } catch(e) {}
+}
+function updateBadge() {
+  curModel = document.getElementById('sel-model').value;
+  document.getElementById('model-badge').textContent = curModel || 'нет модели';
 }
 
-async function loadInstructions(){
-  try{
+// ── System prompt ─────────────────────────────────────────────────────────────
+async function loadSystemPrompt() {
+  try {
     var r = await fetch('/instructions'); var d = await r.json();
-    document.getElementById('ta-instructions').value =
-      typeof d === 'string' ? d : (d.system_prompt || JSON.stringify(d,null,2));
-  } catch(e){}
+    var ta = document.getElementById('ta-sys');
+    ta.value = d.system_prompt || '';
+  } catch(e) {}
+}
+async function saveSystemPrompt() {
+  var val = document.getElementById('ta-sys').value;
+  await fetch('/instructions', { method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ system_prompt: val }) });
+  toast('✓ Системный промпт сохранён');
 }
 
-async function saveInstructions(){
-  var val = document.getElementById('ta-instructions').value; var body;
-  try{ body = JSON.parse(val); } catch{ body = {system_prompt:val}; }
-  await fetch('/instructions', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
-  showToast('Сохранено');
+// ── Bot token ─────────────────────────────────────────────────────────────────
+async function saveBotToken() {
+  var tok = document.getElementById('tok-inp').value.trim();
+  if (!tok) { toast('Введите токен'); return; }
+  try {
+    var r = await fetch('/settings', { method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ bot_token: tok }) });
+    var d = await r.json();
+    if (d.ok) {
+      toast('✓ Токен сохранён — перезапустите start.ps1 для Telegram бота');
+      document.getElementById('tok-inp').value = '';
+      loadHealth();
+    } else { toast('⚠ ' + (d.error||'Ошибка')); }
+  } catch(e) { toast('⚠ Ошибка сети: ' + e.message); }
 }
 
-async function pullModel(){
-  var name = document.getElementById('wk-model-name').value.trim(); if(!name) return;
-  var log = document.getElementById('workshop-log'); log.textContent = 'Pulling ' + name + '...\n';
-  try{
-    var r = await fetch('/ollama/pull', {method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({name:name})});
+// ── Workshop ──────────────────────────────────────────────────────────────────
+async function pullModel() {
+  var name = document.getElementById('wk-pull').value.trim(); if (!name) return;
+  var log = document.getElementById('wlog'); log.textContent = 'Pulling ' + name + '...\n';
+  try {
+    var r = await fetch('/ollama/pull', { method:'POST',
+      headers:{'Content-Type':'application/json'}, body: JSON.stringify({name:name}) });
     var reader = r.body.getReader(); var dec = new TextDecoder();
-    while(true){
-      var result = await reader.read(); if(result.done) break;
-      var lines = dec.decode(result.value).split('\n').filter(Boolean);
-      lines.forEach(function(l){
-        try{ var j = JSON.parse(l); log.textContent += j.status + (j.completed ? ' '+j.completed+'/'+j.total : '') + '\n'; log.scrollTop = 9999; }catch{}
+    while(true) {
+      var res = await reader.read(); if(res.done) break;
+      dec.decode(res.value).split('\n').filter(Boolean).forEach(function(l){
+        try { var j=JSON.parse(l); log.textContent+=(j.status||'')+'\n'; log.scrollTop=9999; } catch{}
       });
     }
     loadModels();
-  } catch(e){ log.textContent += 'Ошибка: ' + e.message; }
+  } catch(e) { log.textContent += 'Ошибка: ' + e.message; }
 }
-
-async function deleteModel(){
-  var name = document.getElementById('wk-del-name').value.trim(); if(!name) return;
+async function deleteModel() {
+  var name = document.getElementById('wk-del').value.trim(); if(!name) return;
   if(!confirm('Удалить ' + name + '?')) return;
-  var r = await fetch('/ollama/delete', {method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({name:name})});
+  var r = await fetch('/ollama/delete', { method:'POST',
+    headers:{'Content-Type':'application/json'}, body: JSON.stringify({name:name}) });
   var d = await r.json();
-  document.getElementById('workshop-log').textContent = d.ok ? 'Удалено' : 'Ошибка: ' + d.error;
+  document.getElementById('wlog').textContent = d.ok ? 'Удалено: ' + name : 'Ошибка: ' + d.error;
   loadModels();
 }
-
-async function retrain(){
+async function retrain() {
   var r = await fetch('/retrain', {method:'POST'}); var d = await r.json();
-  showToast(d.message || 'Retrain запущен');
+  toast(d.message || 'Retrain запущен');
 }
 
-function showToast(msg){
-  var t = document.getElementById('_toast');
-  if(!t){
-    t = document.createElement('div'); t.id = '_toast';
-    t.style = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:8px 18px;border-radius:8px;font-size:13px;z-index:999;pointer-events:none;transition:opacity .3s';
-    document.body.appendChild(t);
-  }
+// ── Utils ─────────────────────────────────────────────────────────────────────
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function autoResize(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 90) + 'px';
+}
+
+function toast(msg) {
+  var t = document.getElementById('toast');
   t.textContent = msg; t.style.opacity = '1';
-  clearTimeout(t._to); t._to = setTimeout(function(){ t.style.opacity = '0'; }, 2000);
+  clearTimeout(t._t); t._t = setTimeout(function(){ t.style.opacity='0'; }, 2800);
 }
 
-// ── Init ───────────────────────────────────────────────────────────────────
-loadHealth(); loadModels();
+// F5 global
+document.addEventListener('keydown', function(e){
+  if(e.key === 'F5'){ e.preventDefault(); runCode(); }
+});
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+window.addEventListener('load', function(){
+  initMonaco();
+  loadHealth();
+  loadModels();
+  loadSystemPrompt();
+  setView('both');
+});
 </script>
 </body>
 </html>

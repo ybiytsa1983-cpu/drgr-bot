@@ -186,9 +186,14 @@ $ready = $false
 for ($i = 0; $i -lt 20; $i++) {
     Start-Sleep -Seconds 1
     try {
-        $null = Invoke-WebRequest -Uri "http://localhost:$Port/" -UseBasicParsing -TimeoutSec 2
+        # Use 127.0.0.1 (not localhost) to avoid IPv6 resolution on Windows.
+        # Use /health endpoint (small JSON) rather than / (full HTML page).
+        $null = Invoke-WebRequest -Uri "http://127.0.0.1:$Port/health" -UseBasicParsing -TimeoutSec 2
         $ready = $true
         break
+    } catch [System.Net.WebException] {
+        # Any HTTP response (even 4xx/5xx) means the server IS up.
+        if ($_.Exception.Response -ne $null) { $ready = $true; break }
     } catch { }
 }
 if (-not $ready) {

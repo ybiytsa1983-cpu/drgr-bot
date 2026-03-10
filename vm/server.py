@@ -1323,13 +1323,51 @@ def update_instructions():
         data["training_instructions"] = body["training_instructions"]
     if "internet_work_instructions" in body:
         data["internet_work_instructions"] = body["internet_work_instructions"]
+    if "system_prompt" in body:
+        data["system_prompt"] = body["system_prompt"]
     save_instructions(data)
     return jsonify({"success": True, "data": data})
 
 
 # ---------------------------------------------------------------------------
-# Ollama integration
+# Settings (bot token, etc.)
 # ---------------------------------------------------------------------------
+@app.route("/settings", methods=["POST"])
+def save_settings():
+    """Save settings such as the Telegram bot token to .env."""
+    body = request.get_json(silent=True) or {}
+    bot_token = body.get("bot_token", "").strip()
+
+    if not bot_token:
+        return jsonify({"ok": False, "error": "Empty token"})
+
+    env_path = os.path.join(os.path.dirname(_DIR), ".env")
+
+    # Read existing lines or start fresh
+    lines = []
+    if os.path.exists(env_path):
+        with open(env_path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+
+    # Update or append BOT_TOKEN line
+    token_found = False
+    for i, line in enumerate(lines):
+        if line.startswith("BOT_TOKEN="):
+            lines[i] = f"BOT_TOKEN={bot_token}\n"
+            token_found = True
+            break
+    if not token_found:
+        lines.append(f"BOT_TOKEN={bot_token}\n")
+
+    with open(env_path, "w", encoding="utf-8") as f:
+        f.writelines(lines)
+
+    # Apply to current process too so /health reflects the new token immediately
+    os.environ["BOT_TOKEN"] = bot_token
+    return jsonify({"ok": True})
+
+
+
 @app.route("/ollama/models", methods=["GET"])
 def ollama_models():
     """Return the list of models available in the local Ollama instance."""
@@ -1691,6 +1729,81 @@ def generate_html():
         return jsonify({"html": "", "error": "Cannot connect to Ollama — is 'ollama serve' running?", "success": False})
     except Exception as exc:  # pylint: disable=broad-except
         return jsonify({"html": "", "error": str(exc), "success": False})
+
+
+# Default Qwen-optimised system prompt used when instructions.json has none.
+_DEFAULT_HTML_SYSTEM_PROMPT = (
+    "Ты DRGR HTML Generator — экспертный веб-разработчик на базе Qwen.\n"
+    "Генерируй красивые, полные, отзывчивые HTML страницы.\n"
+    "ВСЕГДА возвращай один полный HTML файл (<!DOCTYPE html>...) "
+    "со встроенным CSS и JavaScript.\n"
+    "Используй современный CSS (flexbox/grid), красивые цвета, плавные анимации.\n"
+    "НЕ подключай внешние зависимости без необходимости.\n"
+    "Выводи ТОЛЬКО HTML код без пояснений и комментариев вне кода."
+)
+
+
+@app.route("/generate/html/stream", methods=["POST"])
+def generate_html_stream():
+    """Stream a complete HTML page from a natural-language description using Qwen/Ollama.
+
+    Body: {"prompt": "...", "model": "..."}
+    Streams SSE tokens ending with data: [DONE]
+    The accumulated text is the raw Qwen output; the client strips the code fence.
+    """
+    body  = request.get_json(silent=True) or {}
+    model = body.get("model", "").strip()
+    prompt = body.get("prompt", "").strip()
+
+    if not model:
+        def _no_model():
+            yield 'data: {"error":"Модель не выбрана — выберите модель в настройках (☰)"}\n\n'
+        return Response(stream_with_context(_no_model()), mimetype="text/event-stream")
+
+    if not prompt:
+        def _no_prompt():
+            yield 'data: {"error":"Введите описание страницы"}\n\n'
+        return Response(stream_with_context(_no_prompt()), mimetype="text/event-stream")
+
+    # Load custom system prompt; fall back to Qwen default
+    data = load_instructions()
+    sys_prompt = data.get("system_prompt", "").strip() or _DEFAULT_HTML_SYSTEM_PROMPT
+
+    full_prompt = f"{sys_prompt}\n\nЗадание: {prompt}"
+
+    def _stream():
+        try:
+            resp = _http.post(
+                f"{OLLAMA_BASE}/api/generate",
+                json={"model": model, "prompt": full_prompt, "stream": True},
+                stream=True,
+                timeout=int(os.environ.get("OLLAMA_TIMEOUT", 240)),
+            )
+            resp.raise_for_status()
+            for raw_line in resp.iter_lines():
+                if not raw_line:
+                    continue
+                try:
+                    chunk = json.loads(raw_line)
+                except ValueError:
+                    continue
+                token = chunk.get("response", "")
+                if token:
+                    yield f"data: {json.dumps({'token': token})}\n\n"
+                if chunk.get("done"):
+                    _record_generation("html", model, prompt)
+                    yield "data: [DONE]\n\n"
+                    return
+        except _http.exceptions.ConnectionError:
+            yield 'data: {"error":"Нет соединения с Ollama — запустите \'ollama serve\'"}\n\n'
+        except Exception as exc:  # pylint: disable=broad-except
+            yield f"data: {json.dumps({'error': str(exc)})}\n\n"
+
+    return Response(
+        stream_with_context(_stream()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 # ---------------------------------------------------------------------------
