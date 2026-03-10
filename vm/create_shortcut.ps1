@@ -54,9 +54,14 @@ $shortcut = $shell.CreateShortcut($shortcutPath)
 
 $shortcut.TargetPath       = $psExe
 $shortcut.Arguments        = "-NoProfile -ExecutionPolicy Bypass -File `"$startPs1`""
-# Use a recognisable app icon from imageres.dll (available on all modern Windows)
-$icoLib = Join-Path $env:SystemRoot "System32\imageres.dll"
-$shortcut.IconLocation     = if (Test-Path $icoLib) { "$icoLib,97" } else { "$psExe,0" }
+# Prefer bundled custom icon; fall back to a reliably-visible system icon
+$customIco = Join-Path $repoDir "vm\static\code_vm.ico"
+if (Test-Path $customIco) {
+    $shortcut.IconLocation = "$customIco,0"
+} else {
+    $icoLib = Join-Path $env:SystemRoot "System32\shell32.dll"
+    $shortcut.IconLocation     = if (Test-Path $icoLib) { "$icoLib,77" } else { "$psExe,0" }
+}
 $shortcut.WorkingDirectory = $repoDir
 $shortcut.Description      = "Launch Code VM - Monaco Editor with Ollama AI"
 $shortcut.WindowStyle      = 1   # Normal window so progress and errors are visible

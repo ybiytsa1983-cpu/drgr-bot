@@ -83,14 +83,20 @@ try {
         if (-not $ollamaUp) {
             Start-Process -FilePath $ollamaExe -ArgumentList 'serve' `
                 -WindowStyle Minimized -ErrorAction SilentlyContinue
-            # Wait up to 8 s so vm.ps1 detects Ollama immediately (avoids duplicate start)
-            for ($attempt = 0; $attempt -lt 8; $attempt++) {
+            # Wait up to 15 s so vm.ps1 detects Ollama immediately (avoids duplicate start)
+            # Probe all ports 11434-11444, not just the default, in case Ollama
+            # starts on a non-standard port (e.g. 11435 if 11434 is already taken).
+            for ($attempt = 0; $attempt -lt 15; $attempt++) {
                 Start-Sleep -Seconds 1
-                try {
-                    $r2 = Invoke-WebRequest -Uri "http://localhost:11434/api/tags" `
-                            -UseBasicParsing -TimeoutSec 1 -ErrorAction SilentlyContinue
-                    if ($r2 -and $r2.StatusCode -eq 200) { break }
-                } catch { }
+                $detected = $false
+                foreach ($tryPort in (11434..11444)) {
+                    try {
+                        $r2 = Invoke-WebRequest -Uri "http://localhost:$tryPort/api/tags" `
+                                -UseBasicParsing -TimeoutSec 1 -ErrorAction SilentlyContinue
+                        if ($r2 -and $r2.StatusCode -eq 200) { $detected = $true; break }
+                    } catch { }
+                }
+                if ($detected) { break }
             }
         }
     }
@@ -174,8 +180,13 @@ if (-not (Test-Path $venvPython)) {
         $shortcut.WorkingDirectory = $scriptRoot
         $shortcut.Description      = "Launch Code VM - Monaco Editor with Ollama AI"
         $shortcut.WindowStyle      = 1   # Normal window so progress and errors are visible
-        $icoLib = Join-Path $env:SystemRoot "System32\imageres.dll"
-        $shortcut.IconLocation = if (Test-Path $icoLib) { "$icoLib,97" } else { "$psExe,0" }
+        $customIco = Join-Path $scriptRoot "vm\static\code_vm.ico"
+        if (Test-Path $customIco) {
+            $shortcut.IconLocation = "$customIco,0"
+        } else {
+            $icoLib = Join-Path $env:SystemRoot "System32\shell32.dll"
+            $shortcut.IconLocation = if (Test-Path $icoLib) { "$icoLib,77" } else { "$psExe,0" }
+        }
         $shortcut.Save()
         Write-Host "  [OK] Ярлык 'Code VM' создан на Рабочем столе" -ForegroundColor Green
     } catch {

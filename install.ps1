@@ -276,9 +276,14 @@ try {
     $shortcut.WorkingDirectory = $repoDir
     $shortcut.Description      = "Launch Code VM - Monaco Editor with Ollama AI"
     $shortcut.WindowStyle      = 1   # Normal window so progress and errors are visible
-    # Use a recognisable app icon from imageres.dll (available on all modern Windows)
-    $icoLib = Join-Path $env:SystemRoot "System32\imageres.dll"
-    $shortcut.IconLocation = if (Test-Path $icoLib) { "$icoLib,97" } else { "$psExe,0" }
+    # Prefer bundled custom icon; fall back to a reliably-visible system icon
+    $customIco = Join-Path $repoDir "vm\static\code_vm.ico"
+    if (Test-Path $customIco) {
+        $shortcut.IconLocation = "$customIco,0"
+    } else {
+        $icoLib = Join-Path $env:SystemRoot "System32\shell32.dll"
+        $shortcut.IconLocation = if (Test-Path $icoLib) { "$icoLib,77" } else { "$psExe,0" }
+    }
     $shortcut.Save()
     $shortcutOk = $true
     Ok "Desktop shortcut created - 'Code VM' icon is on your Desktop"
@@ -343,3 +348,15 @@ Write-Host ""
 Write-Host "  Then open in browser:" -ForegroundColor White
 Write-Host "    http://localhost:5000/" -ForegroundColor Cyan
 Write-Host ""
+
+# -- 10. Auto-launch the VM so browser opens immediately after first-time setup ---
+# Skip auto-launch only when the caller passes -NoLaunch (e.g., CI/test runs).
+if ($args -notcontains '-NoLaunch') {
+    if (Test-Path $startPs1) {
+        Write-Host "  [-->] Запуск Code VM (браузер откроется автоматически) / launching Code VM..." -ForegroundColor Cyan
+        $psExeLaunch = try { (Get-Process -Id $PID).Path } catch { "powershell.exe" }
+        Start-Process -FilePath $psExeLaunch `
+            -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$startPs1`"" `
+            -WorkingDirectory $repoDir
+    }
+}
