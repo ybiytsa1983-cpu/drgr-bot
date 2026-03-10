@@ -276,17 +276,7 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
     <!-- Monaco Editor pane -->
     <div id="epane">
       <div id="etb">
-        <select id="lang-sel" onchange="changeLang(this.value)" title="Язык">
-          <option value="html">🌐 HTML</option>
-          <option value="javascript">�� JavaScript</option>
-          <option value="css">🎨 CSS</option>
-          <option value="python">🐍 Python</option>
-          <option value="typescript">🔷 TypeScript</option>
-          <option value="json">📋 JSON</option>
-          <option value="markdown">📄 Markdown</option>
-          <option value="sql">🗄 SQL</option>
-          <option value="plaintext">📝 Текст</option>
-        </select>
+        <span id="lang-badge" style="font-size:11px;background:var(--bg4);border:1px solid var(--border);color:var(--text2);padding:3px 9px;border-radius:11px;white-space:nowrap">🔍 авто</span>
         <button class="ei run" onclick="runCode()" title="Запустить (F5)">▶ Запустить</button>
         <button class="ei" onclick="previewFromEditor()" title="Обновить визор">🖥 Обновить визор</button>
         <button class="ei" onclick="copyEditorCode()" title="Копировать весь код">📋 Копировать</button>
@@ -322,14 +312,14 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
     </div>
   </div>
 
-  <!-- Qwen HTML Generator prompt bar -->
+  <!-- Code Generator prompt bar -->
   <div id="pbar">
     <div class="pbar-row">
-      <textarea id="gen-input" placeholder="Опишите HTML страницу: лендинг, форма, игра, дашборд... (Enter — генерировать, Shift+Enter — новая строка)"
+      <textarea id="gen-input" placeholder="Опишите задачу: лендинг, игра, скрипт на Python, дашборд, алгоритм... (Enter — сгенерировать, Shift+Enter — новая строка)"
         rows="1"
-        onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();generateHtml()}"
+        onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();generateCode()}"
         oninput="autoResize(this)"></textarea>
-      <button id="btn-gen" onclick="generateHtml()">▶ Генерировать HTML</button>
+      <button id="btn-gen" onclick="generateCode()">▶ Сгенерировать</button>
     </div>
     <div id="gen-status"></div>
   </div>
@@ -493,19 +483,13 @@ function createEditor(container) {
   editor.onDidChangeModelContent(function(){
     clearTimeout(previewTimer);
     previewTimer = setTimeout(function(){
-      if(document.getElementById('lang-sel').value === 'html') livePreview();
+      if(detectLang(editor.getValue()) === 'html') livePreview();
     }, 600);
   });
   // Show initial placeholder preview
   livePreview();
 }
 
-// ── Language ─────────────────────────────────────────────────────────────────
-function changeLang(lang) {
-  if (!editor) return;
-  var ml = lang === 'bash' ? 'shell' : lang;
-  monaco.editor.setModelLanguage(editor.getModel(), ml);
-}
 function clearEditor() {
   if (editor) editor.setValue('');
 }
@@ -516,20 +500,50 @@ function copyEditorCode() {
     .catch(function(){ toast('Ошибка копирования'); });
 }
 
+// ── Language auto-detect ─────────────────────────────────────────────────────
+function detectLang(code) {
+  if (!code) return 'plaintext';
+  var s = code.trim();
+  if (/<html[\s>]/i.test(s) || /<!DOCTYPE\s/i.test(s)) return 'html';
+  if (/<[a-z][a-z0-9]*[\s\/>][^>]*>[\s\S]{20,}<\/[a-z]/i.test(s)) return 'html';
+  if (/^\s*\{[\s\S]*\}$/.test(s) && /"[\w$]+"\s*:/.test(s)) return 'json';
+  if (/\bdef\s+\w+\s*\(|^\s*import\s+\w|^\s*from\s+\w+\s+import\b|print\s*\(/m.test(s)) return 'python';
+  if (/\bfunction\s+\w|\bconst\b\s+\w|\blet\b\s+\w|\bvar\b\s+\w|\bclass\s+\w|\bimport\s+[{*'"]/.test(s)) return 'javascript';
+  if (/:\s*(string|number|boolean|void)\b|\binterface\s+\w|\btype\s+\w+\s*=/.test(s)) return 'typescript';
+  if (/^\s*[\w.-]+\s*\{|:\s*#[0-9a-f]{3,6}|margin:|padding:|@media\b/im.test(s) && !/<[a-z]/i.test(s)) return 'css';
+  if (/^\s*(SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP)\s/im.test(s)) return 'sql';
+  if (/^#!.*sh\b|^\s*(echo|export|grep|sed|awk|chmod|mkdir|cd)\s/m.test(s)) return 'shell';
+  if (/^#{1,6}\s\S|\*\*\w|\[.+\]\(https?:/.test(s)) return 'markdown';
+  return 'javascript';
+}
+
+function setLangBadge(lang) {
+  var icons = {html:'🌐',javascript:'⚡',typescript:'🔷',python:'🐍',css:'🎨',json:'📋',sql:'🗄',shell:'🖥',markdown:'📄',plaintext:'📝'};
+  var badge = document.getElementById('lang-badge');
+  if (badge) badge.textContent = (icons[lang] || '📝') + ' ' + lang;
+  if (editor) {
+    var ml = (lang === 'shell' || lang === 'bash') ? 'shell' : lang;
+    try { monaco.editor.setModelLanguage(editor.getModel(), ml); } catch(e) {}
+  }
+}
+
 // ── Preview (ВИЗОР) ──────────────────────────────────────────────────────────
 function livePreview() {
-  var lang = document.getElementById('lang-sel').value;
-  if (lang !== 'html' || !editor) return;
-  var html = editor.getValue();
-  if (!html.trim()) return;
-  showPreview(html);
+  if (!editor) return;
+  var code = editor.getValue();
+  if (!code.trim()) return;
+  var lang = detectLang(code);
+  setLangBadge(lang);
+  if (lang === 'html') showPreview(code);
 }
 
 function previewFromEditor() {
   if (!editor) return;
-  var html = editor.getValue();
-  if (!html.trim()) { toast('Редактор пуст'); return; }
-  showPreview(html);
+  var code = editor.getValue();
+  if (!code.trim()) { toast('Редактор пуст'); return; }
+  var lang = detectLang(code);
+  setLangBadge(lang);
+  showPreview(lang === 'html' ? code : wrapForVisor(code, lang));
 }
 
 function showPreview(html) {
@@ -537,12 +551,22 @@ function showPreview(html) {
   var frm = document.getElementById('preview-frame');
   ph.style.display  = 'none';
   frm.style.display = 'block';
-  // Force re-render: remove attribute first, then set on next tick
-  frm.removeAttribute('srcdoc');
-  setTimeout(function() { frm.srcdoc = html; }, 0);
-  // If preview pane is not visible, switch to editor+preview view
+  // Assign srcdoc with unique timestamp comment to force re-render every call
+  frm.srcdoc = html + '\n<!-- t' + Date.now() + ' -->';
   var vpane = document.getElementById('vpane');
   if (window.getComputedStyle(vpane).display === 'none') setView('both');
+}
+
+function wrapForVisor(code, lang) {
+  var escaped = code.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return '<!DOCTYPE html><html><head><meta charset="UTF-8"><style>'
+    + 'body{background:#0d0d0d;color:#e0e0e0;margin:0;font-family:"Cascadia Code","Fira Code",Consolas,monospace}'
+    + 'pre{margin:0;padding:16px;white-space:pre-wrap;word-break:break-word;font-size:13px;line-height:1.6}'
+    + '.hdr{background:#161616;padding:8px 16px;font-size:11px;color:#888;border-bottom:1px solid #2a2a2a}'
+    + '</style></head><body>'
+    + '<div class="hdr">🖥 ВИЗОР — ' + lang.toUpperCase() + ' код</div>'
+    + '<pre>' + escaped + '</pre>'
+    + '</body></html>';
 }
 
 function openFullscreen() {
@@ -562,7 +586,8 @@ async function runCode() {
   if (!editor) return;
   var code = editor.getValue().trim();
   if (!code) { toast('Редактор пуст'); return; }
-  var lang = document.getElementById('lang-sel').value;
+  var lang = detectLang(code);
+  setLangBadge(lang);
   if (lang === 'html') { previewFromEditor(); return; }
   var out = document.getElementById('outc');
   var bar = document.getElementById('outbar');
@@ -579,6 +604,9 @@ async function runCode() {
     if (d.error && !d.stderr) html += '<span class="o-err">' + esc(d.error) + '</span>';
     if (!html) html = '<span style="color:#888">(выполнено, нет вывода)</span>';
     out.innerHTML = html;
+    // Show output in ВИЗОР too
+    var outputText = (d.stdout || '') + (d.stderr ? '\n[stderr]\n' + d.stderr : '') + (d.error && !d.stderr ? '\n[error] ' + d.error : '');
+    showPreview(wrapForVisor(code + (outputText ? '\n\n--- ВЫВОД ---\n' + outputText : ''), lang));
   } catch(e) {
     out.innerHTML = '<span class="o-err">Ошибка: ' + esc(e.message) + '</span>';
   }
@@ -590,10 +618,10 @@ function clearOutput() {
 }
 
 // ── Qwen HTML Generator (streaming) ─────────────────────────────────────────
-async function generateHtml() {
+async function generateCode() {
   if (genBusy) return;
   var prompt = document.getElementById('gen-input').value.trim();
-  if (!prompt) { toast('Введите описание страницы'); return; }
+  if (!prompt) { toast('Введите задание'); return; }
   if (!curModel) { toast('Выберите модель в настройках ☰'); openPanel(); return; }
 
   genBusy = true;
@@ -601,16 +629,15 @@ async function generateHtml() {
   var status = document.getElementById('gen-status');
   btn.disabled = true;
   btn.textContent = '⏳ Генерирую...';
-  status.innerHTML = '<span style="color:var(--warn)">⏳ Qwen генерирует HTML — ждите...</span>';
+  status.innerHTML = '<span style="color:var(--warn)">⏳ ИИ генерирует код — определяет язык автоматически...</span>';
 
   var accumulated = '';
   var done = false;
 
-  // Show streaming in editor in real time
   if (editor) editor.setValue('');
 
   try {
-    var resp = await fetch('/generate/html/stream', {
+    var resp = await fetch('/generate/auto/stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prompt: prompt, model: curModel })
@@ -622,7 +649,6 @@ async function generateHtml() {
     var dec = new TextDecoder();
     var buf = '';
 
-    // Throttle editor updates to max once every 150 ms to avoid re-render storm
     var lastEditorUpdate = 0;
     function flushToEditor() {
       var now = Date.now();
@@ -657,11 +683,13 @@ async function generateHtml() {
     }
 
     if (done && accumulated) {
-      // Extract HTML from code fence if present
-      var html = extractHtml(accumulated);
-      if (editor) editor.setValue(html);
-      showPreview(html);
-      status.innerHTML = '<span class="gs-ok">✓ Готово! Предпросмотр обновлён.</span>';
+      var code = extractCode(accumulated);
+      var lang = detectLang(code);
+      if (editor) editor.setValue(code);
+      setLangBadge(lang);
+      // Always verify in ВИЗОР
+      showPreview(lang === 'html' ? code : wrapForVisor(code, lang));
+      status.innerHTML = '<span class="gs-ok">✓ Готово! Язык: ' + lang.toUpperCase() + '. Визор обновлён.</span>';
     }
   } catch(e) {
     status.innerHTML = '<span class="gs-err">⚠ Ошибка: ' + esc(e.message) + '</span>';
@@ -669,20 +697,23 @@ async function generateHtml() {
 
   genBusy = false;
   btn.disabled = false;
-  btn.textContent = '▶ Генерировать HTML';
+  btn.textContent = '▶ Сгенерировать';
 }
 
-function extractHtml(raw) {
-  // Try ```html ... ```
-  var m = raw.match(/```html\s*([\s\S]*?)```/i);
-  if (m) return m[1].trim();
-  // Try ``` ... ``` (any fence)
-  m = raw.match(/```\s*([\s\S]*?)```/);
+// keep old name as alias for compatibility
+function generateHtml() { return generateCode(); }
+
+function extractCode(raw) {
+  // Try ```<lang> ... ``` (named fence)
+  var m = raw.match(/```[a-zA-Z]*\s*([\s\S]*?)```/);
   if (m) return m[1].trim();
   // If it looks like HTML already
   if (/<html[\s>]/i.test(raw) || /<!DOCTYPE/i.test(raw)) return raw.trim();
   return raw.trim();
 }
+
+// legacy alias
+function extractHtml(raw) { return extractCode(raw); }
 
 // ── Panel ─────────────────────────────────────────────────────────────────────
 function openPanel()  { document.getElementById('panel').classList.add('open'); document.getElementById('panel-overlay').classList.add('show'); }

@@ -1886,6 +1886,82 @@ def generate_html_stream():
 
 
 # ---------------------------------------------------------------------------
+# Auto-language code generator — model decides what language to use
+# ---------------------------------------------------------------------------
+_DEFAULT_AUTO_SYSTEM_PROMPT = (
+    "Ты DRGR Code Generator — эксперт-программист на базе Qwen.\n"
+    "Проанализируй задание и АВТОМАТИЧЕСКИ выбери наиболее подходящий язык программирования.\n"
+    "Для веб-страниц, лендингов, игр в браузере, дашбордов — генерируй самодостаточный HTML "
+    "со встроенным CSS и JavaScript (```html блок, полный <!DOCTYPE html> документ).\n"
+    "Для алгоритмов, скриптов, утилит, обработки данных — Python (```python блок).\n"
+    "Для front-end без сервера — JavaScript (```javascript блок).\n"
+    "ВСЕГДА возвращай ТОЛЬКО код в соответствующем ``` блоке без пояснений вне кода.\n"
+    "НЕ спрашивай уточнений — сразу генерируй полный рабочий код."
+)
+
+
+@app.route("/generate/auto/stream", methods=["POST"])
+def generate_auto_stream():
+    """Stream code generation with automatic language detection by the model.
+
+    Body: {"prompt": "...", "model": "..."}
+    Streams SSE tokens ending with data: [DONE]
+    The model decides what language to use based on the task description.
+    """
+    body   = request.get_json(silent=True) or {}
+    model  = body.get("model", "").strip()
+    prompt = body.get("prompt", "").strip()
+
+    if not model:
+        def _no_model():
+            yield 'data: {"error":"Модель не выбрана — выберите модель в настройках (☰)"}\n\n'
+        return Response(stream_with_context(_no_model()), mimetype="text/event-stream")
+
+    if not prompt:
+        def _no_prompt():
+            yield 'data: {"error":"Введите задание"}\n\n'
+        return Response(stream_with_context(_no_prompt()), mimetype="text/event-stream")
+
+    data       = load_instructions()
+    sys_prompt = data.get("system_prompt", "").strip() or _DEFAULT_AUTO_SYSTEM_PROMPT
+    full_prompt = f"{sys_prompt}\n\nЗадание: {prompt}"
+
+    def _stream():
+        try:
+            resp = _http.post(
+                f"{OLLAMA_BASE}/api/generate",
+                json={"model": model, "prompt": full_prompt, "stream": True},
+                stream=True,
+                timeout=int(os.environ.get("OLLAMA_TIMEOUT", 240)),
+            )
+            resp.raise_for_status()
+            for raw_line in resp.iter_lines():
+                if not raw_line:
+                    continue
+                try:
+                    chunk = json.loads(raw_line)
+                except ValueError:
+                    continue
+                token = chunk.get("response", "")
+                if token:
+                    yield f"data: {json.dumps({'token': token})}\n\n"
+                if chunk.get("done"):
+                    _record_generation("auto", model, prompt)
+                    yield "data: [DONE]\n\n"
+                    return
+        except _http.exceptions.ConnectionError:
+            yield 'data: {"error":"Нет соединения с Ollama — запустите \'ollama serve\'"}\n\n'
+        except Exception as exc:  # pylint: disable=broad-except
+            yield f"data: {json.dumps({'error': str(exc)})}\n\n"
+
+    return Response(
+        stream_with_context(_stream()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+# ---------------------------------------------------------------------------
 # Simple chat endpoint — plain text conversation with Ollama (no HTML wrapping)
 # ---------------------------------------------------------------------------
 @app.route("/chat/stream", methods=["POST"])
