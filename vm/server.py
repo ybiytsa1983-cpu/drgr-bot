@@ -5616,7 +5616,7 @@ def project_path():
 # File upload — upload a file from the user's PC into the editor
 # ---------------------------------------------------------------------------
 
-# Allowed file extensions for upload (whitelist)
+# Allowed text file extensions for upload
 _UPLOAD_ALLOWED_EXT = {
     ".py", ".js", ".ts", ".html", ".css", ".json", ".xml", ".yaml", ".yml",
     ".md", ".markdown", ".txt", ".csv", ".sql", ".sh", ".bash", ".ps1",
@@ -5624,39 +5624,135 @@ _UPLOAD_ALLOWED_EXT = {
     ".rb", ".r", ".swift", ".dockerfile", ".toml", ".ini", ".env",
 }
 
+# Image/binary extensions — stored in projects/uploads/, returned as data URL
+_UPLOAD_IMAGE_EXT = {
+    ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg", ".ico",
+    ".tiff", ".tif", ".avif",
+}
+
+# All other binary file types accepted (PDF, Office, archives, etc.)
+_UPLOAD_BINARY_EXT = {
+    ".pdf", ".zip", ".tar", ".gz", ".7z", ".rar",
+    ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
+    ".mp3", ".mp4", ".wav", ".ogg", ".webm", ".avi",
+}
+
+_UPLOAD_MEDIA_DIR = os.path.join(_DIR, "projects", "uploads")
+
+
+def _ensure_upload_dir() -> None:
+    os.makedirs(_UPLOAD_MEDIA_DIR, exist_ok=True)
+
+
+def _html_escape(s: str) -> str:
+    """Minimal HTML escaping to prevent XSS when inserting filenames into HTML tags."""
+    return (s.replace("&", "&amp;")
+             .replace("<", "&lt;")
+             .replace(">", "&gt;")
+             .replace('"', "&quot;")
+             .replace("'", "&#x27;"))
+
+
+def _save_upload_file(data: bytes, safe_name: str) -> tuple:
+    """Save binary data to the uploads directory; return (stored_name, file_url)."""
+    _ensure_upload_dir()
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    # Use secure_filename again to ensure no path separators in safe_name
+    from werkzeug.utils import secure_filename as _sf
+    safe_base = _sf(safe_name) or "file.bin"
+    stored_name = f"{ts}_{safe_base}"
+    # Final safety check — ensure no directory traversal
+    stored_name = os.path.basename(stored_name)
+    stored_path = os.path.join(_UPLOAD_MEDIA_DIR, stored_name)
+    with open(stored_path, "wb") as fh:
+        fh.write(data)
+    return stored_name, f"/files/media/{stored_name}"
+
 
 @app.route("/files/upload", methods=["POST"])
 def files_upload():
-    """Accept a file uploaded from the user's PC and return its text content.
+    """Accept a file uploaded from the user's PC.
+
+    Text files: returns their text content so the editor can show them.
+    Image files: saves to projects/uploads/, returns base64 data URL + HTML img tag.
+    Binary files: saves to projects/uploads/, returns file URL.
 
     Accepts multipart/form-data with a 'file' field.
-    Returns: {content: "...", filename: "...", language: "...", success: true}
+    Returns: {content, filename, language, size, success, is_image, data_url, file_url}
     """
+    import base64 as _base64
     from werkzeug.utils import secure_filename as _secure_filename
 
     uploaded = request.files.get("file")
     if not uploaded:
         return jsonify({"error": "No file provided", "success": False}), 400
 
-    original_name = uploaded.filename or "file.txt"
-    safe_name = _secure_filename(original_name)
+    original_name = uploaded.filename or "file.bin"
+    safe_name = _secure_filename(original_name) or "file.bin"
     _, ext = os.path.splitext(safe_name.lower())
-    if ext and ext not in _UPLOAD_ALLOWED_EXT:
-        return jsonify({
-            "error": f"File type '{ext}' is not allowed. Supported: "
-                     + ", ".join(sorted(_UPLOAD_ALLOWED_EXT)),
-            "success": False,
-        }), 400
+    escaped_name = _html_escape(safe_name)
 
-    # Read content (limit to 512 KB)
-    data = uploaded.read(512 * 1024)
+    # ── Image file ──────────────────────────────────────────────────────────
+    if ext in _UPLOAD_IMAGE_EXT:
+        data = uploaded.read(10 * 1024 * 1024)  # 10 MB limit for images
+        stored_name, file_url = _save_upload_file(data, safe_name)
+
+        mime_map = {
+            ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+            ".gif": "image/gif", ".webp": "image/webp", ".bmp": "image/bmp",
+            ".svg": "image/svg+xml", ".ico": "image/x-icon",
+            ".tiff": "image/tiff", ".tif": "image/tiff", ".avif": "image/avif",
+        }
+        mime = mime_map.get(ext, "image/png")
+        b64 = _base64.b64encode(data).decode("ascii")
+        data_url = f"data:{mime};base64,{b64}"
+        html_tag = f'<img src="{file_url}" alt="{escaped_name}" style="max-width:100%">'
+        return jsonify({
+            "content":   html_tag,
+            "filename":  safe_name,
+            "language":  "html",
+            "size":      len(data),
+            "success":   True,
+            "is_image":  True,
+            "data_url":  data_url,
+            "file_url":  file_url,
+        })
+
+    # ── Binary (non-image) file ─────────────────────────────────────────────
+    if ext in _UPLOAD_BINARY_EXT:
+        data = uploaded.read(50 * 1024 * 1024)  # 50 MB limit
+        stored_name, file_url = _save_upload_file(data, safe_name)
+        html_tag = f'<a href="{file_url}" target="_blank">{escaped_name}</a>'
+        return jsonify({
+            "content":  html_tag,
+            "filename": safe_name,
+            "language": "html",
+            "size":     len(data),
+            "success":  True,
+            "is_image": False,
+            "file_url": file_url,
+        })
+
+    # ── Text file ───────────────────────────────────────────────────────────
+    # Read content (limit to 1 MB for text)
+    data = uploaded.read(1024 * 1024)
     try:
         content = data.decode("utf-8")
     except UnicodeDecodeError:
         try:
             content = data.decode("cp1251")
         except UnicodeDecodeError:
-            return jsonify({"error": "File is not valid UTF-8 or CP1251 text", "success": False}), 400
+            # Treat undecodable content as binary — save to uploads
+            stored_name, file_url = _save_upload_file(data, safe_name)
+            return jsonify({
+                "content":  f'<a href="{file_url}" target="_blank">{escaped_name}</a>',
+                "filename": safe_name,
+                "language": "html",
+                "size":     len(data),
+                "success":  True,
+                "is_image": False,
+                "file_url": file_url,
+            })
 
     # Guess language from extension
     _ext_to_lang = {
@@ -5674,12 +5770,25 @@ def files_upload():
     lang = _ext_to_lang.get(ext, "plaintext")
 
     return jsonify({
-        "content": content,
+        "content":  content,
         "filename": safe_name,
         "language": lang,
-        "size": len(data),
-        "success": True,
+        "size":     len(data),
+        "success":  True,
+        "is_image": False,
     })
+
+
+@app.route("/files/media/<path:filename>", methods=["GET"])
+def files_media(filename: str):
+    """Serve a previously uploaded media/binary file from projects/uploads/."""
+    from werkzeug.utils import secure_filename as _secure_filename
+    # Sanitise — use secure_filename + os.path.basename to prevent path traversal
+    safe = os.path.basename(_secure_filename(filename))
+    if not safe or safe.startswith('.'):
+        return jsonify({"error": "Invalid filename"}), 400
+    _ensure_upload_dir()
+    return send_from_directory(_UPLOAD_MEDIA_DIR, safe)
 
 
 # ---------------------------------------------------------------------------

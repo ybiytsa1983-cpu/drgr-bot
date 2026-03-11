@@ -81,7 +81,11 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
 #main{flex:1;display:flex;overflow:hidden;min-height:0}
 
 /* ── Editor pane ── */
-#epane{display:flex;flex-direction:column;flex:1;min-width:0}
+#epane{display:flex;flex-direction:column;flex:1;min-width:0;position:relative}
+#epane.drag-over{outline:2px dashed var(--accent);outline-offset:-2px;background:rgba(0,212,255,.04)}
+#epane.drag-over::after{content:'⬇ Перетащите файл сюда';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  background:var(--bg2);color:var(--accent);font-size:18px;padding:16px 32px;border-radius:8px;
+  border:2px dashed var(--accent);pointer-events:none;z-index:99;white-space:nowrap}
 #etb{display:flex;align-items:center;gap:6px;padding:4px 8px;
   background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0;flex-wrap:wrap}
 #etb select{width:auto;padding:4px 7px;font-size:11px}
@@ -515,7 +519,10 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
 
   <div id="main">
     <!-- Monaco Editor pane -->
-    <div id="epane">
+    <div id="epane"
+         ondragover="editorDragOver(event)"
+         ondragleave="editorDragLeave(event)"
+         ondrop="editorDrop(event)">
       <div id="etb">
         <span id="lang-badge" style="font-size:11px;background:var(--bg4);border:1px solid var(--border);color:var(--text2);padding:3px 9px;border-radius:11px;white-space:nowrap;cursor:pointer" onclick="cycleLanguage()" title="Кликни для смены языка">🔍 авто</span>
         <select id="lang-select" onchange="setLangManual(this.value)" title="Выбрать язык" style="font-size:11px;padding:3px 6px;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:4px;cursor:pointer">
@@ -563,7 +570,7 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
         <button class="ei" onclick="uploadFileToEditor()" title="Открыть файл с ПК в редакторе">📂 Файл</button>
         <button class="ei" onclick="downloadEditorFile()" title="Скачать текущий файл на ПК">⬇ Скачать</button>
         <button class="ei" onclick="clearEditor()" title="Очистить">🗑</button>
-        <input type="file" id="file-upload-input" style="display:none" onchange="handleFileUpload(this)"/>
+        <input type="file" id="file-upload-input" style="display:none" accept="*/*" onchange="handleFileUpload(this)"/>
       </div>
       <div id="monaco-box"></div>
       <div id="outbar">
@@ -842,6 +849,24 @@ var chatHistory = [];  // [{role:'user'|'assistant', text:'...'}]
 var MONACO_LOCAL = '/static/vendor/monaco/vs';
 var MONACO_CDN   = 'https://cdn.jsdelivr.net/npm/monaco-editor@0.44.0/min/vs';
 var VISOR_MODEL_NAME = 'drgr-visor';
+
+// ── Global drag-and-drop prevention ─────────────────────────────────────────
+// Prevent the browser from opening dropped files in a new tab when they land
+// outside the designated drop zone (#epane). Without this, dropping a file
+// anywhere on the page navigates away.
+(function() {
+  function _preventBrowserOpen(e) {
+    var target = e.target;
+    // Allow drops only inside #epane — everywhere else, block the browser default
+    var epane = document.getElementById('epane');
+    if (!epane || !epane.contains(target)) {
+      e.preventDefault();
+      e.dataTransfer && (e.dataTransfer.dropEffect = 'none');
+    }
+  }
+  document.addEventListener('dragover',  _preventBrowserOpen, false);
+  document.addEventListener('drop',      _preventBrowserOpen, false);
+})();
 
 // ── View switching ───────────────────────────────────────────────────────────
 function setView(v) {
@@ -1744,10 +1769,9 @@ function uploadFileToEditor() {
   document.getElementById('file-upload-input').click();
 }
 
-async function handleFileUpload(input) {
-  var file = input.files && input.files[0];
+// Core upload logic — upload file to server and load result into editor
+async function _doUploadFile(file) {
   if (!file) return;
-  input.value = '';
   var formData = new FormData();
   formData.append('file', file);
   toast('⏳ Загружаю файл ' + file.name + '...');
@@ -1755,19 +1779,84 @@ async function handleFileUpload(input) {
     var r = await fetch('/files/upload', { method: 'POST', body: formData });
     var d = await r.json();
     if (!d.success) { toast('❌ ' + (d.error || 'Ошибка загрузки')); return; }
-    if (editor) {
-      editor.setValue(d.content);
-      // Set language
-      if (d.language && typeof monaco !== 'undefined') {
-        try { monaco.editor.setModelLanguage(editor.getModel(), d.language); } catch(e) {}
+
+    if (d.is_image && d.data_url) {
+      // For images — show preview in visor and insert <img> tag in editor
+      showPreview('<html><body style="background:#1e1e1e;text-align:center;padding:20px">'
+        + '<p style="color:#aaa;font-size:12px">' + esc(d.filename) + ' ('
+        + (d.size/1024).toFixed(1) + ' КБ)</p>'
+        + '<img src="' + d.data_url + '" alt="' + esc(d.filename) + '" style="max-width:100%;max-height:80vh;border:1px solid #444">'
+        + '</body></html>');
+      setView('both');
+      if (editor) {
+        // Insert img tag at cursor position or append to existing content
+        var existing = editor.getValue();
+        var imgTag = '<img src="' + d.file_url + '" alt="' + d.filename + '" style="max-width:100%">\n';
+        if (existing.trim()) {
+          // Insert at cursor position
+          var pos = editor.getPosition();
+          editor.executeEdits('', [{ range: new monaco.Range(pos.lineNumber, pos.column, pos.lineNumber, pos.column), text: imgTag }]);
+        } else {
+          editor.setValue(imgTag);
+        }
+        if (typeof monaco !== 'undefined') {
+          try { monaco.editor.setModelLanguage(editor.getModel(), 'html'); } catch(e) {}
+        }
+        var sel = document.getElementById('lang-select');
+        if (sel) { sel.value = 'html'; _manualLang = 'html'; }
+        setLangBadge('html');
       }
-      var sel = document.getElementById('lang-select');
-      if (sel && d.language) { sel.value = d.language; _manualLang = d.language; }
-      setLangBadge(d.language || 'plaintext');
+      toast('🖼 Изображение загружено: ' + d.filename + ' (' + (d.size/1024).toFixed(1) + ' КБ)');
+      // Auto-save uploaded image reference to projects
+      autoSaveProject(editor ? editor.getValue() : '', 'html', 'загруженное изображение ' + d.filename);
+    } else {
+      // Text or binary file — set editor content
+      if (editor) {
+        editor.setValue(d.content);
+        if (d.language && typeof monaco !== 'undefined') {
+          try { monaco.editor.setModelLanguage(editor.getModel(), d.language); } catch(e) {}
+        }
+        var sel = document.getElementById('lang-select');
+        if (sel && d.language) { sel.value = d.language; _manualLang = d.language; }
+        setLangBadge(d.language || 'plaintext');
+      }
+      toast('✅ Загружен: ' + d.filename + ' (' + (d.size/1024).toFixed(1) + ' КБ)');
     }
-    toast('✅ Загружен: ' + d.filename + ' (' + (d.size/1024).toFixed(1) + ' КБ)');
   } catch(e) {
     toast('❌ Ошибка: ' + e.message);
+  }
+}
+
+async function handleFileUpload(input) {
+  var file = input.files && input.files[0];
+  if (!file) return;
+  input.value = '';
+  await _doUploadFile(file);
+}
+
+// ── Drag-and-drop onto editor pane ───────────────────────────────────────────
+function editorDragOver(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  e.dataTransfer.dropEffect = 'copy';
+  document.getElementById('epane').classList.add('drag-over');
+}
+
+function editorDragLeave(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  document.getElementById('epane').classList.remove('drag-over');
+}
+
+async function editorDrop(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  document.getElementById('epane').classList.remove('drag-over');
+  var files = e.dataTransfer && e.dataTransfer.files;
+  if (!files || !files.length) return;
+  // Upload all dropped files sequentially; each one is processed by _doUploadFile
+  for (var i = 0; i < files.length; i++) {
+    await _doUploadFile(files[i]);
   }
 }
 
