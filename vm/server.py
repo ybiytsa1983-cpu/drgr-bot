@@ -862,6 +862,142 @@ def _run_code(code: str, language: str) -> dict:
 # ---------------------------------------------------------------------------
 # Code checking
 # ---------------------------------------------------------------------------
+
+def _fix_aiogram_decorators(code: str) -> str:
+    """Auto-fix aiogram 3.x decorator argument ordering.
+
+    Python requires positional arguments before keyword arguments.
+    In aiogram 3.x decorators like @router.message() and
+    @router.callback_query(), filter objects (F.text, Command(...) etc.)
+    are positional args, while state= is a keyword arg.
+
+    This function reorders them so positional filters come first.
+    Example fix:
+      @router.message(state=S.foo, F.text.startswith('/x'))
+      → @router.message(F.text.startswith('/x'), state=S.foo)
+    """
+    import tokenize as _tok
+    import io as _io
+
+    _DECO_NAME_RE = re.compile(r"^(?:router|dp)\.\w+$")
+
+    try:
+        tokens = list(_tok.generate_tokens(_io.StringIO(code).readline))
+    except _tok.TokenError:
+        return code  # unparseable — leave unchanged
+
+    src_lines = code.splitlines(keepends=True)
+
+    def _offset(line: int, col: int) -> int:
+        return sum(len(src_lines[ln]) for ln in range(line - 1)) + col
+
+    replacements: list[tuple[int, int, str]] = []
+    i = 0
+    while i < len(tokens):
+        tok = tokens[i]
+        # Look for '@' that starts a decorator
+        if tok.type != _tok.OP or tok.string != "@":
+            i += 1
+            continue
+
+        # Collect name tokens up to '('
+        j = i + 1
+        name_parts: list[str] = []
+        while j < len(tokens):
+            t = tokens[j]
+            if t.type == _tok.NAME:
+                name_parts.append(t.string)
+                j += 1
+            elif t.type == _tok.OP and t.string == ".":
+                name_parts.append(".")
+                j += 1
+            elif t.type == _tok.OP and t.string == "(":
+                break
+            else:
+                break
+
+        name_str = "".join(name_parts)
+        if not _DECO_NAME_RE.match(name_str) or j >= len(tokens) or tokens[j].string != "(":
+            i += 1
+            continue
+
+        open_paren_tok = tokens[j]
+        depth = 1
+        k = j + 1
+        arg_toks: list = []
+        close_paren_tok = None
+        while k < len(tokens) and depth > 0:
+            t = tokens[k]
+            if t.type == _tok.OP:
+                if t.string in ("(", "[", "{"):
+                    depth += 1
+                elif t.string in (")", "]", "}"):
+                    depth -= 1
+                    if depth == 0:
+                        close_paren_tok = t
+                        break
+            arg_toks.append(t)
+            k += 1
+
+        if not close_paren_tok:
+            i = k
+            continue
+
+        # Split by top-level commas
+        parts_toks: list[list] = []
+        cur: list = []
+        d2 = 0
+        for t in arg_toks:
+            if t.type == _tok.OP:
+                if t.string in ("(", "[", "{"):
+                    d2 += 1
+                elif t.string in (")", "]", "}"):
+                    d2 -= 1
+                elif t.string == "," and d2 == 0:
+                    parts_toks.append(cur)
+                    cur = []
+                    continue
+            cur.append(t)
+        if cur:
+            parts_toks.append(cur)
+
+        part_texts = ["".join(t.string for t in pt).strip() for pt in parts_toks]
+        positional: list[str] = []
+        keyword: list[str] = []
+        for txt in part_texts:
+            if re.match(r"^[A-Za-z_]\w*\s*=", txt):
+                keyword.append(txt)
+            else:
+                positional.append(txt)
+
+        if not keyword or not positional:
+            i = k + 1
+            continue
+
+        # Already correct?
+        saw_kw = False
+        already_ok = True
+        for txt in part_texts:
+            if re.match(r"^[A-Za-z_]\w*\s*=", txt):
+                saw_kw = True
+            elif saw_kw:
+                already_ok = False
+                break
+
+        if not already_ok:
+            new_args = ", ".join(positional + keyword)
+            s = _offset(open_paren_tok.start[0], open_paren_tok.start[1]) + 1
+            e = _offset(close_paren_tok.start[0], close_paren_tok.start[1])
+            replacements.append((s, e, new_args))
+
+        i = k + 1
+
+    for s, e, txt in sorted(replacements, reverse=True):
+        code = code[:s] + txt + code[e:]
+
+    return code
+
+
 def _check_python(code: str) -> list:
     issues = []
 
@@ -1925,6 +2061,9 @@ def execute():
     # message references the actual line number in the submitted code rather
     # than a confusing /tmp/tmpXXX.py path that the user never sees.
     if language == "python":
+        # Auto-fix common aiogram 3.x decorator mistake: positional filter after keyword arg.
+        # e.g. @router.message(state=S.foo, F.text) → @router.message(F.text, state=S.foo)
+        code = _fix_aiogram_decorators(code)
         try:
             compile(code, "<code>", "exec")
         except SyntaxError as exc:
@@ -1933,6 +2072,14 @@ def execute():
             friendly = f"Синтаксическая ошибка на строке {lineno}: {exc.msg}"
             if snippet:
                 friendly += f"\n  {snippet}"
+            # Add hint for the common aiogram ordering mistake
+            if "positional argument follows keyword argument" in str(exc.msg):
+                friendly += (
+                    "\n\n💡 Подсказка: В aiogram 3.x позиционные фильтры (F.text, Command('start') и т.д.) "
+                    "должны стоять ПЕРЕД именованными аргументами (state=...).\n"
+                    "  ПРАВИЛЬНО:   @router.message(F.text.startswith('/cmd'), state=States.value)\n"
+                    "  НЕПРАВИЛЬНО: @router.message(state=States.value, F.text.startswith('/cmd'))"
+                )
             return jsonify({"output": "", "error": friendly, "success": False})
 
     result = _run_code(code, language)
@@ -2756,6 +2903,7 @@ _DEFAULT_AUTO_SYSTEM_PROMPT = (
     "emulator -avd <имя_эмулятора>.\n"
     "Для iOS приложений — Swift/SwiftUI (```swift блок). "
     "IPA — это iOS App Archive. Для установки на устройство нужен Apple Developer аккаунт.\n"
+    "Для Telegram ботов, Discord ботов — Python (```python блок) с aiogram или python-telegram-bot.\n"
     "КРИТИЧЕСКИ ВАЖНО для Python-кода:\n"
     "  - Используй ТОЛЬКО стандартную библиотеку Python (os, sys, json, math, random, datetime, "
     "re, pathlib, collections, itertools, functools, string, io, time, hashlib и т.д.).\n"
@@ -2763,6 +2911,15 @@ _DEFAULT_AUTO_SYSTEM_PROMPT = (
     "если задание явно не требует этого. Сторонние пакеты могут быть не установлены.\n"
     "  - Если нужна работа с HTTP — используй urllib.request из стандартной библиотеки.\n"
     "  - Код должен выполняться без ошибок в чистом окружении Python.\n"
+    "КРИТИЧЕСКИ ВАЖНО для aiogram 3.x:\n"
+    "  - В декораторах @router.message() и @router.callback_query() ВСЕГДА ставь "
+    "позиционные фильтры (F.text, Command('start'), F.text.startswith('/cmd') и т.д.) "
+    "ПЕРЕД именованными аргументами (state=States.value).\n"
+    "  - ПРАВИЛЬНО: @router.message(F.text.startswith('/generate'), "
+    "state=MediaStates.waiting)\n"
+    "  - НЕПРАВИЛЬНО: @router.message(state=MediaStates.waiting, "
+    "F.text.startswith('/generate'))  # SyntaxError!\n"
+    "  - Это Python-правило: позиционные аргументы не могут идти после именованных.\n"
     "КРИТИЧЕСКИ ВАЖНО для JavaScript-кода (Node.js):\n"
     "  - Код выполняется в Node.js — НИКАКИХ browser/Chrome Extension API.\n"
     "  - ЗАПРЕЩЕНО использовать: chrome.storage, chrome.runtime, chrome.tabs, browser.*, "
@@ -4491,12 +4648,145 @@ def _save_project(project_id: str, name: str, description: str, files: dict) -> 
     return project_dir
 
 
+def _is_chrome_extension_request(prompt: str) -> bool:
+    """Return True if the prompt is asking for a Chrome/browser extension."""
+    keywords = [
+        "chrome extension", "browser extension", "расширение chrome",
+        "расширение для chrome", "расширение браузера", "manifest.json",
+        "chrome addon", "firefox extension", "sidebar extension", "sidepanel",
+        "side panel extension", "content script", "background script",
+    ]
+    pl = prompt.lower()
+    return any(kw in pl for kw in keywords)
+
+
+def _generate_chrome_extension_files(model: str, prompt: str, name: str) -> dict:
+    """Use the LLM to generate a complete Chrome extension (Manifest V3) as multiple files.
+
+    Returns a dict of {filename: content} for all extension files.
+    """
+    sys_prompt = (
+        "You are an expert Chrome Extension developer (Manifest V3).\n"
+        "Generate a complete, working Chrome Extension for the task below.\n"
+        "Output EXACTLY the following files, each in its own fenced code block "
+        "preceded by a line that says exactly: === filename ===\n"
+        "Required files:\n"
+        "=== manifest.json ===\n"
+        "```json\n"
+        "{ ... complete manifest ... }\n"
+        "```\n"
+        "=== sidepanel.html ===\n"
+        "```html\n"
+        "<!DOCTYPE html> ... complete side panel UI ...\n"
+        "```\n"
+        "=== sidepanel.js ===\n"
+        "```javascript\n"
+        "// complete side panel logic\n"
+        "```\n"
+        "=== background.js ===\n"
+        "```javascript\n"
+        "// service worker / background script\n"
+        "```\n"
+        "=== content.js ===\n"
+        "```javascript\n"
+        "// content script injected into pages\n"
+        "```\n"
+        "Rules:\n"
+        "- Use Manifest Version 3 (manifest_version: 3).\n"
+        "- The side panel URL must be 'sidepanel.html'.\n"
+        "- All Ollama API calls go to http://localhost:11434.\n"
+        "- Use only standard Web APIs — no npm packages.\n"
+        "- Include responsive CSS directly in sidepanel.html <style> tag.\n"
+        "- Include a README.md with installation instructions.\n"
+        f"\nTask: {prompt}"
+    )
+
+    resp = _http.post(
+        f"{OLLAMA_BASE}/api/generate",
+        json={"model": model, "prompt": sys_prompt, "stream": False},
+        timeout=int(os.environ.get("OLLAMA_TIMEOUT", 300)),
+    )
+    resp.raise_for_status()
+    raw = resp.json().get("response", "")
+
+    # Parse the response: look for === filename === markers followed by code blocks
+    file_re = re.compile(
+        r"===\s*([\w.\-/]+)\s*===\s*\n```\w*\n([\s\S]*?)```",
+        re.MULTILINE,
+    )
+    files: dict[str, str] = {}
+    for m in file_re.finditer(raw):
+        fname = m.group(1).strip()
+        content = m.group(2)
+        if fname and content.strip():
+            files[fname] = content
+
+    # Fallback: if the model didn't follow the format, extract individual code blocks
+    if not files:
+        manifest = _extract_code_block(raw, "json")
+        sidepanel_html = _extract_code_block(raw, "html")
+        sidepanel_js = _extract_code_block(raw, "javascript")
+        if manifest:
+            files["manifest.json"] = manifest
+        if sidepanel_html:
+            files["sidepanel.html"] = sidepanel_html
+        if sidepanel_js:
+            files["sidepanel.js"] = sidepanel_js
+        # background / content fallback
+        bg_match = re.search(r'background\.js.*?```(?:javascript|js)\n([\s\S]*?)```', raw, re.IGNORECASE)
+        if bg_match:
+            files["background.js"] = bg_match.group(1)
+        ct_match = re.search(r'content\.js.*?```(?:javascript|js)\n([\s\S]*?)```', raw, re.IGNORECASE)
+        if ct_match:
+            files["content.js"] = ct_match.group(1)
+
+    # Ensure a manifest exists even if generation failed partially
+    if "manifest.json" not in files:
+        ext_name = name or "AI Assistant"
+        files["manifest.json"] = json.dumps({
+            "manifest_version": 3,
+            "name": ext_name,
+            "version": "1.0",
+            "description": prompt[:120],
+            "permissions": ["sidePanel", "activeTab", "scripting", "tabs"],
+            "host_permissions": ["<all_urls>"],
+            "background": {"service_worker": "background.js"},
+            "content_scripts": [{"matches": ["<all_urls>"], "js": ["content.js"]}],
+            "side_panel": {"default_path": "sidepanel.html"},
+            "action": {"default_title": ext_name},
+        }, ensure_ascii=False, indent=2)
+
+    # Add README with installation instructions
+    files["README.md"] = (
+        f"# {name}\n\n"
+        f"**Описание:** {prompt}\n\n"
+        f"**Сгенерировано:** {_now()}\n\n"
+        "## Установка Chrome Extension\n\n"
+        "1. Откройте Chrome и перейдите на `chrome://extensions/`\n"
+        "2. Включите **Режим разработчика** (правый верхний угол)\n"
+        "3. Нажмите **«Загрузить распакованное расширение»**\n"
+        "4. Выберите папку этого проекта\n"
+        "5. Расширение установлено!\n\n"
+        "## Файлы\n\n"
+        + "\n".join(f"- `{f}`" for f in files.keys() if f != "README.md")
+        + "\n\n"
+        "## Использование Ollama\n\n"
+        "Расширение подключается к `http://localhost:11434`.\n"
+        "Убедитесь, что Ollama запущена: `ollama serve`\n"
+    )
+
+    return files
+
+
 @app.route("/project/generate", methods=["POST"])
 def project_generate():
     """Generate a complete web project from a task description using Ollama.
 
     Body: {"model": "...", "prompt": "...", "name": "optional project name"}
     Returns: {"project_id": "...", "files": {"index.html": "...", ...}, "success": true}
+
+    Detects Chrome extension requests and generates a full multi-file extension
+    (manifest.json, sidepanel.html, sidepanel.js, background.js, content.js, README.md).
     """
     body    = request.get_json(silent=True) or {}
     model   = body.get("model", "").strip()
@@ -4508,41 +4798,46 @@ def project_generate():
     if not prompt:
         return jsonify({"error": "No prompt provided", "success": False})
 
-    sys_prompt = (
-        "You are an expert full-stack web developer. "
-        "Generate a complete, self-contained, production-ready web application "
-        "for the task described below. "
-        "The application MUST be a single HTML file with all CSS and JavaScript inline. "
-        "Use a dark, modern design with CSS variables, responsive layout (flexbox/grid), "
-        "and smooth animations. Include all functionality described in the task. "
-        "Return ONLY the complete HTML document inside a fenced ```html code block. "
-        "Do not write anything outside that block.\n\n"
-        f"Task: {prompt}"
-    )
-
     try:
-        resp = _http.post(
-            f"{OLLAMA_BASE}/api/generate",
-            json={"model": model, "prompt": sys_prompt, "stream": False},
-            timeout=int(os.environ.get("OLLAMA_TIMEOUT", 240)),
-        )
-        resp.raise_for_status()
-        raw  = resp.json().get("response", "")
-        html = _extract_code_block(raw, "html")
-        if not html:
-            return jsonify({"error": "Model returned no HTML", "success": False})
+        # Chrome extension: generate multi-file project
+        if _is_chrome_extension_request(prompt):
+            files = _generate_chrome_extension_files(model, prompt, name)
+            if not files:
+                return jsonify({"error": "Model returned no extension files", "success": False})
+        else:
+            sys_prompt = (
+                "You are an expert full-stack web developer. "
+                "Generate a complete, self-contained, production-ready web application "
+                "for the task described below. "
+                "The application MUST be a single HTML file with all CSS and JavaScript inline. "
+                "Use a dark, modern design with CSS variables, responsive layout (flexbox/grid), "
+                "and smooth animations. Include all functionality described in the task. "
+                "Return ONLY the complete HTML document inside a fenced ```html code block. "
+                "Do not write anything outside that block.\n\n"
+                f"Task: {prompt}"
+            )
 
-        # Build file set
-        files = {
-            "index.html": html,
-            "README.md": (
-                f"# {name}\n\n"
-                f"**Описание задачи:**\n\n{prompt}\n\n"
-                f"**Сгенерировано:** {_now()}\n\n"
-                f"**Модель:** {model}\n\n"
-                "## Запуск\n\nОткройте `index.html` в браузере.\n"
-            ),
-        }
+            resp = _http.post(
+                f"{OLLAMA_BASE}/api/generate",
+                json={"model": model, "prompt": sys_prompt, "stream": False},
+                timeout=int(os.environ.get("OLLAMA_TIMEOUT", 240)),
+            )
+            resp.raise_for_status()
+            raw  = resp.json().get("response", "")
+            html = _extract_code_block(raw, "html")
+            if not html:
+                return jsonify({"error": "Model returned no HTML", "success": False})
+
+            files = {
+                "index.html": html,
+                "README.md": (
+                    f"# {name}\n\n"
+                    f"**Описание задачи:**\n\n{prompt}\n\n"
+                    f"**Сгенерировано:** {_now()}\n\n"
+                    f"**Модель:** {model}\n\n"
+                    "## Запуск\n\nОткройте `index.html` в браузере.\n"
+                ),
+            }
 
         project_id = f"{_slugify(name)}_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
         _save_project(project_id, name, prompt, files)
@@ -4565,7 +4860,7 @@ def project_generate():
         return jsonify({
             "project_id": project_id,
             "name": name,
-            "files": files,
+            "files": {k: v for k, v in files.items()},
             "success": True,
         })
     except _http.exceptions.Timeout:
@@ -4599,6 +4894,35 @@ def project_list():
 
     projects.sort(key=lambda p: p.get("created", ""), reverse=True)
     return jsonify({"projects": projects, "total": len(projects)})
+
+
+@app.route("/project/zip/<project_id>", methods=["GET"])
+def project_zip(project_id: str):
+    """Return all project files as a ZIP archive for download.
+
+    Useful for downloading Chrome extensions ready for installation.
+    """
+    import io
+    import zipfile
+
+    if not re.match(r'^[a-z0-9_\-]+$', project_id):
+        return jsonify({"error": "Invalid project ID"}), 400
+    project_dir = os.path.join(PROJECTS_DIR, project_id)
+    if not os.path.isdir(project_dir):
+        return jsonify({"error": "Project not found"}), 404
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for entry in os.scandir(project_dir):
+            if entry.is_file() and entry.name != "project.json":
+                zf.write(entry.path, entry.name)
+    buf.seek(0)
+
+    return Response(
+        buf.read(),
+        mimetype="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{project_id}.zip"'},
+    )
 
 
 @app.route("/project/<project_id>/<path:filename>", methods=["GET"])

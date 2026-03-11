@@ -271,6 +271,40 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
   background:#2a2a2a;color:#fff;padding:7px 16px;border-radius:7px;
   font-size:12px;z-index:999;pointer-events:none;
   transition:opacity .3s;opacity:0;border:1px solid var(--border)}
+
+/* ── Mobile / narrow-screen responsive layout ── */
+@media (max-width: 768px) {
+  :root { --panel-w: 90vw }
+  html,body { overflow: auto }
+  #app { height: auto; min-height: 100vh }
+  #topbar { padding: 5px 8px; gap: 5px }
+  .tv-btn { font-size: 10px; padding: 3px 6px }
+  #model-badge { max-width: 90px; font-size: 10px }
+  /* Stack editor and visor vertically on mobile */
+  #main { flex-direction: column; overflow: visible; min-height: 0 }
+  #epane { min-height: 50vh; flex: none }
+  #rh { display: none !important }
+  #vpane { width: 100% !important; min-width: unset; border-left: none;
+           border-top: 1px solid var(--border); flex: none; min-height: 40vh }
+  #pbar { position: sticky; bottom: 0; z-index: 10 }
+  /* Chat pane on mobile */
+  #chat-pane { height: 100vh }
+  #chat-input-row { padding: 8px 10px }
+  /* VM pane on mobile */
+  #vm-pane { height: 100vh }
+  /* Prompt bar buttons wrap properly */
+  .pbar-row { flex-wrap: wrap }
+  #btn-gen, #btn-patch, #btn-open-browser, #btn-save-project { padding: 7px 10px; font-size: 12px }
+  /* Editor toolbar: allow scrolling */
+  #etb { overflow-x: auto; flex-wrap: nowrap }
+  /* Side panel full-width */
+  #panel { width: var(--panel-w) }
+}
+@media (max-width: 480px) {
+  .tv-btn:not(.on) { display: none }
+  #topbar-title { font-size: 12px }
+  #etb .ei { padding: 3px 6px; font-size: 10px }
+}
 </style>
 </head>
 <body>
@@ -369,7 +403,7 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
           font-family:monospace;color:#9cdcfe;cursor:pointer;word-break:break-all;margin-bottom:6px;
           border:1px solid var(--border)"
         onclick="copyPs('ps-install-cmd')" title="Нажмите для копирования">
-        <span id="ps-install-cmd">irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/copilot/create-monaco-code-generator/run.ps1" | iex</span>
+        <span id="ps-install-cmd">irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/run.ps1" | iex</span>
         <span style="float:right;color:var(--text2);font-size:9px">📋</span>
       </div>
       <div style="font-size:10px;color:var(--text2);margin-bottom:3px">⬇ Скачать и применить обновления:</div>
@@ -1031,16 +1065,27 @@ async function loadProjectList() {
       var p = d.projects[i];
       var files = (p.files || []);
       if (!files.length) continue;  // skip projects with no files
-      var mainFile = files[0];
+      // Prefer index.html / sidepanel.html as main file; fallback to first
+      var mainFile = files.find(function(f){ return f === 'index.html' || f === 'sidepanel.html'; }) || files[0];
       var pid = esc(p.id || '');
       var pname = esc(p.name || p.id || '?');
       var pcreated = esc((p.created || '').slice(0,16).replace('T',' '));
+      var isExtension = files.some(function(f){ return f === 'manifest.json'; });
+      var fileCount = files.length;
+      var filesBadge = fileCount > 1 ? ' <span style="color:var(--text2);font-size:9px">[' + fileCount + ' файлов]</span>' : '';
+      var extBadge = isExtension ? ' <span style="background:#3a2a5a;color:#c8a0f0;font-size:9px;padding:1px 4px;border-radius:3px">🔌 Extension</span>' : '';
       html += '<div data-pid="' + pid + '" style="background:var(--bg3);border:1px solid var(--border);border-radius:5px;padding:7px 9px;margin-bottom:5px">'
-           +  '<div style="font-weight:700;font-size:11px;color:var(--text)">' + pname + '</div>'
+           +  '<div style="font-weight:700;font-size:11px;color:var(--text)">' + pname + extBadge + filesBadge + '</div>'
            +  '<div style="font-size:10px;color:var(--text2);margin:2px 0">' + pcreated + '</div>'
-           +  '<div style="display:flex;gap:5px;margin-top:4px">'
-           +    '<button class="pb pb-s" style="font-size:10px;padding:3px 8px" onclick="loadProjectIntoEditor(\'' + pid + '\',\'' + esc(mainFile) + '\')" title="Открыть в редакторе">📝 Открыть</button>'
-           +    '<button class="pb pb-m" style="font-size:10px;padding:3px 8px" onclick="downloadProjectFile(\'' + pid + '\',\'' + esc(mainFile) + '\',\'' + esc(mainFile) + '\')" title="Скачать на ПК">⬇ Скачать</button>'
+           +  '<div style="display:flex;gap:5px;margin-top:4px;flex-wrap:wrap">'
+           +    '<button class="pb pb-s" style="font-size:10px;padding:3px 8px" onclick="loadProjectIntoEditor(\'' + pid + '\',\'' + esc(mainFile) + '\')" title="Открыть в редакторе">📝 Код</button>'
+           +    (mainFile.endsWith('.html')
+                  ? '<button class="pb" style="font-size:10px;padding:3px 8px;background:#1a4a6a;color:#7acfef" onclick="runProjectInVisor(\'' + pid + '\',\'' + esc(mainFile) + '\')" title="Показать в Визоре">▶ Визор</button>'
+                  : '')
+           +    (isExtension
+                  ? '<button class="pb" style="font-size:10px;padding:3px 8px;background:#2a5c3a;color:#7acc8a" onclick="downloadProjectZip(\'' + pid + '\')" title="Скачать ZIP для установки в Chrome">📦 ZIP</button>'
+                  : '<button class="pb pb-m" style="font-size:10px;padding:3px 8px" onclick="downloadProjectFile(\'' + pid + '\',\'' + esc(mainFile) + '\',\'' + esc(mainFile) + '\')" title="Скачать на ПК">⬇ Скачать</button>'
+               )
            +    '<button class="pb pb-d" style="font-size:10px;padding:3px 8px" onclick="deleteProject(\'' + pid + '\')" title="Удалить проект">🗑</button>'
            +  '</div>'
            + '</div>';
@@ -1049,6 +1094,31 @@ async function loadProjectList() {
   } catch(e) {
     box.innerHTML = '<span style="color:var(--danger)">Ошибка: ' + esc(e.message) + '</span>';
   }
+}
+
+// ── Run project HTML in the VISOR ─────────────────────────────────────────────
+async function runProjectInVisor(projectId, filename) {
+  try {
+    var r = await fetch('/project/' + encodeURIComponent(projectId) + '/' + encodeURIComponent(filename));
+    var html = await r.text();
+    showPreview(html);
+    closePanel();
+    setView('preview');
+    toast('▶ Проект запущен в Визоре: ' + filename);
+  } catch(e) {
+    toast('❌ Ошибка запуска: ' + e.message);
+  }
+}
+
+// ── Download entire project as ZIP ────────────────────────────────────────────
+function downloadProjectZip(projectId) {
+  var a = document.createElement('a');
+  a.href = '/project/zip/' + encodeURIComponent(projectId);
+  a.download = projectId + '.zip';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  toast('📦 Скачивание ZIP: ' + projectId);
 }
 
 async function loadProjectIntoEditor(projectId, filename) {
