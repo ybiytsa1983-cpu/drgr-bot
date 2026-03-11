@@ -303,7 +303,7 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
         <button class="pb pb-m" title="Показать/скрыть" onclick="var i=document.getElementById('tok-inp');i.type=i.type==='password'?'text':'password'">👁</button>
       </div>
       <div id="bot-test-status" style="font-size:10px;margin-top:2px"></div>
-      <div style="font-size:10px;color:var(--text2)">Получить у @BotFather в Telegram</div>
+      <div style="font-size:10px;color:var(--text2)">Получить у @BotFather в Telegram. После смены токена перезапустите бота (start.ps1).</div>
     </div>
 
     <!-- Chat ID -->
@@ -1750,6 +1750,19 @@ async function generateCode() {
       setLangBadge(lang);
       var sel = document.getElementById('lang-select');
       if (sel) sel.value = '';
+      // Detect if model returned training/episode JSON instead of code
+      var isTrainingJson = lang === 'json' && (
+        /"episode_id"\s*:/.test(code) ||
+        /"training_view"\s*:/.test(code) ||
+        /"actions"\s*:\s*\[/.test(code) ||
+        /"dataset_role"\s*:/.test(code)
+      );
+      if (isTrainingJson) {
+        status.innerHTML = '<span class="gs-err">⚠ Модель вернула данные обучения вместо кода. '
+          + 'Попробуйте: 1) Выбрать другую модель в настройках ☰, '
+          + '2) Переформулировать задание, '
+          + '3) Выполнить ollama pull &lt;модель&gt; для обновления модели.</span>';
+      }
       // Always show in ВИЗОР
       if (lang === 'html') {
         showPreview(code);
@@ -1761,7 +1774,9 @@ async function generateCode() {
       } else {
         showPreview(wrapForVisor(code, lang));
       }
-      status.innerHTML = '<span class="gs-ok">✓ Готово! Язык: ' + (_LANG_ICONS[lang]||'') + ' ' + lang.toUpperCase() + '. Визор обновлён.</span>';
+      if (!isTrainingJson) {
+        status.innerHTML = '<span class="gs-ok">✓ Готово! Язык: ' + (_LANG_ICONS[lang]||'') + ' ' + lang.toUpperCase() + '. Визор обновлён.</span>';
+      }
       // Auto-save to projects folder
       autoSaveProject(code, lang, prompt);
     }
@@ -1855,6 +1870,10 @@ async function patchCode() {
       if (sel) sel.value = '';
       if (lang === 'html') { showPreview(code); }
       else if (lang === 'markdown') { showPreview(renderMarkdownPreview(code)); }
+      else if (lang === 'json') {
+        try { showPreview(wrapForVisor(JSON.stringify(JSON.parse(code), null, 2), 'json')); }
+        catch(e) { showPreview(wrapForVisor(code, lang)); }
+      }
       else { showPreview(wrapForVisor(code, lang)); }
       status.innerHTML = '<span class="gs-ok">✓ Правки внесены! Визор обновлён.</span>';
     }
@@ -1990,7 +2009,7 @@ async function saveBotToken() {
       body: JSON.stringify({ bot_token: tok }) });
     var d = await r.json();
     if (d.ok) {
-      toast('✅ Токен бота сохранён в .env');
+      toast('✅ Токен бота сохранён — перезапустите бота (start.ps1) чтобы применить');
       document.getElementById('tok-inp').value = '';
       // Update health indicator immediately
       var el = document.getElementById('h-bot');

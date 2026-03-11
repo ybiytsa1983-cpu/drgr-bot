@@ -2538,6 +2538,14 @@ def generate_html_stream():
                 stream=True,
                 timeout=int(os.environ.get("OLLAMA_TIMEOUT", 240)),
             )
+            if resp.status_code == 500:
+                err_body = ""
+                try:
+                    err_body = resp.json().get("error", resp.text[:200])
+                except Exception:  # pylint: disable=broad-except
+                    err_body = resp.text[:200]
+                yield f"data: {json.dumps({'error': f'Ollama ошибка 500: {err_body}. Проверьте, что модель \"{model}\" загружена (ollama pull {model}).'})}\n\n"
+                return
             resp.raise_for_status()
             for raw_line in resp.iter_lines():
                 if not raw_line:
@@ -2602,7 +2610,10 @@ _DEFAULT_AUTO_SYSTEM_PROMPT = (
     "НЕ JavaScript для Node.js.\n"
     "  - Если нужна работа в браузере с DOM — генерируй HTML (```html блок), а не JavaScript.\n"
     "ВСЕГДА возвращай ТОЛЬКО код в соответствующем ``` блоке без пояснений вне кода.\n"
-    "НЕ спрашивай уточнений — сразу генерируй полный рабочий код."
+    "НЕ спрашивай уточнений — сразу генерируй полный рабочий код.\n"
+    "СТРОГО ЗАПРЕЩЕНО: возвращать любые мета-данные, данные обучения или структурированные данные "
+    "вместо кода (например: episode/actions/training_view, perception/observation или похожие схемы) — "
+    "только готовый исполняемый код."
 )
 
 
@@ -2816,6 +2827,14 @@ def patch_stream():
                 stream=True,
                 timeout=int(os.environ.get("OLLAMA_TIMEOUT", 300)),
             )
+            if resp.status_code == 500:
+                err_body = ""
+                try:
+                    err_body = resp.json().get("error", resp.text[:200])
+                except Exception:  # pylint: disable=broad-except
+                    err_body = resp.text[:200]
+                yield f"data: {json.dumps({'error': f'Ollama ошибка 500: {err_body}. Проверьте, что модель \"{model}\" загружена (ollama pull {model}).'})}\n\n"
+                return
             resp.raise_for_status()
             for raw_line in resp.iter_lines():
                 if not raw_line:
