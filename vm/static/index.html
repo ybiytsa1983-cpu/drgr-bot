@@ -474,6 +474,7 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
         <button class="vbtn" onclick="downloadFileFromUrl()" title="Скачать файл по URL в редактор">⬇ Скачать</button>
         <button class="vbtn ai" onclick="screenshotAndAnalyze()" title="Скриншот страницы + AI описание">📸+🧠</button>
         <button class="vbtn" id="btn-watch" onclick="toggleWatchPage()" title="Следить за изменениями на странице (3 снимка)">👁 Watch</button>
+        <button class="vbtn" id="btn-agent" onclick="toggleAgentRun()" title="Автономный агент: выполнить задачу в браузере" style="border-color:#7b3f9e;color:#c47ff7">🤖 Агент</button>
       </div>
       <!-- Web search bar -->
       <div id="vsearch-row" style="display:flex;gap:4px;padding:4px 6px;background:var(--bg2);border-bottom:1px solid var(--border)">
@@ -924,12 +925,23 @@ async function autoSaveProject(code, lang, prompt) {
   var safeName = (prompt || 'auto').slice(0,40).replace(/[^\w\- .а-яА-Я]/g,'_').trim() || 'auto';
   var filename = safeName + '.' + ext;
   try {
-    await fetch('/project/save', {
+    var r = await fetch('/project/save', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ content: code, filename: filename, name: safeName,
                              description: prompt || '' })
     });
+    var d = await r.json();
+    if (d.success) {
+      toast('💾 Сохранён в проекты: ' + (d.project_id || filename));
+      // Refresh project list if it's already loaded (check for data items)
+      var projList = document.getElementById('proj-list');
+      if (projList && projList.querySelector('[data-pid]')) {
+        loadProjectList();
+      }
+    } else {
+      console.error('Auto-save failed:', d.error);
+    }
   } catch(e) { console.error('Auto-save failed:', e); }
 }
 
@@ -954,7 +966,7 @@ async function loadProjectList() {
       var pid = esc(p.id || '');
       var pname = esc(p.name || p.id || '?');
       var pcreated = esc((p.created || '').slice(0,16).replace('T',' '));
-      html += '<div style="background:var(--bg3);border:1px solid var(--border);border-radius:5px;padding:7px 9px;margin-bottom:5px">'
+      html += '<div data-pid="' + pid + '" style="background:var(--bg3);border:1px solid var(--border);border-radius:5px;padding:7px 9px;margin-bottom:5px">'
            +  '<div style="font-weight:700;font-size:11px;color:var(--text)">' + pname + '</div>'
            +  '<div style="font-size:10px;color:var(--text2);margin:2px 0">' + pcreated + '</div>'
            +  '<div style="display:flex;gap:5px;margin-top:4px">'
@@ -2242,7 +2254,81 @@ async function toggleWatchPage() {
   watchAbort = null;
   if (btn) { btn.textContent = '👁 Watch'; btn.style.background = ''; }
 }
-// ── Markdown → safe HTML renderer for chat bubbles ────────────────────────────
+
+// ── Autonomous Browser Agent ───────────────────────────────────────────────────
+var agentActive = false;
+var agentAbort = null;
+
+async function toggleAgentRun() {
+  var btn = document.getElementById('btn-agent');
+  if (agentActive) {
+    agentActive = false;
+    if (agentAbort) { agentAbort.abort(); agentAbort = null; }
+    if (btn) { btn.textContent = '🤖 Агент'; btn.style.background = ''; }
+    showVaiResult('⏹ Агент остановлен.', false);
+    return;
+  }
+  if (!curModel) { toast('Выберите модель в настройках ☰'); openPanel(); return; }
+  var url  = document.getElementById('vurl-input').value.trim();
+  var task = document.getElementById('vsearch-input').value.trim()
+             || prompt('Задание для автономного агента (что сделать в браузере):', '');
+  if (!task) { toast('Введите задание для агента'); return; }
+
+  agentActive = true;
+  agentAbort  = new AbortController();
+  if (btn) { btn.textContent = '⏹ Стоп'; btn.style.background = '#7b3f9e'; }
+  showVaiResult('🤖 Автономный агент запущен...\nЗадание: ' + task.slice(0, 120), true);
+  if (window.getComputedStyle(document.getElementById('vpane')).display === 'none') setView('both');
+
+  var log = '🤖 Автономный агент\nЗадание: ' + task.slice(0, 200) + '\n\n';
+  try {
+    var resp = await fetch('/browse/agent/run', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({task: task, model: curModel, max_steps: 20, start_url: url || ''}),
+      signal: agentAbort.signal
+    });
+    var reader = resp.body.getReader();
+    var decoder = new TextDecoder();
+    var buf = '';
+    while (true) {
+      var rd = await reader.read();
+      if (rd.done) break;
+      buf += decoder.decode(rd.value, {stream: true});
+      var lines = buf.split('\n'); buf = lines.pop();
+      for (var ln of lines) {
+        if (!ln.startsWith('data: ')) continue;
+        var payload = ln.slice(6).trim();
+        if (payload === '[DONE]') { log += '\n✅ Агент завершил работу.\n'; break; }
+        try {
+          var obj = JSON.parse(payload);
+          if (obj.error) { log += '❌ ' + obj.error + '\n'; break; }
+          log += '⚙ Цикл ' + (obj.cycle||'?') + ' | URL: ' + (obj.url||'') + '\n';
+          if (obj.thoughts && obj.thoughts.plan_short) log += '  План: ' + obj.thoughts.plan_short.slice(0,120) + '\n';
+          if (obj.commands && obj.commands.length) log += '  Команд: ' + obj.commands.length + '\n';
+          if (obj.results) {
+            for (var r of obj.results) log += '  → ' + r.type + ': ' + (r.ok ? '✓' : '✗') + ' ' + (r.info||'').slice(0,60) + '\n';
+          }
+          if (obj.status && obj.status !== 'running') log += '\n🏁 Статус: ' + obj.status + '\n';
+          log += '\n';
+          showVaiResult(log, obj.status === 'running' || !obj.status);
+          // Show screenshot in ВИЗОР if available
+          if (obj.screenshot && obj.screenshot.length > 30) {
+            // Note: screenshot is truncated in the log, the page rendered via iframe
+          }
+          if (obj.status && obj.status.startsWith('finished_')) break;
+        } catch(e) {}
+      }
+    }
+  } catch(e) {
+    if (e.name !== 'AbortError') log += '❌ Ошибка: ' + e.message + '\n';
+  }
+  agentActive = false;
+  agentAbort = null;
+  if (btn) { btn.textContent = '🤖 Агент'; btn.style.background = ''; }
+  showVaiResult(log, false);
+}
+
 function mdToHtml(text) {
   // Escape HTML first
   var s = text

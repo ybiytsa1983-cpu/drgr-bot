@@ -29,6 +29,7 @@ Endpoints:
   POST /convert/image       — convert image between formats (PNG/JPEG/WEBP/BMP) via Pillow
   POST /convert/text        — convert text between formats (JSON↔CSV, HTML→text, MD→HTML)
   POST /browse/screenshot   — screenshot a URL and analyse with qwen3-vl / drgr-visor
+  POST /browse/agent/run    — SSE: run autonomous DRGRBrowserAgent loop for a task
   POST /patch/stream        — stream edited code (patch existing code based on user request)
   POST /project/generate    — generate a full web project from a task description and save to disk
   GET  /project/list        — list all saved projects (metadata, most recent first)
@@ -437,6 +438,31 @@ def _is_browser_extension_code(code: str) -> bool:
     return bool(_BROWSER_EXT_PATTERNS.search(code))
 
 
+# Regex that matches a *closed* JavaScript regex literal on a single line:
+#   /pattern/flags   (flags are optional; only valid flag chars allowed)
+# Used to distinguish a real regex from a bare URL-path like /site or /api/v1.
+_JS_CLOSED_REGEX_RE = re.compile(
+    r"^/[^/\n]+/[gimsuy]{0,6}\s*(?:[;,\)\]}\n]|$)"
+)
+
+
+def _js_code_starts_with_bare_slash(code: str) -> str:
+    """Return the offending first line if *code* starts with an unterminated
+    regex literal (e.g. '/site', '/api/v1'), or an empty string if the code
+    is fine.  A valid '/pattern/flags' regex or a '//' / '/*' comment is
+    considered fine.
+    """
+    stripped = code.lstrip()
+    if not stripped.startswith("/"):
+        return ""
+    if stripped.startswith(("//", "/*")):
+        return ""
+    first_line = stripped.split("\n")[0].strip()
+    if _JS_CLOSED_REGEX_RE.match(first_line):
+        return ""
+    return first_line
+
+
 _RUNNERS = {
     "python": ["python3"],
     "javascript": ["node", "--no-warnings"],
@@ -466,6 +492,18 @@ def _run_typescript(code: str) -> dict:
     2. npx ts-node --transpile-only --skip-project  (requires ts-node install)
     3. Regex type-stripping + plain node  (last resort for simple TS files)
     """
+    # Guard: bare slash at start (e.g. /site) would cause a Node.js regex error
+    _bad_line = _js_code_starts_with_bare_slash(code)
+    if _bad_line:
+        return {
+            "output": "",
+            "error": (
+                f"SyntaxError: Строка 1 «{_bad_line[:80]}» начинается с «/» — "
+                "это URL-путь, а не TypeScript-код."
+            ),
+            "success": False,
+        }
+
     tmp_ts = None
     try:
         with tempfile.NamedTemporaryFile(
@@ -607,6 +645,31 @@ def _run_code(code: str, language: str) -> dict:
             ),
             "success": False,
         }
+
+    # Guard: code whose first non-blank line starts with a bare '/' (not '//' or
+    # '/*') is almost certainly a URL path accidentally extracted as JavaScript
+    # (e.g. '/site', '/api/endpoint').  Node.js tries to parse it as a regex
+    # literal and immediately throws:
+    #   SyntaxError: Invalid regular expression: missing /
+    # Detect this early and return a clear, actionable error instead of the
+    # cryptic Node.js message.
+    if language == "javascript":
+        _bad_first = _js_code_starts_with_bare_slash(code)
+        if _bad_first:
+            return {
+                "output": "",
+                "error": (
+                    f"SyntaxError: Строка 1 «{_bad_first[:80]}» начинается с «/» — "
+                    "это похоже на URL-путь, а не на JavaScript-код.\n"
+                    "Node.js интерпретирует «/...» как незакрытое регулярное выражение "
+                    "и выбрасывает «Invalid regular expression: missing /».\n\n"
+                    "Что делать:\n"
+                    "  • Убедитесь, что в редакторе JavaScript-код, а не URL-адрес.\n"
+                    "  • Если вы хотели сгенерировать JS, нажмите «▶ Сгенерировать» "
+                    "с описанием задачи."
+                ),
+                "success": False,
+            }
 
     # Guard: browser/Chrome-extension APIs don't exist in Node.js
     if language in ("javascript", "typescript") and _is_browser_extension_code(code):
@@ -3698,7 +3761,222 @@ def create_visor_vm():
     )
 
 
-@app.route("/visor/watch", methods=["POST"])
+# ---------------------------------------------------------------------------
+# Autonomous Browser Agent — DRGRBrowserAgent execution loop
+# ---------------------------------------------------------------------------
+
+@app.route("/browse/agent/run", methods=["POST"])
+def browse_agent_run():
+    """Execute a multi-step autonomous browser task via DRGRBrowserAgent protocol.
+
+    Body: {"task": "...", "model": "...", "max_steps": 20, "start_url": "https://..."}
+    Returns: text/event-stream with per-cycle JSON objects:
+      {"cycle": N, "thoughts": {...}, "commands": [...], "results": [...], "done": bool}
+
+    The endpoint asks the model for the next cycle of commands, executes each
+    command (NAVIGATE / CLICK / TYPE / SCREENSHOT / WAIT / SCROLL / NOOP) using
+    Playwright, feeds the screenshot back to the vision model and repeats until
+    the model sets cycle_state.status to "finished_*" or max_steps is reached.
+    """
+    import base64 as _b64
+
+    body      = request.get_json(silent=True) or {}
+    task      = body.get("task", "").strip()
+    model     = body.get("model", "").strip()
+    max_steps = max(1, min(int(body.get("max_steps", 20)), 80))
+    start_url = body.get("start_url", "").strip()
+
+    if not task:
+        return jsonify({"error": "Provide task"}), 400
+    if not model:
+        return jsonify({"error": "Provide model"}), 400
+
+    vis_model = _best_vision_model() or model
+
+    def _ssrf_ok(url: str) -> bool:
+        """Return True if the URL is not a private/loopback address."""
+        try:
+            import ipaddress as _ipa
+            import urllib.parse as _up
+            parsed = _up.urlparse(url)
+            host = parsed.hostname or ""
+            if host in {"localhost", "127.0.0.1", "::1", "0.0.0.0"}:
+                return False
+            try:
+                addr = _ipa.ip_address(host)
+                if addr.is_private or addr.is_loopback or addr.is_link_local:
+                    return False
+            except ValueError:
+                pass
+            return True
+        except Exception:
+            return False
+
+    def _stream():
+        # Try to import Playwright; stream an error if not available
+        try:
+            from playwright.sync_api import sync_playwright  # type: ignore
+            from playwright.sync_api import TimeoutError as _PWTimeout  # type: ignore
+        except ImportError:
+            yield (
+                'data: {"error":"Playwright не установлен. '
+                'Запустите: playwright install chromium"}\n\n'
+            )
+            return
+
+        context_history: list = []
+        current_url = start_url or ""
+        last_screenshot_b64 = ""
+
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(
+                headless=True,
+                args=["--no-sandbox", "--disable-dev-shm-usage"],
+            )
+            page = browser.new_page(viewport={"width": 1280, "height": 800})
+
+            # Navigate to start URL if provided
+            if current_url:
+                if not current_url.startswith(("http://", "https://")):
+                    current_url = "https://" + current_url
+                if _ssrf_ok(current_url):
+                    try:
+                        page.goto(current_url, wait_until="domcontentloaded", timeout=20_000)
+                        page.wait_for_timeout(1000)
+                        buf = page.screenshot(type="png", full_page=False)
+                        last_screenshot_b64 = _b64.b64encode(buf).decode()
+                    except Exception as e:
+                        yield f"data: {json.dumps({'error': f'Не удалось открыть стартовый URL: {e}'})}\n\n"
+
+            for cycle in range(1, max_steps + 1):
+                # Build prompt for the model including current page screenshot
+                agent_prompt = (
+                    f"Задание: {task}\n\n"
+                    f"Шаг {cycle} из {max_steps}.\n"
+                    f"Текущий URL: {page.url or 'не определён'}\n"
+                    "Опиши, что видишь на странице, и верни JSON с полями:\n"
+                    '{"cycle_state":{"status":"running|finished_success|finished_error",'
+                    '"current_step":' + str(cycle) + ',"max_steps":' + str(max_steps) + '},'
+                    '"thoughts":{"observation":"...","plan_short":"..."},'
+                    '"commands":[...]}'
+                )
+
+                # Ask model for next commands
+                model_response = ""
+                try:
+                    api_body: dict = {
+                        "model": vis_model,
+                        "prompt": agent_prompt,
+                        "stream": False,
+                    }
+                    if last_screenshot_b64:
+                        api_body["images"] = [last_screenshot_b64]
+                    r = _http.post(
+                        f"{OLLAMA_BASE}/api/generate",
+                        json=api_body,
+                        timeout=int(os.environ.get("OLLAMA_TIMEOUT", 120)),
+                    )
+                    if r.status_code == 200:
+                        model_response = r.json().get("response", "")
+                except Exception as exc:
+                    yield f"data: {json.dumps({'error': f'Ollama error: {exc}', 'cycle': cycle})}\n\n"
+                    break
+
+                # Try to parse JSON from model response
+                cycle_json = {}
+                try:
+                    # Extract JSON block from response
+                    m_json = re.search(r"\{.*\}", model_response, re.DOTALL)
+                    if m_json:
+                        cycle_json = json.loads(m_json.group(0))
+                except (ValueError, AttributeError):
+                    cycle_json = {"thoughts": {"observation": model_response[:300]}, "commands": []}
+
+                commands  = cycle_json.get("commands", [])
+                thoughts  = cycle_json.get("thoughts", {})
+                cs        = cycle_json.get("cycle_state", {})
+                status    = cs.get("status", "running")
+                cmd_results: list = []
+
+                # Execute each command
+                for cmd in commands[:5]:  # limit to 5 commands per cycle
+                    cmd_type = (cmd.get("type") or "").upper()
+                    result   = {"type": cmd_type, "ok": False, "info": ""}
+                    try:
+                        if cmd_type == "NAVIGATE":
+                            nav_url = cmd.get("url", "")
+                            if nav_url and _ssrf_ok(nav_url):
+                                page.goto(nav_url, wait_until="domcontentloaded", timeout=20_000)
+                                page.wait_for_timeout(500)
+                                result.update({"ok": True, "info": f"Navigated to {nav_url}"})
+                            else:
+                                result["info"] = "URL blocked or empty"
+                        elif cmd_type == "CLICK":
+                            sel = cmd.get("selector", "")
+                            if sel:
+                                page.click(sel, timeout=5000)
+                                page.wait_for_timeout(300)
+                                result.update({"ok": True, "info": f"Clicked {sel}"})
+                        elif cmd_type == "TYPE":
+                            sel  = cmd.get("selector", "")
+                            text = cmd.get("text", "")
+                            if sel and text:
+                                page.fill(sel, text)
+                                if cmd.get("submit"):
+                                    page.press(sel, "Enter")
+                                result.update({"ok": True, "info": f"Typed into {sel}"})
+                        elif cmd_type == "WAIT":
+                            ms = max(100, min(int(cmd.get("timeout_ms", 1000)), 10000))
+                            page.wait_for_timeout(ms)
+                            result.update({"ok": True, "info": f"Waited {ms}ms"})
+                        elif cmd_type == "SCROLL":
+                            direction = cmd.get("direction", "down")
+                            amount    = int(cmd.get("amount", 300))
+                            delta_y   = amount if direction == "down" else -amount
+                            page.evaluate(f"window.scrollBy(0, {delta_y})")
+                            result.update({"ok": True, "info": f"Scrolled {direction}"})
+                        elif cmd_type in ("SCREENSHOT", "NOOP"):
+                            result.update({"ok": True, "info": cmd_type})
+                        else:
+                            result["info"] = f"Unknown command: {cmd_type}"
+                    except Exception as e:
+                        result["info"] = str(e)[:200]
+                    cmd_results.append(result)
+
+                # Take screenshot after commands
+                try:
+                    buf = page.screenshot(type="png", full_page=False)
+                    last_screenshot_b64 = _b64.b64encode(buf).decode()
+                except Exception:
+                    last_screenshot_b64 = ""
+
+                # Log agent action
+                _record_agent_action({
+                    "timestamp":   _now(),
+                    "action_type": "browser_agent_cycle",
+                    "input":       {"task": task[:120], "cycle": cycle},
+                    "output":      {"status": status, "commands": len(commands)},
+                    "success":     status.startswith("finished_success"),
+                    "duration_ms": 0,
+                    "metadata":    {"url": page.url},
+                })
+
+                yield f"data: {json.dumps({'cycle': cycle, 'url': page.url, 'thoughts': thoughts, 'commands': commands, 'results': cmd_results, 'screenshot': last_screenshot_b64[:200] + '...' if last_screenshot_b64 else '', 'status': status})}\n\n"
+
+                if status.startswith("finished_"):
+                    break
+
+            browser.close()
+            yield "data: [DONE]\n\n"
+
+    return Response(
+        stream_with_context(_stream()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+
 def visor_watch():
     """Continuously screenshot a URL and report AI-detected changes (SSE).
 

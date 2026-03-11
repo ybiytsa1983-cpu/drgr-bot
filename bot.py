@@ -2289,6 +2289,127 @@ async def handle_document_convert(message: Message) -> None:
     )
 
 
+# ---------------------------------------------------------------------------
+# /agent command — autonomous browser agent (DRGRBrowserAgent)
+# ---------------------------------------------------------------------------
+
+
+@router.message(Command("agent"))
+async def cmd_agent(message: Message) -> None:
+    """Run the autonomous DRGRBrowserAgent to complete a browser task.
+
+    Usage: /agent <task description>
+           /agent <url> <task description>
+    """
+    parts = (message.text or "").split(maxsplit=1)
+    if len(parts) < 2:
+        await message.answer(
+            "🤖 *Автономный браузер\\-агент*\n\n"
+            "Использование:\n"
+            "`/agent <задание>` — агент сам откроет браузер и выполнит задачу\n\n"
+            "Примеры:\n"
+            "• `/agent Найди последние новости о Python 3\\.13`\n"
+            "• `/agent https://github\\.com Найди самый популярный репозиторий Python`\n\n"
+            "Агент делает скриншоты, кликает, заполняет формы и отвечает на задачу\\.\n"
+            "Требуется: Ollama \\+ модель qwen3\\-vl:8b или drgr\\-visor",
+            parse_mode="MarkdownV2",
+        )
+        return
+
+    task_text = parts[1].strip()
+    start_url = ""
+    # If task starts with a URL, extract it
+    task_words = task_text.split(maxsplit=1)
+    if task_words[0].startswith(("http://", "https://", "www.")):
+        start_url = task_words[0]
+        if not start_url.startswith("http"):
+            start_url = "https://" + start_url
+        task_text = task_words[1] if len(task_words) > 1 else task_text
+
+    model = await get_best_model()
+    status = await message.answer(
+        f"🤖 Запускаю автономный агент\\.\\.\\.\n"
+        f"Задание: {_esc(task_text[:100])}\n"
+        f"Модель: {_esc(model or 'не найдена')}",
+        parse_mode="MarkdownV2",
+    )
+
+    log_lines: list = [f"🤖 Агент: {task_text[:200]}"]
+    if start_url:
+        log_lines.append(f"🌐 Стартовый URL: {start_url}")
+    log_lines.append("")
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{VM_BASE}/browse/agent/run",
+                json={
+                    "task": task_text,
+                    "model": model,
+                    "max_steps": 10,
+                    "start_url": start_url,
+                },
+                timeout=aiohttp.ClientTimeout(total=300),
+            ) as resp:
+                if resp.status != 200:
+                    await status.edit_text(f"❌ VM вернула {resp.status}")
+                    return
+                async for raw_line in resp.content:
+                    line = raw_line.decode("utf-8", errors="replace").strip()
+                    if not line.startswith("data: "):
+                        continue
+                    payload = line[6:]
+                    if payload == "[DONE]":
+                        break
+                    try:
+                        obj = json.loads(payload)
+                    except ValueError:
+                        continue
+                    if obj.get("error"):
+                        log_lines.append(f"❌ {obj['error'][:200]}")
+                        break
+                    cycle     = obj.get("cycle", "?")
+                    url_now   = obj.get("url", "")
+                    status_v  = obj.get("status", "running")
+                    thoughts  = obj.get("thoughts", {})
+                    plan      = (thoughts.get("plan_short") or "")[:100]
+                    results   = obj.get("results", [])
+                    log_lines.append(f"⚙ Цикл {cycle}: {url_now[:60]}")
+                    if plan:
+                        log_lines.append(f"  → {plan}")
+                    for r in results:
+                        ok_mark = "✓" if r.get("ok") else "✗"
+                        log_lines.append(f"  {ok_mark} {r.get('type','')}: {(r.get('info') or '')[:60]}")
+                    if status_v.startswith("finished_"):
+                        log_lines.append(f"\n🏁 {status_v}")
+                        break
+                    # Update status message every 3 cycles
+                    if isinstance(cycle, int) and cycle % 3 == 0:
+                        try:
+                            await status.edit_text(
+                                "\n".join(log_lines[-20:])[:4000],
+                                parse_mode=None,
+                            )
+                        except Exception:
+                            pass
+    except Exception as exc:
+        logger.error("cmd_agent: %s", exc)
+        log_lines.append(f"❌ Ошибка: {str(exc)[:200]}")
+
+    await action_logger.log(
+        "browser_agent",
+        {"task": task_text[:200], "start_url": start_url},
+        {"cycles": len(log_lines), "success": any("finished_success" in ln for ln in log_lines)},
+        any("finished_success" in ln for ln in log_lines),
+    )
+
+    final = "\n".join(log_lines)[:4000]
+    try:
+        await status.edit_text(final, parse_mode=None)
+    except Exception:
+        await message.answer(final[:4096], parse_mode=None)
+
+
 @router.message(F.text & ~F.text.startswith("/"))
 async def handle_text(message: Message) -> None:
     query = (message.text or "").strip()
