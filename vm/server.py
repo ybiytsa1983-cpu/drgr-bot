@@ -515,15 +515,12 @@ def _is_html_content(code: str) -> bool:
 # that cannot run in plain Node.js
 _BROWSER_EXT_PATTERNS = re.compile(
     r"""
-    # chrome.property (dot notation)
-    \bchrome\s*\.\s*(?:storage|runtime|tabs|windows|browserAction|action|
-        scripting|contextMenus|alarms|notifications|identity|downloads|
-        bookmarks|history|cookies|permissions|management|extension)\b
+    # chrome.<any-identifier> (dot notation) — catches ALL Chrome Extension APIs,
+    # including sidePanel, offscreen, declarativeNetRequest, webNavigation, etc.
+    \bchrome\s*\.\s*[a-zA-Z_][a-zA-Z0-9_]*\b
     |
-    # chrome['property'] (bracket notation)
-    \bchrome\s*\[\s*['"](?:storage|runtime|tabs|windows|browserAction|action|
-        scripting|contextMenus|alarms|notifications|identity|downloads|
-        bookmarks|history|cookies|permissions|management|extension)['"]\s*\]
+    # chrome['property'] or chrome["property"] (bracket notation)
+    \bchrome\s*\[\s*['"][a-zA-Z_][a-zA-Z0-9_]*['"]\s*\]
     |
     # typeof chrome (existence check in browser extension code)
     \btypeof\s+chrome\b
@@ -533,7 +530,9 @@ _BROWSER_EXT_PATTERNS = re.compile(
     |
     # browser.* WebExtensions API (Firefox extensions)
     \bbrowser\s*\.\s*(?:storage|runtime|tabs|windows|bookmarks|history|
-        cookies|permissions|management|extension|alarms|notifications)\b
+        cookies|permissions|management|extension|alarms|notifications|
+        sidebarAction|menus|commands|webNavigation|webRequest|
+        declarativeNetRequest|scripting|action|browserAction)\b
     """,
     re.IGNORECASE | re.VERBOSE,
 )
