@@ -3977,6 +3977,7 @@ def browse_agent_run():
 
 
 
+@app.route("/visor/watch", methods=["POST"])
 def visor_watch():
     """Continuously screenshot a URL and report AI-detected changes (SSE).
 

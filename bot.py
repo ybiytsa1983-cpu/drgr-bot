@@ -200,6 +200,39 @@ action_logger = ActionLogger(VM_BASE)
 _chat_history: Dict[int, List[Dict[str, str]]] = {}  # user_id -> [{role, text}, ...]
 _MAX_CHAT_TURNS = 20  # keep last N turns in context (mirrors _MAX_CHAT_HISTORY_TURNS in server.py)
 
+# Regex matching http/https URLs in plain text (compiled once at module level)
+_URL_IN_TEXT_RE = re.compile(r'https?://[^\s<>"\']+', re.IGNORECASE)
+
+# Russian keywords that signal a web-search intent
+_SEARCH_KEYWORDS_RU = (
+    "найди", "поищи", "погугли", "загугли",
+    "расскажи о ", "расскажи про ",
+    "что такое ", "кто такой ", "кто такая ",
+    "что нового", "последние новости",
+    "новости о ", "новости про ",
+)
+
+
+def _clean_url(raw: str) -> str:
+    """Strip trailing punctuation from a URL, but preserve balanced parentheses.
+
+    For example:
+      'https://example.com.'        → 'https://example.com'
+      'https://example.com/path)'   → 'https://example.com/path'
+      'https://en.wikipedia.org/wiki/Python_(language)' → unchanged (parens balanced)
+    """
+    # Strip simple trailing punctuation (not parentheses yet)
+    _simple_punct = frozenset(".,:;!?>")
+    while raw and raw[-1] in _simple_punct:
+        raw = raw[:-1]
+    # Handle trailing ')': strip only if unbalanced (more ')' than '(' in URL)
+    while raw and raw[-1] == ")":
+        if raw.count("(") < raw.count(")"):
+            raw = raw[:-1]
+        else:
+            break
+    return raw
+
 
 # ===========================================================================
 # OLLAMA HELPERS
@@ -263,24 +296,22 @@ async def chat_via_vm(user_id: int, text: str, message: Message) -> bool:
     _VM_SYSTEM = (
         "Ты — AI-агент DRGR VM, подключённый к локальной Code VM по адресу "
         f"{VM_BASE}. "
-        "Ты работаешь через расширение Code VM которое даёт тебе доступ к браузеру, "
-        "Monaco редактору, ВИЗОРУ и HTML-генератору.\n\n"
-        "Твои возможности:\n"
-        "• 🖥 ВИЗОР — браузер-инспектор со скриншотами и AI-анализом — /visor <url> или /browse <url>\n"
-        "• 🧑‍💻 Генерация и выполнение кода (Python, JS, HTML) — /execute, /code\n"
-        "• 🌐 HTML-генератор Monaco — создание полных страниц — /generate <описание>\n"
-        "• 🔍 Поиск в интернете и написание статей — /search <тема>\n"
-        "• 📂 Конвертация файлов (изображения, JSON, CSV, Markdown) — /convert\n"
-        "• 🧠 Управление моделями Ollama (pull, delete, retrain)\n"
-        "• 🔄 Самообучение VM на основе накопленного опыта — /retrain\n"
-        "• 📸 Скриншот + qwen3-vl анализ страницы — /browse <url>\n\n"
-        "ВАЖНО: Ты ПОДКЛЮЧЁН к расширению Code VM. Ты МОЖЕШЬ:\n"
-        "1. Делать скриншоты ЛЮБЫХ веб-страниц через /browse\n"
-        "2. Анализировать страницы с помощью qwen3-vl:8b (vision model)\n"
-        "3. Запускать код прямо в VM sandbox\n"
-        "4. Генерировать HTML и сразу видеть его в ВИЗОРЕ\n"
-        "Когда пользователь просит что-то — ДЕЛАЙ это немедленно, не объясняй как это сделать.\n"
         "Отвечай на русском языке, кратко и по делу.\n\n"
+        "Возможности пользователя (команды Telegram-бота):\n"
+        "• /visor <url> или /browse <url> — 🖥 ВИЗОР: скриншот страницы + AI анализ vision-моделью\n"
+        "• /visor watch <url> — слежение за изменениями на странице\n"
+        "• /agent <задание> — автономный браузер-агент (Playwright + vision): кликает, заполняет формы\n"
+        "• /research <запрос> — текстовый веб-агент: ищет в интернете, читает страницы\n"
+        "• /search <тема> — исследование с полной статьёй и скриншотами\n"
+        "• /code <задача> — написать и выполнить код (Python, JS, HTML)\n"
+        "• /generate <описание> — сгенерировать HTML-страницу\n"
+        "• /convert — конвертер файлов\n"
+        "• Пришли URL в чат → бот автоматически сделает скриншот + AI анализ\n"
+        "• Пришли файл .py/.js/.sh → VM выполнит и вернёт результат\n\n"
+        "ВАЖНО: Ты НЕ можешь самостоятельно открыть браузер или сделать поиск прямо сейчас. "
+        "Когда пользователь просит найти что-то в интернете — скажи ему использовать "
+        "/research или /agent. Когда просит открыть URL — скажи прислать URL в чат или "
+        "использовать /visor. Не выдумывай информацию из интернета — ты не подключён к нему.\n"
     )
 
     full_response = ""
@@ -839,7 +870,8 @@ async def cmd_start(message: Message) -> None:
         "Я автономный агент для исследования, генерации кода и HTML\\.\n\n"
         f"\U0001f5a5 *Веб\\-интерфейс VM \\(откройте в браузере\\):* {_MD_WEB_URL}\n\n"
         "*Команды:*\n"
-        "/agent `<задание>` — \U0001f916 автономный агент: ищет, читает страницы, отвечает\n"
+        "/agent `<задание>` — \U0001f916 автономный браузер\\-агент: Playwright \\+ vision\n"
+        "/research `<задание>` — \U0001f50e текстовый агент: ищет, читает страницы, отвечает\n"
         "/search `<запрос>` — исследовать тему, статья \\+ скриншоты\n"
         "/browse `<url>` — скриншот страницы \\+ AI анализ \\(qwen3\\-vl\\)\n"
         "/visor `<url>` — 🖥 ВИЗОР: скриншот \\+ AI анализ \\(qwen3\\-vl\\)\n"
@@ -889,7 +921,8 @@ async def cmd_help(message: Message) -> None:
         "\U0001f4d6 *Помощь — все команды*\n\n"
         f"\U0001f5a5 *Веб\\-интерфейс:* {_MD_WEB_URL} \\| /web\n\n"
         "*Автономный агент и браузер:*\n"
-        "• `/agent <задание>` — \U0001f916 автономный агент: ищет в интернете, читает страницы, отвечает\n"
+        "• `/agent <задание>` — \U0001f916 автономный браузер\\-агент: Playwright \\+ vision модель\n"
+        "• `/research <задание>` — \U0001f50e текстовый агент: ищет в интернете, читает страницы, отвечает\n"
         "• `/search <тема>` — полное исследование, статья \\+ скриншоты \\+ HTML\n"
         "• `/visor <url>` — 🖥 ВИЗОР: скриншот \\+ AI анализ \\(qwen3\\-vl:8b\\)\n"
         "• `/visor watch <url>` — слежение за изменениями на странице \\(3 снимка\\)\n"
@@ -917,7 +950,8 @@ async def cmd_help(message: Message) -> None:
         "• Отправьте фото с подписью `jpeg`, `png`, `webp` или `bmp` — конвертация изображения\n"
         "• Отправьте файл `.json`, `.csv`, `.html` или `.md` — конвертация текстового формата\n\n"
         f"{_MD_INSTALL_CMD}\n\n"
-        "Пример: `/agent цена Bitcoin сегодня`",
+        "Примеры: `/agent https://github\\.com` или `/research цена Bitcoin сегодня`\n"
+        "Просто пришлите URL — ВИЗОР сделает скриншот и AI анализ автоматически\\.",
         parse_mode="MarkdownV2",
     )
 
@@ -1775,11 +1809,11 @@ async def cmd_download(message: Message) -> None:
 # ---------------------------------------------------------------------------
 
 
-@router.message(Command("agent"))
-async def cmd_agent(message: Message) -> None:
-    """Autonomous web agent: searches the web, reads pages, summarises results.
+@router.message(Command("research"))
+async def cmd_research(message: Message) -> None:
+    """Text-based web research agent: searches the web, reads pages, summarises results.
 
-    Usage: /agent <task>
+    Usage: /research <task>
     The agent will:
       1. Search DuckDuckGo for the task
       2. Open top pages and extract text via VM /browse/page
@@ -1789,24 +1823,25 @@ async def cmd_agent(message: Message) -> None:
     parts = (message.text or "").split(maxsplit=1)
     if len(parts) < 2:
         await message.answer(
-            "\U0001f916 *Автономный веб\\-агент*\n\n"
-            "Использование: `/agent <задание>`\n\n"
+            "\U0001f916 *Текстовый веб\\-агент*\n\n"
+            "Использование: `/research <задание>`\n\n"
             "Агент автономно:\n"
             "1\\. Ищет информацию в интернете\n"
             "2\\. Открывает страницы и читает их\n"
             "3\\. Анализирует и обобщает найденное\n"
             "4\\. Отвечает подробным отчётом\n\n"
             "Примеры:\n"
-            "• `/agent последние новости о Python 3.13`\n"
-            "• `/agent цена Bitcoin сегодня`\n"
-            "• `/agent как установить Docker на Windows`",
+            "• `/research последние новости о Python 3.13`\n"
+            "• `/research цена Bitcoin сегодня`\n"
+            "• `/research как установить Docker на Windows`\n\n"
+            "Для автономного браузер\\-агента используйте `/agent`",
             parse_mode="MarkdownV2",
         )
         return
 
     task   = parts[1].strip()
     status = await message.answer(
-        f"\U0001f916 Агент исследует: _{_esc(task[:120])}_\u2026",
+        f"\U0001f916 Исследую: _{_esc(task[:120])}_\u2026",
         parse_mode="MarkdownV2",
     )
     t0 = time.monotonic()
@@ -2420,7 +2455,63 @@ async def handle_text(message: Message) -> None:
         )
         return
     user_id = message.from_user.id if message.from_user else 0
-    # Try VM chat/stream first (conversational AI with per-user history).
+
+    # Smart routing: if message contains a URL, treat it as a ВИЗОР/browse request
+    url_match = _URL_IN_TEXT_RE.search(query)
+    if url_match:
+        url = _clean_url(url_match.group(0))
+        status = await message.answer(
+            f"🖥 ВИЗОР анализирует `{url[:80]}`\\.\\.\\.",
+            parse_mode="MarkdownV2",
+        )
+        t0 = time.monotonic()
+        try:
+            async with aiohttp.ClientSession() as _sess:
+                async with _sess.post(
+                    f"{VM_BASE}/browse/screenshot",
+                    json={"url": url},
+                    timeout=aiohttp.ClientTimeout(total=60),
+                ) as resp:
+                    data = await resp.json() if resp.status == 200 else {}
+        except Exception as exc:
+            await status.edit_text(f"❌ Ошибка: {str(exc)[:200]}")
+            return
+        dur = int((time.monotonic() - t0) * 1000)
+        screenshot_b64 = data.get("screenshot_base64", "")
+        description    = data.get("description", "")
+        model_used     = data.get("model", "")
+        await status.delete()
+        if screenshot_b64:
+            img_bytes = base64.b64decode(screenshot_b64)
+            ts = int(time.time())
+            shot_path = str(SCREENSHOTS_DIR / f"visor_{ts}.png")
+            with open(shot_path, "wb") as fh:
+                fh.write(img_bytes)
+            caption = f"🖥 *ВИЗОР* — {_esc(url[:60])}\n\n{_esc(description[:900])}"
+            if model_used:
+                caption += f"\n\n_Модель: {_esc(model_used)}_"
+            caption += f"\n⏱ {dur} мс"
+            try:
+                await message.answer_photo(
+                    FSInputFile(shot_path),
+                    caption=caption[:1024],
+                    parse_mode="MarkdownV2",
+                )
+            except Exception:
+                await message.answer(caption[:4096], parse_mode=None)
+        else:
+            await message.answer(
+                (description or "❌ Не удалось получить скриншот")[:4096]
+            )
+        return
+
+    # Smart routing: detect clear search intent keywords → use research_and_reply
+    q_lower = query.lower()
+    if any(kw in q_lower for kw in _SEARCH_KEYWORDS_RU):
+        await research_and_reply(query, message)
+        return
+
+    # Default: conversational VM chat with per-user history.
     # Falls back to full web research if VM is unreachable or returns nothing.
     try:
         if not await chat_via_vm(user_id, query, message):
@@ -2450,7 +2541,8 @@ async def main() -> None:
     )
     # Register bot commands so Telegram shows them in the menu
     await bot.set_my_commands([
-        BotCommand(command="agent",      description="🤖 Автономный агент: ищет в интернете и отвечает"),
+        BotCommand(command="agent",      description="🤖 Автономный браузер-агент (Playwright + vision)"),
+        BotCommand(command="research",   description="🔎 Текстовый веб-агент: ищет и читает страницы"),
         BotCommand(command="search",     description="Исследовать тему (статья + скриншоты)"),
         BotCommand(command="browse",     description="Скриншот страницы + AI анализ"),
         BotCommand(command="visor",      description="ВИЗОР: скриншот + AI анализ страницы"),
