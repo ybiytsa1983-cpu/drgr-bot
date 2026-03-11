@@ -2695,24 +2695,22 @@ def chat_stream():
             yield 'data: {"error":"Введите сообщение"}\n\n'
         return Response(stream_with_context(_no_msg()), mimetype="text/event-stream")
 
-    # Build a prompt with chat history context
-    lines = []
+    # Build messages list for /api/chat (role-based, better for multi-turn)
+    messages = []
     if system:
-        lines.append(f"Системный контекст: {system}")
-    for entry in history[-_MAX_CHAT_HISTORY_TURNS:]:  # keep last N turns to avoid context overflow
+        messages.append({"role": "system", "content": system})
+    for entry in history[-_MAX_CHAT_HISTORY_TURNS:]:
         role = entry.get("role", "user")
         text = entry.get("text", "").strip()
         if text:
-            lines.append(f"{'Пользователь' if role == 'user' else 'Ассистент'}: {text}")
-    lines.append(f"Пользователь: {message}")
-    lines.append("Ассистент:")
-    full_prompt = "\n".join(lines)
+            messages.append({"role": role, "content": text})
+    messages.append({"role": "user", "content": message})
 
     def _stream():
         try:
             resp = _http.post(
-                f"{OLLAMA_BASE}/api/generate",
-                json={"model": model, "prompt": full_prompt, "stream": True},
+                f"{OLLAMA_BASE}/api/chat",
+                json={"model": model, "messages": messages, "stream": True},
                 stream=True,
                 timeout=int(os.environ.get("OLLAMA_TIMEOUT", 240)),
             )
@@ -2724,7 +2722,7 @@ def chat_stream():
                     chunk = json.loads(raw_line)
                 except ValueError:
                     continue
-                token = chunk.get("response", "")
+                token = chunk.get("message", {}).get("content", "") or chunk.get("response", "")
                 if token:
                     yield f"data: {json.dumps({'token': token})}\n\n"
                 if chunk.get("done"):

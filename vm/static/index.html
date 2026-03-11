@@ -239,6 +239,20 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
   padding:9px 12px;border-radius:9px;cursor:pointer;font-size:13px;
   flex-shrink:0;transition:background .15s}
 #btn-chat-clear:hover{background:var(--bg3);color:var(--text)}
+/* ── Chat tool buttons ── */
+#chat-tools{display:flex;gap:4px;padding:4px 14px;background:var(--bg2);border-top:1px solid var(--border);flex-shrink:0;flex-wrap:wrap}
+.ct-btn{background:var(--bg4);border:1px solid var(--border);color:var(--text2);
+  padding:4px 9px;border-radius:5px;cursor:pointer;font-size:11px;
+  transition:background .15s,color .15s;white-space:nowrap}
+.ct-btn:hover{background:var(--bg3);color:var(--text)}
+.ct-btn:disabled{opacity:.4;cursor:not-allowed}
+.ct-label{font-size:10px;color:var(--text2);padding:4px 2px;align-self:center;flex-shrink:0}
+.cm-tool{background:#1a2a3a;border:1px solid #2a4a6a;color:#7ac5f0;font-size:11px;
+  padding:6px 10px;border-radius:6px;align-self:flex-start;font-family:monospace;
+  white-space:pre-wrap;word-break:break-all;max-width:95%}
+.cm-tool-result{background:#1a3a1a;border:1px solid #2a5a2a;color:#7fc97f;font-size:11px;
+  padding:6px 10px;border-radius:6px;align-self:flex-start;white-space:pre-wrap;
+  word-break:break-word;max-width:95%}
 
 /* ── Toast ── */
 #toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);
@@ -517,7 +531,13 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
   <!-- Chat pane (shown when view=chat) -->
   <div id="chat-pane">
     <div id="chat-messages">
-      <div class="cm cm-bot">👋 Привет! Я — ИИ-ассистент DRGR VM. Задайте любой вопрос или дайте задание.<br><br>Выберите модель в настройках (кнопка ☰ слева вверху), затем пишите сюда.</div>
+      <div class="cm cm-bot">👋 Привет! Я — ИИ-ассистент DRGR VM. Задайте любой вопрос или дайте задание.<br><br>
+Я вижу текущий код в редакторе и URL ВИЗОРА. Используйте кнопки снизу:<br>
+📸 <b>Описать ВИЗОР</b> — получить AI-описание того, что показано в ВИЗОРЕ<br>
+🔍 <b>Поиск</b> — искать в интернете и добавить результаты в контекст<br>
+▶ <b>Запустить код</b> — выполнить код и добавить вывод в контекст<br>
+📋 <b>Вставить код</b> — вставить текущий код редактора в сообщение<br><br>
+Выберите модель в настройках (кнопка ☰), затем пишите сюда.</div>
       <div id="chat-no-ollama" class="cm cm-err" style="display:none">
         ⚠ Ollama не запущена или не обнаружена.<br>
         Запусти Ollama: <code>ollama serve</code><br>
@@ -532,6 +552,13 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
         oninput="autoResize(this)"></textarea>
       <button id="btn-chat-send" onclick="sendChat()">➤ Отправить</button>
       <button id="btn-chat-clear" onclick="clearChat()" title="Очистить чат">🗑</button>
+    </div>
+    <div id="chat-tools">
+      <span class="ct-label">Инструменты:</span>
+      <button class="ct-btn" id="btn-chat-visor" onclick="chatDescribeVisor()" title="Сделать скриншот ВИЗОРА и описать его в чате">📸 Описать ВИЗОР</button>
+      <button class="ct-btn" id="btn-chat-search" onclick="chatOpenSearch()" title="Поиск в интернете и добавить результаты в чат">🔍 Поиск</button>
+      <button class="ct-btn" id="btn-chat-run" onclick="chatRunCode()" title="Выполнить код из редактора и добавить результат в чат">▶ Запустить код</button>
+      <button class="ct-btn" id="btn-chat-code" onclick="chatSendCode()" title="Вставить текущий код редактора в чат">📋 Вставить код</button>
     </div>
   </div>
 
@@ -685,9 +712,15 @@ function setView(v) {
 })();
 
 // ── Monaco loader ────────────────────────────────────────────────────────────
-function initMonaco() {
+async function initMonaco() {
   var container = document.getElementById('monaco-box');
-  var bases = [MONACO_LOCAL, MONACO_CDN];
+  // Check if local Monaco vendor exists (HEAD request, non-blocking)
+  var localOk = false;
+  try {
+    var hd = await fetch(MONACO_LOCAL + '/loader.js', { method: 'HEAD' });
+    localOk = hd.ok;
+  } catch(e) { localOk = false; }
+  var bases = localOk ? [MONACO_LOCAL, MONACO_CDN] : [MONACO_CDN];
   var idx = 0;
   function tryNext() {
     if (idx >= bases.length) {
@@ -2380,6 +2413,41 @@ async function sendChat() {
 
   input.value = ''; autoResize(input);
 
+  // ── Build system context (editor + visor + pending tool results) ──────────
+  var systemParts = [
+    'Ты — DRGR VM, умный ИИ-ассистент встроенный в среду разработки.',
+    'У тебя есть доступ к следующим инструментам (используй их если нужно):',
+    '  [SEARCH: запрос] — поиск в интернете',
+    '  [BROWSE: https://url] — загрузить и описать веб-страницу',
+    '  [DESCRIBE_VISOR] — описать содержимое ВИЗОРА (браузер/предпросмотр)',
+    'Отвечай на русском языке. Если нужны данные из интернета — используй [SEARCH:...].',
+  ];
+  // Attach current editor code as context
+  var editorCode = editor && editor.getValue ? editor.getValue().trim() : '';
+  var editorLang = (document.getElementById('lang-select') || {}).value || (editorCode ? detectLang(editorCode) : '');
+  if (editorCode) {
+    systemParts.push('\nТекущий код в редакторе (' + editorLang + '):\n```' + editorLang + '\n' + editorCode.slice(0, 2000) + (editorCode.length > 2000 ? '\n... [код обрезан]' : '') + '\n```');
+  }
+  // Attach visor URL
+  var visorUrl = document.getElementById('vurl-input') ? document.getElementById('vurl-input').value.trim() : '';
+  if (visorUrl) systemParts.push('Текущий URL в ВИЗОРЕ: ' + visorUrl);
+  // Attach pending visor description from chatDescribeVisor tool
+  if (window._pendingVisorContext) {
+    systemParts.push('\nОписание ВИЗОРА (только что получено):\n' + window._pendingVisorContext);
+    window._pendingVisorContext = null;
+  }
+  // Attach pending search results
+  if (window._pendingSearchContext) {
+    systemParts.push('\nРезультаты поиска:\n' + window._pendingSearchContext);
+    window._pendingSearchContext = null;
+  }
+  // Attach pending code execution results
+  if (window._pendingExecContext) {
+    systemParts.push('\nРезультат выполнения кода:\n' + window._pendingExecContext);
+    window._pendingExecContext = null;
+  }
+  var systemContext = systemParts.join('\n');
+
   // Append user bubble
   var msgs = document.getElementById('chat-messages');
   var userBubble = document.createElement('div');
@@ -2397,13 +2465,17 @@ async function sendChat() {
 
   chatBusy = true;
   document.getElementById('btn-chat-send').disabled = true;
+  // Disable tool buttons while chat busy
+  ['btn-chat-visor','btn-chat-search','btn-chat-run','btn-chat-code'].forEach(function(id){
+    var b = document.getElementById(id); if (b) b.disabled = true;
+  });
 
   var accumulated = '';
   try {
     var resp = await fetch('/chat/stream', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({message: msg, model: curModel, history: chatHistory})
+      body: JSON.stringify({message: msg, model: curModel, history: chatHistory, system: systemContext})
     });
     var reader = resp.body.getReader();
     var dec = new TextDecoder();
@@ -2424,7 +2496,6 @@ async function sendChat() {
           }
           if (obj.token) {
             accumulated += obj.token;
-            // During streaming show plain text (pre-wrap handles newlines)
             botBubble.textContent = accumulated;
             botBubble.className = 'cm cm-bot streaming';
             msgs.scrollTop = msgs.scrollHeight;
@@ -2433,11 +2504,13 @@ async function sendChat() {
       });
     }
     if (accumulated) {
-      // When streaming completes, render full markdown
+      // Render markdown
       botBubble.innerHTML = mdToHtml(accumulated);
       botBubble.className = 'cm cm-bot';
       chatHistory.push({role:'user', text: msg});
       chatHistory.push({role:'assistant', text: accumulated});
+      // Execute any tool calls found in the AI response
+      await executeToolCalls(accumulated, msgs);
     }
   } catch(e) {
     botBubble.className = 'cm cm-err';
@@ -2445,6 +2518,9 @@ async function sendChat() {
   }
   chatBusy = false;
   document.getElementById('btn-chat-send').disabled = false;
+  ['btn-chat-visor','btn-chat-search','btn-chat-run','btn-chat-code'].forEach(function(id){
+    var b = document.getElementById(id); if (b) b.disabled = false;
+  });
   msgs.scrollTop = msgs.scrollHeight;
 }
 
@@ -2452,6 +2528,228 @@ function clearChat() {
   chatHistory = [];
   var msgs = document.getElementById('chat-messages');
   msgs.innerHTML = '<div class="cm cm-bot">💬 Чат очищен. Начните новый разговор.</div>';
+}
+
+// ── Helper: get current visor URL (from input bar or iframe src) ───────────
+function _getVisorUrl() {
+  var visorUrl = '';
+  var visorInput = document.getElementById('vurl-input');
+  if (visorInput) visorUrl = visorInput.value.trim();
+  var vframe = document.getElementById('vframe');
+  if (!visorUrl && vframe && vframe.src
+      && vframe.src !== 'about:blank'
+      && !vframe.src.startsWith(window.location.origin + '/#')) {
+    visorUrl = vframe.src;
+  }
+  return visorUrl;
+}
+
+// ── Chat tool: describe ВИЗОР via screenshot ───────────────────────────────
+async function chatDescribeVisor() {
+  if (chatBusy) { toast('Чат занят, подождите...'); return; }
+  var btn = document.getElementById('btn-chat-visor');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Снимок...'; }
+  var msgs = document.getElementById('chat-messages');
+  var infoDiv = document.createElement('div');
+  infoDiv.className = 'cm cm-tool';
+  infoDiv.textContent = '🔧 Инструмент: Описать ВИЗОР — делаю скриншот...';
+  msgs.appendChild(infoDiv);
+  msgs.scrollTop = msgs.scrollHeight;
+  try {
+    var visorUrl = _getVisorUrl();
+    var description = '';
+    if (visorUrl && /^https?:\/\//i.test(visorUrl)) {
+      // External URL: take screenshot via server
+      infoDiv.textContent = '🔧 Инструмент: Описать ВИЗОР — скриншот URL: ' + visorUrl;
+      var r = await fetch('/browse/screenshot', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ url: visorUrl })
+      });
+      var d = await r.json();
+      if (d.success && d.description) {
+        description = 'Описание страницы ' + visorUrl + ':\n' + d.description;
+      } else if (d.success && d.screenshot_base64) {
+        description = 'Скриншот страницы ' + visorUrl + ' сделан (описание недоступно).';
+      } else {
+        description = 'Не удалось получить описание страницы: ' + (d.error || 'неизвестная ошибка');
+      }
+    } else {
+      // Use current editor HTML code to describe via Ollama
+      var code = editor && editor.getValue ? editor.getValue().trim() : '';
+      if (code) {
+        infoDiv.textContent = '🔧 Инструмент: Описать ВИЗОР — анализирую HTML-код...';
+        var r2 = await fetch('/ollama/ask', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            model: curModel,
+            prompt: 'Опиши этот HTML: какой интерфейс, элементы и функции он содержит?\n\n```html\n' + code.slice(0, 3000) + (code.length > 3000 ? '\n... [код обрезан]' : '') + '\n```'
+          })
+        });
+        var d2 = await r2.json();
+        description = 'Описание текущего HTML в ВИЗОРЕ:\n' + (d2.response || 'Нет описания');
+      } else {
+        description = 'ВИЗОР пуст — нет URL и нет кода в редакторе.';
+      }
+    }
+    infoDiv.className = 'cm cm-tool-result';
+    infoDiv.textContent = '📸 ВИЗОР: ' + description;
+    // Prefill chat input with the description as context
+    var ci = document.getElementById('chat-input');
+    if (ci && !ci.value.trim()) {
+      ci.placeholder = 'Задайте вопрос про ВИЗОР...';
+    }
+    // Add description to pending context for next message
+    window._pendingVisorContext = description;
+    toast('✅ Описание ВИЗОРА добавлено в контекст чата');
+  } catch(e) {
+    infoDiv.className = 'cm cm-err';
+    infoDiv.textContent = '⚠ Ошибка получения описания: ' + e.message;
+  }
+  if (btn) { btn.disabled = false; btn.textContent = '📸 Описать ВИЗОР'; }
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+// ── Chat tool: web search ──────────────────────────────────────────────────
+async function chatOpenSearch() {
+  var query = prompt('Введите поисковый запрос:');
+  if (!query || !query.trim()) return;
+  await chatRunSearch(query.trim());
+}
+
+async function chatRunSearch(query) {
+  if (chatBusy) { toast('Чат занят...'); return; }
+  var msgs = document.getElementById('chat-messages');
+  var infoDiv = document.createElement('div');
+  infoDiv.className = 'cm cm-tool';
+  infoDiv.textContent = '🔧 Инструмент: Поиск — "' + query + '"...';
+  msgs.appendChild(infoDiv);
+  msgs.scrollTop = msgs.scrollHeight;
+  try {
+    var r = await fetch('/search', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ query: query, max_results: 5 })
+    });
+    var d = await r.json();
+    if (!d.success || !d.results || !d.results.length) {
+      infoDiv.className = 'cm cm-tool-result';
+      infoDiv.textContent = '🔍 Поиск "' + query + '": результатов нет.';
+      window._pendingSearchContext = 'Поиск "' + query + '" не дал результатов.';
+      return;
+    }
+    var lines = ['Результаты поиска "' + query + '":'];
+    d.results.forEach(function(res, i) {
+      lines.push((i+1) + '. ' + res.title + '\n   ' + res.url + (res.snippet ? '\n   ' + res.snippet : ''));
+    });
+    var text = lines.join('\n');
+    infoDiv.className = 'cm cm-tool-result';
+    infoDiv.textContent = '🔍 ' + text;
+    window._pendingSearchContext = text;
+    toast('✅ Результаты поиска добавлены в контекст чата');
+  } catch(e) {
+    infoDiv.className = 'cm cm-err';
+    infoDiv.textContent = '⚠ Ошибка поиска: ' + e.message;
+  }
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+// ── Chat tool: run code from editor ───────────────────────────────────────
+async function chatRunCode() {
+  if (chatBusy) { toast('Чат занят...'); return; }
+  var code = editor && editor.getValue ? editor.getValue().trim() : '';
+  if (!code) { toast('Редактор пуст'); return; }
+  var lang = (document.getElementById('lang-select') || {}).value || detectLang(code);
+  var msgs = document.getElementById('chat-messages');
+  var infoDiv = document.createElement('div');
+  infoDiv.className = 'cm cm-tool';
+  infoDiv.textContent = '🔧 Инструмент: Выполнить код (' + lang + ')...';
+  msgs.appendChild(infoDiv);
+  msgs.scrollTop = msgs.scrollHeight;
+  try {
+    var r = await fetch('/execute', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ code: code, language: lang })
+    });
+    var d = await r.json();
+    var out = (d.output || d.stdout || '').trim();
+    var err = (d.error || d.stderr || '').trim();
+    var resultText = '▶ Результат (' + lang + '):\n';
+    if (out) resultText += out;
+    if (err) resultText += (out ? '\n⚠ Ошибки:\n' : '⚠ Ошибки:\n') + err;
+    if (!out && !err) resultText += '(нет вывода)';
+    infoDiv.className = 'cm cm-tool-result';
+    infoDiv.textContent = resultText;
+    window._pendingExecContext = resultText;
+    toast('✅ Результат выполнения добавлен в контекст чата');
+  } catch(e) {
+    infoDiv.className = 'cm cm-err';
+    infoDiv.textContent = '⚠ Ошибка выполнения: ' + e.message;
+  }
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+// ── Chat tool: paste current code into input ──────────────────────────────
+function chatSendCode() {
+  var code = editor && editor.getValue ? editor.getValue().trim() : '';
+  if (!code) { toast('Редактор пуст'); return; }
+  var lang = (document.getElementById('lang-select') || {}).value || detectLang(code);
+  var ci = document.getElementById('chat-input');
+  if (ci) {
+    var prefix = ci.value.trim() ? ci.value + '\n\n' : '';
+    ci.value = prefix + '```' + lang + '\n' + code.slice(0, 3000) + (code.length > 3000 ? '\n... [код обрезан]' : '') + '\n```';
+    autoResize(ci);
+    ci.focus();
+    toast('Код вставлен в сообщение');
+  }
+}
+
+// ── Parse AI response for tool calls and execute them ─────────────────────
+// AI can emit: [SEARCH: query], [BROWSE: url], [EXEC], [DESCRIBE_VISOR]
+async function executeToolCalls(text, msgs) {
+  var toolCalled = false;
+  // [SEARCH: query]
+  var searchRe = /\[SEARCH:\s*([^\]]+)\]/gi;
+  var sm;
+  while ((sm = searchRe.exec(text)) !== null) {
+    toolCalled = true;
+    await chatRunSearch(sm[1].trim());
+  }
+  // [BROWSE: url]
+  var browseRe = /\[BROWSE:\s*(https?:\/\/[^\]]+)\]/gi;
+  var bm;
+  while ((bm = browseRe.exec(text)) !== null) {
+    toolCalled = true;
+    var burl = bm[1].trim();
+    var infoDiv2 = document.createElement('div');
+    infoDiv2.className = 'cm cm-tool';
+    infoDiv2.textContent = '🔧 Инструмент: Загрузить страницу — ' + burl;
+    msgs.appendChild(infoDiv2);
+    msgs.scrollTop = msgs.scrollHeight;
+    try {
+      var br = await fetch('/browse/screenshot', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ url: burl })
+      });
+      var bd = await br.json();
+      infoDiv2.className = 'cm cm-tool-result';
+      infoDiv2.textContent = '🌐 Страница ' + burl + ':\n' + (bd.description || (bd.success ? '(описание недоступно)' : bd.error || 'ошибка'));
+      if (bd.description) window._pendingVisorContext = 'Страница ' + burl + ':\n' + bd.description;
+    } catch(e) {
+      infoDiv2.className = 'cm cm-err';
+      infoDiv2.textContent = '⚠ Ошибка загрузки: ' + e.message;
+    }
+    msgs.scrollTop = msgs.scrollHeight;
+  }
+  // [DESCRIBE_VISOR]
+  if (/\[DESCRIBE_VISOR\]/i.test(text)) {
+    toolCalled = true;
+    await chatDescribeVisor();
+  }
+  return toolCalled;
 }
 
 
