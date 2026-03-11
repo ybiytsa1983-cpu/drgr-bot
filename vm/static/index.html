@@ -282,13 +282,20 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
   #model-badge { max-width: 90px; font-size: 10px }
   /* Stack editor and visor vertically on mobile */
   #main { flex-direction: column; overflow: visible; min-height: 0 }
-  #epane { min-height: 50vh; flex: none }
+  /* Use explicit height so Monaco flex:1 child fills the box correctly */
+  #epane { height: 52vh; flex: none; display: flex; flex-direction: column }
+  #monaco-box { flex: 1; min-height: 0; overflow: hidden }
   #rh { display: none !important }
   #vpane { width: 100% !important; min-width: unset; border-left: none;
-           border-top: 1px solid var(--border); flex: none; min-height: 40vh }
+           border-top: 1px solid var(--border); flex: none; min-height: 42vh }
   #pbar { position: sticky; bottom: 0; z-index: 10 }
+  /* Visor toolbars: allow horizontal scroll on narrow screens */
+  #vtb, #vurl-row, #vsearch-row { overflow-x: auto; flex-wrap: nowrap;
+    scrollbar-width: none; -webkit-overflow-scrolling: touch }
+  #vtb::-webkit-scrollbar, #vurl-row::-webkit-scrollbar,
+  #vsearch-row::-webkit-scrollbar { display: none }
   /* Chat pane on mobile */
-  #chat-pane { height: 100vh; height: 100dvh }
+  #chat-pane { min-height: 100vh; height: 100dvh }
   #chat-input-row { padding: 8px 10px; flex-wrap: wrap; gap: 6px }
   #chat-input-wrap { flex: 1 1 100%; order: -1 }
   #btn-chat-attach { order: 1 }
@@ -298,31 +305,39 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
   #chat-tools { flex-wrap: wrap; gap: 4px }
   .ct-btn { font-size: 11px; padding: 4px 7px }
   /* VM pane on mobile */
-  #vm-pane { height: 100vh }
+  #vm-pane { min-height: 100vh }
   /* Prompt bar buttons wrap properly */
   .pbar-row { flex-wrap: wrap }
-  #btn-gen, #btn-patch, #btn-open-browser, #btn-save-project { padding: 7px 10px; font-size: 12px }
-  /* Editor toolbar: allow scrolling */
-  #etb { overflow-x: auto; flex-wrap: nowrap }
+  #btn-gen, #btn-patch, #btn-open-browser, #btn-save-project { padding: 8px 10px; font-size: 12px; min-height: 40px }
+  /* Editor toolbar: allow horizontal scrolling */
+  #etb { overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none; -webkit-overflow-scrolling: touch }
+  #etb::-webkit-scrollbar { display: none }
   /* Side panel full-width */
   #panel { width: var(--panel-w) }
   /* Output bar */
   #outbar { max-height: 40vh; overflow-y: auto }
+  /* Improve touch targets for toolbar buttons */
+  .ei { min-height: 36px; display: inline-flex; align-items: center }
+  .vbtn { min-height: 36px; white-space: nowrap; flex-shrink: 0 }
 }
 @media (max-width: 480px) {
   /* Keep all view buttons visible — compact emoji-only style */
-  .tv-btn { overflow: hidden; white-space: nowrap; max-width: 32px; padding: 5px 6px; font-size: 15px }
+  .tv-btn { overflow: hidden; white-space: nowrap; max-width: 38px; min-width: 38px;
+            padding: 6px 4px; font-size: 16px; min-height: 34px }
   /* Hide text after emoji: emoji is always the first character */
   #topbar { overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none }
   #topbar::-webkit-scrollbar { display: none }
   #topbar-title { font-size: 11px; flex-shrink: 0 }
-  #etb .ei { padding: 3px 6px; font-size: 10px }
+  #etb .ei { padding: 4px 7px; font-size: 11px }
   #gen-input { font-size: 13px }
   #chat-messages .cm { font-size: 13px }
   .vm-card h3 { font-size: 14px }
   /* Ensure pbar buttons wrap to multiple rows */
   .pbar-row { flex-wrap: wrap; gap: 5px }
-  #btn-gen, #btn-patch, #btn-open-browser, #btn-save-project { flex: 1; min-width: 70px; font-size: 11px; padding: 6px 8px }
+  #btn-gen, #btn-patch, #btn-open-browser, #btn-save-project { flex: 1; min-width: 70px; font-size: 11px; padding: 7px 8px }
+  /* Compact Monaco editor height on small phones */
+  #epane { height: 45vh }
+  #vpane { min-height: 38vh }
 }
 /* ── Emoji picker styles ── */
 #btn-emoji {
