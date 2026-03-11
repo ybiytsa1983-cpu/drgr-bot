@@ -238,6 +238,7 @@ _DEFAULT_INSTRUCTIONS: dict = {
         "total_articles": 0,
         "total_image_descriptions": 0,
         "total_generate_html": 0,
+        "total_projects_saved": 0,
         "failed_actions": 0,
         "retrain_cycles": 0,
         "popular_queries": {},          # query -> count
@@ -246,6 +247,7 @@ _DEFAULT_INSTRUCTIONS: dict = {
         "screenshot_success_rate": 1.0,
         "image_descriptions": [],       # last 50 AI descriptions (for training)
         "article_topics": [],           # last 50 article titles
+        "saved_projects": [],           # last 100 saved project names
         "actions_since_last_retrain": 0,
     },
     # ── Browser-agent specification ───────────────────────────────────────────
@@ -405,11 +407,28 @@ def _is_html_content(code: str) -> bool:
 # Patterns that indicate code uses Chrome-extension or browser-extension APIs
 # that cannot run in plain Node.js
 _BROWSER_EXT_PATTERNS = re.compile(
-    r'\bchrome\s*\.\s*(storage|runtime|tabs|windows|browserAction|action|'
-    r'scripting|contextMenus|alarms|notifications|identity|downloads|'
-    r'bookmarks|history|cookies|permissions|management|extension)\b'
-    r'|\bbrowser\s*\.\s*(storage|runtime|tabs|windows)\b',
-    re.IGNORECASE,
+    r"""
+    # chrome.property (dot notation)
+    \bchrome\s*\.\s*(?:storage|runtime|tabs|windows|browserAction|action|
+        scripting|contextMenus|alarms|notifications|identity|downloads|
+        bookmarks|history|cookies|permissions|management|extension)\b
+    |
+    # chrome['property'] (bracket notation)
+    \bchrome\s*\[\s*['"](?:storage|runtime|tabs|windows|browserAction|action|
+        scripting|contextMenus|alarms|notifications|identity|downloads|
+        bookmarks|history|cookies|permissions|management|extension)['"]\s*\]
+    |
+    # typeof chrome (existence check in browser extension code)
+    \btypeof\s+chrome\b
+    |
+    # if (chrome) / if (!chrome) bare standalone reference
+    \bif\s*\(\s*!?\s*chrome\s*[).\[&|!]
+    |
+    # browser.* WebExtensions API (Firefox extensions)
+    \bbrowser\s*\.\s*(?:storage|runtime|tabs|windows|bookmarks|history|
+        cookies|permissions|management|extension|alarms|notifications)\b
+    """,
+    re.IGNORECASE | re.VERBOSE,
 )
 
 
@@ -594,14 +613,16 @@ def _run_code(code: str, language: str) -> dict:
         return {
             "output": "",
             "error": (
-                "Код использует Chrome Extension API (chrome.storage, chrome.runtime и т.д.), "
+                "⛔ Код использует Chrome Extension API (chrome.storage, chrome.runtime и т.д.), "
                 "которые недоступны в Node.js.\n"
-                "Этот код является расширением для браузера — его нельзя запустить напрямую.\n"
+                "Этот код является расширением для браузера — его нельзя запустить через Node.js.\n\n"
                 "Решения:\n"
-                "  1. Упакуйте код как Chrome Extension (manifest.json + popup/background scripts) "
-                "и загрузите через chrome://extensions/\n"
-                "  2. Попросите ИИ переписать код без chrome.* API для запуска в Node.js\n"
-                "  3. Используйте кнопку '🌐 Открыть' для просмотра HTML-версии кода в браузере"
+                "  1. Нажмите '▶ Сгенерировать' и попросите:\n"
+                "     «Перепиши без chrome.* API — только Node.js (fs, path, os, crypto)»\n"
+                "  2. Если это Chrome Extension — упакуйте как расширение:\n"
+                "     создайте manifest.json + popup.html и загрузите через chrome://extensions/\n"
+                "  3. Для визуализации в браузере — попросите сгенерировать HTML-файл\n"
+                "  4. Используйте кнопку '🌐 Открыть' для просмотра HTML-версии в браузере"
             ),
             "success": False,
         }
@@ -865,6 +886,19 @@ def _record_agent_action(record: dict) -> None:
         if not success:
             aa["failed_actions"] = aa.get("failed_actions", 0) + 1
 
+    elif action_type in ("project_save", "project_generate"):
+        aa["total_projects_saved"] = aa.get("total_projects_saved", 0) + 1
+        name = record.get("input", {}).get("name", "")
+        if name:
+            projects = aa.setdefault("saved_projects", [])
+            projects.append({
+                "name": name,
+                "action": action_type,
+                "ts": record.get("timestamp", ""),
+            })
+            if len(projects) > 100:
+                aa["saved_projects"] = projects[-100:]
+
     # 3. Increment actions-since-retrain counter
     aa["actions_since_last_retrain"] = aa.get("actions_since_last_retrain", 0) + 1
     save_instructions(data)
@@ -989,6 +1023,17 @@ def _regenerate_instructions(data: dict) -> None:
         instructions.append(
             f"Self-improvement cycles completed: {aa['retrain_cycles']}"
         )
+
+    if aa.get("total_projects_saved", 0) > 0:
+        instructions.append(
+            f"Projects saved to VM memory: {aa['total_projects_saved']} "
+            "(generated code/HTML projects stored in vm/projects/ directory)"
+        )
+        recent_proj = [p["name"] for p in aa.get("saved_projects", [])[-5:]]
+        if recent_proj:
+            instructions.append(
+                "Recent saved project names: " + "; ".join(recent_proj)
+            )
 
     data["training_instructions"] = instructions
 
@@ -4021,6 +4066,20 @@ def project_generate():
         project_id = f"{_slugify(name)}_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
         _save_project(project_id, name, prompt, files)
         _record_generation("html", model, prompt)
+        # Also log to VM memory/training data
+        threading.Thread(
+            target=_record_agent_action,
+            args=({
+                "timestamp":   _now(),
+                "action_type": "project_generate",
+                "input":       {"name": name, "prompt": prompt, "model": model},
+                "output":      {"project_id": project_id, "files": list(files.keys())},
+                "success":     True,
+                "duration_ms": 0,
+                "metadata":    {},
+            },),
+            daemon=True,
+        ).start()
 
         return jsonify({
             "project_id": project_id,
@@ -4102,6 +4161,21 @@ def project_save():
     project_id = f"{slug}_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
     files = {filename: content}
     _save_project(project_id, name, description or name, files)
+
+    # Log to VM training data / memory so the VM "remembers" this project
+    threading.Thread(
+        target=_record_agent_action,
+        args=({
+            "timestamp":   _now(),
+            "action_type": "project_save",
+            "input":       {"name": name, "filename": filename, "description": description or name},
+            "output":      {"project_id": project_id, "size": len(content)},
+            "success":     True,
+            "duration_ms": 0,
+            "metadata":    {"content_preview": content[:200]},
+        },),
+        daemon=True,
+    ).start()
 
     return jsonify({
         "project_id": project_id,
