@@ -167,6 +167,112 @@ def _ollama_heartbeat() -> None:
 
 threading.Thread(target=_ollama_heartbeat, daemon=True).start()
 
+# ---------------------------------------------------------------------------
+# Telegram bot process manager
+# ---------------------------------------------------------------------------
+# server.py manages the lifecycle of bot.py so that saving a new token via
+# POST /settings immediately restarts the bot with the updated credential.
+
+_bot_proc: "subprocess.Popen | None" = None
+_bot_proc_lock = threading.Lock()
+
+_BOT_PY = os.path.join(os.path.dirname(_DIR), "bot.py")
+_BOT_TOKEN_PLACEHOLDER = "your_telegram_bot_token_here"
+
+
+def _get_saved_token() -> str:
+    """Return BOT_TOKEN from .env in repo root, or '' if not set."""
+    env_path = os.path.join(os.path.dirname(_DIR), ".env")
+    try:
+        with open(env_path, "r", encoding="utf-8") as fh:
+            for line in fh:
+                if line.startswith("BOT_TOKEN="):
+                    val = line[len("BOT_TOKEN="):].strip()
+                    if val and val != _BOT_TOKEN_PLACEHOLDER:
+                        return val
+    except OSError:
+        pass
+    return os.environ.get("BOT_TOKEN", "")
+
+
+def _stop_bot() -> None:
+    """Kill the managed bot subprocess (if running)."""
+    global _bot_proc  # noqa: PLW0603
+    with _bot_proc_lock:
+        if _bot_proc is not None:
+            try:
+                _bot_proc.terminate()
+                try:
+                    _bot_proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    _bot_proc.kill()
+            except OSError:
+                pass
+            _bot_proc = None
+
+
+def _start_bot(token: str = "") -> bool:
+    """Start (or restart) bot.py with the given token.
+
+    If *token* is empty, reads from .env.  Returns True if the process
+    was launched successfully, False otherwise.
+    """
+    global _bot_proc  # noqa: PLW0603
+
+    if not os.path.isfile(_BOT_PY):
+        _log.warning("bot.py not found at %s — skipping bot start", _BOT_PY)
+        return False
+
+    if not token:
+        token = _get_saved_token()
+    if not token:
+        _log.info("BOT_TOKEN not set — bot will not start")
+        return False
+
+    _stop_bot()
+
+    env = os.environ.copy()
+    env["BOT_TOKEN"] = token
+
+    # Determine log file path for bot output (repo root / bot.log)
+    bot_log_path = os.path.join(os.path.dirname(_DIR), "bot.log")
+    try:
+        bot_log_fh = open(bot_log_path, "a", encoding="utf-8")  # noqa: SIM115, WPS515
+    except OSError:
+        bot_log_fh = subprocess.DEVNULL  # type: ignore[assignment]
+
+    try:
+        with _bot_proc_lock:
+            _bot_proc = subprocess.Popen(  # noqa: S603
+                [sys.executable, _BOT_PY],
+                env=env,
+                cwd=os.path.dirname(_DIR),
+                stdout=bot_log_fh,
+                stderr=bot_log_fh,
+            )
+        _log.info("Bot started (PID %s)", _bot_proc.pid)
+        return True
+    except OSError as exc:
+        _log.error("Failed to start bot.py: %s", exc)
+        return False
+
+
+def _bot_monitor() -> None:
+    """Background thread: restart the bot if it exits unexpectedly."""
+    while True:
+        time.sleep(10)
+        with _bot_proc_lock:
+            proc = _bot_proc
+        if proc is not None and proc.poll() is not None:
+            # Process exited — restart only if we still have a valid token
+            token = _get_saved_token()
+            if token:
+                _log.warning("Bot exited (rc=%s) — restarting", proc.returncode)
+                _start_bot(token)
+
+
+threading.Thread(target=_bot_monitor, daemon=True).start()
+
 # Maximum number of prior chat turns to include in the /chat/stream context.
 _MAX_CHAT_HISTORY_TURNS = 20
 
@@ -1175,7 +1281,7 @@ def health():
                     line = line.strip()
                     if line.startswith("BOT_TOKEN="):
                         val = line.split("=", 1)[1].strip().strip('"').strip("'")
-                        bot_token_set = bool(val and val != "your_telegram_bot_token_here")
+                        bot_token_set = bool(val and val != _BOT_TOKEN_PLACEHOLDER)
                         break
         # Also honour env var set at runtime (e.g. when running on a server)
         if not bot_token_set and os.environ.get("BOT_TOKEN"):
@@ -1899,7 +2005,7 @@ def get_settings():
                     line = line.strip()
                     if line.startswith("BOT_TOKEN="):
                         val = line.split("=", 1)[1].strip().strip('"').strip("'")
-                        bot_token_set = bool(val and val != "your_telegram_bot_token_here")
+                        bot_token_set = bool(val and val != _BOT_TOKEN_PLACEHOLDER)
                         break
         if not bot_token_set and os.environ.get("BOT_TOKEN"):
             bot_token_set = True
@@ -1978,7 +2084,46 @@ def save_settings():
     except OSError as exc:
         return jsonify({"ok": False, "error": f"Не удалось записать .env: {exc}"})
 
-    return jsonify({"ok": True})
+    # If the bot token changed, restart the bot process so it uses the new token.
+    bot_restarted = False
+    if bot_token:
+        bot_restarted = _start_bot(bot_token)
+
+    return jsonify({"ok": True, "bot_restarted": bot_restarted})
+
+
+@app.route("/bot/status", methods=["GET"])
+def bot_status():
+    """Return the status of the managed bot subprocess."""
+    with _bot_proc_lock:
+        proc = _bot_proc
+    if proc is None:
+        running = False
+        pid = None
+    else:
+        running = proc.poll() is None
+        pid = proc.pid
+    token = _get_saved_token()
+    return jsonify({
+        "running": running,
+        "pid": pid,
+        "token_set": bool(token),
+    })
+
+
+@app.route("/bot/restart", methods=["POST"])
+def bot_restart():
+    """(Re)start the bot subprocess using the token stored in .env."""
+    if not os.path.isfile(_BOT_PY):
+        return jsonify({"ok": False, "error": "bot.py не найден — убедитесь что репозиторий клонирован полностью"})
+    if not _get_saved_token():
+        return jsonify({"ok": False, "error": "BOT_TOKEN не задан — сначала сохрани токен в настройках"})
+    ok = _start_bot()
+    if ok:
+        with _bot_proc_lock:
+            pid = _bot_proc.pid if _bot_proc else None
+        return jsonify({"ok": True, "pid": pid})
+    return jsonify({"ok": False, "error": "Не удалось запустить бота"})
 
 
 @app.route("/bot/test", methods=["POST"])
@@ -4905,6 +5050,8 @@ if __name__ == "__main__":
         print(f"[Code VM] Starting on port {port} ...", flush=True)
         # Ensure instructions file is initialised before accepting requests
         load_instructions()
+        # Auto-start bot.py if BOT_TOKEN is already configured
+        _start_bot()
         print("[Code VM] Flask app starting.", flush=True)
         app.run(host="0.0.0.0", port=port, debug=False)
     except Exception:

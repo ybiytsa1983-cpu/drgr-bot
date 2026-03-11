@@ -48,7 +48,9 @@ load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 if not BOT_TOKEN:
-    raise ValueError("Set BOT_TOKEN in your .env file.")
+    raise SystemExit(
+        "BOT_TOKEN не задан. Укажи токен в .env файле или через настройки VM на http://localhost:5000/"
+    )
 
 OLLAMA_BASE        = os.getenv("OLLAMA_HOST",        "http://localhost:11434")
 VM_BASE            = os.getenv("VM_BASE",            "http://localhost:5000")

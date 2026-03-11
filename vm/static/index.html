@@ -303,7 +303,7 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
         <button class="pb pb-m" title="Показать/скрыть" onclick="var i=document.getElementById('tok-inp');i.type=i.type==='password'?'text':'password'">👁</button>
       </div>
       <div id="bot-test-status" style="font-size:10px;margin-top:2px"></div>
-      <div style="font-size:10px;color:var(--text2)">Получить у @BotFather в Telegram. После смены токена перезапустите бота (start.ps1).</div>
+      <div style="font-size:10px;color:var(--text2)">Получить у @BotFather в Telegram. После сохранения токена бот перезапускается автоматически.</div>
     </div>
 
     <!-- Chat ID -->
@@ -2009,7 +2009,11 @@ async function saveBotToken() {
       body: JSON.stringify({ bot_token: tok }) });
     var d = await r.json();
     if (d.ok) {
-      toast('✅ Токен бота сохранён — перезапустите бота (start.ps1) чтобы применить');
+      if (d.bot_restarted) {
+        toast('✅ Токен сохранён — бот перезапущен автоматически');
+      } else {
+        toast('✅ Токен бота сохранён. Для применения запусти: ЗАПУСТИТЬ_ВСЕ.ps1 или start.ps1');
+      }
       document.getElementById('tok-inp').value = '';
       // Update health indicator immediately
       var el = document.getElementById('h-bot');

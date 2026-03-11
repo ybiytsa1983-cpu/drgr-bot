@@ -34,7 +34,10 @@ irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/run.ps1" | 
 2. Нажми кнопку **☰** (левый верхний угол)
 3. Найди раздел **«📱 Telegram Bot Token»**
 4. Введи токен → нажми **«💾 Сохранить токен»**
-5. Перезапусти: `powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\drgr-bot\start.ps1"`
+5. ✅ **Бот перезапустится автоматически** — никаких дополнительных действий не нужно
+
+> Если бот почему-то не отвечает после смены токена — запусти вручную:
+> `powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\drgr-bot\ЗАПУСТИТЬ_ВСЕ.ps1"`
 
 ---
 
