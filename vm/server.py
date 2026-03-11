@@ -4016,7 +4016,7 @@ def _build_gltf(shape: str, params: dict, color: list | None = None) -> dict:
 
     buf_b64 = "data:application/octet-stream;base64," + _b64.b64encode(buf).decode()
 
-    r, g, b_c = (color or [0.4, 0.7, 1.0])[:3]
+    r, g, b = (color or [0.4, 0.7, 1.0])[:3]
     a = (color[3] if color and len(color) > 3 else 1.0)
 
     gltf = {
@@ -4063,7 +4063,7 @@ def _build_gltf(shape: str, params: dict, color: list | None = None) -> dict:
         "materials": [{
             "name": "default",
             "pbrMetallicRoughness": {
-                "baseColorFactor": [r, g, b_c, a],
+                "baseColorFactor": [r, g, b, a],
                 "metallicFactor": 0.0,
                 "roughnessFactor": 0.5,
             },
