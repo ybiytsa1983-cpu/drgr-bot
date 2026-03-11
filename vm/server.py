@@ -571,7 +571,9 @@ def _js_code_starts_with_bare_slash(code: str) -> str:
 
 
 _RUNNERS = {
-    "python": ["python3"],
+    # Use sys.executable so user code runs in the same venv as the server and
+    # has access to all installed packages (flask, requests, aiogram, etc.).
+    "python": [sys.executable],
     "javascript": ["node", "--no-warnings"],
     "shell": ["bash"],
     "bash": ["bash"],
@@ -582,7 +584,6 @@ _RUNNERS = {
 # Fallback runtimes tried when the primary runner is not found.
 # Key = primary executable name (runner[0]); value = fallback command list.
 _RUNNER_FALLBACKS = {
-    "python3": ["python"],
     "bash": ["sh"],
 }
 

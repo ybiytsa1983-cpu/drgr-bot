@@ -79,8 +79,8 @@ _MD_INSTALL_CMD = (
 )
 
 _MD_UPDATE_CMD = (
-    "*⬇ Обновить файлы \\(скачать новые версии\\):*\n"
-    "`Set\\-Location \"$env:USERPROFILE\\\\drgr\\-bot\"; git pull; \\.\\\\install\\.ps1`"
+    "*⬇ Обновить \\(PowerShell, Win\\+X → Windows PowerShell\\):*\n"
+    "`irm \"https://raw.githubusercontent.com/ybiytsa1983\\-cpu/drgr\\-bot/main/update\\.ps1\" | iex`"
 )
 
 _MD_WEB_URL = "`http://localhost:5000/`"
@@ -2247,15 +2247,15 @@ async def cmd_research(message: Message) -> None:
 
 @router.message(Command("update"))
 async def cmd_update(message: Message) -> None:
-    """Show the PowerShell command to pull the latest files and re-run install."""
+    """Show the PowerShell one-liner to check for updates and install new files."""
     text_md = (
         "\u2b07\ufe0f *Скачать и установить новые файлы*\n\n"
         "Открой *PowerShell* \\(Win\\+X → Windows PowerShell\\) и вставь:\n\n"
         f"{_MD_UPDATE_CMD}\n\n"
-        "Команда:\n"
-        "1\\. Переходит в папку `drgr-bot`\n"
-        "2\\. Скачивает последние изменения с GitHub\n"
-        "3\\. Переустанавливает зависимости\n\n"
+        "Команда автоматически:\n"
+        "1\\. Проверяет наличие обновлений\n"
+        "2\\. Показывает список изменённых файлов\n"
+        "3\\. Скачивает и устанавливает новые версии\n\n"
         "После завершения запусти VM:\n"
         "`powershell \\-ExecutionPolicy Bypass \\-File \"$env:USERPROFILE\\\\drgr\\-bot\\\\start\\.ps1\"`\n\n"
         "_Если папки `drgr\\-bot` нет — используй_ /vm _для полной установки с нуля_"
@@ -2266,11 +2266,11 @@ async def cmd_update(message: Message) -> None:
         await message.answer(
             "⬇ Скачать и установить новые файлы\n\n"
             "Открой PowerShell (Win+X → Windows PowerShell) и вставь:\n\n"
-            'Set-Location "$env:USERPROFILE\\drgr-bot"; git pull; .\\install.ps1\n\n'
-            "Эта команда:\n"
-            "1. Переходит в папку drgr-bot\n"
-            "2. Скачивает последние изменения с GitHub\n"
-            "3. Переустанавливает зависимости\n\n"
+            'irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/update.ps1" | iex\n\n'
+            "Команда автоматически:\n"
+            "1. Проверяет наличие обновлений\n"
+            "2. Показывает список изменённых файлов\n"
+            "3. Скачивает и устанавливает новые версии\n\n"
             "После завершения запусти VM:\n"
             'powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\\drgr-bot\\start.ps1"\n\n'
             "Если папки drgr-bot нет — используй /vm для полной установки с нуля"
