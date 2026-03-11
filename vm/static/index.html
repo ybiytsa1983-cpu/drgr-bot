@@ -316,6 +316,7 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
       </div>
       <div id="bot-test-status" style="font-size:10px;margin-top:2px"></div>
       <div style="font-size:10px;color:var(--text2)">Получить у @BotFather в Telegram. После сохранения токена бот перезапускается автоматически.</div>
+      <button class="pb pb-m pb-f" style="margin-top:4px" onclick="restartBot()">🔄 Перезапустить бот</button>
     </div>
 
     <!-- Chat ID -->
@@ -368,7 +369,7 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
           font-family:monospace;color:#9cdcfe;cursor:pointer;word-break:break-all;margin-bottom:6px;
           border:1px solid var(--border)"
         onclick="copyPs('ps-install-cmd')" title="Нажмите для копирования">
-        <span id="ps-install-cmd">irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/run.ps1" | iex</span>
+        <span id="ps-install-cmd">irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/copilot/create-monaco-code-generator/run.ps1" | iex</span>
         <span style="float:right;color:var(--text2);font-size:9px">📋</span>
       </div>
       <div style="font-size:10px;color:var(--text2);margin-bottom:3px">⬇ Скачать и применить обновления:</div>
@@ -1964,11 +1965,13 @@ async function loadHealth() {
   var noOl = document.getElementById('chat-no-ollama');
   try {
     var r = await fetch('/health'); var d = await r.json();
-    var vm=d.vm&&d.vm.status==='ok', ol=d.ollama&&d.ollama.status==='ok', bot=d.bot&&d.bot.token_set;
+    var vm=d.vm&&d.vm.status==='ok', ol=d.ollama&&d.ollama.status==='ok',
+        bot=d.bot&&d.bot.token_set, botRun=d.bot&&d.bot.running;
     set('h-vm',  vm ? '✓ OK'        : '✗ Ошибка',    vm  ? 'ok' : 'fail');
     set('h-ol',  ol ? '✓ OK'        : '✗ Недоступна', ol  ? 'ok' : 'fail');
     document.getElementById('h-url').textContent = (d.ollama&&d.ollama.url)||'—';
-    set('h-bot', bot? '✓ Токен есть': '✗ Нет токена', bot ? 'ok' : 'warn');
+    set('h-bot', botRun ? '✓ Работает' : (bot ? '⚠ Не запущен' : '✗ Нет токена'),
+        botRun ? 'ok' : (bot ? 'warn' : 'fail'));
     document.getElementById('sdot').className = ol ? 'ok' : '';
     // Show/hide "Ollama not running" banner in chat view
     noOl.style.display = ol ? 'none' : '';
@@ -2045,7 +2048,13 @@ async function saveBotToken() {
       document.getElementById('tok-inp').value = '';
       // Update health indicator immediately
       var el = document.getElementById('h-bot');
-      if (el) { el.textContent = '✓ Токен есть'; el.className = 'hv ok'; }
+      if (el) {
+        if (d.bot_restarted) {
+          el.textContent = '✓ Работает'; el.className = 'hv ok';
+        } else {
+          el.textContent = '⚠ Не запущен'; el.className = 'hv warn';
+        }
+      }
       setTimeout(loadHealth, 1000);
     } else { toast('⚠ ' + (d.error||'Ошибка сохранения токена')); }
   } catch(e) { toast('⚠ Ошибка сети: ' + e.message); }
@@ -2079,6 +2088,18 @@ async function testBotToken() {
   }
 }
 
+// ── Bot restart ───────────────────────────────────────────────────────────────
+async function restartBot() {
+  try {
+    var r = await fetch('/bot/restart', { method:'POST' });
+    var d = await r.json();
+    if (d.ok) {
+      toast('✅ Бот перезапущен');
+      setTimeout(loadHealth, 1500);
+    } else { toast('⚠ ' + (d.error||'Ошибка перезапуска бота')); }
+  } catch(e) { toast('⚠ Ошибка сети: ' + e.message); }
+}
+
 // ── Chat ID ───────────────────────────────────────────────────────────────────
 async function saveChatId() {
   var cid = document.getElementById('chatid-inp').value.trim();
@@ -2103,7 +2124,7 @@ async function loadOllamaUrl() {
     // Also update bot token indicator from settings if health hasn't been polled yet
     if (typeof d.bot_token_set === 'boolean') {
       var hasToken = d.bot_token_set;
-      set('h-bot', hasToken ? '✓ Токен есть' : '✗ Нет токена', hasToken ? 'ok' : 'warn');
+      set('h-bot', hasToken ? '⚠ Не запущен' : '✗ Нет токена', hasToken ? 'warn' : 'fail');
     }
   } catch(e) {}
 }

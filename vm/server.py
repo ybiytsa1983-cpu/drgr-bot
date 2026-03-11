@@ -1288,6 +1288,11 @@ def health():
     except Exception:  # pylint: disable=broad-except
         pass
 
+    # --- Bot process running status ---
+    with _bot_proc_lock:
+        _proc = _bot_proc
+    bot_running = _proc is not None and _proc.poll() is None
+
     return jsonify({
         "vm":     {"status": "ok"},
         "ollama": {
@@ -1297,7 +1302,8 @@ def health():
         },
         "bot": {
             "token_set": bot_token_set,
-            "status":    "configured" if bot_token_set else "missing",
+            "running":   bot_running,
+            "status":    "running" if bot_running else ("configured" if bot_token_set else "missing"),
         },
     })
 
