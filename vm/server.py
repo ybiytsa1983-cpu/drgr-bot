@@ -401,7 +401,8 @@ _RUNNERS = {
     "javascript": ["node"],
     "shell": ["bash"],
     "bash": ["bash"],
-    "typescript": ["npx", "ts-node", "--transpile-only"],
+    # Prefer node --experimental-strip-types (Node 22+); fallback to npx ts-node
+    "typescript": ["node", "--experimental-strip-types"],
 }
 
 # Fallback runtimes tried when the primary runner is not found.
@@ -414,6 +415,122 @@ _RUNNER_FALLBACKS = {
 # Languages handled entirely in-process (no subprocess needed).
 _INPROCESS_RUNNERS = {"json", "xml", "html", "markdown", "css", "sql",
                       "plaintext", "text"}
+
+
+def _run_typescript(code: str) -> dict:
+    """Execute TypeScript code using the best available runtime.
+
+    Tries runtimes in order:
+    1. node --experimental-strip-types  (Node 22+, built-in TS support)
+    2. npx ts-node --transpile-only --skip-project  (requires ts-node install)
+    3. Regex type-stripping + plain node  (last resort for simple TS files)
+    """
+    tmp_ts = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            suffix=".ts", mode="w", delete=False, encoding="utf-8"
+        ) as tmp:
+            tmp.write(code)
+            tmp_ts = tmp.name
+
+        def _run(cmd: list) -> dict:
+            proc = subprocess.run(
+                cmd + [tmp_ts],
+                capture_output=True, text=True, timeout=10,
+                cwd=tempfile.gettempdir(),
+            )
+            return {
+                "output": proc.stdout[:4096],
+                "stdout": proc.stdout[:4096],
+                "error": proc.stderr[:2048],
+                "stderr": proc.stderr[:2048],
+                "success": proc.returncode == 0,
+            }
+
+        # 1. Try node --experimental-strip-types (Node 22+)
+        try:
+            result = _run(["node", "--experimental-strip-types"])
+            if result["success"] or (
+                result["error"] and
+                "--experimental-strip-types" not in result["error"] and
+                "unknown" not in result["error"].lower() and
+                "unrecognized" not in result["error"].lower()
+            ):
+                return result
+        except FileNotFoundError:
+            pass
+
+        # 2. Try npx ts-node --transpile-only --skip-project
+        try:
+            result = _run(["npx", "--yes", "ts-node",
+                           "--transpile-only", "--skip-project"])
+            if result["success"] or (
+                result["error"] and
+                "Cannot find module" not in result["error"] and
+                "ts-node" not in result["error"].lower().split("\n")[0]
+            ):
+                return result
+        except FileNotFoundError:
+            pass
+
+        # 3. Regex type-stripping + plain node (last resort)
+        ts_stripped = re.sub(
+            r'\binterface\s+\w+[^{]*\{[^}]*\}', '', code, flags=re.DOTALL)
+        ts_stripped = re.sub(
+            r'\btype\s+\w+\s*=\s*[^\n;]+[;\n]', '', ts_stripped)
+        # Remove return type annotations: ): ReturnType => / ): ReturnType {
+        ts_stripped = re.sub(
+            r'\)\s*:\s*(?:string|number|boolean|void|any|never|unknown|object'
+            r'|undefined|bigint|symbol|Promise|[A-Z]\w*)(?:\[\])?'
+            r'(?:\s*\|[^{=,;\n]+)?(?=\s*[\{=])',
+            ')', ts_stripped)
+        # Remove parameter/variable type annotations: name: TypeName
+        ts_stripped = re.sub(
+            r':\s*(?:string|number|boolean|void|any|never|unknown|object'
+            r'|undefined|bigint|symbol|null|[A-Z]\w*)(?:\[\])?'
+            r'(?:\s*(?:\||\&)\s*(?:string|number|boolean|null|undefined|[A-Z]\w*)(?:\[\])?)*'
+            r'(?=\s*[,)=;\n])',
+            '', ts_stripped)
+        # Remove generic type params from function calls: fn<Type>(...)
+        ts_stripped = re.sub(r'<[A-Z]\w*(?:,\s*\w+)*>', '', ts_stripped)
+
+        js_path = tmp_ts.replace('.ts', '_stripped.js')
+        try:
+            with open(js_path, 'w', encoding='utf-8') as jf:
+                jf.write(ts_stripped)
+            try:
+                proc = subprocess.run(
+                    ['node', js_path],
+                    capture_output=True, text=True, timeout=10,
+                    cwd=tempfile.gettempdir())
+                return {
+                    "output": proc.stdout[:4096],
+                    "stdout": proc.stdout[:4096],
+                    "error": proc.stderr[:2048],
+                    "stderr": proc.stderr[:2048],
+                    "success": proc.returncode == 0,
+                }
+            except FileNotFoundError:
+                pass
+        finally:
+            if os.path.exists(js_path):
+                os.unlink(js_path)
+
+        return {
+            "output": "",
+            "error": (
+                "TypeScript runtime not found. "
+                "Установите Node.js 22+ или ts-node: npm install -g ts-node typescript"
+            ),
+            "success": False,
+        }
+    except subprocess.TimeoutExpired:
+        return {"output": "", "error": "Execution timed out (10 s limit)", "success": False}
+    except Exception as exc:  # pylint: disable=broad-except
+        return {"output": "", "error": str(exc), "success": False}
+    finally:
+        if tmp_ts and os.path.exists(tmp_ts):
+            os.unlink(tmp_ts)
 
 
 def _run_code(code: str, language: str) -> dict:
@@ -434,6 +551,10 @@ def _run_code(code: str, language: str) -> dict:
     runner = _RUNNERS.get(language)
     if runner is None:
         return {"output": "", "error": f"Unsupported language: {language}", "success": False}
+
+    # TypeScript has its own multi-step runner
+    if language == "typescript":
+        return _run_typescript(code)
 
     # Guard: if JavaScript code is actually HTML, refuse execution with a clear message
     if language == "javascript" and _is_html_content(code):
@@ -3895,6 +4016,267 @@ def project_file(project_id: str, filename: str):
         return jsonify({"error": "Project not found"}), 404
     # send_from_directory handles path traversal protection
     return send_from_directory(project_dir, filename)
+
+
+# ---------------------------------------------------------------------------
+# File upload — upload a file from the user's PC into the editor
+# ---------------------------------------------------------------------------
+
+# Allowed file extensions for upload (whitelist)
+_UPLOAD_ALLOWED_EXT = {
+    ".py", ".js", ".ts", ".html", ".css", ".json", ".xml", ".yaml", ".yml",
+    ".md", ".markdown", ".txt", ".csv", ".sql", ".sh", ".bash", ".ps1",
+    ".java", ".kt", ".go", ".rs", ".cpp", ".c", ".h", ".cs", ".php",
+    ".rb", ".r", ".swift", ".dockerfile", ".toml", ".ini", ".env",
+}
+
+
+@app.route("/files/upload", methods=["POST"])
+def files_upload():
+    """Accept a file uploaded from the user's PC and return its text content.
+
+    Accepts multipart/form-data with a 'file' field.
+    Returns: {content: "...", filename: "...", language: "...", success: true}
+    """
+    from werkzeug.utils import secure_filename as _secure_filename
+
+    uploaded = request.files.get("file")
+    if not uploaded:
+        return jsonify({"error": "No file provided", "success": False}), 400
+
+    original_name = uploaded.filename or "file.txt"
+    safe_name = _secure_filename(original_name)
+    _, ext = os.path.splitext(safe_name.lower())
+    if ext and ext not in _UPLOAD_ALLOWED_EXT:
+        return jsonify({
+            "error": f"File type '{ext}' is not allowed. Supported: "
+                     + ", ".join(sorted(_UPLOAD_ALLOWED_EXT)),
+            "success": False,
+        }), 400
+
+    # Read content (limit to 512 KB)
+    data = uploaded.read(512 * 1024)
+    try:
+        content = data.decode("utf-8")
+    except UnicodeDecodeError:
+        try:
+            content = data.decode("cp1251")
+        except UnicodeDecodeError:
+            return jsonify({"error": "File is not valid UTF-8 or CP1251 text", "success": False}), 400
+
+    # Guess language from extension
+    _ext_to_lang = {
+        ".py": "python", ".js": "javascript", ".ts": "typescript",
+        ".html": "html", ".htm": "html", ".css": "css",
+        ".json": "json", ".xml": "xml", ".yaml": "yaml", ".yml": "yaml",
+        ".md": "markdown", ".markdown": "markdown",
+        ".txt": "plaintext", ".csv": "plaintext", ".sql": "sql",
+        ".sh": "shell", ".bash": "bash", ".ps1": "powershell",
+        ".java": "java", ".kt": "kotlin", ".go": "go", ".rs": "rust",
+        ".cpp": "cpp", ".c": "c", ".h": "c", ".cs": "csharp",
+        ".php": "php", ".rb": "ruby", ".r": "r", ".swift": "swift",
+        ".dockerfile": "dockerfile", ".toml": "plaintext", ".ini": "plaintext",
+    }
+    lang = _ext_to_lang.get(ext, "plaintext")
+
+    return jsonify({
+        "content": content,
+        "filename": safe_name,
+        "language": lang,
+        "size": len(data),
+        "success": True,
+    })
+
+
+# ---------------------------------------------------------------------------
+# Web search — search the web via DuckDuckGo Lite HTML (no API key needed)
+# ---------------------------------------------------------------------------
+
+@app.route("/search", methods=["POST"])
+def web_search():
+    """Search the web using DuckDuckGo Lite and return top results.
+
+    Body: {"query": "search terms", "max_results": 5}
+    Returns: {results: [{title, url, snippet},...], query, success}
+    """
+    body = request.get_json(silent=True) or {}
+    query = body.get("query", "").strip()
+    max_results = min(int(body.get("max_results", 5)), 10)
+
+    if not query:
+        return jsonify({"error": "Provide query", "success": False}), 400
+
+    results = []
+    try:
+        import urllib.parse as _up
+        search_url = "https://lite.duckduckgo.com/lite/"
+        params = {"q": query, "kl": "ru-ru"}
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                          "AppleWebKit/537.36 (KHTML, like Gecko) "
+                          "Chrome/120.0 Safari/537.36",
+            "Accept-Language": "ru,en;q=0.9",
+        }
+        r = _http.post(search_url, data=params, headers=headers, timeout=10)
+        r.raise_for_status()
+
+        # Parse DuckDuckGo Lite HTML results
+        html_text = r.text
+        # Extract result links and snippets with simple regex (no BeautifulSoup needed)
+        link_pattern = re.compile(
+            r'<a[^>]+class="result-link"[^>]*href="([^"]+)"[^>]*>([^<]+)</a>',
+            re.IGNORECASE | re.DOTALL,
+        )
+        snip_pattern = re.compile(
+            r'<td[^>]+class="result-snippet"[^>]*>(.*?)</td>',
+            re.IGNORECASE | re.DOTALL,
+        )
+        links = link_pattern.findall(html_text)
+        snippets = [re.sub(r'<[^>]+>', '', s).strip()
+                    for s in snip_pattern.findall(html_text)]
+
+        for i, (href, title) in enumerate(links[:max_results]):
+            snippet = snippets[i] if i < len(snippets) else ""
+            # Decode DuckDuckGo redirect URLs if present
+            if href.startswith("//duckduckgo.com/l/?"):
+                match = re.search(r'uddg=([^&]+)', href)
+                if match:
+                    href = _up.unquote(match.group(1))
+            elif href.startswith("/"):
+                href = "https://duckduckgo.com" + href
+            results.append({
+                "title": title.strip(),
+                "url": href,
+                "snippet": snippet[:300],
+            })
+
+        # If regex extraction yielded nothing, try a broader approach
+        if not results:
+            # Look for <a href="http..."> patterns in results table
+            broad = re.findall(
+                r'<a[^>]+href="(https?://[^"]+)"[^>]*>([^<]{5,120})</a>',
+                html_text)
+            for href, title in broad[:max_results]:
+                if "duckduckgo.com" not in href:
+                    results.append({"title": title.strip(), "url": href, "snippet": ""})
+
+    except Exception as exc:  # pylint: disable=broad-except
+        return jsonify({"error": str(exc), "success": False}), 500
+
+    _record_agent_action({
+        "timestamp": _now(),
+        "action_type": "web_search",
+        "input": {"query": query},
+        "output": {"results_count": len(results)},
+        "success": bool(results),
+        "duration_ms": 0,
+        "metadata": {},
+    })
+
+    return jsonify({"results": results, "query": query, "success": True})
+
+
+# ---------------------------------------------------------------------------
+# File download — download a file from a URL and return its content/save it
+# ---------------------------------------------------------------------------
+
+@app.route("/files/download", methods=["POST"])
+def files_download():
+    """Download a file from a URL and return its text content (or save it).
+
+    Body: {"url": "https://example.com/file.py", "save": false}
+    Returns: {content: "...", filename: "...", language: "...", success: true}
+    or if save=true: {path: "/abs/path", filename: "...", success: true}
+    """
+    import urllib.parse as _up
+
+    body = request.get_json(silent=True) or {}
+    url = body.get("url", "").strip()
+    save_to_disk = bool(body.get("save", False))
+
+    if not url or not url.startswith(("http://", "https://")):
+        return jsonify({"error": "Provide a valid http/https URL", "success": False}), 400
+
+    # SSRF guard — reconstruct URL from parsed parts to break taint chain
+    safe_url = ""
+    try:
+        import ipaddress as _ip
+        parsed = _up.urlparse(url)
+        hostname = parsed.hostname or ""
+        _BLOCKED = {"localhost", "0.0.0.0", "::1", "ip6-localhost", "ip6-loopback"}
+        if hostname in _BLOCKED:
+            return jsonify({"error": "Requests to internal addresses are not allowed", "success": False}), 400
+        try:
+            addr = _ip.ip_address(hostname)
+            if addr.is_private or addr.is_loopback or addr.is_reserved or addr.is_link_local:
+                return jsonify({"error": "Requests to private/reserved IPs are not allowed", "success": False}), 400
+        except ValueError:
+            pass
+        # Reconstruct from parsed parts to produce a sanitised URL
+        safe_url = _up.urlunparse((
+            parsed.scheme, parsed.netloc, parsed.path,
+            "", parsed.query, "",
+        ))
+    except Exception as ssrf_exc:
+        return jsonify({"error": f"URL validation failed: {ssrf_exc}", "success": False}), 400
+    if not safe_url:
+        return jsonify({"error": "Could not construct safe URL", "success": False}), 400
+
+    try:
+        r = _http.get(safe_url, timeout=15,
+                      headers={"User-Agent": "Mozilla/5.0 (compatible; DRGRBot/1.0)"},
+                      stream=True)
+        r.raise_for_status()
+
+        # Limit to 1 MB
+        chunks = []
+        total = 0
+        for chunk in r.iter_content(chunk_size=8192):
+            total += len(chunk)
+            if total > 1_048_576:
+                return jsonify({"error": "File too large (> 1 MB)", "success": False}), 400
+            chunks.append(chunk)
+        raw = b"".join(chunks)
+
+        # Guess filename from URL
+        path_part = _up.urlparse(safe_url).path
+        filename = os.path.basename(path_part) or "downloaded_file.txt"
+        _, ext = os.path.splitext(filename.lower())
+
+        if save_to_disk:
+            save_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "downloads")
+            os.makedirs(save_dir, exist_ok=True)
+            dest = os.path.join(save_dir, filename)
+            with open(dest, "wb") as fh:
+                fh.write(raw)
+            return jsonify({"path": dest, "filename": filename, "size": len(raw), "success": True})
+
+        # Return as text
+        try:
+            content = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            content = raw.decode("latin-1")
+
+        _ext_to_lang = {
+            ".py": "python", ".js": "javascript", ".ts": "typescript",
+            ".html": "html", ".htm": "html", ".css": "css",
+            ".json": "json", ".xml": "xml", ".yaml": "yaml", ".yml": "yaml",
+            ".md": "markdown", ".sql": "sql", ".sh": "shell", ".bash": "bash",
+        }
+        lang = _ext_to_lang.get(ext, "plaintext")
+
+        return jsonify({
+            "content": content[:65536],
+            "filename": filename,
+            "language": lang,
+            "size": len(raw),
+            "success": True,
+        })
+
+    except _http.exceptions.Timeout:
+        return jsonify({"error": "Download timed out", "success": False}), 500
+    except Exception as exc:  # pylint: disable=broad-except
+        return jsonify({"error": str(exc), "success": False}), 500
 
 
 # ---------------------------------------------------------------------------

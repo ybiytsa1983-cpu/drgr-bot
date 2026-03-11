@@ -417,7 +417,9 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
         <button class="ei" onclick="formatCode()" title="Форматировать / Красиво отформатировать код">✨ Формат</button>
         <button class="ei" onclick="previewFromEditor()" title="Обновить визор">🖥 Визор</button>
         <button class="ei" onclick="copyEditorCode()" title="Копировать весь код">📋</button>
+        <button class="ei" onclick="uploadFileToEditor()" title="Открыть файл с ПК в редакторе">📂 Файл</button>
         <button class="ei" onclick="clearEditor()" title="Очистить">🗑</button>
+        <input type="file" id="file-upload-input" style="display:none" onchange="handleFileUpload(this)"/>
       </div>
       <div id="monaco-box"></div>
       <div id="outbar">
@@ -446,8 +448,17 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
           onkeydown="if(event.key==='Enter') browseUrl()"
           autocomplete="off" autocorrect="off" spellcheck="false"/>
         <button class="vbtn" onclick="browseUrl()" title="Загрузить в ВИЗОР">🌐 Перейти</button>
+        <button class="vbtn" onclick="downloadFileFromUrl()" title="Скачать файл по URL в редактор">⬇ Скачать</button>
         <button class="vbtn ai" onclick="screenshotAndAnalyze()" title="Скриншот страницы + AI описание">📸+🧠</button>
         <button class="vbtn" id="btn-watch" onclick="toggleWatchPage()" title="Следить за изменениями на странице (3 снимка)">👁 Watch</button>
+      </div>
+      <!-- Web search bar -->
+      <div id="vsearch-row" style="display:flex;gap:4px;padding:4px 6px;background:var(--bg2);border-bottom:1px solid var(--border)">
+        <input type="text" id="vsearch-input" placeholder="🔍 Поиск в интернете..."
+          onkeydown="if(event.key==='Enter') doWebSearch()"
+          style="flex:1;font-size:12px;padding:4px 8px;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:4px"
+          autocomplete="off"/>
+        <button class="vbtn" onclick="doWebSearch()" title="Искать в интернете">🔍 Найти</button>
       </div>
       <!-- AI analysis result -->
       <div id="vai-box">
@@ -1200,7 +1211,112 @@ function hideVaiResult() {
   document.getElementById('vai-box').classList.remove('show');
 }
 
-// ── Run code (Python/JS output) ───────────────────────────────────────────────
+// ── File upload from PC ───────────────────────────────────────────────────────
+function uploadFileToEditor() {
+  document.getElementById('file-upload-input').click();
+}
+
+async function handleFileUpload(input) {
+  var file = input.files && input.files[0];
+  if (!file) return;
+  input.value = '';
+  var formData = new FormData();
+  formData.append('file', file);
+  toast('⏳ Загружаю файл ' + file.name + '...');
+  try {
+    var r = await fetch('/files/upload', { method: 'POST', body: formData });
+    var d = await r.json();
+    if (!d.success) { toast('❌ ' + (d.error || 'Ошибка загрузки')); return; }
+    if (editor) {
+      editor.setValue(d.content);
+      // Set language
+      if (d.language && typeof monaco !== 'undefined') {
+        try { monaco.editor.setModelLanguage(editor.getModel(), d.language); } catch(e) {}
+      }
+      var sel = document.getElementById('lang-select');
+      if (sel && d.language) { sel.value = d.language; _manualLang = d.language; }
+      setLangBadge(d.language || 'plaintext');
+    }
+    toast('✅ Загружен: ' + d.filename + ' (' + (d.size/1024).toFixed(1) + ' КБ)');
+  } catch(e) {
+    toast('❌ Ошибка: ' + e.message);
+  }
+}
+
+// ── Download file from URL into editor ───────────────────────────────────────
+async function downloadFileFromUrl() {
+  var url = document.getElementById('vurl-input').value.trim();
+  if (!url) { toast('Введите URL файла для скачивания'); return; }
+  if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+  toast('⏳ Скачиваю ' + url + '...');
+  try {
+    var r = await fetch('/files/download', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ url: url, save: false })
+    });
+    var d = await r.json();
+    if (!d.success) { toast('❌ ' + (d.error || 'Ошибка скачивания')); return; }
+    if (editor) {
+      editor.setValue(d.content);
+      if (d.language && typeof monaco !== 'undefined') {
+        try { monaco.editor.setModelLanguage(editor.getModel(), d.language); } catch(e) {}
+      }
+      var sel = document.getElementById('lang-select');
+      if (sel && d.language) { sel.value = d.language; _manualLang = d.language; }
+      setLangBadge(d.language || 'plaintext');
+    }
+    toast('✅ Скачан: ' + d.filename + ' (' + (d.size/1024).toFixed(1) + ' КБ)');
+    setView('editor');
+  } catch(e) {
+    toast('❌ Ошибка: ' + e.message);
+  }
+}
+
+// ── Web search ────────────────────────────────────────────────────────────────
+async function doWebSearch() {
+  var query = document.getElementById('vsearch-input').value.trim();
+  if (!query) { toast('Введите поисковый запрос'); return; }
+  showVaiResult('⏳ Ищу: ' + query + '...', true);
+  var vpane = document.getElementById('vpane');
+  if (window.getComputedStyle(vpane).display === 'none') setView('both');
+  try {
+    var r = await fetch('/search', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ query: query, max_results: 5 })
+    });
+    var d = await r.json();
+    if (!d.success || !d.results || !d.results.length) {
+      showVaiResult('⚠ Нет результатов для: ' + query + (d.error ? '\n' + d.error : ''), false);
+      return;
+    }
+    // Build results HTML in the preview frame
+    var html = '<!DOCTYPE html><html><head><meta charset="UTF-8">'
+      + '<style>body{font-family:sans-serif;background:#1a1a2e;color:#eee;padding:20px;margin:0}'
+      + 'a{color:#61dafb;text-decoration:none}a:hover{text-decoration:underline}'
+      + '.r{margin-bottom:18px;border-bottom:1px solid #333;padding-bottom:12px}'
+      + '.t{font-size:16px;font-weight:bold;margin-bottom:4px}'
+      + '.u{font-size:11px;color:#888;margin-bottom:6px}'
+      + '.s{font-size:13px;color:#ccc;line-height:1.5}'
+      + 'h2{color:#61dafb;margin-bottom:16px}</style></head>'
+      + '<body><h2>🔍 ' + esc(query) + '</h2>';
+    d.results.forEach(function(res) {
+      html += '<div class="r"><div class="t"><a href="' + res.url
+        + '" target="_blank" rel="noopener">' + esc(res.title) + '</a></div>'
+        + '<div class="u">' + esc(res.url) + '</div>'
+        + (res.snippet ? '<div class="s">' + esc(res.snippet) + '</div>' : '')
+        + '</div>';
+    });
+    html += '</body></html>';
+    showPreview(html);
+    showVaiResult('✅ Найдено ' + d.results.length + ' результатов для: ' + query, false);
+  } catch(e) {
+    showVaiResult('⚠ Ошибка поиска: ' + e.message, false);
+  }
+}
+
+
 async function runCode() {
   if (!editor) return;
   var code = editor.getValue().trim();
