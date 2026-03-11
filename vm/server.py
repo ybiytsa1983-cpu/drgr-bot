@@ -2843,11 +2843,12 @@ def chat_stream():
     Unlike /generate/html/stream this returns raw model text without any
     HTML-generation system prompt so it works for any question.
     """
-    body    = request.get_json(silent=True) or {}
-    model   = body.get("model", "").strip()
-    message = body.get("message", "").strip()
-    history = body.get("history", [])  # list of {"role": "user"|"assistant", "text": "..."}
-    system  = body.get("system", "").strip()  # optional system context prefix
+    body         = request.get_json(silent=True) or {}
+    model        = body.get("model", "").strip()
+    message      = body.get("message", "").strip()
+    history      = body.get("history", [])  # list of {"role": "user"|"assistant", "text": "..."}
+    system       = body.get("system", "").strip()  # optional system context prefix
+    image_base64 = body.get("image_base64", "").strip()  # optional base64 image for vision models
 
     if not model:
         def _no_model():
@@ -2868,7 +2869,11 @@ def chat_stream():
         text = entry.get("text", "").strip()
         if text:
             messages.append({"role": role, "content": text})
-    messages.append({"role": "user", "content": message})
+    # Build the user message — attach image if provided
+    user_msg = {"role": "user", "content": message}
+    if image_base64:
+        user_msg["images"] = [image_base64]
+    messages.append(user_msg)
 
     def _stream():
         try:
