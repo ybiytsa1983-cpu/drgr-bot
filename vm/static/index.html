@@ -596,6 +596,7 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
           onkeydown="if(event.key==='Enter') browseUrl()"
           autocomplete="off" autocorrect="off" spellcheck="false"/>
         <button class="vbtn" onclick="browseUrl()" title="Загрузить в ВИЗОР">🌐 Перейти</button>
+        <button class="vbtn" onclick="openUrlInNewTab()" title="Открыть URL в браузере (новая вкладка, полный интернет)" aria-label="Открыть URL в браузере в новой вкладке">↗ В браузер</button>
         <button class="vbtn" onclick="downloadFileFromUrl()" title="Скачать файл по URL в редактор">⬇ Скачать</button>
         <button class="vbtn ai" onclick="screenshotAndAnalyze()" title="Скриншот страницы + AI описание">📸+🧠</button>
         <button class="vbtn" id="btn-watch" onclick="toggleWatchPage()" title="Следить за изменениями на странице (3 снимка)">👁 Watch</button>
@@ -1683,6 +1684,15 @@ function browseUrl() {
   frm.src = isLocal ? url : ('/browse/proxy?url=' + encodeURIComponent(url));
   var vpane = document.getElementById('vpane');
   if (window.getComputedStyle(vpane).display === 'none') setView('both');
+}
+
+function openUrlInNewTab() {
+  var url = document.getElementById('vurl-input').value.trim();
+  if (!url) { toast('Введите URL для открытия'); return; }
+  if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+  var win = window.open(url, '_blank', 'noopener,noreferrer');
+  if (!win) { toast('Браузер заблокировал открытие — разрешите всплывающие окна'); }
+  else { toast('✓ Открыто в браузере'); }
 }
 
 // ── ВИЗОР screenshot + AI analysis ───────────────────────────────────────────

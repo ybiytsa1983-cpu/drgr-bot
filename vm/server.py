@@ -2741,11 +2741,20 @@ def generate_code():
     if not prompt:
         return jsonify({"code": "", "error": "No prompt provided", "success": False})
 
+    # Use the same strong auto-generation prompt but fixed to the requested language
     sys_prompt = (
-        f"You are an expert {language} programmer. "
-        f"Generate clean, well-commented {language} code for the following task. "
-        "Return ONLY the code inside a fenced code block — no explanations outside it.\n\n"
-        f"Task: {prompt}"
+        f"Ты DRGR Code Generator — эксперт-программист ({language}) на базе Qwen.\n"
+        f"Генерируй ПОЛНЫЙ, РАБОЧИЙ, ГОТОВЫЙ К ЗАПУСКУ {language}-код.\n"
+        "КРИТИЧЕСКИ ВАЖНО — КАЧЕСТВО КОДА:\n"
+        "  - СТРОГО ЗАПРЕЩЕНО генерировать demo-версии, заглушки, placeholder-код.\n"
+        "  - ЗАПРЕЩЕНЫ любые комментарии: '# TODO', '# implement later', '# ваш код', "
+        "'// TODO', 'pass', 'raise NotImplementedError', '// add code here', "
+        "'В реальном приложении здесь...', 'This is a demo', 'placeholder'.\n"
+        "  - КАЖДАЯ функция должна иметь ПОЛНУЮ, РАБОЧУЮ реализацию — никаких пустых тел.\n"
+        "  - Генерируй ПОЛНЫЙ, РАБОЧИЙ, ГОТОВЫЙ К ЗАПУСКУ код с первой попытки.\n"
+        f"Возвращай ТОЛЬКО код в блоке ```{language} ... ``` без пояснений вне блока.\n"
+        "НЕ спрашивай уточнений — сразу генерируй полный рабочий код.\n\n"
+        f"Задание: {prompt}"
     )
 
     try:
@@ -2780,12 +2789,19 @@ def generate_html():
         return jsonify({"html": "", "error": "No prompt provided", "success": False})
 
     sys_prompt = (
-        "You are an expert web developer. "
-        "Generate a complete, self-contained, responsive HTML page for the description below. "
-        "Use modern CSS (flexbox/grid), semantic HTML5, and inline JavaScript if needed. "
-        "Return ONLY the full HTML document inside a fenced ```html code block. "
-        "Do not write anything outside that block.\n\n"
-        f"Description: {prompt}"
+        "Ты DRGR HTML Generator — экспертный веб-разработчик на базе Qwen.\n"
+        "Генерируй красивые, ПОЛНЫЕ, РАБОЧИЕ, отзывчивые HTML страницы.\n"
+        "ВСЕГДА возвращай один полный HTML файл (<!DOCTYPE html>...) "
+        "со встроенным CSS и JavaScript.\n"
+        "Используй современный CSS (flexbox/grid), красивые цвета, плавные анимации.\n"
+        "Выводи ТОЛЬКО HTML код без пояснений и комментариев вне кода.\n"
+        "СТРОГО ЗАПРЕЩЕНО: заглушки, demo-версии, placeholder-код, "
+        "незаполненные функции, комментарии вида '// TODO', '// добавить логику', "
+        "'/* реализация */', 'console.log(\"not implemented\")', 'В реальном приложении здесь...'.\n"
+        "Если задание содержит 3D-объекты — ОБЯЗАТЕЛЬНО подключи Three.js через CDN "
+        "и создавай реальную 3D-сцену с WebGLRenderer.\n"
+        "Генерируй ПОЛНЫЙ, РАБОЧИЙ, ГОТОВЫЙ К ЗАПУСКУ код с первой попытки.\n\n"
+        f"Задание: {prompt}"
     )
 
     try:
@@ -2806,6 +2822,18 @@ def generate_html():
     except Exception as exc:  # pylint: disable=broad-except
         return jsonify({"html": "", "error": str(exc), "success": False})
 
+
+# Free public APIs usable without any API key — referenced in system prompts.
+_FREE_PUBLIC_APIS_HINT = (
+    "используй реальные БЕСПЛАТНЫЕ публичные API без ключей: "
+    "https://api.open-meteo.com/v1/forecast?latitude=55.75&longitude=37.62&current_weather=true (погода), "
+    "https://api.exchangerate-api.com/v4/latest/USD (курсы валют), "
+    "https://api.coindesk.com/v1/bpi/currentprice.json (Bitcoin), "
+    "https://worldtimeapi.org/api/ip (текущее время), "
+    "https://randomuser.me/api/ (случайный пользователь), "
+    "https://jsonplaceholder.typicode.com/posts (тест-данные). "
+    "ЗАПРЕЩЕНО: 'YOUR_API_KEY', 'вставьте ключ', 'API ключ здесь' — только рабочий код без ключей"
+)
 
 # Default Qwen-optimised system prompt used when instructions.json has none.
 _DEFAULT_HTML_SYSTEM_PROMPT = (
@@ -2829,7 +2857,9 @@ _DEFAULT_HTML_SYSTEM_PROMPT = (
     "Если задание содержит расширение браузера (extension) — пиши ПОЛНЫЙ "
     "рабочий код всех файлов: manifest.json, background.js, content.js, popup.html. "
     "Код должен немедленно работать после установки без доработки. "
-    "НЕ пиши 'В реальном расширении...' или 'здесь будет логика' — только реальный код.\n\n"
+    "НЕ пиши 'В реальном расширении...' или 'здесь будет логика' — только реальный код.\n"
+    "Если задание требует данных из интернета (погода, курсы валют, новости и т.д.) — "
+    f"{_FREE_PUBLIC_APIS_HINT}.\n\n"
     "Ты также знаешь протокол DRGRBrowserAgent v1.0 — автономного агента для управления "
     "браузером через DRGR-визор. Агент работает в цикле: наблюдение → планирование → действие "
     "→ проверка → логирование. Команды агента: NAVIGATE, CLICK, TYPE, WAIT, SWITCH_TAB, "
@@ -2974,6 +3004,9 @@ _DEFAULT_AUTO_SYSTEM_PROMPT = (
     "  - Если нужна работа в браузере с DOM — генерируй HTML (```html блок), а не JavaScript.\n"
     "ВСЕГДА возвращай ТОЛЬКО код в соответствующем ``` блоке без пояснений вне кода.\n"
     "НЕ спрашивай уточнений — сразу генерируй полный рабочий код.\n"
+    "КРИТИЧЕСКИ ВАЖНО для HTML — работа с интернетом:\n"
+    f"  - Если задание требует данных из интернета — {_FREE_PUBLIC_APIS_HINT}.\n"
+    "  - fetch() в HTML работает напрямую из браузера — используй его без проблем.\n"
     "СТРОГО ЗАПРЕЩЕНО: возвращать любые мета-данные, данные обучения или структурированные данные "
     "вместо кода (например: episode/actions/training_view, perception/observation или похожие схемы) — "
     "только готовый исполняемый код."
@@ -6043,11 +6076,16 @@ def browse_proxy():
 
         def _resolve_src(m: "re.Match") -> str:
             attr, q, val = m.group(1), m.group(2), m.group(3)
-            if val.startswith(("data:", "http://", "https://", "//")):
+            if val.startswith(("data:", "blob:")):
                 return m.group(0)
             try:
                 abs_url = urllib.parse.urljoin(base_url, val)
-                return f'{attr}={q}{abs_url}{q}'
+                parts = urllib.parse.urlparse(abs_url)
+                if parts.scheme not in ("http", "https"):
+                    return m.group(0)
+                # Route external scripts and stylesheets through the proxy to avoid
+                # CORS issues caused by the null-origin sandbox on the iframe
+                return f'{attr}={q}/browse/proxy?url={urllib.parse.quote(abs_url, safe="")}{q}'
             except Exception:
                 return m.group(0)
 
@@ -6064,7 +6102,9 @@ def browse_proxy():
             html,
             flags=re.IGNORECASE,
         )
-        # Resolve relative src= (images, scripts, iframes) to absolute URLs
+        # Route all src= resources (scripts, images, iframes) through the proxy.
+        # This avoids CORS failures that occur because the sandboxed iframe has a
+        # null origin — external servers reject null-origin fetch/XHR requests.
         html = re.sub(
             r'''(src)\s*=\s*(["'])([^"']+)\2''',
             _resolve_src,
