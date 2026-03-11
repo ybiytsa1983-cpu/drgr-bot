@@ -47,24 +47,7 @@ echo "[Code VM] Starting server on port $VM_PORT ..."
 VM_PORT=$VM_PORT "$PYTHON" vm/server.py &
 SERVER_PID=$!
 
-# ── Wait until server responds (up to 15 s) ───────────────────────────────────
-echo "[Code VM] Waiting for server to be ready..."
-for i in $(seq 1 15); do
-    sleep 1
-    if "$PYTHON" -c "import urllib.request; urllib.request.urlopen('http://localhost:$VM_PORT/')" 2>/dev/null; then
-        break
-    fi
-done
-
-# ── Open browser ──────────────────────────────────────────────────────────────
-echo "[Code VM] Opening browser..."
-if command -v xdg-open &>/dev/null; then
-    xdg-open "http://localhost:$VM_PORT" 2>/dev/null &
-elif command -v open &>/dev/null; then
-    open "http://localhost:$VM_PORT"
-fi
-
-# ── Find local IP for Android access ─────────────────────────────────────────
+# ── Find local IP for network access ─────────────────────────────────────────
 LOCAL_IP=$("$PYTHON" -c "
 import socket
 try:
@@ -76,19 +59,70 @@ except Exception:
     print('YOUR_IP')
 " 2>/dev/null || echo "YOUR_IP")
 
+# ── Wait until server responds on /health (up to 20 s) ───────────────────────
+echo "[Code VM] Waiting for server to be ready..."
+SERVER_READY=0
+for i in $(seq 1 20); do
+    sleep 1
+    if "$PYTHON" -c "
+import urllib.request, sys
+try:
+    r = urllib.request.urlopen('http://127.0.0.1:$VM_PORT/health', timeout=2)
+    sys.exit(0)
+except Exception:
+    sys.exit(1)
+" 2>/dev/null; then
+        SERVER_READY=1
+        break
+    fi
+done
+
+if [ "$SERVER_READY" -eq 0 ]; then
+    echo "[Code VM] WARNING: server did not respond on /health within 20 s — check server.log"
+fi
+
+# ── Verify network accessibility ──────────────────────────────────────────────
+if [ "$LOCAL_IP" != "YOUR_IP" ]; then
+    NET_OK=0
+    if "$PYTHON" -c "
+import urllib.request, sys
+try:
+    r = urllib.request.urlopen('http://$LOCAL_IP:$VM_PORT/health', timeout=3)
+    sys.exit(0)
+except Exception:
+    sys.exit(1)
+" 2>/dev/null; then
+        NET_OK=1
+        echo "[Code VM] ✓ Network check OK: http://$LOCAL_IP:$VM_PORT/health"
+    else
+        echo "[Code VM] ⚠ Network check FAILED: http://$LOCAL_IP:$VM_PORT/health"
+        echo "           The server is running locally. Check your firewall if remote"
+        echo "           devices cannot connect."
+    fi
+fi
+
+# ── Open browser ──────────────────────────────────────────────────────────────
+echo "[Code VM] Opening browser..."
+if command -v xdg-open &>/dev/null; then
+    xdg-open "http://localhost:$VM_PORT" 2>/dev/null &
+elif command -v open &>/dev/null; then
+    open "http://localhost:$VM_PORT"
+fi
+
 echo ""
 echo "  ╔══════════════════════════════════════════════════╗"
 echo "  ║  ⚡ Code VM is running!                          ║"
 echo "  ╠══════════════════════════════════════════════════╣"
-echo "  ║  Code VM    →  http://localhost:$VM_PORT/             ║"
-echo "  ║  Navigator  →  http://localhost:$VM_PORT/navigator/   ║"
-echo "  ╠══════════════════════════════════════════════════╣"
-echo "  ║  Android    →  http://$LOCAL_IP:$VM_PORT/navigator/   ║"
-echo "  ║  (open this URL in Chrome on your Android phone) ║"
+echo "  ║  Localhost  →  http://localhost:$VM_PORT/             ║"
 echo "  ╠══════════════════════════════════════════════════╣"
 echo "  ║  Ollama AI: run 'ollama serve' separately        ║"
 echo "  ║  Press Ctrl+C to stop the VM                     ║"
 echo "  ╚══════════════════════════════════════════════════╝"
+echo ""
+echo "  Network access (open on any LAN device):"
+echo "    Editor    → http://$LOCAL_IP:$VM_PORT/"
+echo "    Navigator → http://$LOCAL_IP:$VM_PORT/navigator/"
+echo "    Health    → http://$LOCAL_IP:$VM_PORT/health"
 echo ""
 
 # ── Wait for server process ───────────────────────────────────────────────────
