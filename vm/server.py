@@ -30,6 +30,11 @@ Endpoints:
   POST /convert/text        — convert text between formats (JSON↔CSV, HTML→text, MD→HTML)
   POST /browse/screenshot   — screenshot a URL and analyse with qwen3-vl / drgr-visor
   POST /patch/stream        — stream edited code (patch existing code based on user request)
+  POST /project/generate    — generate a full web project from a task description and save to disk
+  GET  /project/list        — list all saved projects (metadata, most recent first)
+  GET  /project/<id>/<file> — serve a file from a saved project directory
+  POST /project/save        — save current editor content as a named project file on disk
+  DELETE /project/<id>      — delete a saved project directory
 """
 
 import ast
@@ -396,13 +401,29 @@ def _is_html_content(code: str) -> bool:
     return prefix.startswith("<") or "<!doctype" in prefix
 
 
+# Patterns that indicate code uses Chrome-extension or browser-extension APIs
+# that cannot run in plain Node.js
+_BROWSER_EXT_PATTERNS = re.compile(
+    r'\bchrome\s*\.\s*(storage|runtime|tabs|windows|browserAction|action|'
+    r'scripting|contextMenus|alarms|notifications|identity|downloads|'
+    r'bookmarks|history|cookies|permissions|management|extension)\b'
+    r'|\bbrowser\s*\.\s*(storage|runtime|tabs|windows)\b',
+    re.IGNORECASE,
+)
+
+
+def _is_browser_extension_code(code: str) -> bool:
+    """Return True if code uses Chrome/browser extension APIs not available in Node.js."""
+    return bool(_BROWSER_EXT_PATTERNS.search(code))
+
+
 _RUNNERS = {
     "python": ["python3"],
-    "javascript": ["node"],
+    "javascript": ["node", "--no-warnings"],
     "shell": ["bash"],
     "bash": ["bash"],
     # Prefer node --experimental-strip-types (Node 22+); fallback to npx ts-node
-    "typescript": ["node", "--experimental-strip-types"],
+    "typescript": ["node", "--no-warnings", "--experimental-strip-types"],
 }
 
 # Fallback runtimes tried when the primary runner is not found.
@@ -449,7 +470,7 @@ def _run_typescript(code: str) -> dict:
 
         # 1. Try node --experimental-strip-types (Node 22+)
         try:
-            result = _run(["node", "--experimental-strip-types"])
+            result = _run(["node", "--no-warnings", "--experimental-strip-types"])
             if result["success"] or (
                 result["error"] and
                 "--experimental-strip-types" not in result["error"] and
@@ -500,7 +521,7 @@ def _run_typescript(code: str) -> dict:
                 jf.write(ts_stripped)
             try:
                 proc = subprocess.run(
-                    ['node', js_path],
+                    ['node', '--no-warnings', js_path],
                     capture_output=True, text=True, timeout=10,
                     cwd=tempfile.gettempdir())
                 return {
@@ -563,6 +584,23 @@ def _run_code(code: str, language: str) -> dict:
             "error": (
                 "Обнаружен HTML вместо JavaScript. "
                 "Выберите язык 'html' или используйте ```html блок."
+            ),
+            "success": False,
+        }
+
+    # Guard: browser/Chrome-extension APIs don't exist in Node.js
+    if language in ("javascript", "typescript") and _is_browser_extension_code(code):
+        return {
+            "output": "",
+            "error": (
+                "Код использует Chrome Extension API (chrome.storage, chrome.runtime и т.д.), "
+                "которые недоступны в Node.js.\n"
+                "Этот код является расширением для браузера — его нельзя запустить напрямую.\n"
+                "Решения:\n"
+                "  1. Упакуйте код как Chrome Extension (manifest.json + popup/background scripts) "
+                "и загрузите через chrome://extensions/\n"
+                "  2. Попросите ИИ переписать код без chrome.* API для запуска в Node.js\n"
+                "  3. Используйте кнопку '🌐 Открыть' для просмотра HTML-версии кода в браузере"
             ),
             "success": False,
         }
@@ -2444,6 +2482,16 @@ _DEFAULT_AUTO_SYSTEM_PROMPT = (
     "если задание явно не требует этого. Сторонние пакеты могут быть не установлены.\n"
     "  - Если нужна работа с HTTP — используй urllib.request из стандартной библиотеки.\n"
     "  - Код должен выполняться без ошибок в чистом окружении Python.\n"
+    "КРИТИЧЕСКИ ВАЖНО для JavaScript-кода (Node.js):\n"
+    "  - Код выполняется в Node.js — НИКАКИХ browser/Chrome Extension API.\n"
+    "  - ЗАПРЕЩЕНО использовать: chrome.storage, chrome.runtime, chrome.tabs, browser.*, "
+    "window, document, localStorage, sessionStorage, fetch (используй https модуль вместо), "
+    "XMLHttpRequest — эти API доступны ТОЛЬКО в браузере или Chrome Extension.\n"
+    "  - НЕ подключай внешние npm пакеты — используй только встроенные Node.js модули "
+    "(fs, path, os, crypto, http, https, url, util, events, stream и т.д.).\n"
+    "  - Если задание требует Chrome Extension — генерируй HTML-файл с инструкцией по упаковке, "
+    "НЕ JavaScript для Node.js.\n"
+    "  - Если нужна работа в браузере с DOM — генерируй HTML (```html блок), а не JavaScript.\n"
     "ВСЕГДА возвращай ТОЛЬКО код в соответствующем ``` блоке без пояснений вне кода.\n"
     "НЕ спрашивай уточнений — сразу генерируй полный рабочий код."
 )
@@ -4023,6 +4071,57 @@ def project_file(project_id: str, filename: str):
         return jsonify({"error": "Project not found"}), 404
     # send_from_directory handles path traversal protection
     return send_from_directory(project_dir, filename)
+
+
+@app.route("/project/save", methods=["POST"])
+def project_save():
+    """Save the current editor content as a named project file on disk.
+
+    Body: {"content": "...", "filename": "index.html", "name": "My Project",
+           "description": "optional description"}
+    Returns: {"project_id": "...", "path": "...", "success": true}
+    """
+    body        = request.get_json(silent=True) or {}
+    content     = body.get("content", "")
+    filename    = body.get("filename", "index.html").strip()
+    name        = body.get("name", "").strip() or filename
+    description = body.get("description", "").strip()
+
+    if not content:
+        return jsonify({"error": "No content provided", "success": False}), 400
+
+    # Sanitise filename — strip any path separators, keep only safe characters
+    filename = os.path.basename(filename)
+    # Allow word chars, hyphens, spaces, single dots; reject anything else
+    filename = re.sub(r'[^\w\-. ]', '_', filename)
+    # Collapse multiple dots to prevent issues like 'foo..html'
+    filename = re.sub(r'\.{2,}', '.', filename).strip() or "project.html"
+
+    slug = _slugify(name) or "project"
+    project_id = f"{slug}_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
+    files = {filename: content}
+    _save_project(project_id, name, description or name, files)
+
+    return jsonify({
+        "project_id": project_id,
+        "name":       name,
+        "filename":   filename,
+        "path":       os.path.join(PROJECTS_DIR, project_id, filename),
+        "success":    True,
+    })
+
+
+@app.route("/project/delete/<project_id>", methods=["DELETE"])
+def project_delete(project_id: str):
+    """Delete a saved project directory."""
+    if not re.match(r'^[a-z0-9_\-]+$', project_id):
+        return jsonify({"error": "Invalid project ID"}), 400
+    project_dir = os.path.join(PROJECTS_DIR, project_id)
+    if not os.path.isdir(project_dir):
+        return jsonify({"error": "Project not found"}), 404
+    import shutil as _shutil
+    _shutil.rmtree(project_dir, ignore_errors=True)
+    return jsonify({"success": True})
 
 
 # ---------------------------------------------------------------------------

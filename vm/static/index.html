@@ -163,6 +163,11 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
   border-radius:8px;cursor:pointer;font-size:13px;font-weight:700;
   white-space:nowrap;transition:filter .15s;flex-shrink:0}
 #btn-open-browser:hover{filter:brightness(1.2)}
+#btn-save-project{background:#7b3f9e;border:none;color:#fff;padding:8px 14px;
+  border-radius:8px;cursor:pointer;font-size:13px;font-weight:700;
+  white-space:nowrap;transition:filter .15s;flex-shrink:0}
+#btn-save-project:hover{filter:brightness(1.2)}
+#btn-save-project:disabled{background:#333;cursor:not-allowed;filter:none}
 #gen-status{font-size:11px;color:var(--text2);min-height:16px}
 .gs-ok{color:var(--accent2)}.gs-err{color:var(--danger)}
 
@@ -352,6 +357,15 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
         <a href="/launch" target="_blank" style="font-size:10px;color:var(--accent);text-decoration:none">📋 Все команды запуска →</a>
       </div>
     </div>
+
+    <!-- Projects -->
+    <div>
+      <div class="pl" style="display:flex;justify-content:space-between;align-items:center">
+        <span>📁 Сохранённые проекты</span>
+        <button class="pb pb-m" style="padding:2px 8px;font-size:10px" onclick="loadProjectList()">↻</button>
+      </div>
+      <div id="proj-list" style="font-size:11px;color:var(--text2);margin-top:4px">Нет проектов</div>
+    </div>
   </div>
 </div>
 
@@ -418,6 +432,7 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
         <button class="ei" onclick="previewFromEditor()" title="Обновить визор">🖥 Визор</button>
         <button class="ei" onclick="copyEditorCode()" title="Копировать весь код">📋</button>
         <button class="ei" onclick="uploadFileToEditor()" title="Открыть файл с ПК в редакторе">📂 Файл</button>
+        <button class="ei" onclick="downloadEditorFile()" title="Скачать текущий файл на ПК">⬇ Скачать</button>
         <button class="ei" onclick="clearEditor()" title="Очистить">🗑</button>
         <input type="file" id="file-upload-input" style="display:none" onchange="handleFileUpload(this)"/>
       </div>
@@ -485,6 +500,7 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
       <button id="btn-gen" onclick="generateCode()">▶ Сгенерировать</button>
       <button id="btn-patch" onclick="patchCode()" title="Внести правки в существующий код по запросу">✏ Правки</button>
       <button id="btn-open-browser" onclick="openInBrowser()" title="Открыть текущий код в новой вкладке браузера">🌐 Открыть</button>
+      <button id="btn-save-project" onclick="saveProjectFromEditor()" title="Сохранить текущий код как проект в папку projects/">💾 Сохранить</button>
     </div>
     <div id="gen-status"></div>
   </div>
@@ -819,6 +835,177 @@ function copyEditorCode() {
   navigator.clipboard.writeText(editor.getValue())
     .then(function(){ toast('📋 Скопировано'); })
     .catch(function(){ toast('Ошибка копирования'); });
+}
+
+// ── Download current editor content as a file ────────────────────────────────
+// ── Shared helpers for file/project operations ────────────────────────────────
+var _LANG_EXT_MAP = {
+  html:'html', css:'css', javascript:'js', typescript:'ts', python:'py',
+  json:'json', xml:'xml', yaml:'yaml', markdown:'md', sql:'sql',
+  shell:'sh', bash:'sh', powershell:'ps1', java:'java', kotlin:'kt',
+  cpp:'cpp', c:'c', csharp:'cs', go:'go', rust:'rs', swift:'swift',
+  php:'php', ruby:'rb', r:'r', dockerfile:'dockerfile', plaintext:'txt'
+};
+function _nowStamp() {
+  return new Date().toISOString().replace(/[:.]/g,'-').slice(0,19);
+}
+function _triggerDownload(content, filename) {
+  var blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(a.href);
+}
+
+function downloadEditorFile() {
+  if (!editor) { toast('Редактор не готов'); return; }
+  var code = editor.getValue();
+  if (!code.trim()) { toast('Редактор пуст — нечего скачивать'); return; }
+  var lang = (_manualLang || detectLang(code) || 'plaintext');
+  var ext = _LANG_EXT_MAP[lang] || 'txt';
+  var filename = 'project_' + _nowStamp() + '.' + ext;
+  _triggerDownload(code, filename);
+  toast('⬇ Скачан: ' + filename);
+}
+
+// ── Save current editor content as a project on disk ─────────────────────────
+async function saveProjectFromEditor() {
+  if (!editor) { toast('Редактор не готов'); return; }
+  var code = editor.getValue().trim();
+  if (!code) { toast('Редактор пуст — нечего сохранять'); return; }
+  var lang = (_manualLang || detectLang(code) || 'plaintext');
+  var ext = _LANG_EXT_MAP[lang] || 'txt';
+  var defaultName = 'project_' + _nowStamp();
+  var name = prompt('Название проекта:', defaultName);
+  if (name === null) return;  // cancelled
+  name = name.trim() || defaultName;
+  var filename = name.replace(/[^\w\- .а-яА-Я]/g,'_') + '.' + ext;
+  var btn = document.getElementById('btn-save-project');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳...'; }
+  try {
+    var r = await fetch('/project/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: code, filename: filename, name: name })
+    });
+    var d = await r.json();
+    if (d.success) {
+      toast('✅ Сохранён: ' + d.project_id);
+    } else {
+      toast('❌ ' + (d.error || 'Ошибка сохранения'));
+    }
+  } catch(e) {
+    toast('❌ Ошибка: ' + e.message);
+  }
+  if (btn) { btn.disabled = false; btn.textContent = '💾 Сохранить'; }
+}
+
+// ── Auto-save project after generation ───────────────────────────────────────
+async function autoSaveProject(code, lang, prompt) {
+  if (!code || !code.trim()) return;
+  var ext = _LANG_EXT_MAP[lang] || 'txt';
+  var safeName = (prompt || 'auto').slice(0,40).replace(/[^\w\- .а-яА-Я]/g,'_').trim() || 'auto';
+  var filename = safeName + '.' + ext;
+  try {
+    await fetch('/project/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: code, filename: filename, name: safeName,
+                             description: prompt || '' })
+    });
+  } catch(e) { console.error('Auto-save failed:', e); }
+}
+
+// ── Projects list in settings panel ──────────────────────────────────────────
+async function loadProjectList() {
+  var box = document.getElementById('proj-list');
+  if (!box) return;
+  box.innerHTML = '<span style="color:var(--text2)">⏳ Загружаю...</span>';
+  try {
+    var r = await fetch('/project/list');
+    var d = await r.json();
+    if (!d.projects || !d.projects.length) {
+      box.innerHTML = '<span style="color:var(--text2)">Нет сохранённых проектов</span>';
+      return;
+    }
+    var html = '';
+    for (var i = 0; i < d.projects.length; i++) {
+      var p = d.projects[i];
+      var files = (p.files || []);
+      if (!files.length) continue;  // skip projects with no files
+      var mainFile = files[0];
+      var pid = esc(p.id || '');
+      var pname = esc(p.name || p.id || '?');
+      var pcreated = esc((p.created || '').slice(0,16).replace('T',' '));
+      html += '<div style="background:var(--bg3);border:1px solid var(--border);border-radius:5px;padding:7px 9px;margin-bottom:5px">'
+           +  '<div style="font-weight:700;font-size:11px;color:var(--text)">' + pname + '</div>'
+           +  '<div style="font-size:10px;color:var(--text2);margin:2px 0">' + pcreated + '</div>'
+           +  '<div style="display:flex;gap:5px;margin-top:4px">'
+           +    '<button class="pb pb-s" style="font-size:10px;padding:3px 8px" onclick="loadProjectIntoEditor(\'' + pid + '\',\'' + esc(mainFile) + '\')" title="Открыть в редакторе">📝 Открыть</button>'
+           +    '<button class="pb pb-m" style="font-size:10px;padding:3px 8px" onclick="downloadProjectFile(\'' + pid + '\',\'' + esc(mainFile) + '\',\'' + esc(mainFile) + '\')" title="Скачать на ПК">⬇ Скачать</button>'
+           +    '<button class="pb pb-d" style="font-size:10px;padding:3px 8px" onclick="deleteProject(\'' + pid + '\')" title="Удалить проект">🗑</button>'
+           +  '</div>'
+           + '</div>';
+    }
+    box.innerHTML = html;
+  } catch(e) {
+    box.innerHTML = '<span style="color:var(--danger)">Ошибка: ' + esc(e.message) + '</span>';
+  }
+}
+
+async function loadProjectIntoEditor(projectId, filename) {
+  try {
+    var r = await fetch('/project/' + encodeURIComponent(projectId) + '/' + encodeURIComponent(filename));
+    var text = await r.text();
+    if (editor) {
+      editor.setValue(text);
+      var lang = filename.endsWith('.html') ? 'html'
+               : filename.endsWith('.js') ? 'javascript'
+               : filename.endsWith('.py') ? 'python'
+               : filename.endsWith('.css') ? 'css'
+               : 'plaintext';
+      if (typeof monaco !== 'undefined') {
+        try { monaco.editor.setModelLanguage(editor.getModel(), lang); } catch(e){}
+      }
+      setLangBadge(lang);
+      if (lang === 'html') showPreview(text);
+    }
+    closePanel();
+    setView('editor');
+    toast('✅ Проект загружен: ' + filename);
+  } catch(e) {
+    toast('❌ Ошибка загрузки проекта: ' + e.message);
+  }
+}
+
+async function downloadProjectFile(projectId, filename, saveAs) {
+  try {
+    var r = await fetch('/project/' + encodeURIComponent(projectId) + '/' + encodeURIComponent(filename));
+    var text = await r.text();
+    var blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = saveAs || filename;
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(a.href);
+    toast('⬇ Скачан: ' + (saveAs || filename));
+  } catch(e) {
+    toast('❌ Ошибка скачивания: ' + e.message);
+  }
+}
+
+async function deleteProject(projectId) {
+  if (!confirm('Удалить проект «' + projectId + '»?')) return;
+  try {
+    var r = await fetch('/project/delete/' + encodeURIComponent(projectId), { method: 'DELETE' });
+    var d = await r.json();
+    if (d.success) { toast('🗑 Удалён: ' + projectId); loadProjectList(); }
+    else toast('❌ ' + (d.error || 'Ошибка удаления'));
+  } catch(e) { toast('❌ ' + e.message); }
 }
 
 // ── Language management ──────────────────────────────────────────────────────
@@ -1509,6 +1696,8 @@ async function generateCode() {
         showPreview(wrapForVisor(code, lang));
       }
       status.innerHTML = '<span class="gs-ok">✓ Готово! Язык: ' + (_LANG_ICONS[lang]||'') + ' ' + lang.toUpperCase() + '. Визор обновлён.</span>';
+      // Auto-save to projects folder
+      autoSaveProject(code, lang, prompt);
     }
   } catch(e) {
     status.innerHTML = '<span class="gs-err">⚠ Ошибка: ' + esc(e.message) + '</span>';
@@ -1650,7 +1839,11 @@ function copyPs(id) {
 }
 
 // ── Panel ─────────────────────────────────────────────────────────────────────
-function openPanel()  { document.getElementById('panel').classList.add('open'); document.getElementById('panel-overlay').classList.add('show'); }
+function openPanel()  {
+  document.getElementById('panel').classList.add('open');
+  document.getElementById('panel-overlay').classList.add('show');
+  loadProjectList();
+}
 function closePanel() { document.getElementById('panel').classList.remove('open'); document.getElementById('panel-overlay').classList.remove('show'); }
 
 // ── Health ────────────────────────────────────────────────────────────────────
