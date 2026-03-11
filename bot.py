@@ -822,12 +822,13 @@ async def cmd_start(message: Message) -> None:
         "Я автономный агент для исследования, генерации кода и HTML\\.\n\n"
         f"\U0001f5a5 *Веб\\-интерфейс VM \\(откройте в браузере\\):* {_MD_WEB_URL}\n\n"
         "*Команды:*\n"
-        "/web — \U0001f517 ссылка на веб\\-интерфейс Code VM\n"
+        "/agent `<задание>` — \U0001f916 автономный агент: ищет, читает страницы, отвечает\n"
         "/search `<запрос>` — исследовать тему, статья \\+ скриншоты\n"
-        "/visor `<url>` — 🖥 ВИЗОР: скриншот \\+ AI анализ \\(qwen3\\-vl\\)\n"
         "/browse `<url>` — скриншот страницы \\+ AI анализ \\(qwen3\\-vl\\)\n"
+        "/visor `<url>` — 🖥 ВИЗОР: скриншот \\+ AI анализ \\(qwen3\\-vl\\)\n"
         "/code `[python|js|html|...]` `<задача>` — написать, запустить, исправить\n"
         "/execute `<код>` — выполнить код в VM sandbox\n"
+        "/download `<url>` — \U0001f4e5 скачать файл по URL\n"
         "/generate `<описание>` — HTML\\-страница \\(скачать файл\\)\n"
         "/screenshot `<url>` — быстрый скриншот страницы\n"
         "/convert — форматы конвертера; отправьте фото или файл \\(json/csv/md/html\\) для конвертации\n"
@@ -836,6 +837,7 @@ async def cmd_start(message: Message) -> None:
         "/models — доступные AI\\-модели\n"
         "/stats — статистика самообучения\n"
         "/help — помощь\n\n"
+        "_Отправьте \\.py/\\.js/\\.sh файл — VM выполнит его и вернёт вывод_\n\n"
         "*Или просто напишите запрос* — агент исследует тему и создаст статью\\.\n\n"
         f"\U0001f4bb {_MD_INSTALL_CMD}\n\n"
         "\U0001f5a5 После установки: ярлык *«Code VM»* и *«ЗАПУСТИТЬ ВМ»* на Рабочем столе",
@@ -868,7 +870,8 @@ async def cmd_help(message: Message) -> None:
     await message.answer(
         "\U0001f4d6 *Помощь — все команды*\n\n"
         f"\U0001f5a5 *Веб\\-интерфейс:* {_MD_WEB_URL} \\| /web\n\n"
-        "*Исследование и браузер:*\n"
+        "*Автономный агент и браузер:*\n"
+        "• `/agent <задание>` — \U0001f916 автономный агент: ищет в интернете, читает страницы, отвечает\n"
         "• `/search <тема>` — полное исследование, статья \\+ скриншоты \\+ HTML\n"
         "• `/visor <url>` — 🖥 ВИЗОР: скриншот \\+ AI анализ \\(qwen3\\-vl:8b\\)\n"
         "• `/visor watch <url>` — слежение за изменениями на странице \\(3 снимка\\)\n"
@@ -878,7 +881,12 @@ async def cmd_help(message: Message) -> None:
         "• `/code <задача>` — написать код, запустить, исправить ошибки, прислать файл\n"
         "• `/code python|js|html|go|... <задача>` — выбрать язык\n"
         "• `/execute <код>` — выполнить код в VM sandbox\n"
-        "• `/generate <описание>` — HTML\\-страница \\(файл `.html`\\)\n\n"
+        "• `/generate <описание>` — HTML\\-страница \\(файл `.html`\\)\n"
+        "• _Отправьте \\.py, \\.js, \\.sh файл_ — VM выполнит и вернёт результат\n\n"
+        "*Файлы:*\n"
+        "• `/download <url>` — \U0001f4e5 скачать файл по URL через VM\n"
+        "• _Отправьте любой код\\-файл_ — VM выполнит его\n"
+        "• _Отправьте \\.json/\\.csv/\\.html/\\.md_ — конвертация формата\n\n"
         "*VM и самообучение:*\n"
         "• `/web` — ссылка на веб\\-интерфейс Code VM\n"
         "• `/models` — список AI\\-моделей \\(включая drgr\\-visor\\)\n"
@@ -890,7 +898,7 @@ async def cmd_help(message: Message) -> None:
         "• Отправьте фото с подписью `jpeg`, `png`, `webp` или `bmp` — конвертация изображения\n"
         "• Отправьте файл `.json`, `.csv`, `.html` или `.md` — конвертация текстового формата\n\n"
         f"{_MD_INSTALL_CMD}\n\n"
-        "Пример: `/visor watch https://news.ycombinator.com`",
+        "Пример: `/agent цена Bitcoin сегодня`",
         parse_mode="MarkdownV2",
     )
 
@@ -1645,6 +1653,256 @@ async def cmd_convert(message: Message) -> None:
 
 
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# /download command — download a file from a URL via VM /files/download
+# ---------------------------------------------------------------------------
+
+
+@router.message(Command("download"))
+async def cmd_download(message: Message) -> None:
+    """Download a file from a URL via VM /files/download and send it back.
+
+    Usage: /download <url>
+    """
+    parts = (message.text or "").split(maxsplit=1)
+    if len(parts) < 2:
+        await message.answer(
+            "\U0001f4e5 *Скачать файл по URL*\n\n"
+            "Использование: `/download <url>`\n\n"
+            "Примеры:\n"
+            "• `/download https://example.com/script.py`\n"
+            "• `/download https://raw.githubusercontent.com/user/repo/main/file.js`\n\n"
+            "Файл скачивается через VM и отправляется вам как документ\\.",
+            parse_mode="MarkdownV2",
+        )
+        return
+
+    url = parts[1].strip()
+    if not url.startswith(("http://", "https://")):
+        url = "https://" + url
+
+    status = await message.answer(
+        f"\U0001f4e5 Скачиваю `{_esc(url[:80])}{'...' if len(url) > 80 else ''}`\u2026",
+        parse_mode="MarkdownV2",
+    )
+    t0 = time.monotonic()
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{VM_BASE}/files/download",
+                json={"url": url, "save": True},
+                timeout=aiohttp.ClientTimeout(total=60),
+            ) as resp:
+                if resp.status != 200:
+                    err = await resp.text()
+                    await status.edit_text(f"\u274c VM вернула {resp.status}: {err[:200]}")
+                    return
+                data = await resp.json()
+    except Exception as exc:
+        await status.edit_text(f"\u274c Ошибка: {str(exc)[:200]}")
+        return
+
+    dur = int((time.monotonic() - t0) * 1000)
+
+    if not data.get("success"):
+        await status.edit_text(f"\u274c {data.get('error', 'Ошибка скачивания')[:300]}")
+        return
+
+    await action_logger.log(
+        "download_file",
+        {"url": url},
+        {"filename": data.get("filename", ""), "size": data.get("size", 0)},
+        True,
+        dur,
+    )
+
+    # If file was saved on the VM, serve it back
+    saved_path = data.get("path", "")
+    # Sanitize filename to prevent path traversal
+    raw_name   = data.get("filename") or url.rsplit("/", 1)[-1] or "downloaded_file"
+    filename   = re.sub(r"[^\w.\-]", "_", raw_name)[:120] or "downloaded_file"
+
+    if saved_path and os.path.exists(saved_path):
+        await status.delete()
+        size_kb = os.path.getsize(saved_path) // 1024
+        await message.answer_document(
+            FSInputFile(saved_path, filename=filename),
+            caption=f"\u2705 Скачано: `{_esc(filename)}` \\({size_kb} КБ\\)\n\U0001f517 {_esc(url[:200])}",
+            parse_mode="MarkdownV2",
+        )
+        return
+
+    # If only content returned (not saved to disk), write a temp file
+    content = data.get("content", "")
+    if content:
+        ts   = int(time.time())
+        path = str(ARTICLES_DIR / f"download_{ts}_{filename}")
+        async with aiofiles.open(path, "w", encoding="utf-8") as fh:
+            await fh.write(content)
+        await status.delete()
+        await message.answer_document(
+            FSInputFile(path, filename=filename),
+            caption=f"\u2705 Скачано: `{_esc(filename)}`\n\U0001f517 {_esc(url[:200])}",
+            parse_mode="MarkdownV2",
+        )
+        return
+
+    await status.edit_text(f"\u274c Файл не получен от VM для URL: {url[:100]}")
+
+
+# ---------------------------------------------------------------------------
+# /agent command — autonomous browsing agent: search + read pages + summarise
+# ---------------------------------------------------------------------------
+
+
+@router.message(Command("agent"))
+async def cmd_agent(message: Message) -> None:
+    """Autonomous web agent: searches the web, reads pages, summarises results.
+
+    Usage: /agent <task>
+    The agent will:
+      1. Search DuckDuckGo for the task
+      2. Open top pages and extract text via VM /browse/page
+      3. Ask Ollama to synthesise the findings
+      4. Reply with a detailed answer
+    """
+    parts = (message.text or "").split(maxsplit=1)
+    if len(parts) < 2:
+        await message.answer(
+            "\U0001f916 *Автономный веб\\-агент*\n\n"
+            "Использование: `/agent <задание>`\n\n"
+            "Агент автономно:\n"
+            "1\\. Ищет информацию в интернете\n"
+            "2\\. Открывает страницы и читает их\n"
+            "3\\. Анализирует и обобщает найденное\n"
+            "4\\. Отвечает подробным отчётом\n\n"
+            "Примеры:\n"
+            "• `/agent последние новости о Python 3.13`\n"
+            "• `/agent цена Bitcoin сегодня`\n"
+            "• `/agent как установить Docker на Windows`",
+            parse_mode="MarkdownV2",
+        )
+        return
+
+    task   = parts[1].strip()
+    status = await message.answer(
+        f"\U0001f916 Агент исследует: _{_esc(task[:120])}_\u2026",
+        parse_mode="MarkdownV2",
+    )
+    t0 = time.monotonic()
+
+    collected_texts: List[str] = []
+    sources_used: List[str]    = []
+
+    try:
+        # Step 1: Search via VM /search
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{VM_BASE}/search",
+                json={"query": task, "max_results": 5},
+                timeout=aiohttp.ClientTimeout(total=20),
+            ) as resp:
+                search_data = await resp.json() if resp.status == 200 else {}
+
+        results = search_data.get("results", [])
+
+        if not results:
+            # Fall back to local search helper
+            results = await search_duckduckgo(task, max_results=5)
+
+        await status.edit_text(
+            f"\U0001f916 Нашёл {len(results)} источников, читаю страницы\u2026"
+        )
+
+        # Step 2: Fetch text from top pages (15 s per page, skip if too slow)
+        async with aiohttp.ClientSession() as session:
+            for item in results[:4]:
+                url = item.get("url", "")
+                if not url or not url.startswith("http"):
+                    continue
+                sources_used.append(url)
+                try:
+                    async with session.post(
+                        f"{VM_BASE}/browse/page",
+                        json={"url": url, "max_chars": 2000},
+                        timeout=aiohttp.ClientTimeout(total=15),
+                    ) as page_resp:
+                        if page_resp.status == 200:
+                            pdata = await page_resp.json()
+                            page_text = pdata.get("text", "").strip()
+                            if page_text:
+                                collected_texts.append(
+                                    f"[{item.get('title', url[:60])}]\n{page_text[:1500]}"
+                                )
+                        else:
+                            # Fallback: extract text directly
+                            page_text = await extract_page_text(url, max_chars=1500)
+                            if page_text:
+                                collected_texts.append(
+                                    f"[{item.get('title', url[:60])}]\n{page_text}"
+                                )
+                except Exception as page_exc:
+                    logger.debug("agent browse_page failed for %s: %s", url, page_exc)
+                    page_text = await extract_page_text(url, max_chars=1500)
+                    if page_text:
+                        collected_texts.append(
+                            f"[{item.get('title', url[:60])}]\n{page_text}"
+                        )
+
+        if not collected_texts and results:
+            # Use snippets if no full text available
+            for item in results:
+                snippet = item.get("snippet", "").strip()
+                if snippet:
+                    collected_texts.append(f"[{item.get('title', '')}]\n{snippet}")
+
+        await status.edit_text("\U0001f916 Анализирую найденную информацию\u2026")
+
+        # Step 3: Synthesise with Ollama
+        context = "\n\n---\n\n".join(collected_texts[:6])
+        prompt  = (
+            f"Задание: {task}\n\n"
+            f"Информация из интернета:\n{context[:4000]}\n\n"
+            "На основе найденной информации дай подробный, структурированный ответ на задание. "
+            "Отвечай на русском языке. Упомяни важные факты и детали."
+        )
+        answer = await ask_ollama(prompt)
+
+    except Exception as exc:
+        logger.error("cmd_agent error: %s", exc)
+        await status.edit_text(f"\u274c Ошибка агента: {str(exc)[:200]}")
+        return
+
+    dur = int((time.monotonic() - t0) * 1000)
+    await action_logger.log(
+        "agent_browse",
+        {"task": task},
+        {"sources": len(sources_used), "texts_fetched": len(collected_texts)},
+        bool(answer),
+        dur,
+    )
+
+    await status.delete()
+
+    # Format response
+    header = f"\U0001f916 *Агент: {_esc(task[:100])}*\n\n"
+    body   = answer or "Не удалось получить ответ от AI."
+    footer = ""
+    if sources_used:
+        src_lines = ["\n\n\U0001f517 *Источники:*"]
+        for i, u in enumerate(sources_used[:5], 1):
+            src_lines.append(f"{i}\\. {_esc(u[:100])}")
+        footer = "\n".join(src_lines)
+
+    full_text = header + body + footer
+    for chunk in _split_text(full_text, 4000):
+        try:
+            await message.answer(chunk, parse_mode="MarkdownV2")
+        except Exception:
+            await message.answer(chunk)
+
+
 # /vm command — show VM status, URL and PowerShell launch command
 # ---------------------------------------------------------------------------
 
@@ -1788,20 +2046,101 @@ _TEXT_CONVERT_DEFAULTS = {
 }
 
 
+_CODE_EXTS = {"py", "js", "ts", "sh", "bash", "rb", "go", "rs", "cpp", "c", "java", "php", "swift", "kt", "sql"}
+
+
 @router.message(F.document)
 async def handle_document_convert(message: Message) -> None:
-    """Convert a text document (JSON/CSV/HTML/Markdown) via VM /convert/text."""
+    """Handle uploaded documents.
+
+    • Code files (.py, .js, .sh, …) — upload to VM and execute via /execute.
+      Caption triggers execution; no caption shows file content in editor.
+    • Text format files (JSON, CSV, HTML, Markdown) — convert via /convert/text.
+    """
     doc   = message.document
     if not doc:
         return
     fname   = (doc.file_name or "").lower()
-    caption = (message.caption or "").strip().lower()
+    caption = (message.caption or "").strip()
+    caption_lower = caption.lower()
 
-    # Detect source format from file extension
+    # Detect extension
     ext = fname.rsplit(".", 1)[-1] if "." in fname else ""
+
+    # --- Branch 1: code file upload → execute in VM ---
+    if ext in _CODE_EXTS:
+        # Limit size to 512 KB
+        if doc.file_size and doc.file_size > 524_288:
+            await message.answer("\u26a0\ufe0f Файл слишком большой \\(макс 512 КБ\\)\\.", parse_mode="MarkdownV2")
+            return
+
+        _ext_lang = {
+            "py": "python", "js": "javascript", "ts": "typescript",
+            "sh": "shell", "bash": "bash", "rb": "ruby",
+            "go": "go", "rs": "rust", "cpp": "cpp", "c": "c",
+            "java": "java", "php": "php", "swift": "swift", "kt": "kotlin",
+            "sql": "sql",
+        }
+        lang = _ext_lang.get(ext, ext)
+
+        status = await message.answer(
+            f"\u2699\ufe0f Запускаю `{_esc(doc.file_name or fname)}` в VM sandbox\u2026",
+            parse_mode="MarkdownV2",
+        )
+        try:
+            file_info = await bot.get_file(doc.file_id)
+            buf       = io.BytesIO()
+            await bot.download_file(file_info.file_path, buf)
+            raw_bytes = buf.getvalue()
+            try:
+                code = raw_bytes.decode("utf-8")
+            except UnicodeDecodeError:
+                try:
+                    code = raw_bytes.decode("cp1251")
+                except UnicodeDecodeError:
+                    await status.edit_text("\u274c Файл содержит не-текстовые данные \\(не UTF\\-8\\)\\.", parse_mode="MarkdownV2")
+                    return
+
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{VM_BASE}/execute",
+                    json={"code": code, "language": lang},
+                    timeout=aiohttp.ClientTimeout(total=60),
+                ) as resp:
+                    if resp.status == 200:
+                        data    = await resp.json()
+                        success = data.get("success", False)
+                        output  = (data.get("output") or "").strip()
+                        error   = (data.get("error") or "").strip()
+                        await action_logger.log(
+                            "execute_upload",
+                            {"filename": doc.file_name, "language": lang},
+                            {"success": success, "output": output[:200]},
+                            success,
+                        )
+                        icon = "\u2705" if success else "\u274c"
+                        lines = [f"{icon} `{_esc(doc.file_name or fname)}` \\({_esc(lang)}\\)"]
+                        if output:
+                            lines.append(f"\n\U0001f4e4 *Вывод:*\n```\n{_esc(output[:800])}\n```")
+                        if not success and error:
+                            lines.append(f"\n\U0001f6a8 *Ошибка:*\n```\n{_esc(error[:600])}\n```")
+                        await status.delete()
+                        try:
+                            await message.answer("\n".join(lines), parse_mode="MarkdownV2")
+                        except Exception:
+                            await message.answer(f"{icon} {output or error}")
+                        return
+                    err_text = await resp.text()
+                    await status.edit_text(f"\u274c VM {resp.status}: {err_text[:200]}")
+        except Exception as exc:
+            logger.error("handle_document code exec: %s", exc)
+            await status.edit_text(f"\u274c Ошибка: {str(exc)[:200]}")
+        return
+
+    # --- Branch 2: text format conversion ---
     from_fmt = ext if ext in _TEXT_CONVERT_DEFAULTS else None
     if not from_fmt:
-        return  # Not a text format we handle — silently ignore
+        return  # Not a file format we handle — silently ignore
 
     # Detect target format from caption; fall back to default
     to_fmt = None
@@ -1813,7 +2152,7 @@ async def handle_document_convert(message: Message) -> None:
         "md":   {"html"},
         "markdown": {"html"},
     }.get(from_fmt, set())
-    for word in caption.split():
+    for word in caption_lower.split():
         if word in valid_targets or (word == "txt" and "text" in valid_targets):
             to_fmt = "text" if word == "txt" else word
             break
@@ -1908,20 +2247,22 @@ async def main() -> None:
     )
     # Register bot commands so Telegram shows them in the menu
     await bot.set_my_commands([
-        BotCommand(command="web",        description="🌐 Открыть веб-интерфейс Code VM (localhost:5000)"),
+        BotCommand(command="agent",      description="🤖 Автономный агент: ищет в интернете и отвечает"),
         BotCommand(command="search",     description="Исследовать тему (статья + скриншоты)"),
-        BotCommand(command="generate",   description="Сгенерировать HTML-страницу"),
-        BotCommand(command="visor",      description="ВИЗОР: скриншот + AI анализ страницы"),
         BotCommand(command="browse",     description="Скриншот страницы + AI анализ"),
-        BotCommand(command="code",       description="Написать и выполнить код"),
+        BotCommand(command="visor",      description="ВИЗОР: скриншот + AI анализ страницы"),
+        BotCommand(command="code",       description="Написать и выполнить код (авто-исправление)"),
         BotCommand(command="execute",    description="Выполнить код в VM sandbox"),
+        BotCommand(command="download",   description="📥 Скачать файл по URL через VM"),
+        BotCommand(command="generate",   description="Сгенерировать HTML-страницу"),
         BotCommand(command="screenshot", description="Быстрый скриншот страницы"),
         BotCommand(command="convert",    description="Конвертер файлов (фото, json, csv, md)"),
+        BotCommand(command="retrain",    description="Запустить цикл самообучения VM"),
         BotCommand(command="vm",         description="Статус VM и команды запуска"),
         BotCommand(command="models",     description="Доступные AI-модели"),
-        BotCommand(command="retrain",    description="Запустить цикл самообучения VM"),
         BotCommand(command="stats",      description="Статистика самообучения"),
         BotCommand(command="help",       description="Все команды и справка"),
+        BotCommand(command="web",        description="🌐 Открыть веб-интерфейс Code VM (localhost:5000)"),
     ])
     await dp.start_polling(bot, skip_updates=True)
 

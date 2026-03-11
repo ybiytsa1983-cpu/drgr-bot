@@ -2437,6 +2437,13 @@ _DEFAULT_AUTO_SYSTEM_PROMPT = (
     "emulator -avd <имя_эмулятора>.\n"
     "Для iOS приложений — Swift/SwiftUI (```swift блок). "
     "IPA — это iOS App Archive. Для установки на устройство нужен Apple Developer аккаунт.\n"
+    "КРИТИЧЕСКИ ВАЖНО для Python-кода:\n"
+    "  - Используй ТОЛЬКО стандартную библиотеку Python (os, sys, json, math, random, datetime, "
+    "re, pathlib, collections, itertools, functools, string, io, time, hashlib и т.д.).\n"
+    "  - НЕ импортируй сторонние пакеты (requests, numpy, pandas, flask, django и т.д.) "
+    "если задание явно не требует этого. Сторонние пакеты могут быть не установлены.\n"
+    "  - Если нужна работа с HTTP — используй urllib.request из стандартной библиотеки.\n"
+    "  - Код должен выполняться без ошибок в чистом окружении Python.\n"
     "ВСЕГДА возвращай ТОЛЬКО код в соответствующем ``` блоке без пояснений вне кода.\n"
     "НЕ спрашивай уточнений — сразу генерируй полный рабочий код."
 )
@@ -4091,6 +4098,114 @@ def files_upload():
 # ---------------------------------------------------------------------------
 # Web search — search the web via DuckDuckGo Lite HTML (no API key needed)
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Web search — search the web via DuckDuckGo Lite HTML (no API key needed)
+# ---------------------------------------------------------------------------
+
+@app.route("/browse/page", methods=["POST"])
+def browse_page():
+    """Fetch the text content of a web page (no screenshot, no vision AI).
+
+    Useful for the autonomous agent to read page text quickly.
+
+    Body: {"url": "https://example.com", "max_chars": 3000}
+    Returns: {text: "...", title: "...", url: "...", success: true}
+    """
+    body     = request.get_json(silent=True) or {}
+    url      = body.get("url", "").strip()
+    max_chars = int(body.get("max_chars", 3000))
+
+    if not url:
+        return jsonify({"error": "Provide url", "success": False}), 400
+    if not url.startswith(("http://", "https://")):
+        url = "https://" + url
+
+    # SSRF guard
+    safe_url = ""
+    try:
+        import ipaddress as _ipaddress_bp
+        parsed   = urllib.parse.urlparse(url)
+        hostname = parsed.hostname or ""
+        _BLOCKED = {"localhost", "0.0.0.0", "::1", "ip6-localhost", "ip6-loopback"}
+        if hostname in _BLOCKED:
+            return jsonify({"error": "Requests to internal addresses are not allowed", "success": False}), 400
+        try:
+            addr = _ipaddress_bp.ip_address(hostname)
+            if addr.is_private or addr.is_loopback or addr.is_reserved or addr.is_link_local:
+                return jsonify({"error": "Requests to private/reserved IPs are not allowed", "success": False}), 400
+        except ValueError:
+            pass
+        safe_url = urllib.parse.urlunparse((parsed.scheme, parsed.netloc, parsed.path, "", parsed.query, ""))
+    except Exception as ssrf_exc:
+        return jsonify({"error": f"URL validation failed: {ssrf_exc}", "success": False}), 400
+    if not safe_url:
+        return jsonify({"error": "Could not construct safe URL", "success": False}), 400
+
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                          "AppleWebKit/537.36 (KHTML, like Gecko) "
+                          "Chrome/120.0 Safari/537.36",
+            "Accept-Language": "ru,en;q=0.9",
+        }
+        # Read at most ~300 KB to avoid memory issues with large pages
+        _MAX_HTML = 300_000
+        r = _http.get(safe_url, headers=headers, timeout=15, stream=True)
+        r.raise_for_status()
+        content_type = r.headers.get("Content-Type", "")
+        if "text" not in content_type and "html" not in content_type:
+            return jsonify({"error": f"Not a text page: {content_type}", "success": False}), 400
+
+        chunks = []
+        total  = 0
+        for chunk in r.iter_content(chunk_size=8192, decode_unicode=True):
+            if isinstance(chunk, bytes):
+                chunk = chunk.decode("utf-8", errors="replace")
+            chunks.append(chunk)
+            total += len(chunk)
+            if total >= _MAX_HTML:
+                break
+        raw_html = "".join(chunks)[:_MAX_HTML]
+
+        # Extract title
+        title = ""
+        title_match = re.search(r"<title[^>]*>([^<]{1,200})</title>", raw_html, re.IGNORECASE)
+        if title_match:
+            title = re.sub(r"\s+", " ", title_match.group(1)).strip()
+
+        # Strip HTML tags to get text
+        text = re.sub(r"<style[^>]*>.*?</style[^>]*>", " ", raw_html, flags=re.DOTALL | re.IGNORECASE)
+        text = re.sub(r"<script[^>]*>.*?</script[^>]*>", " ", text, flags=re.DOTALL | re.IGNORECASE)
+        text = re.sub(r"<[^>]+>", " ", text)
+        text = re.sub(r"&nbsp;", " ", text)
+        text = re.sub(r"&amp;", "&", text)
+        text = re.sub(r"&lt;", "<", text)
+        text = re.sub(r"&gt;", ">", text)
+        text = re.sub(r"&quot;", '"', text)
+        text = re.sub(r"&#\d+;", "", text)
+        text = re.sub(r"\s{2,}", " ", text).strip()
+
+        _record_agent_action({
+            "timestamp":   _now(),
+            "action_type": "browse_page",
+            "input":       {"url": safe_url},
+            "output":      {"text_length": len(text), "title": title},
+            "success":     True,
+            "duration_ms": 0,
+            "metadata":    {},
+        })
+
+        return jsonify({
+            "text":    text[:max_chars],
+            "title":   title,
+            "url":     safe_url,
+            "success": True,
+        })
+
+    except Exception as exc:  # pylint: disable=broad-except
+        return jsonify({"error": str(exc), "success": False}), 500
+
 
 @app.route("/search", methods=["POST"])
 def web_search():
