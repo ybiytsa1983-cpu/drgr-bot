@@ -72,6 +72,11 @@ _MD_INSTALL_CMD = (
     "`irm \"https://raw.githubusercontent.com/ybiytsa1983\\-cpu/drgr\\-bot/main/run\\.ps1\" | iex`"
 )
 
+_MD_UPDATE_CMD = (
+    "*⬇ Обновить файлы \\(скачать новые версии\\):*\n"
+    "`Set\\-Location \"$env:USERPROFILE\\\\drgr\\-bot\"; git pull; \\.\\\\install\\.ps1`"
+)
+
 _MD_WEB_URL = "`http://localhost:5000/`"
 
 logging.basicConfig(
@@ -834,6 +839,7 @@ async def cmd_start(message: Message) -> None:
         "/convert — форматы конвертера; отправьте фото или файл \\(json/csv/md/html\\) для конвертации\n"
         "/retrain — запустить цикл самообучения VM\n"
         "/vm — статус VM, URL и команда запуска\n"
+        "/update — скачать и установить новые файлы\n"
         "/models — доступные AI\\-модели\n"
         "/stats — статистика самообучения\n"
         "/help — помощь\n\n"
@@ -892,7 +898,8 @@ async def cmd_help(message: Message) -> None:
         "• `/models` — список AI\\-моделей \\(включая drgr\\-visor\\)\n"
         "• `/stats` — что VM узнала из своих действий\n"
         "• `/retrain` — запустить цикл самообучения VM вручную\n"
-        "• `/vm` — статус VM и команды запуска\n\n"
+        "• `/vm` — статус VM и команды запуска\n"
+        "• `/update` — команда для скачивания и установки новых файлов\n\n"
         "*Конвертер файлов \\(через VM\\):*\n"
         "• `/convert` — список всех доступных конвертаций\n"
         "• Отправьте фото с подписью `jpeg`, `png`, `webp` или `bmp` — конвертация изображения\n"
@@ -1903,6 +1910,28 @@ async def cmd_agent(message: Message) -> None:
             await message.answer(chunk)
 
 
+# /update command — show the PowerShell command to download and install new files
+# ---------------------------------------------------------------------------
+
+
+@router.message(Command("update"))
+async def cmd_update(message: Message) -> None:
+    """Show the PowerShell command to pull the latest files and re-run install."""
+    await message.answer(
+        "\u2b07\ufe0f *Скачать и установить новые файлы*\n\n"
+        "Открой *PowerShell* \\(Win\\+X → Windows PowerShell\\) и вставь:\n\n"
+        f"{_MD_UPDATE_CMD}\n\n"
+        "Команда:\n"
+        "1\\. Переходит в папку `drgr-bot`\n"
+        "2\\. Скачивает последние изменения с GitHub\n"
+        "3\\. Переустанавливает зависимости\n\n"
+        "После завершения запусти VM:\n"
+        "`powershell \\-ExecutionPolicy Bypass \\-File \"$env:USERPROFILE\\\\drgr\\-bot\\\\start\\.ps1\"`\n\n"
+        "_Если папки `drgr\\-bot` нет — используй_ /vm _для полной установки с нуля_",
+        parse_mode="MarkdownV2",
+    )
+
+
 # /vm command — show VM status, URL and PowerShell launch command
 # ---------------------------------------------------------------------------
 
@@ -1938,6 +1967,7 @@ async def cmd_vm(message: Message) -> None:
         f"{ollama_icon} Ollama: {'подключена' if ollama_ok else 'не подключена'}\n"
         f"\U0001f9e0 Модели: `{_esc(models_str)}`\n\n"
         f"*\U0001f680 {_MD_INSTALL_CMD}\n\n"
+        f"{_MD_UPDATE_CMD}\n\n"
         "*\u25b6\ufe0f Запуск VM:*\n"
         "`powershell \\-ExecutionPolicy Bypass \\-File \"$env:USERPROFILE\\\\drgr\\-bot\\\\start\\.ps1\"`\n\n"
         f"*\U0001f5a5 Адрес VM в браузере:* {_MD_WEB_URL}\n\n"
@@ -2259,6 +2289,7 @@ async def main() -> None:
         BotCommand(command="convert",    description="Конвертер файлов (фото, json, csv, md)"),
         BotCommand(command="retrain",    description="Запустить цикл самообучения VM"),
         BotCommand(command="vm",         description="Статус VM и команды запуска"),
+        BotCommand(command="update",     description="⬇ Скачать и установить новые файлы"),
         BotCommand(command="models",     description="Доступные AI-модели"),
         BotCommand(command="stats",      description="Статистика самообучения"),
         BotCommand(command="help",       description="Все команды и справка"),
