@@ -3799,6 +3799,347 @@ def agent_training_data():
 
 
 # ---------------------------------------------------------------------------
+# GLTF Figure Generator — pure-Python, no extra dependencies
+# Generates valid GLTF 2.0 (JSON) for primitive 3D shapes.
+# ---------------------------------------------------------------------------
+
+import struct as _struct
+import math as _math
+import base64 as _b64
+
+
+def _pack_buffer(positions: list, normals: list, indices: list) -> tuple:
+    """Pack vertex positions, normals and indices into a binary buffer.
+
+    Returns (buffer_bytes, pos_count, idx_count) where
+      - positions/normals are flat lists of floats (3 components each vertex)
+      - indices are a flat list of unsigned shorts (must be < 65535 vertices)
+    """
+    vertex_count = len(positions) // 3
+    idx_count    = len(indices)
+
+    # Positions buffer (FLOAT 32)
+    pos_bytes = _struct.pack(f"{len(positions)}f", *positions)
+    # Normals buffer (FLOAT 32)
+    nrm_bytes = _struct.pack(f"{len(normals)}f", *normals)
+    # Indices buffer (UNSIGNED SHORT, padded to 4-byte boundary)
+    idx_bytes = _struct.pack(f"{idx_count}H", *indices)
+    pad_len   = (4 - len(idx_bytes) % 4) % 4
+    idx_bytes += b"\x00" * pad_len
+
+    buf = idx_bytes + pos_bytes + nrm_bytes
+    return buf, vertex_count, idx_count, len(idx_bytes), len(pos_bytes)
+
+
+def _gltf_json(shape: str, params: dict) -> dict:
+    """Build a GLTF 2.0 dict for the requested shape.
+
+    Supported shapes: cube, sphere, cylinder, cone, torus, plane.
+    Returns the GLTF dict (caller embeds the buffer as a data URI).
+    """
+    if shape == "cube":
+        w = float(params.get("width",  1.0))
+        h = float(params.get("height", 1.0))
+        d = float(params.get("depth",  1.0))
+        hw, hh, hd = w / 2, h / 2, d / 2
+        # 6 faces × 4 verts each = 24 verts
+        faces = [
+            # pos_x, pos_y, pos_z, normal_x, normal_y, normal_z
+            # +Z face
+            (-hw, -hh,  hd,  0, 0,  1), ( hw, -hh,  hd,  0, 0,  1),
+            ( hw,  hh,  hd,  0, 0,  1), (-hw,  hh,  hd,  0, 0,  1),
+            # -Z face
+            ( hw, -hh, -hd,  0, 0, -1), (-hw, -hh, -hd,  0, 0, -1),
+            (-hw,  hh, -hd,  0, 0, -1), ( hw,  hh, -hd,  0, 0, -1),
+            # +X face
+            ( hw, -hh,  hd,  1, 0,  0), ( hw, -hh, -hd,  1, 0,  0),
+            ( hw,  hh, -hd,  1, 0,  0), ( hw,  hh,  hd,  1, 0,  0),
+            # -X face
+            (-hw, -hh, -hd, -1, 0,  0), (-hw, -hh,  hd, -1, 0,  0),
+            (-hw,  hh,  hd, -1, 0,  0), (-hw,  hh, -hd, -1, 0,  0),
+            # +Y face
+            (-hw,  hh,  hd,  0, 1,  0), ( hw,  hh,  hd,  0, 1,  0),
+            ( hw,  hh, -hd,  0, 1,  0), (-hw,  hh, -hd,  0, 1,  0),
+            # -Y face
+            (-hw, -hh, -hd,  0,-1,  0), ( hw, -hh, -hd,  0,-1,  0),
+            ( hw, -hh,  hd,  0,-1,  0), (-hw, -hh,  hd,  0,-1,  0),
+        ]
+        positions = []
+        normals   = []
+        for f in faces:
+            positions += [f[0], f[1], f[2]]
+            normals   += [f[3], f[4], f[5]]
+        indices = []
+        for fi in range(6):
+            base = fi * 4
+            indices += [base, base+1, base+2, base, base+2, base+3]
+
+    elif shape == "plane":
+        w = float(params.get("width",  2.0))
+        d = float(params.get("depth",  2.0))
+        hw, hd = w / 2, d / 2
+        positions = [-hw,0,-hd,  hw,0,-hd,  hw,0,hd,  -hw,0,hd]
+        normals   = [0,1,0,  0,1,0,  0,1,0,  0,1,0]
+        indices   = [0,1,2,  0,2,3]
+
+    elif shape == "sphere":
+        segs_w = max(8, int(params.get("segments_w", 16)))
+        segs_h = max(6, int(params.get("segments_h", 12)))
+        r = float(params.get("radius", 0.5))
+        positions, normals, indices = [], [], []
+        for lat in range(segs_h + 1):
+            theta = _math.pi * lat / segs_h
+            for lon in range(segs_w + 1):
+                phi = 2 * _math.pi * lon / segs_w
+                x = _math.sin(theta) * _math.cos(phi)
+                y = _math.cos(theta)
+                z = _math.sin(theta) * _math.sin(phi)
+                positions += [x * r, y * r, z * r]
+                normals   += [x, y, z]
+        for lat in range(segs_h):
+            for lon in range(segs_w):
+                a = lat * (segs_w + 1) + lon
+                b = a + segs_w + 1
+                indices += [a, b, a+1, b, b+1, a+1]
+
+    elif shape == "cylinder":
+        segs = max(8, int(params.get("segments", 16)))
+        r    = float(params.get("radius", 0.5))
+        h    = float(params.get("height", 1.0))
+        positions, normals, indices = [], [], []
+        # Side surface
+        for s in range(segs + 1):
+            phi = 2 * _math.pi * s / segs
+            cx = _math.cos(phi)
+            cz = _math.sin(phi)
+            positions += [cx*r, -h/2, cz*r,  cx*r, h/2, cz*r]
+            normals   += [cx, 0, cz,  cx, 0, cz]
+        for s in range(segs):
+            base = s * 2
+            indices += [base, base+1, base+2, base+1, base+3, base+2]
+        # Bottom cap
+        bot_center = len(positions) // 3
+        positions += [0, -h/2, 0];  normals += [0, -1, 0]
+        first_rim = len(positions) // 3
+        for s in range(segs):
+            phi = 2 * _math.pi * s / segs
+            positions += [_math.cos(phi)*r, -h/2, _math.sin(phi)*r]
+            normals   += [0, -1, 0]
+        for s in range(segs):
+            indices += [bot_center, first_rim + (s+1) % segs, first_rim + s]
+        # Top cap
+        top_center = len(positions) // 3
+        positions += [0, h/2, 0];  normals += [0, 1, 0]
+        top_rim = len(positions) // 3
+        for s in range(segs):
+            phi = 2 * _math.pi * s / segs
+            positions += [_math.cos(phi)*r, h/2, _math.sin(phi)*r]
+            normals   += [0, 1, 0]
+        for s in range(segs):
+            indices += [top_center, top_rim + s, top_rim + (s+1) % segs]
+
+    elif shape == "cone":
+        segs = max(8, int(params.get("segments", 16)))
+        r    = float(params.get("radius", 0.5))
+        h    = float(params.get("height", 1.0))
+        positions, normals, indices = [], [], []
+        slope = r / h
+        # Side surface
+        apex = len(positions) // 3
+        positions += [0, h/2, 0];  normals += [0, 1, 0]
+        rim_start = len(positions) // 3
+        for s in range(segs):
+            phi = 2 * _math.pi * s / segs
+            cx = _math.cos(phi)
+            cz = _math.sin(phi)
+            positions += [cx*r, -h/2, cz*r]
+            nlen = _math.sqrt(1 + slope*slope)
+            normals   += [cx/nlen, slope/nlen, cz/nlen]
+        for s in range(segs):
+            indices += [apex, rim_start + s, rim_start + (s+1) % segs]
+        # Bottom cap
+        bot_center = len(positions) // 3
+        positions += [0, -h/2, 0];  normals += [0, -1, 0]
+        bot_rim = len(positions) // 3
+        for s in range(segs):
+            phi = 2 * _math.pi * s / segs
+            positions += [_math.cos(phi)*r, -h/2, _math.sin(phi)*r]
+            normals   += [0, -1, 0]
+        for s in range(segs):
+            indices += [bot_center, bot_rim + (s+1) % segs, bot_rim + s]
+
+    elif shape == "torus":
+        segs_tube  = max(8,  int(params.get("segments_tube",  16)))
+        segs_ring  = max(8,  int(params.get("segments_ring",  32)))
+        r_major    = float(params.get("radius_major", 0.4))
+        r_minor    = float(params.get("radius_minor", 0.15))
+        positions, normals, indices = [], [], []
+        for i in range(segs_ring + 1):
+            phi = 2 * _math.pi * i / segs_ring
+            cx = _math.cos(phi)
+            cz = _math.sin(phi)
+            for j in range(segs_tube + 1):
+                theta = 2 * _math.pi * j / segs_tube
+                nx = cx * _math.cos(theta)
+                ny = _math.sin(theta)
+                nz = cz * _math.cos(theta)
+                x  = (r_major + r_minor * _math.cos(theta)) * cx
+                y  = r_minor * _math.sin(theta)
+                z  = (r_major + r_minor * _math.cos(theta)) * cz
+                positions += [x, y, z]
+                normals   += [nx, ny, nz]
+        for i in range(segs_ring):
+            for j in range(segs_tube):
+                a = i * (segs_tube + 1) + j
+                b = a + segs_tube + 1
+                indices += [a, b, a+1, b, b+1, a+1]
+    else:
+        raise ValueError(f"Unknown shape: {shape!r}")
+
+    return positions, normals, indices
+
+
+def _build_gltf(shape: str, params: dict, color: list | None = None) -> dict:
+    """Build a complete GLTF 2.0 dict with an embedded base64 buffer."""
+    positions, normals, raw_indices = _gltf_json(shape, params)
+
+    # Clamp indices to unsigned short range (max 65535)
+    indices = [int(i) for i in raw_indices]
+    buf, vertex_count, idx_count, idx_bytes_len, attr_bytes_len = _pack_buffer(
+        positions, normals, indices
+    )
+
+    # Compute min/max for position accessor (GLTF validator requires them)
+    px = positions[0::3];  py = positions[1::3];  pz = positions[2::3]
+    pos_min = [min(px), min(py), min(pz)]
+    pos_max = [max(px), max(py), max(pz)]
+
+    buf_b64 = "data:application/octet-stream;base64," + _b64.b64encode(buf).decode()
+
+    r, g, b_c = (color or [0.4, 0.7, 1.0])[:3]
+    a = (color[3] if color and len(color) > 3 else 1.0)
+
+    gltf = {
+        "asset": {"version": "2.0", "generator": "drgr-bot GLTF Generator"},
+        "scene": 0,
+        "scenes": [{"nodes": [0]}],
+        "nodes": [{"mesh": 0, "name": shape}],
+        "meshes": [{
+            "name": shape,
+            "primitives": [{
+                "attributes": {"POSITION": 1, "NORMAL": 2},
+                "indices": 0,
+                "material": 0,
+            }]
+        }],
+        "accessors": [
+            # Indices
+            {
+                "bufferView": 0, "componentType": 5123, "count": idx_count,
+                "type": "SCALAR",
+            },
+            # Positions
+            {
+                "bufferView": 1, "componentType": 5126, "count": vertex_count,
+                "type": "VEC3", "min": pos_min, "max": pos_max,
+            },
+            # Normals
+            {
+                "bufferView": 2, "componentType": 5126, "count": vertex_count,
+                "type": "VEC3",
+            },
+        ],
+        "bufferViews": [
+            # Indices view
+            {"buffer": 0, "byteOffset": 0, "byteLength": idx_bytes_len, "target": 34963},
+            # Positions view
+            {"buffer": 0, "byteOffset": idx_bytes_len,
+             "byteLength": attr_bytes_len, "target": 34962},
+            # Normals view
+            {"buffer": 0, "byteOffset": idx_bytes_len + attr_bytes_len,
+             "byteLength": attr_bytes_len, "target": 34962},
+        ],
+        "buffers": [{"uri": buf_b64, "byteLength": len(buf)}],
+        "materials": [{
+            "name": "default",
+            "pbrMetallicRoughness": {
+                "baseColorFactor": [r, g, b_c, a],
+                "metallicFactor": 0.0,
+                "roughnessFactor": 0.5,
+            },
+            "doubleSided": True,
+        }],
+    }
+    return gltf
+
+
+@app.route("/generate/gltf", methods=["POST"])
+def generate_gltf():
+    """Generate a GLTF 2.0 figure and return it as JSON or a downloadable file.
+
+    Body (JSON):
+      shape    — "cube" | "sphere" | "cylinder" | "cone" | "torus" | "plane"
+      params   — dict of shape-specific parameters (optional)
+      color    — [r, g, b, a] 0-1 floats (optional, default blue-ish)
+      download — bool, if true respond with application/json + Content-Disposition
+
+    Shape params:
+      cube:     width, height, depth  (default 1)
+      plane:    width, depth          (default 2)
+      sphere:   radius (0.5), segments_w (16), segments_h (12)
+      cylinder: radius (0.5), height (1), segments (16)
+      cone:     radius (0.5), height (1), segments (16)
+      torus:    radius_major (0.4), radius_minor (0.15),
+                segments_ring (32), segments_tube (16)
+    """
+    body     = request.get_json(silent=True) or {}
+    shape    = str(body.get("shape", "cube")).lower()
+    params   = body.get("params", {}) or {}
+    color    = body.get("color", None)
+    download = bool(body.get("download", False))
+
+    _VALID_SHAPES = {"cube", "sphere", "cylinder", "cone", "torus", "plane"}
+    if shape not in _VALID_SHAPES:
+        return jsonify({"error": f"Unknown shape '{shape}'. Choose from: {sorted(_VALID_SHAPES)}"}), 400
+
+    try:
+        gltf = _build_gltf(shape, params, color)
+    except (ValueError, TypeError, OverflowError, _struct.error) as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    gltf_json_bytes = json.dumps(gltf, ensure_ascii=False, indent=2).encode("utf-8")
+
+    if download:
+        from flask import Response as _FResponse
+        return _FResponse(
+            gltf_json_bytes,
+            mimetype="model/gltf+json",
+            headers={"Content-Disposition": f"attachment; filename={shape}.gltf"},
+        )
+
+    return app.response_class(
+        gltf_json_bytes,
+        mimetype="application/json",
+    )
+
+
+@app.route("/generate/gltf/shapes", methods=["GET"])
+def generate_gltf_shapes():
+    """Return the list of supported shapes and their default parameters."""
+    return jsonify({
+        "shapes": [
+            {"name": "cube",     "params": {"width": 1, "height": 1, "depth": 1}},
+            {"name": "plane",    "params": {"width": 2, "depth": 2}},
+            {"name": "sphere",   "params": {"radius": 0.5, "segments_w": 16, "segments_h": 12}},
+            {"name": "cylinder", "params": {"radius": 0.5, "height": 1, "segments": 16}},
+            {"name": "cone",     "params": {"radius": 0.5, "height": 1, "segments": 16}},
+            {"name": "torus",    "params": {"radius_major": 0.4, "radius_minor": 0.15,
+                                            "segments_ring": 32, "segments_tube": 16}},
+        ]
+    })
+
+
+# ---------------------------------------------------------------------------
 # File Converter — image and text format conversions
 # ---------------------------------------------------------------------------
 
