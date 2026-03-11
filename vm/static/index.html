@@ -519,10 +519,7 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
 
   <div id="main">
     <!-- Monaco Editor pane -->
-    <div id="epane"
-         ondragover="editorDragOver(event)"
-         ondragleave="editorDragLeave(event)"
-         ondrop="editorDrop(event)">
+    <div id="epane">
       <div id="etb">
         <span id="lang-badge" style="font-size:11px;background:var(--bg4);border:1px solid var(--border);color:var(--text2);padding:3px 9px;border-radius:11px;white-space:nowrap;cursor:pointer" onclick="cycleLanguage()" title="Кликни для смены языка">🔍 авто</span>
         <select id="lang-select" onchange="setLangManual(this.value)" title="Выбрать язык" style="font-size:11px;padding:3px 6px;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:4px;cursor:pointer">
@@ -1848,7 +1845,19 @@ async function handleFileUpload(input) {
 }
 
 // ── Drag-and-drop onto editor pane ───────────────────────────────────────────
+// These handlers are registered in CAPTURE phase (see init below) so they fire
+// before Monaco Editor's internal handlers. The 'Files' guard ensures we only
+// intercept file drags — text reordering inside Monaco is left untouched.
+function _dragHasFiles(e) {
+  var types = e.dataTransfer && e.dataTransfer.types;
+  if (!types) return false;
+  return (typeof types.contains === 'function')
+    ? types.contains('Files')
+    : (Array.prototype.indexOf.call(types, 'Files') >= 0);
+}
+
 function editorDragOver(e) {
+  if (!_dragHasFiles(e)) return;  // let Monaco handle text drags
   e.preventDefault();
   e.stopPropagation();
   e.dataTransfer.dropEffect = 'copy';
@@ -1856,12 +1865,14 @@ function editorDragOver(e) {
 }
 
 function editorDragLeave(e) {
+  if (!_dragHasFiles(e)) return;
   e.preventDefault();
   e.stopPropagation();
   document.getElementById('epane').classList.remove('drag-over');
 }
 
 async function editorDrop(e) {
+  if (!_dragHasFiles(e)) return;  // let Monaco handle text drops
   e.preventDefault();
   e.stopPropagation();
   document.getElementById('epane').classList.remove('drag-over');
@@ -3797,6 +3808,13 @@ window.addEventListener('load', function(){
   loadSystemPrompt();
   loadOllamaUrl();
   setView('both');
+
+  // Register editor drag-drop handlers in CAPTURE phase so they fire before
+  // Monaco Editor can intercept (and potentially stopPropagation on) file drags.
+  var epane = document.getElementById('epane');
+  epane.addEventListener('dragover',  editorDragOver,  true);
+  epane.addEventListener('dragleave', editorDragLeave, true);
+  epane.addEventListener('drop',      editorDrop,      true);
 });
 </script>
 </body>
