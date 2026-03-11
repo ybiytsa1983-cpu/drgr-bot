@@ -42,6 +42,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -4119,8 +4120,7 @@ def project_delete(project_id: str):
     project_dir = os.path.join(PROJECTS_DIR, project_id)
     if not os.path.isdir(project_dir):
         return jsonify({"error": "Project not found"}), 404
-    import shutil as _shutil
-    _shutil.rmtree(project_dir, ignore_errors=True)
+    shutil.rmtree(project_dir, ignore_errors=True)
     return jsonify({"success": True})
 
 

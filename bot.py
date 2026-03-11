@@ -739,7 +739,10 @@ async def research_and_reply(query: str, message: Message) -> None:
         asyncio.create_task(describe_image_ollama(path))
 
     # 8. Send to Telegram
-    await status.delete()
+    try:
+        await status.delete()
+    except Exception:
+        pass  # message may have been deleted already
 
     header = f"\U0001f4f0 *{_esc(title)}*\n\n"
     chunks = _split_text(article_text, 4000)
@@ -752,7 +755,11 @@ async def research_and_reply(query: str, message: Message) -> None:
         try:
             await message.answer(prefix + _esc(chunk), parse_mode="MarkdownV2")
         except Exception:
-            await message.answer((prefix + chunk)[:4096])
+            plain = _unescape_md(prefix + chunk)
+            try:
+                await message.answer(plain[:4096])
+            except Exception:
+                pass
 
     for i, path in enumerate(screenshot_paths):
         if os.path.exists(path):
@@ -800,6 +807,11 @@ _ESC_CHARS = r"\_*[]()~`>#+-=|{}.!"
 def _esc(text: str) -> str:
     """Escape special characters for Telegram MarkdownV2."""
     return re.sub(r"([" + re.escape(_ESC_CHARS) + r"])", r"\\\1", text)
+
+
+def _unescape_md(text: str) -> str:
+    """Remove MarkdownV2 escape backslashes to produce clean plain text."""
+    return re.sub(r"\\([_*\[\]()~`>#+\-=|{}.!])", r"\1", text)
 
 
 def _split_text(text: str, max_len: int) -> List[str]:
@@ -1878,7 +1890,13 @@ async def cmd_agent(message: Message) -> None:
 
     except Exception as exc:
         logger.error("cmd_agent error: %s", exc)
-        await status.edit_text(f"\u274c Ошибка агента: {str(exc)[:200]}")
+        try:
+            await status.edit_text(f"\u274c Ошибка агента: {str(exc)[:200]}")
+        except Exception:
+            try:
+                await message.answer(f"❌ Ошибка агента: {str(exc)[:200]}")
+            except Exception:
+                pass
         return
 
     dur = int((time.monotonic() - t0) * 1000)
@@ -1890,24 +1908,33 @@ async def cmd_agent(message: Message) -> None:
         dur,
     )
 
-    await status.delete()
+    try:
+        await status.delete()
+    except Exception:
+        pass  # message may have been deleted already
 
-    # Format response
-    header = f"\U0001f916 *Агент: {_esc(task[:100])}*\n\n"
-    body   = answer or "Не удалось получить ответ от AI."
-    footer = ""
+    # Format response — body MUST be escaped for MarkdownV2
+    header   = f"\U0001f916 *Агент: {_esc(task[:100])}*\n\n"
+    body_raw = answer or "Не удалось получить ответ от AI."
+    body_md  = _esc(body_raw)
+    footer   = ""
     if sources_used:
         src_lines = ["\n\n\U0001f517 *Источники:*"]
         for i, u in enumerate(sources_used[:5], 1):
             src_lines.append(f"{i}\\. {_esc(u[:100])}")
         footer = "\n".join(src_lines)
 
-    full_text = header + body + footer
-    for chunk in _split_text(full_text, 4000):
+    full_md = header + body_md + footer
+    for chunk in _split_text(full_md, 4000):
         try:
             await message.answer(chunk, parse_mode="MarkdownV2")
         except Exception:
-            await message.answer(chunk)
+            # Strip MarkdownV2 formatting — send clean plain text
+            plain = _unescape_md(chunk)
+            try:
+                await message.answer(plain[:4096])
+            except Exception:
+                pass
 
 
 # /update command — show the PowerShell command to download and install new files
@@ -1917,7 +1944,7 @@ async def cmd_agent(message: Message) -> None:
 @router.message(Command("update"))
 async def cmd_update(message: Message) -> None:
     """Show the PowerShell command to pull the latest files and re-run install."""
-    await message.answer(
+    text_md = (
         "\u2b07\ufe0f *Скачать и установить новые файлы*\n\n"
         "Открой *PowerShell* \\(Win\\+X → Windows PowerShell\\) и вставь:\n\n"
         f"{_MD_UPDATE_CMD}\n\n"
@@ -1927,9 +1954,23 @@ async def cmd_update(message: Message) -> None:
         "3\\. Переустанавливает зависимости\n\n"
         "После завершения запусти VM:\n"
         "`powershell \\-ExecutionPolicy Bypass \\-File \"$env:USERPROFILE\\\\drgr\\-bot\\\\start\\.ps1\"`\n\n"
-        "_Если папки `drgr\\-bot` нет — используй_ /vm _для полной установки с нуля_",
-        parse_mode="MarkdownV2",
+        "_Если папки `drgr\\-bot` нет — используй_ /vm _для полной установки с нуля_"
     )
+    try:
+        await message.answer(text_md, parse_mode="MarkdownV2")
+    except Exception:
+        await message.answer(
+            "⬇ Скачать и установить новые файлы\n\n"
+            "Открой PowerShell (Win+X → Windows PowerShell) и вставь:\n\n"
+            'Set-Location "$env:USERPROFILE\\drgr-bot"; git pull; .\\install.ps1\n\n'
+            "Эта команда:\n"
+            "1. Переходит в папку drgr-bot\n"
+            "2. Скачивает последние изменения с GitHub\n"
+            "3. Переустанавливает зависимости\n\n"
+            "После завершения запусти VM:\n"
+            'powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\\drgr-bot\\start.ps1"\n\n'
+            "Если папки drgr-bot нет — используй /vm для полной установки с нуля"
+        )
 
 
 # /vm command — show VM status, URL and PowerShell launch command
@@ -2260,8 +2301,19 @@ async def handle_text(message: Message) -> None:
     user_id = message.from_user.id if message.from_user else 0
     # Try VM chat/stream first (conversational AI with per-user history).
     # Falls back to full web research if VM is unreachable or returns nothing.
-    if not await chat_via_vm(user_id, query, message):
-        await research_and_reply(query, message)
+    try:
+        if not await chat_via_vm(user_id, query, message):
+            await research_and_reply(query, message)
+    except Exception as exc:
+        logger.error("handle_text error: %s", exc)
+        try:
+            await message.answer(
+                "⚠ Произошла ошибка при обработке запроса\\. "
+                "Убедитесь, что VM и Ollama запущены \\(см\\. /vm\\)\\.",
+                parse_mode="MarkdownV2",
+            )
+        except Exception:
+            pass
 
 
 # ===========================================================================

@@ -345,6 +345,14 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
         <span id="ps-install-cmd">irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/run.ps1" | iex</span>
         <span style="float:right;color:var(--text2);font-size:9px">📋</span>
       </div>
+      <div style="font-size:10px;color:var(--text2);margin-bottom:3px">⬇ Скачать и применить обновления:</div>
+      <div id="ps-update" style="background:var(--bg3);border-radius:4px;padding:6px 8px;font-size:10px;
+          font-family:monospace;color:#9cdcfe;cursor:pointer;word-break:break-all;margin-bottom:6px;
+          border:1px solid var(--border)"
+        onclick="copyPs('ps-update-cmd')" title="Нажмите для копирования">
+        <span id="ps-update-cmd">Set-Location "$env:USERPROFILE\drgr-bot"; git pull; .\install.ps1</span>
+        <span style="float:right;color:var(--text2);font-size:9px">📋</span>
+      </div>
       <div style="font-size:10px;color:var(--text2);margin-bottom:3px">Запустить VM:</div>
       <div id="ps-start" style="background:var(--bg3);border-radius:4px;padding:6px 8px;font-size:10px;
           font-family:monospace;color:#9cdcfe;cursor:pointer;word-break:break-all;
