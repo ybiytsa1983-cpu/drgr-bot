@@ -274,7 +274,7 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
 
 /* ── Mobile / narrow-screen responsive layout ── */
 @media (max-width: 768px) {
-  :root { --panel-w: 90vw }
+  :root { --panel-w: 95vw }
   html,body { overflow: auto }
   #app { height: auto; min-height: 100vh }
   #topbar { padding: 5px 8px; gap: 5px }
@@ -288,8 +288,15 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
            border-top: 1px solid var(--border); flex: none; min-height: 40vh }
   #pbar { position: sticky; bottom: 0; z-index: 10 }
   /* Chat pane on mobile */
-  #chat-pane { height: 100vh }
-  #chat-input-row { padding: 8px 10px }
+  #chat-pane { height: 100vh; height: 100dvh }
+  #chat-input-row { padding: 8px 10px; flex-wrap: wrap; gap: 6px }
+  #chat-input-wrap { flex: 1 1 100%; order: -1 }
+  #btn-chat-attach { order: 1 }
+  #btn-emoji { order: 2 }
+  #btn-chat-send { order: 3; flex: 1; min-width: 80px }
+  #btn-chat-clear { order: 4 }
+  #chat-tools { flex-wrap: wrap; gap: 4px }
+  .ct-btn { font-size: 11px; padding: 4px 7px }
   /* VM pane on mobile */
   #vm-pane { height: 100vh }
   /* Prompt bar buttons wrap properly */
@@ -299,12 +306,37 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
   #etb { overflow-x: auto; flex-wrap: nowrap }
   /* Side panel full-width */
   #panel { width: var(--panel-w) }
+  /* Output bar */
+  #outbar { max-height: 40vh; overflow-y: auto }
 }
 @media (max-width: 480px) {
   .tv-btn:not(.on) { display: none }
   #topbar-title { font-size: 12px }
   #etb .ei { padding: 3px 6px; font-size: 10px }
+  #gen-input { font-size: 13px }
+  #chat-messages .cm { font-size: 13px }
+  .vm-card h3 { font-size: 14px }
 }
+/* ── Emoji picker styles ── */
+#btn-emoji {
+  background: var(--bg4); border: 1px solid var(--border); color: var(--text2);
+  padding: 9px 10px; border-radius: 6px; cursor: pointer; font-size: 16px;
+}
+#btn-emoji:hover { background: var(--bg3); color: var(--text) }
+#emoji-picker {
+  display: none; position: absolute; bottom: 44px; right: 0;
+  background: var(--bg2); border: 1px solid var(--border); border-radius: 8px;
+  padding: 8px; z-index: 200; width: 260px; box-shadow: 0 4px 16px rgba(0,0,0,.4);
+}
+.emoji-picker-grid {
+  display: flex; flex-wrap: wrap; gap: 4px;
+  max-height: 180px; overflow-y: auto;
+}
+.emoji-grid-btn {
+  background: none; border: none; cursor: pointer;
+  font-size: 20px; padding: 4px; border-radius: 4px; line-height: 1;
+}
+.emoji-grid-btn:hover { background: var(--bg3) }
 </style>
 </head>
 <body>
@@ -610,6 +642,13 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
           rows="1"
           onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat()}"
           oninput="autoResize(this)"></textarea>
+      </div>
+      <div style="position:relative;display:inline-block">
+        <button id="btn-emoji" onclick="toggleEmojiPicker()" title="Вставить эмодзи">😊</button>
+        <div id="emoji-picker">
+          <div class="emoji-picker-grid">
+          </div>
+        </div>
       </div>
       <button id="btn-chat-send" onclick="sendChat()">➤ Отправить</button>
       <button id="btn-chat-clear" onclick="clearChat()" title="Очистить чат">🗑</button>
@@ -1212,6 +1251,8 @@ function detectLang(code) {
   if (/<html[\s>]/i.test(s) || /<!DOCTYPE\s/i.test(s)) return 'html';
   if (/<[a-z][a-z0-9]*[\s\/>][^>]*>[\s\S]{20,}<\/[a-z]/i.test(s)) return 'html';
   if (/^<\?xml\b/.test(s) || /^<[A-Za-z][A-Za-z0-9]*(\s[^>]*)?>[\s\S]{10,}<\/[A-Za-z]/.test(s)) return 'xml';
+  // Chrome extension manifest.json — detect by manifest_version key even with leading comments
+  if (/"manifest_version"\s*:\s*[23]/.test(s)) return 'json';
   // Data formats — JSON: objects with key:value OR plain arrays
   if (/^\s*\{[\s\S]*\}$/.test(s) && /"[\w$]+"\s*:/.test(s)) return 'json';
   if (/^\s*\[[\s\S]*\]$/.test(s) && /"[\w$]*"\s*[,:\]]/.test(s)) return 'json';
@@ -2710,6 +2751,56 @@ function clearChat() {
   chatClearAttachment();
   var msgs = document.getElementById('chat-messages');
   msgs.innerHTML = '<div class="cm cm-bot">💬 Чат очищен. Начните новый разговор.</div>';
+}
+
+// ── Emoji picker ─────────────────────────────────────────────────────────────
+var _EMOJI_LIST = [
+  '😀','😂','😍','🤔','😎','🥳','😅','😉','🤖','👋','👍','👎','👌','🙏',
+  '❤️','🔥','⭐','✅','❌','⚠️','💡','🔍','📎','📁','📊','🎉','🚀','💻',
+  '🛠️','⚙️','🔧','📝','🔑','🌐','📡','🤝','💬','📸','🎯','🏆','⚡','🧠',
+  '🐍','🟨','🦀','🐹','☕','📱','🖥️','💾','🗂️','📦','🔒','🔓','🌙','☀️',
+  '🌊','🌿','🦋','🎨','🎵','🎬','📚','✨','💎','🪄','🛡️','⚔️','🧪','🔬',
+  '😢','😡','🤯','😴','🤗','🥺','😇','😈','🤡','👻','💀','🎃','🌈','🦄',
+];
+var _emojiPickerBuilt = false;
+function toggleEmojiPicker() {
+  var picker = document.getElementById('emoji-picker');
+  if (!picker) return;
+  var isOpen = picker.style.display !== 'none';
+  if (isOpen) { picker.style.display = 'none'; return; }
+  if (!_emojiPickerBuilt) {
+    var grid = picker.querySelector('.emoji-picker-grid');
+    _EMOJI_LIST.forEach(function(e) {
+      var btn = document.createElement('button');
+      btn.textContent = e;
+      btn.title = e;
+      btn.className = 'emoji-grid-btn';
+      btn.addEventListener('click', function(){
+        var inp = document.getElementById('chat-input');
+        if (!inp) return;
+        var pos = inp.selectionStart || inp.value.length;
+        inp.value = inp.value.slice(0, pos) + e + inp.value.slice(pos);
+        inp.selectionStart = inp.selectionEnd = pos + e.length;
+        inp.focus();
+        picker.style.display = 'none';
+        autoResize(inp);
+      });
+      grid.appendChild(btn);
+    });
+    _emojiPickerBuilt = true;
+  }
+  picker.style.display = 'block';
+  // Close picker when clicking outside
+  setTimeout(function(){
+    function _closeOnOutside(ev) {
+      var btn = document.getElementById('btn-emoji');
+      if (!picker.contains(ev.target) && ev.target !== btn) {
+        picker.style.display = 'none';
+        document.removeEventListener('click', _closeOnOutside);
+      }
+    }
+    document.addEventListener('click', _closeOnOutside);
+  }, 10);
 }
 
 // ── Chat: file / image attach ─────────────────────────────────────────────

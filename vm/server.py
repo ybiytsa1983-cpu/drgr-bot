@@ -776,6 +776,22 @@ def _run_code(code: str, language: str) -> dict:
                 "success": False,
             }
 
+    # Guard: manifest.json content should not be executed as JavaScript
+    if language in ("javascript", "typescript") and re.search(r'"manifest_version"\s*:', code):
+        return {
+            "output": "",
+            "error": (
+                "⛔ Это файл manifest.json Chrome Extension — его нельзя запускать как JavaScript.\n"
+                "manifest.json — это конфигурационный JSON-файл для расширения браузера.\n\n"
+                "Что делать:\n"
+                "  1. Скачайте расширение как ZIP: нажмите '📦 ZIP' в менеджере проектов\n"
+                "  2. Установите через chrome://extensions/ → Режим разработчика → "
+                "Загрузить распакованное расширение\n"
+                "  3. Смените язык на JSON кнопкой ⟨/⟩ или выпадающим списком языка"
+            ),
+            "success": False,
+        }
+
     # Guard: browser/Chrome-extension APIs don't exist in Node.js
     if language in ("javascript", "typescript") and _is_browser_extension_code(code):
         return {
@@ -4667,37 +4683,60 @@ def _generate_chrome_extension_files(model: str, prompt: str, name: str) -> dict
     """
     sys_prompt = (
         "You are an expert Chrome Extension developer (Manifest V3).\n"
-        "Generate a complete, working Chrome Extension for the task below.\n"
+        "Generate a COMPLETE, FULLY FUNCTIONAL Chrome Extension for the task below.\n"
+        "\n"
+        "CRITICAL RULES — STRICTLY ENFORCE:\n"
+        "- NEVER write placeholder/demo text like 'В реальном расширении здесь будет...', "
+        "'This is a demo', '// TODO', '// your code here', 'placeholder content', etc.\n"
+        "- Every file must be 100% complete and working — no stubs, no ellipsis (...), "
+        "no incomplete blocks.\n"
+        "- sidepanel.js must contain REAL event listeners, REAL fetch/XMLHttpRequest calls, "
+        "REAL DOM manipulation — not commented-out code.\n"
+        "- background.js must register the side panel and handle chrome.action.onClicked.\n"
+        "- content.js must perform actual page interaction (read text, click elements, etc.) "
+        "relevant to the task.\n"
+        "- All Ollama API calls must use: fetch('http://localhost:11434/api/generate', "
+        "{method:'POST', body:JSON.stringify({model:'gemma3:4b', prompt: userMsg, stream:false})})\n"
+        "- Include real responsive CSS with dark theme directly in sidepanel.html <style> tag.\n"
+        "- Support mobile viewport: <meta name='viewport' content='width=device-width,"
+        "initial-scale=1.0'> and CSS media queries.\n"
+        "\n"
         "Output EXACTLY the following files, each in its own fenced code block "
         "preceded by a line that says exactly: === filename ===\n"
-        "Required files:\n"
+        "\n"
         "=== manifest.json ===\n"
         "```json\n"
-        "{ ... complete manifest ... }\n"
+        "{\n"
+        "  \"manifest_version\": 3,\n"
+        "  \"name\": \"ExtensionName\",\n"
+        "  \"version\": \"1.0\",\n"
+        "  \"description\": \"...\",\n"
+        "  \"permissions\": [\"sidePanel\", \"activeTab\", \"scripting\", \"tabs\", \"storage\"],\n"
+        "  \"host_permissions\": [\"<all_urls>\"],\n"
+        "  \"background\": {\"service_worker\": \"background.js\"},\n"
+        "  \"content_scripts\": [{\"matches\": [\"<all_urls>\"], \"js\": [\"content.js\"]}],\n"
+        "  \"side_panel\": {\"default_path\": \"sidepanel.html\"},\n"
+        "  \"action\": {\"default_title\": \"ExtensionName\"}\n"
+        "}\n"
         "```\n"
         "=== sidepanel.html ===\n"
         "```html\n"
-        "<!DOCTYPE html> ... complete side panel UI ...\n"
+        "<!DOCTYPE html>... COMPLETE HTML with embedded CSS and no script src references "
+        "(all inline or in sidepanel.js) ...\n"
         "```\n"
         "=== sidepanel.js ===\n"
         "```javascript\n"
-        "// complete side panel logic\n"
+        "// COMPLETE functional JavaScript — DOM ready handler, event listeners, "
+        "Ollama API calls, storage, tab communication\n"
         "```\n"
         "=== background.js ===\n"
         "```javascript\n"
-        "// service worker / background script\n"
+        "// COMPLETE service worker: chrome.sidePanel setup + chrome.action.onClicked listener\n"
         "```\n"
         "=== content.js ===\n"
         "```javascript\n"
-        "// content script injected into pages\n"
+        "// COMPLETE content script: page interaction logic, message listener for sidepanel\n"
         "```\n"
-        "Rules:\n"
-        "- Use Manifest Version 3 (manifest_version: 3).\n"
-        "- The side panel URL must be 'sidepanel.html'.\n"
-        "- All Ollama API calls go to http://localhost:11434.\n"
-        "- Use only standard Web APIs — no npm packages.\n"
-        "- Include responsive CSS directly in sidepanel.html <style> tag.\n"
-        "- Include a README.md with installation instructions.\n"
         f"\nTask: {prompt}"
     )
 
