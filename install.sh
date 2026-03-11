@@ -109,7 +109,18 @@ fi
 
 # ── 6. Make launchers executable ──────────────────────────────────────────────
 chmod +x "$SCRIPT_DIR/vm.sh" 2>/dev/null || true
+chmod +x "$SCRIPT_DIR/vm/bundle_monaco.sh" 2>/dev/null || true
 ok "Launchers are executable"
+
+# ── 6b. Bundle Monaco Editor for offline use ──────────────────────────────────
+BUNDLE_SCRIPT="$SCRIPT_DIR/vm/bundle_monaco.sh"
+if [ -f "$BUNDLE_SCRIPT" ]; then
+    info "Downloading Monaco Editor (offline code editor)..."
+    bash "$BUNDLE_SCRIPT" && ok "Monaco Editor downloaded — editor works without internet" || \
+        warn "Could not download Monaco — CDN will be used as fallback."
+else
+    warn "vm/bundle_monaco.sh not found — CDN will be used as fallback."
+fi
 
 # ── 7. Ollama instructions ─────────────────────────────────────────────────────
 echo ""

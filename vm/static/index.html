@@ -927,7 +927,7 @@ async function initMonaco() {
         + 'color:#7fc27f;font-size:11px;font-family:monospace;'
         + 'border-bottom:1px solid #2a3a2a;';
       notice.innerHTML = '⚠ Monaco offline — простой редактор активен. '
-        + 'Для полного Monaco: запусти <code>vm/bundle_monaco.ps1</code>';
+        + 'Для полного Monaco: Windows: <code>vm/bundle_monaco.ps1</code> | Linux/macOS: <code>bash vm/bundle_monaco.sh</code>';
       var ta = document.createElement('textarea');
       ta.id = 'editor-textarea';
       ta.spellcheck = false;
