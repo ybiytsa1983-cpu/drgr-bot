@@ -2903,7 +2903,7 @@ _DEFAULT_AUTO_SYSTEM_PROMPT = (
     "emulator -avd <имя_эмулятора>.\n"
     "Для iOS приложений — Swift/SwiftUI (```swift блок). "
     "IPA — это iOS App Archive. Для установки на устройство нужен Apple Developer аккаунт.\n"
-    "Для Telegram ботов, Discord ботов — Python (```python блок) с aiogram или python-telegram-bot.\n"
+    "Для Telegram ботов, Discord ботов — Python (```python блок) с aiogram 3.x или python-telegram-bot.\n"
     "КРИТИЧЕСКИ ВАЖНО для Python-кода:\n"
     "  - Используй ТОЛЬКО стандартную библиотеку Python (os, sys, json, math, random, datetime, "
     "re, pathlib, collections, itertools, functools, string, io, time, hashlib и т.д.).\n"
@@ -4710,15 +4710,18 @@ def _generate_chrome_extension_files(model: str, prompt: str, name: str) -> dict
     raw = resp.json().get("response", "")
 
     # Parse the response: look for === filename === markers followed by code blocks
+    # Pattern allows word chars, dots and hyphens — no slashes to prevent path traversal.
     file_re = re.compile(
-        r"===\s*([\w.\-/]+)\s*===\s*\n```\w*\n([\s\S]*?)```",
+        r"===\s*([\w.\-]+)\s*===\s*\n```\w*\n([\s\S]*?)```",
         re.MULTILINE,
     )
     files: dict[str, str] = {}
     for m in file_re.finditer(raw):
         fname = m.group(1).strip()
         content = m.group(2)
-        if fname and content.strip():
+        # Sanitize: reject any path traversal attempts
+        fname = os.path.basename(fname)
+        if fname and content.strip() and not fname.startswith("."):
             files[fname] = content
 
     # Fallback: if the model didn't follow the format, extract individual code blocks
@@ -4905,7 +4908,7 @@ def project_zip(project_id: str):
     import io
     import zipfile
 
-    if not re.match(r'^[a-z0-9_\-]+$', project_id):
+    if not re.match(r'^[a-z0-9_-]+$', project_id):
         return jsonify({"error": "Invalid project ID"}), 400
     project_dir = os.path.join(PROJECTS_DIR, project_id)
     if not os.path.isdir(project_dir):
@@ -4929,7 +4932,7 @@ def project_zip(project_id: str):
 def project_file(project_id: str, filename: str):
     """Serve a file from a saved project directory."""
     # Sanitise: only allow lowercase alphanumeric characters, underscores and hyphens
-    if not re.match(r'^[a-z0-9_\-]+$', project_id):
+    if not re.match(r'^[a-z0-9_-]+$', project_id):
         return jsonify({"error": "Invalid project ID. Only lowercase letters, digits, underscores and hyphens are allowed."}), 400
     project_dir = os.path.join(PROJECTS_DIR, project_id)
     if not os.path.isdir(project_dir):
@@ -4994,7 +4997,7 @@ def project_save():
 @app.route("/project/delete/<project_id>", methods=["DELETE"])
 def project_delete(project_id: str):
     """Delete a saved project directory."""
-    if not re.match(r'^[a-z0-9_\-]+$', project_id):
+    if not re.match(r'^[a-z0-9_-]+$', project_id):
         return jsonify({"error": "Invalid project ID"}), 400
     project_dir = os.path.join(PROJECTS_DIR, project_id)
     if not os.path.isdir(project_dir):
