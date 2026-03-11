@@ -714,12 +714,19 @@ function setView(v) {
 // ── Monaco loader ────────────────────────────────────────────────────────────
 async function initMonaco() {
   var container = document.getElementById('monaco-box');
-  // Check if local Monaco vendor exists (HEAD request, non-blocking)
+  // Check if local Monaco vendor bundle is COMPLETE (loader.js + language files).
+  // Checking only loader.js is insufficient — a partial bundle causes 404 errors
+  // for language files (html.js, htmlMode.js, codicon.ttf, etc.).
   var localOk = false;
   try {
     var hd = await fetch(MONACO_LOCAL + '/loader.js', { method: 'HEAD' });
-    localOk = hd.ok;
+    if (hd.ok) {
+      // Also verify at least one language file is present before using local path
+      var hd2 = await fetch(MONACO_LOCAL + '/basic-languages/html/html.js', { method: 'HEAD' });
+      localOk = hd2.ok;
+    }
   } catch(e) { localOk = false; }
+  // Always try CDN; use local only when confirmed complete, with CDN as fallback
   var bases = localOk ? [MONACO_LOCAL, MONACO_CDN] : [MONACO_CDN];
   var idx = 0;
   function tryNext() {
@@ -2420,6 +2427,8 @@ async function sendChat() {
     '  [SEARCH: запрос] — поиск в интернете',
     '  [BROWSE: https://url] — загрузить и описать веб-страницу',
     '  [DESCRIBE_VISOR] — описать содержимое ВИЗОРА (браузер/предпросмотр)',
+    '  [EXEC] — выполнить текущий код из редактора и показать результат',
+    'Используй [EXEC] когда пользователь просит запустить, выполнить или протестировать код.',
     'Отвечай на русском языке. Если нужны данные из интернета — используй [SEARCH:...].',
   ];
   // Attach current editor code as context
@@ -2667,6 +2676,58 @@ async function chatRunCode() {
   infoDiv.textContent = '🔧 Инструмент: Выполнить код (' + lang + ')...';
   msgs.appendChild(infoDiv);
   msgs.scrollTop = msgs.scrollHeight;
+
+  // ── Handle languages that are processed client-side (same as runCode()) ──
+  // Sending these to /execute causes "Unsupported language: X" errors
+  if (lang === 'html' || lang === 'markdown') {
+    var previewHtml = lang === 'html' ? code : renderMarkdownPreview(code);
+    showPreview(previewHtml);
+    var resultText = '▶ ' + lang.toUpperCase() + ' отображён в ВИЗОРЕ.';
+    infoDiv.className = 'cm cm-tool-result';
+    infoDiv.textContent = resultText;
+    window._pendingExecContext = resultText;
+    toast('✅ ' + lang.toUpperCase() + ' показан в ВИЗОРЕ');
+    msgs.scrollTop = msgs.scrollHeight;
+    return;
+  }
+  if (lang === 'json') {
+    try {
+      var parsed = JSON.parse(code);
+      var pretty = JSON.stringify(parsed, null, 2);
+      showPreview(wrapForVisor(pretty, 'json'));
+      var resultText = '▶ JSON:\n' + pretty.slice(0, 500) + (pretty.length > 500 ? '\n...' : '');
+      infoDiv.className = 'cm cm-tool-result';
+      infoDiv.textContent = resultText;
+      window._pendingExecContext = resultText;
+      toast('✅ JSON отформатирован и показан в ВИЗОРЕ');
+    } catch(e) {
+      var errText = '⚠ JSON ошибка: ' + e.message;
+      infoDiv.className = 'cm cm-err';
+      infoDiv.textContent = errText;
+      window._pendingExecContext = errText;
+    }
+    msgs.scrollTop = msgs.scrollHeight;
+    return;
+  }
+  if (lang === 'css' || lang === 'xml' || lang === 'sql' || lang === 'yaml' || lang === 'plaintext') {
+    showPreview(wrapForVisor(code, lang));
+    var resultText = '▶ ' + lang.toUpperCase() + ' показан в ВИЗОРЕ.';
+    infoDiv.className = 'cm cm-tool-result';
+    infoDiv.textContent = resultText;
+    window._pendingExecContext = resultText;
+    toast('✅ ' + lang.toUpperCase() + ' показан в ВИЗОРЕ');
+    msgs.scrollTop = msgs.scrollHeight;
+    return;
+  }
+  // ── For runnable languages (Python, JS, Shell, etc.) → send to /execute ──
+  if (!_RUNNABLE_LANGS[lang]) {
+    var resultText = '⚠ Язык ' + lang + ' не поддерживает выполнение.';
+    infoDiv.className = 'cm cm-tool-result';
+    infoDiv.textContent = resultText;
+    window._pendingExecContext = resultText;
+    msgs.scrollTop = msgs.scrollHeight;
+    return;
+  }
   try {
     var r = await fetch('/execute', {
       method: 'POST',
@@ -2710,6 +2771,11 @@ function chatSendCode() {
 // AI can emit: [SEARCH: query], [BROWSE: url], [EXEC], [DESCRIBE_VISOR]
 async function executeToolCalls(text, msgs) {
   var toolCalled = false;
+  // [EXEC] — execute current editor code
+  if (/\[EXEC\]/i.test(text)) {
+    toolCalled = true;
+    await chatRunCode();
+  }
   // [SEARCH: query]
   var searchRe = /\[SEARCH:\s*([^\]]+)\]/gi;
   var sm;

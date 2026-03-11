@@ -16,3 +16,5 @@ vm/projects/*
 !vm/projects/.gitkeep
 !vm/projects/.gitignore
 nohup.out
+# VM runtime state — updated by the server on every run
+vm/instructions.json

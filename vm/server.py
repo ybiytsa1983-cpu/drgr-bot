@@ -2640,6 +2640,14 @@ def generate_auto_stream():
                 stream=True,
                 timeout=int(os.environ.get("OLLAMA_TIMEOUT", 240)),
             )
+            if resp.status_code == 500:
+                err_body = ""
+                try:
+                    err_body = resp.json().get("error", resp.text[:200])
+                except Exception:
+                    err_body = resp.text[:200]
+                yield f"data: {json.dumps({'error': f'Ollama ошибка 500: {err_body}. Проверьте, что модель \"{model}\" загружена (ollama pull {model}).'}  )}\n\n"
+                return
             resp.raise_for_status()
             for raw_line in resp.iter_lines():
                 if not raw_line:
@@ -2714,6 +2722,14 @@ def chat_stream():
                 stream=True,
                 timeout=int(os.environ.get("OLLAMA_TIMEOUT", 240)),
             )
+            if resp.status_code == 500:
+                err_body = ""
+                try:
+                    err_body = resp.json().get("error", resp.text[:200])
+                except Exception:
+                    err_body = resp.text[:200]
+                yield f"data: {json.dumps({'error': f'Ollama вернул ошибку 500: {err_body}. Проверьте, что модель \"{model}\" загружена (ollama pull {model}).'}  )}\n\n"
+                return
             resp.raise_for_status()
             for raw_line in resp.iter_lines():
                 if not raw_line:
