@@ -1670,28 +1670,29 @@ function browseUrl() {
   if (!url) { toast('Введите URL'); return; }
   if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
   document.getElementById('vurl-input').value = url;
+  var ph  = document.getElementById('preview-placeholder');
+  var frm = document.getElementById('preview-frame');
+  ph.style.display  = 'none';
+  frm.style.display = 'block';
+  frm.srcdoc = '';
   // Local URLs (localhost, 127.0.0.1, ::1, 0.0.0.0) load directly in iframe.
-  // All other external URLs are routed through the server screenshot endpoint because
-  // the vast majority of real websites send X-Frame-Options / CSP headers
-  // that block direct iframe embedding and produce a blank white page.
+  // External URLs are routed through /browse/proxy which fetches the page
+  // server-side, rewrites links, and strips X-Frame-Options / CSP so pages
+  // render fully in the ВИЗОР iframe without blank-page issues.
   var isLocal = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0)(:\d+)?/i.test(url);
-  if (isLocal) {
-    var ph  = document.getElementById('preview-placeholder');
-    var frm = document.getElementById('preview-frame');
-    ph.style.display  = 'none';
-    frm.style.display = 'block';
-    frm.src = url;
-    frm.srcdoc = '';
-    var vpane = document.getElementById('vpane');
-    if (window.getComputedStyle(vpane).display === 'none') setView('both');
-  } else {
-    // For external sites use server-side Playwright screenshot so the
-    // page is always visible regardless of X-Frame-Options restrictions.
-    screenshotAndAnalyze();
-  }
+  frm.src = isLocal ? url : ('/browse/proxy?url=' + encodeURIComponent(url));
+  var vpane = document.getElementById('vpane');
+  if (window.getComputedStyle(vpane).display === 'none') setView('both');
 }
 
 // ── ВИЗОР screenshot + AI analysis ───────────────────────────────────────────
+
+function loadProxyInVisor(evt, url) {
+  // Called from search-result links — load the URL through the proxy inside ВИЗОР
+  if (evt) evt.preventDefault();
+  document.getElementById('vurl-input').value = url;
+  browseUrl();
+}
 var vaiBusy = false;
 
 async function screenshotAndAnalyze() {
@@ -1957,8 +1958,11 @@ async function doWebSearch() {
       + 'h2{color:#61dafb;margin-bottom:16px}</style></head>'
       + '<body><h2>🔍 ' + esc(query) + '</h2>';
     d.results.forEach(function(res) {
-      html += '<div class="r"><div class="t"><a href="' + res.url
-        + '" target="_blank" rel="noopener">' + esc(res.title) + '</a></div>'
+      var proxyUrl = '/browse/proxy?url=' + encodeURIComponent(res.url);
+      html += '<div class="r">'
+        + '<div class="t"><a href="' + proxyUrl + '" data-url="' + esc(res.url)
+        + '" onclick="parent.loadProxyInVisor(event,this.dataset.url)">'
+        + esc(res.title) + '</a></div>'
         + '<div class="u">' + esc(res.url) + '</div>'
         + (res.snippet ? '<div class="s">' + esc(res.snippet) + '</div>' : '')
         + '</div>';

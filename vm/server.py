@@ -5945,6 +5945,162 @@ def browse_page():
         return jsonify({"error": str(exc), "success": False}), 500
 
 
+@app.route("/browse/proxy", methods=["GET"])
+def browse_proxy():
+    """Proxy web pages for interactive browsing inside the ВИЗОР iframe.
+
+    Fetches the target URL server-side, rewrites all anchor/form URLs to route
+    back through this proxy, and returns the page HTML without X-Frame-Options
+    or Content-Security-Policy restrictions so modern sites render in the iframe.
+
+    Query string: ?url=https://example.com
+    Returns: text/html (the proxied, URL-rewritten page)
+    """
+    raw_url = request.args.get("url", "").strip()
+    if not raw_url:
+        return "<html><body style='font-family:sans-serif;color:#fff;background:#1a1a1a;padding:20px'><h3>⚠ Не указан URL</h3><p>Передайте параметр ?url=https://example.com</p></body></html>", 400
+    if not raw_url.startswith(("http://", "https://")):
+        raw_url = "https://" + raw_url
+
+    # ── SSRF guard — block internal/private addresses ─────────────────────────
+    safe_url = ""
+    try:
+        import ipaddress as _ipa_prx
+        parsed = urllib.parse.urlparse(raw_url)
+        hostname = parsed.hostname or ""
+        _BLOCKED = {"localhost", "0.0.0.0", "::1", "ip6-localhost", "ip6-loopback"}
+        if hostname in _BLOCKED:
+            return "<html><body style='font-family:sans-serif;color:#fff;background:#1a1a1a;padding:20px'><h3>⛔ Запрещено</h3><p>Запросы на внутренние адреса не разрешены.</p></body></html>", 403
+        try:
+            addr = _ipa_prx.ip_address(hostname)
+            if addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_reserved:
+                return "<html><body style='font-family:sans-serif;color:#fff;background:#1a1a1a;padding:20px'><h3>⛔ Запрещено</h3><p>Запросы на приватные/зарезервированные IP не разрешены.</p></body></html>", 403
+        except ValueError:
+            pass
+        safe_url = urllib.parse.urlunparse((parsed.scheme, parsed.netloc, parsed.path, "", parsed.query, ""))
+    except Exception as ssrf_exc:
+        return f"<html><body><p>URL error: {ssrf_exc}</p></body></html>", 400
+    if not safe_url:
+        return "<html><body><p>Could not construct safe URL</p></body></html>", 400
+
+    try:
+        hdrs = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/120.0 Safari/537.36"
+            ),
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "ru,en;q=0.9",
+        }
+        r = _http.get(safe_url, headers=hdrs, timeout=15, allow_redirects=True, stream=True)
+
+        # After redirects the final URL is used as the base for relative links
+        base_url = r.url or safe_url
+        content_type = r.headers.get("Content-Type", "text/html")
+
+        # Non-HTML resources (images, fonts, CSS, JS, etc.) — pass through transparently
+        if "text/html" not in content_type:
+            content = r.content
+            resp_headers = {"Content-Type": content_type}
+            # Strip framing-restriction headers for everything that flows through us
+            return content, r.status_code, resp_headers
+
+        # Read HTML (cap at 500 KB to stay responsive)
+        _MAX_HTML_PRX = 500_000
+        chunks = []
+        total = 0
+        for chunk in r.iter_content(chunk_size=8192, decode_unicode=True):
+            if isinstance(chunk, bytes):
+                chunk = chunk.decode("utf-8", errors="replace")
+            chunks.append(chunk)
+            total += len(chunk)
+            if total >= _MAX_HTML_PRX:
+                break
+        html = "".join(chunks)
+
+        # ── Rewrite links so all navigation stays inside the proxy ─────────────
+        def _proxy_href(href: str) -> str:
+            """Return a /browse/proxy?url=... link for the given href."""
+            if not href or href.startswith(("#", "javascript:", "mailto:", "tel:", "data:")):
+                return href
+            try:
+                abs_url = urllib.parse.urljoin(base_url, href)
+                parts = urllib.parse.urlparse(abs_url)
+                if parts.scheme not in ("http", "https"):
+                    return href
+                return "/browse/proxy?url=" + urllib.parse.quote(abs_url, safe="")
+            except Exception:
+                return href
+
+        def _rewrite_href(m: "re.Match") -> str:
+            q, val = m.group(1), m.group(2)
+            return f'href={q}{_proxy_href(val)}{q}'
+
+        def _rewrite_action(m: "re.Match") -> str:
+            q, val = m.group(1), m.group(2)
+            return f'action={q}{_proxy_href(val)}{q}'
+
+        def _resolve_src(m: "re.Match") -> str:
+            attr, q, val = m.group(1), m.group(2), m.group(3)
+            if val.startswith(("data:", "http://", "https://", "//")):
+                return m.group(0)
+            try:
+                abs_url = urllib.parse.urljoin(base_url, val)
+                return f'{attr}={q}{abs_url}{q}'
+            except Exception:
+                return m.group(0)
+
+        # Rewrite <a href> and <form action> to go through proxy
+        html = re.sub(
+            r'''href\s*=\s*(["'])((?!#|javascript:|mailto:|tel:|data:)[^"']+)\1''',
+            _rewrite_href,
+            html,
+            flags=re.IGNORECASE,
+        )
+        html = re.sub(
+            r'''action\s*=\s*(["'])([^"']+)\1''',
+            _rewrite_action,
+            html,
+            flags=re.IGNORECASE,
+        )
+        # Resolve relative src= (images, scripts, iframes) to absolute URLs
+        html = re.sub(
+            r'''(src)\s*=\s*(["'])([^"']+)\2''',
+            _resolve_src,
+            html,
+            flags=re.IGNORECASE,
+        )
+
+        # Inject <base> + tiny script that updates the VM URL bar on the parent
+        js_url = json.dumps(base_url)  # properly escapes all JS-special chars incl. \n, \r, U+2028
+        inject = (
+            f'<base href="{base_url}">'
+            f"<script>"
+            f"try{{window.top.document.getElementById('vurl-input').value={js_url}}}catch(e){{}}"
+            f"</script>"
+        )
+        # Insert right after <head> (or prepend if no head tag)
+        html_patched = re.sub(r"(<head[^>]*>)", r"\1\n" + inject, html, count=1, flags=re.IGNORECASE)
+        if html_patched == html:
+            html_patched = inject + html
+
+        return html_patched, 200, {"Content-Type": "text/html; charset=utf-8"}
+
+    except Exception as exc:  # pylint: disable=broad-except
+        _log.warning("browse_proxy error for %s: %s", safe_url, exc)
+        return (
+            f"<html><body style='font-family:sans-serif;color:#fff;background:#1a1a1a;padding:20px'>"
+            f"<h3>⚠ Ошибка загрузки страницы</h3>"
+            f"<p>{safe_url}</p><pre style='color:#f88'>{exc}</pre>"
+            f"<p><a href='/browse/proxy?url={urllib.parse.quote(safe_url, safe='')}' "
+            f"style='color:#4af'>Повторить</a></p>"
+            f"</body></html>",
+            500,
+            {"Content-Type": "text/html; charset=utf-8"},
+        )
+
+
 @app.route("/search", methods=["POST"])
 def web_search():
     """Search the web using the ddgs library (primary) or DuckDuckGo Lite HTML (fallback).
