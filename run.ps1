@@ -1,6 +1,6 @@
 # Code VM -- скрипт скачивания и запуска (однострочник).
 # Использование (из любого окна PowerShell — репозиторий не нужен):
-#   irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/run.ps1" | iex
+#   irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/copilot/create-monaco-code-generator/run.ps1" | iex
 #
 # Что делает скрипт:
 #   1. Проверяет, установлен ли Git.
