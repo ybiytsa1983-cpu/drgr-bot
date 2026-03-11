@@ -873,9 +873,18 @@ var VISOR_MODEL_NAME = 'drgr-visor';
     }
     // Drop inside #epane — dropEffect stays 'copy'; editorDrop() handles it
   }
+  // When a file drag leaves the browser window entirely (relatedTarget === null),
+  // make sure the #epane drag-over indicator is removed.
+  function _cleanDragLeave(e) {
+    if (e.relatedTarget === null) {
+      var epane = document.getElementById('epane');
+      if (epane) epane.classList.remove('drag-over');
+    }
+  }
   // Capture phase (true) ensures we fire before Monaco's internal handlers
-  document.addEventListener('dragover', _preventFileDrop, true);
-  document.addEventListener('drop',     _preventFileDrop, true);
+  document.addEventListener('dragover',  _preventFileDrop, true);
+  document.addEventListener('drop',      _preventFileDrop, true);
+  document.addEventListener('dragleave', _cleanDragLeave,  true);
 })();
 
 // ── View switching ───────────────────────────────────────────────────────────
@@ -1866,9 +1875,14 @@ function editorDragOver(e) {
 
 function editorDragLeave(e) {
   if (!_dragHasFiles(e)) return;
+  // Ignore false-leave events that fire when the cursor moves between Monaco's
+  // internal child elements — relatedTarget is still inside #epane in that case.
+  var epane = document.getElementById('epane');
+  if (!epane) return;
+  if (e.relatedTarget && epane.contains(e.relatedTarget)) return;
   e.preventDefault();
   e.stopPropagation();
-  document.getElementById('epane').classList.remove('drag-over');
+  epane.classList.remove('drag-over');
 }
 
 async function editorDrop(e) {
