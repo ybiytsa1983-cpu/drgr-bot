@@ -5776,7 +5776,7 @@ def browse_page():
 
 @app.route("/search", methods=["POST"])
 def web_search():
-    """Search the web using DuckDuckGo Lite and return top results.
+    """Search the web using the ddgs library (primary) or DuckDuckGo Lite HTML (fallback).
 
     Body: {"query": "search terms", "max_results": 5}
     Returns: {results: [{title, url, snippet},...], query, success}
@@ -5789,61 +5789,104 @@ def web_search():
         return jsonify({"error": "Provide query", "success": False}), 400
 
     results = []
+    last_error = ""
+
+    # ── Primary: try ddgs / duckduckgo_search library ─────────────────────────
+    _DDGS = None
     try:
-        import urllib.parse as _up
-        search_url = "https://lite.duckduckgo.com/lite/"
-        params = {"q": query, "kl": "ru-ru"}
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                          "AppleWebKit/537.36 (KHTML, like Gecko) "
-                          "Chrome/120.0 Safari/537.36",
-            "Accept-Language": "ru,en;q=0.9",
-        }
-        r = _http.post(search_url, data=params, headers=headers, timeout=10)
-        r.raise_for_status()
+        try:
+            from ddgs import DDGS as _D
+        except ImportError:
+            from duckduckgo_search import DDGS as _D  # type: ignore[no-redef]
+        _DDGS = _D
+    except ImportError:
+        pass
 
-        # Parse DuckDuckGo Lite HTML results
-        html_text = r.text
-        # Extract result links and snippets with simple regex (no BeautifulSoup needed)
-        link_pattern = re.compile(
-            r'<a[^>]+class="result-link"[^>]*href="([^"]+)"[^>]*>([^<]+)</a>',
-            re.IGNORECASE | re.DOTALL,
-        )
-        snip_pattern = re.compile(
-            r'<td[^>]+class="result-snippet"[^>]*>(.*?)</td>',
-            re.IGNORECASE | re.DOTALL,
-        )
-        links = link_pattern.findall(html_text)
-        snippets = [re.sub(r'<[^>]+>', '', s).strip()
-                    for s in snip_pattern.findall(html_text)]
+    if _DDGS is not None:
+        try:
+            def _ddgs_search() -> list:
+                try:
+                    with _DDGS() as ddgs_inst:
+                        return list(ddgs_inst.text(query, max_results=max_results))
+                except TypeError:
+                    return list(_DDGS().text(query, max_results=max_results))
 
-        for i, (href, title) in enumerate(links[:max_results]):
-            snippet = snippets[i] if i < len(snippets) else ""
-            # Decode DuckDuckGo redirect URLs if present
-            if href.startswith("//duckduckgo.com/l/?"):
-                match = re.search(r'uddg=([^&]+)', href)
-                if match:
-                    href = _up.unquote(match.group(1))
-            elif href.startswith("/"):
-                href = "https://duckduckgo.com" + href
-            results.append({
-                "title": title.strip(),
-                "url": href,
-                "snippet": snippet[:300],
-            })
+            raw = _ddgs_search()
+            for r in raw:
+                results.append({
+                    "title":   r.get("title", ""),
+                    "url":     r.get("href", "") or r.get("url", ""),
+                    "snippet": r.get("body", "") or r.get("snippet", ""),
+                })
+        except (OSError, RuntimeError, ValueError, ImportError) as exc:
+            last_error = str(exc)
+            _log.warning("web_search ddgs: %s", exc)
+        except Exception as exc:  # pylint: disable=broad-except  # ddgs may raise library-specific errors
+            last_error = str(exc)
+            _log.warning("web_search ddgs (unexpected): %s", exc)
 
-        # If regex extraction yielded nothing, try a broader approach
-        if not results:
-            # Look for <a href="http..."> patterns in results table
-            broad = re.findall(
-                r'<a[^>]+href="(https?://[^"]+)"[^>]*>([^<]{5,120})</a>',
-                html_text)
-            for href, title in broad[:max_results]:
-                if "duckduckgo.com" not in href:
-                    results.append({"title": title.strip(), "url": href, "snippet": ""})
+    # ── Fallback: scrape DuckDuckGo Lite HTML ─────────────────────────────────
+    if not results:
+        try:
+            import urllib.parse as _up
+            search_url = "https://lite.duckduckgo.com/lite/"
+            params = {"q": query, "kl": "ru-ru"}
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                              "AppleWebKit/537.36 (KHTML, like Gecko) "
+                              "Chrome/120.0 Safari/537.36",
+                "Accept-Language": "ru,en;q=0.9",
+            }
+            r = _http.post(search_url, data=params, headers=headers, timeout=10)
+            r.raise_for_status()
 
-    except Exception as exc:  # pylint: disable=broad-except
-        return jsonify({"error": str(exc), "success": False}), 500
+            html_text = r.text
+            # Primary pattern for DuckDuckGo Lite results
+            link_pattern = re.compile(
+                r'<a[^>]+class="result-link"[^>]*href="([^"]+)"[^>]*>([^<]+)</a>',
+                re.IGNORECASE | re.DOTALL,
+            )
+            snip_pattern = re.compile(
+                r'<td[^>]+class="result-snippet"[^>]*>(.*?)</td>',
+                re.IGNORECASE | re.DOTALL,
+            )
+            links = link_pattern.findall(html_text)
+            snippets = [re.sub(r'<[^>]+>', '', s).strip()
+                        for s in snip_pattern.findall(html_text)]
+
+            for i, (href, title) in enumerate(links[:max_results]):
+                snippet = snippets[i] if i < len(snippets) else ""
+                # Decode DuckDuckGo redirect URLs if present
+                if "duckduckgo.com/l/?" in href:
+                    match = re.search(r'uddg=([^&]+)', href)
+                    if match:
+                        href = _up.unquote(match.group(1))
+                elif href.startswith("/"):
+                    href = "https://duckduckgo.com" + href
+                results.append({
+                    "title":   title.strip(),
+                    "url":     href,
+                    "snippet": snippet[:300],
+                })
+
+            # Broader fallback if primary regex matched nothing
+            if not results:
+                broad = re.findall(
+                    r'<a[^>]+href="(https?://[^"]+)"[^>]*>([^<]{5,120})</a>',
+                    html_text)
+                for href, title in broad[:max_results]:
+                    if "duckduckgo.com" not in href:
+                        results.append({"title": title.strip(), "url": href, "snippet": ""})
+
+        except (_http.exceptions.RequestException, OSError, ValueError) as exc:
+            last_error = str(exc)
+            _log.warning("web_search html-scrape: %s", exc)
+        except Exception as exc:  # pylint: disable=broad-except  # defensive catch for regex/decode errors
+            last_error = str(exc)
+            _log.warning("web_search html-scrape (unexpected): %s", exc)
+
+    if not results and last_error:
+        return jsonify({"error": last_error, "success": False}), 500
 
     _record_agent_action({
         "timestamp": _now(),

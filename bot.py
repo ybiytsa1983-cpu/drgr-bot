@@ -35,7 +35,11 @@ except ImportError:
     PLAYWRIGHT_AVAILABLE = False
 
 try:
-    from duckduckgo_search import DDGS
+    # Try the new package name first, fall back to the old compatibility shim
+    try:
+        from ddgs import DDGS
+    except ImportError:
+        from duckduckgo_search import DDGS  # type: ignore[no-redef]
     DDG_AVAILABLE = True
 except ImportError:
     DDG_AVAILABLE = False
@@ -486,11 +490,21 @@ async def search_duckduckgo(query: str, max_results: int = 5) -> List[Dict[str, 
     if DDG_AVAILABLE:
         try:
             def _sync() -> List[Dict[str, str]]:
-                with DDGS() as ddgs:
-                    return [
-                        {"title": r.get("title",""), "href": r.get("href",""), "body": r.get("body","")}
-                        for r in ddgs.text(query, max_results=max_results)
-                    ]
+                # Support both old (context-manager) and new (direct call) API styles
+                try:
+                    with DDGS() as ddgs_inst:
+                        raw = ddgs_inst.text(query, max_results=max_results)
+                except TypeError:
+                    # Newer ddgs may not support context-manager style
+                    raw = DDGS().text(query, max_results=max_results)
+                return [
+                    {
+                        "title": r.get("title", ""),
+                        "href":  r.get("href", "") or r.get("url", ""),
+                        "body":  r.get("body", "") or r.get("snippet", ""),
+                    }
+                    for r in (raw or [])
+                ]
             results = await asyncio.to_thread(_sync)
             if results:
                 await action_logger.log_search(f"ddg:{query}", results, int((time.monotonic()-t0)*1000))
@@ -504,13 +518,18 @@ async def search_duckduckgo(query: str, max_results: int = 5) -> List[Dict[str, 
             async with session.post(
                 f"{VM_BASE}/search",
                 json={"query": query, "max_results": max_results},
-                timeout=aiohttp.ClientTimeout(total=15),
+                # 20s: server-side search may need to try ddgs + HTML scraping in sequence
+                timeout=aiohttp.ClientTimeout(total=20),
             ) as resp:
                 if resp.status == 200:
                     data = await resp.json()
                     if data.get("success") and data.get("results"):
                         results = [
-                            {"title": r.get("title",""), "href": r.get("url",""), "body": r.get("snippet","")}
+                            {
+                                "title": r.get("title", ""),
+                                "href":  r.get("url", "") or r.get("href", ""),
+                                "body":  r.get("snippet", "") or r.get("body", ""),
+                            }
                             for r in data["results"]
                         ]
                         await action_logger.log_search(f"vm:{query}", results, int((time.monotonic()-t0)*1000))
