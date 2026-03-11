@@ -480,24 +480,45 @@ async def describe_image_ollama(image_path: str, model: Optional[str] = None) ->
 # ===========================================================================
 
 async def search_duckduckgo(query: str, max_results: int = 5) -> List[Dict[str, str]]:
-    """Search DuckDuckGo; log action to VM."""
-    if not DDG_AVAILABLE:
-        return []
+    """Search DuckDuckGo via library or fall back to VM /search endpoint."""
     t0 = time.monotonic()
+    # Try library first
+    if DDG_AVAILABLE:
+        try:
+            def _sync() -> List[Dict[str, str]]:
+                with DDGS() as ddgs:
+                    return [
+                        {"title": r.get("title",""), "href": r.get("href",""), "body": r.get("body","")}
+                        for r in ddgs.text(query, max_results=max_results)
+                    ]
+            results = await asyncio.to_thread(_sync)
+            if results:
+                await action_logger.log_search(f"ddg:{query}", results, int((time.monotonic()-t0)*1000))
+                return results
+        except Exception as exc:
+            logger.warning("DuckDuckGo library: %s", exc)
+
+    # Fall back to VM /search endpoint (works without duckduckgo-search library)
     try:
-        def _sync() -> List[Dict[str, str]]:
-            with DDGS() as ddgs:
-                return [
-                    {"title": r.get("title",""), "href": r.get("href",""), "body": r.get("body","")}
-                    for r in ddgs.text(query, max_results=max_results)
-                ]
-        results = await asyncio.to_thread(_sync)
-        await action_logger.log_search(f"ddg:{query}", results, int((time.monotonic()-t0)*1000))
-        return results
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{VM_BASE}/search",
+                json={"query": query, "max_results": max_results},
+                timeout=aiohttp.ClientTimeout(total=15),
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    if data.get("success") and data.get("results"):
+                        results = [
+                            {"title": r.get("title",""), "href": r.get("url",""), "body": r.get("snippet","")}
+                            for r in data["results"]
+                        ]
+                        await action_logger.log_search(f"vm:{query}", results, int((time.monotonic()-t0)*1000))
+                        return results
     except Exception as exc:
-        logger.warning("DuckDuckGo: %s", exc)
+        logger.warning("VM /search fallback: %s", exc)
         await action_logger.log("search", {"query": f"ddg:{query}"}, {"error": str(exc)}, False)
-        return []
+    return []
 
 
 async def search_wikipedia(query: str) -> Dict[str, str]:
@@ -528,55 +549,92 @@ async def search_wikipedia(query: str) -> Dict[str, str]:
 # ===========================================================================
 
 async def take_screenshot(url: str, output_path: str) -> bool:
-    """Capture a 1280x800 viewport screenshot; log action to VM."""
-    if not PLAYWRIGHT_AVAILABLE:
-        return False
+    """Capture a screenshot via local Playwright or VM /browse/screenshot endpoint."""
     t0 = time.monotonic()
     success = False
-    try:
-        async with async_playwright() as pw:
-            browser = await pw.chromium.launch(headless=True)
-            page = await browser.new_page(viewport={"width": 1280, "height": 800})
-            try:
-                await page.goto(url, wait_until="domcontentloaded", timeout=15_000)
-                await page.wait_for_timeout(800)
-                await page.screenshot(path=output_path, full_page=False)
-                success = True
-            except PlaywrightTimeout:
-                logger.warning("Screenshot timeout: %s", url)
-            finally:
-                await browser.close()
-    except Exception as exc:
-        logger.error("take_screenshot(%s): %s", url, exc)
+    # Try local Playwright first
+    if PLAYWRIGHT_AVAILABLE:
+        try:
+            async with async_playwright() as pw:
+                browser = await pw.chromium.launch(headless=True)
+                page = await browser.new_page(viewport={"width": 1280, "height": 800})
+                try:
+                    await page.goto(url, wait_until="domcontentloaded", timeout=15_000)
+                    await page.wait_for_timeout(800)
+                    await page.screenshot(path=output_path, full_page=False)
+                    success = True
+                except PlaywrightTimeout:
+                    logger.warning("Screenshot timeout: %s", url)
+                finally:
+                    await browser.close()
+        except Exception as exc:
+            logger.warning("take_screenshot local (%s): %s — trying VM", url, exc)
+
+    # Fall back to VM /browse/screenshot endpoint
+    if not success:
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{VM_BASE}/browse/screenshot",
+                    json={"url": url},
+                    timeout=aiohttp.ClientTimeout(total=30),
+                ) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        img_b64 = data.get("screenshot_base64") or data.get("screenshot") or data.get("image") or ""
+                        if img_b64:
+                            img_bytes = base64.b64decode(img_b64)
+                            with open(output_path, "wb") as fh:
+                                fh.write(img_bytes)
+                            success = True
+        except Exception as exc:
+            logger.warning("take_screenshot VM (%s): %s", url, exc)
+
     dur = int((time.monotonic() - t0) * 1000)
     await action_logger.log_screenshot(url, output_path, success, dur)
     return success
 
 
 async def extract_page_text(url: str, max_chars: int = 3000) -> str:
-    """Extract visible text from a page using Playwright."""
-    if not PLAYWRIGHT_AVAILABLE:
-        return ""
+    """Extract visible text from a page via local Playwright or VM /browse/page."""
+    # Try local Playwright first
+    if PLAYWRIGHT_AVAILABLE:
+        try:
+            async with async_playwright() as pw:
+                browser = await pw.chromium.launch(headless=True)
+                page = await browser.new_page()
+                try:
+                    await page.goto(url, wait_until="domcontentloaded", timeout=15_000)
+                    text: str = await page.evaluate(
+                        "() => {"
+                        "document.querySelectorAll('script,style,nav,footer,header,aside').forEach(e=>e.remove());"
+                        "return (document.body||{}).innerText||'';"
+                        "}"
+                    )
+                    if text:
+                        return text[:max_chars]
+                except Exception:
+                    pass
+                finally:
+                    await browser.close()
+        except Exception as exc:
+            logger.warning("extract_page_text local (%s): %s — trying VM", url, exc)
+
+    # Fall back to VM /browse/page endpoint
     try:
-        async with async_playwright() as pw:
-            browser = await pw.chromium.launch(headless=True)
-            page = await browser.new_page()
-            try:
-                await page.goto(url, wait_until="domcontentloaded", timeout=15_000)
-                text: str = await page.evaluate(
-                    "() => {"
-                    "document.querySelectorAll('script,style,nav,footer,header,aside').forEach(e=>e.remove());"
-                    "return (document.body||{}).innerText||'';"
-                    "}"
-                )
-                return text[:max_chars]
-            except Exception:
-                return ""
-            finally:
-                await browser.close()
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{VM_BASE}/browse/page",
+                json={"url": url, "max_chars": max_chars},
+                timeout=aiohttp.ClientTimeout(total=20),
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    if data.get("success"):
+                        return data.get("text", "")
     except Exception as exc:
-        logger.error("extract_page_text(%s): %s", url, exc)
-        return ""
+        logger.error("extract_page_text VM (%s): %s", url, exc)
+    return ""
 
 
 # ===========================================================================
@@ -689,13 +747,8 @@ async def research_and_reply(query: str, message: Message) -> None:
     all_sources.extend(ddg_results)
 
     if not all_sources:
-        no_ddg_note = (
-            "\n⚠️ Библиотека поиска \\(duckduckgo\\-search\\) не установлена\\. "
-            "Выполните: `pip install duckduckgo-search`"
-        ) if not DDG_AVAILABLE else ""
         await status.edit_text(
-            "\u274c Ничего не найдено по запросу\\. Попробуйте другой запрос\\."
-            + no_ddg_note,
+            "❌ Ничего не найдено по запросу\\. Попробуйте другой запрос\\.",
             parse_mode="MarkdownV2",
         )
         await action_logger.log(
@@ -1054,13 +1107,7 @@ async def cmd_screenshot(message: Message) -> None:
     url = parts[1].strip()
     if not url.startswith("http"):
         url = "https://" + url
-    if not PLAYWRIGHT_AVAILABLE:
-        await message.answer(
-            "\u26a0\ufe0f Playwright не установлен\\. Запустите `playwright install chromium`\\.",
-            parse_mode="MarkdownV2",
-        )
-        return
-    status = await message.answer("\U0001f4f8 Делаю скриншот\u2026")
+    status = await message.answer("📸 Делаю скриншот…")
     out = str(SCREENSHOTS_DIR / f"manual_{int(time.time())}.png")
     ok  = await take_screenshot(url, out)
     await status.delete()
@@ -1167,7 +1214,7 @@ async def cmd_browse(message: Message) -> None:
     # No screenshot — text fallback
     text_fb = data.get("text_fallback", False)
     fallback_desc = description or data.get("error", "Нет данных")
-    prefix = "⚠ Скриншот недоступен (установите Playwright: `playwright install chromium`).\n\n" if text_fb else "\u274c "
+    prefix = "⚠ Скриншот недоступен.\n\n" if text_fb else "❌ "
     await message.answer(prefix + fallback_desc[:3000])
 
 

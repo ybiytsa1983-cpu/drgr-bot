@@ -151,6 +151,19 @@ if (Test-Path $reqFile) {
     Ok "requirements.txt обработан"
 }
 
+# -- 5b. Install Playwright Chromium browser (needed for screenshots & agent) --
+Info "Установка браузера Chromium для Playwright (скриншоты и автономный агент)..."
+try {
+    & $venvPython -m playwright install chromium 2>&1 | Out-Null
+    if ($LASTEXITCODE -eq 0) {
+        Ok "Playwright Chromium установлен (скриншоты и авто-агент работают)"
+    } else {
+        Warn "Playwright Chromium не установлен — скриншоты будут недоступны"
+    }
+} catch {
+    Warn "Playwright Chromium не установлен — скриншоты будут недоступны"
+}
+
 # -- 4. Bundle Monaco Editor locally ------------------------------------------
 Write-Host ""
 Write-Host "  =============================================" -ForegroundColor White
