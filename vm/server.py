@@ -575,7 +575,8 @@ def _sanitize_exec_output(text: str, tmp_path: str) -> str:
 
     This makes error tracebacks user-friendly by hiding internal temp file
     names like /tmp/tmpXXX.py or C:\\Users\\...\\AppData\\Local\\Temp\\tmpXXX.py.
-    Both the original path and the forward-slash normalised version are replaced.
+    The full path, its forward-slash normalised variant, and the bare basename
+    are all replaced so no internal path leaks through in any error format.
     """
     if not tmp_path or not text:
         return text
@@ -586,6 +587,12 @@ def _sanitize_exec_output(text: str, tmp_path: str) -> str:
     normalised = tmp_path.replace("\\", "/")
     if normalised != tmp_path:
         cleaned = cleaned.replace(normalised, "<code>")
+    # Also replace the bare filename (basename) in case only the filename
+    # appears in an error message without the directory prefix.
+    # Use a cross-platform split that recognises both '/' and '\'.
+    basename = normalised.rsplit("/", 1)[-1]
+    if basename:
+        cleaned = cleaned.replace(basename, "<code>")
     return cleaned
 
 
@@ -712,7 +719,9 @@ def _run_typescript(code: str) -> dict:
                     capture_output=True, text=True, timeout=10,
                     cwd=tempfile.gettempdir())
                 stdout = _sanitize_exec_output(proc.stdout, js_path)
+                stdout = _sanitize_exec_output(stdout, tmp_ts)
                 stderr = _sanitize_exec_output(proc.stderr, js_path)
+                stderr = _sanitize_exec_output(stderr, tmp_ts)
                 return {
                     "output": stdout[:4096],
                     "stdout": stdout[:4096],
