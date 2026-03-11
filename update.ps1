@@ -59,6 +59,38 @@ if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
     exit 1
 }
 
+# --- Проверка наличия обновлений (git fetch + compare) ---
+Push-Location $repoDir
+$hasUpdates = $false
+$currentBranch = "main"   # default; overwritten below if git is available
+try {
+    Write-Host ""
+    Write-Host "Проверяю наличие обновлений..." -ForegroundColor Cyan
+    git fetch origin 2>&1 | Out-Null
+
+    # Узнаём текущую ветку
+    $currentBranch = (& git rev-parse --abbrev-ref HEAD 2>&1).Trim()
+    if (-not $currentBranch -or $currentBranch -eq "HEAD") { $currentBranch = "main" }
+
+    $localRev  = (& git rev-parse HEAD 2>&1).Trim()
+    $remoteRev = (& git rev-parse "origin/$currentBranch" 2>&1).Trim()
+
+    if ($localRev -eq $remoteRev) {
+        Write-Host "  Всё уже актуально (нет новых коммитов)." -ForegroundColor Green
+    } else {
+        Write-Host ""
+        Write-Host "  Найдены обновления! Список изменённых файлов:" -ForegroundColor Yellow
+        $changedFiles = & git diff --name-only HEAD "origin/$currentBranch" 2>&1
+        foreach ($f in $changedFiles) { Write-Host "    • $f" -ForegroundColor Gray }
+        $hasUpdates = $true
+    }
+} catch {
+    Write-Host "  Предупреждение: не удалось проверить обновления — продолжаю." -ForegroundColor Yellow
+    $hasUpdates = $true
+} finally {
+    Pop-Location
+}
+
 # --- git pull ---
 Push-Location $repoDir
 try {
@@ -70,10 +102,50 @@ try {
         Write-Host ""
         Write-Host "Ошибка git pull. Попытка сброса..." -ForegroundColor Yellow
         git fetch --all 2>&1 | Out-Null
-        git reset --hard origin/main 2>&1
+        git reset --hard "origin/$currentBranch" 2>&1
     }
 } finally {
     Pop-Location
+}
+
+# --- Обновление Python-зависимостей ---
+$reqFile = Join-Path $repoDir "requirements.txt"
+if (Test-Path $reqFile) {
+    # Find a working pip: prefer standalone pip/pip3, fall back to python -m pip
+    $pipExe    = $null
+    $pipIsPython = $false  # true when we need "python -m pip" style
+    foreach ($exe in @("pip", "pip3")) {
+        if (Get-Command $exe -ErrorAction SilentlyContinue) {
+            $pipExe = $exe; break
+        }
+    }
+    if (-not $pipExe) {
+        foreach ($pyExe in @("python", "python3")) {
+            if (Get-Command $pyExe -ErrorAction SilentlyContinue) {
+                # Verify the pip module is actually available
+                $check = & $pyExe -m pip --version 2>&1
+                if ($LASTEXITCODE -eq 0) {
+                    $pipExe = $pyExe
+                    $pipIsPython = $true
+                    break
+                }
+            }
+        }
+    }
+    if ($pipExe) {
+        Write-Host ""
+        Write-Host "Обновляю Python-зависимости (pip install -r requirements.txt)..." -ForegroundColor Cyan
+        try {
+            if ($pipIsPython) {
+                & $pipExe -m pip install -r $reqFile --upgrade --quiet 2>&1
+            } else {
+                & $pipExe install -r $reqFile --upgrade --quiet 2>&1
+            }
+            Write-Host "  Зависимости обновлены." -ForegroundColor Green
+        } catch {
+            Write-Host "  Предупреждение: не удалось обновить зависимости: $_" -ForegroundColor Yellow
+        }
+    }
 }
 
 Write-Host ""
@@ -82,3 +154,4 @@ Write-Host ""
 Write-Host "Чтобы запустить Code VM:" -ForegroundColor Yellow
 Write-Host "  powershell -ExecutionPolicy Bypass -File `"$repoDir\start.ps1`"" -ForegroundColor Cyan
 Write-Host ""
+pause

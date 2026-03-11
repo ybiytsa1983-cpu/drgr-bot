@@ -20,19 +20,26 @@ irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/copilot/create-m
 
 ## 🔄 КОМАНДА ДЛЯ СКАЧИВАНИЯ НОВЫХ ФАЙЛОВ (ОБНОВЛЕНИЕ)
 
-Если Code VM уже установлен и нужно скачать новые файлы — **открой PowerShell** (Win+X → Windows PowerShell) и вставь:
+**Способ 1 — двойной клик:** найди файл `update.bat` в папке `drgr-bot` и дважды кликни по нему.
+
+**Способ 2 — через PowerShell** (Win+X → Windows PowerShell):
 
 ```powershell
 irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/update.ps1" | iex
 ```
 
-Или, если репозиторий уже скачан в `%USERPROFILE%\drgr-bot`:
+**Способ 3 — вручную** (если репозиторий уже скачан в `%USERPROFILE%\drgr-bot`):
 
 ```powershell
 Set-Location "$env:USERPROFILE\drgr-bot"; git pull
 ```
 
-> После обновления файлов перезапусти Code VM:
+Скрипт автоматически:
+- проверит наличие новых коммитов и покажет список изменённых файлов
+- скачает обновления (`git pull`)
+- обновит Python-зависимости (`pip install -r requirements.txt`)
+
+> После обновления перезапусти Code VM:
 > ```powershell
 > powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\drgr-bot\start.ps1"
 > ```
