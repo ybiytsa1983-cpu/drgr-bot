@@ -47,6 +47,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import queue
 import threading
 import time
 import urllib.parse
@@ -3110,8 +3111,118 @@ def chat_stream():
 
 
 # ---------------------------------------------------------------------------
-# Code patch / edit endpoint — edit existing code based on a user request
+# Online multi-user Chat Room — for extension users
+# Each message is broadcast to all connected SSE subscribers.
 # ---------------------------------------------------------------------------
+_CHATROOM_HISTORY_MAX      = 100   # keep last N messages in memory
+_CHATROOM_MAX_NICK_LEN     = 32    # max nickname length
+_CHATROOM_MAX_MSG_LEN      = 2000  # max message text length
+_CHATROOM_QUEUE_MAXSIZE    = 64    # max queued events per SSE subscriber
+_CHATROOM_HEARTBEAT_SEC    = 20    # seconds between heartbeat pings
+_chatroom_history: list = []  # list of {id, nick, text, ts}
+_chatroom_subs: list = []     # list of queue.Queue — one per SSE subscriber
+_chatroom_lock = threading.Lock()
+_chatroom_msg_counter = 0
+
+
+def _chatroom_broadcast(msg: dict) -> None:
+    """Push a message dict to every active SSE subscriber queue."""
+    with _chatroom_lock:
+        dead = []
+        for q in _chatroom_subs:
+            try:
+                q.put_nowait(msg)
+            except queue.Full:
+                dead.append(q)
+        for q in dead:
+            try:
+                _chatroom_subs.remove(q)
+            except ValueError:
+                pass
+
+
+@app.route("/chatroom/page")
+def chatroom_page():
+    """Serve the standalone chat room HTML page."""
+    return send_from_directory(
+        os.path.join(_DIR, "static"), "chat_room.html"
+    )
+
+
+@app.route("/chatroom/history", methods=["GET"])
+def chatroom_history():
+    """Return recent chat room messages as JSON."""
+    with _chatroom_lock:
+        history = list(_chatroom_history)
+    return jsonify({"messages": history})
+
+
+@app.route("/chatroom/send", methods=["POST"])
+def chatroom_send():
+    """Post a message to the chat room.
+
+    Body: {"nick": "...", "text": "..."}
+    Returns: {"ok": true, "id": N}
+    """
+    global _chatroom_msg_counter
+    body = request.get_json(silent=True) or {}
+    nick = (body.get("nick") or "Аноним").strip()[:_CHATROOM_MAX_NICK_LEN]
+    text = (body.get("text") or "").strip()[:_CHATROOM_MAX_MSG_LEN]
+    if not text:
+        return jsonify({"ok": False, "error": "empty message"}), 400
+
+    with _chatroom_lock:
+        _chatroom_msg_counter += 1
+        msg_id = _chatroom_msg_counter
+        msg = {
+            "id": msg_id,
+            "nick": nick,
+            "text": text,
+            "ts": datetime.now(timezone.utc).strftime("%H:%M"),
+        }
+        _chatroom_history.append(msg)
+        if len(_chatroom_history) > _CHATROOM_HISTORY_MAX:
+            _chatroom_history.pop(0)
+
+    _chatroom_broadcast(msg)
+    return jsonify({"ok": True, "id": msg_id})
+
+
+@app.route("/chatroom/events")
+def chatroom_events():
+    """SSE stream — pushes new chat messages to the client as they arrive."""
+    q: queue.Queue = queue.Queue(maxsize=_CHATROOM_QUEUE_MAXSIZE)
+    with _chatroom_lock:
+        _chatroom_subs.append(q)
+
+    def _gen():
+        # Send heartbeat first so the connection is established immediately
+        yield "data: {\"type\":\"connected\"}\n\n"
+        try:
+            while True:
+                try:
+                    msg = q.get(timeout=_CHATROOM_HEARTBEAT_SEC)
+                    yield f"data: {json.dumps(msg)}\n\n"
+                except queue.Empty:
+                    # Heartbeat to keep connection alive
+                    yield "data: {\"type\":\"ping\"}\n\n"
+        except GeneratorExit:
+            pass
+        finally:
+            with _chatroom_lock:
+                try:
+                    _chatroom_subs.remove(q)
+                except ValueError:
+                    pass
+
+    return Response(
+        stream_with_context(_gen()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+
 _DEFAULT_PATCH_SYSTEM_PROMPT = (
     "Ты DRGR Code Patcher — эксперт-программист на базе Qwen.\n"
     "Тебе дадут СУЩЕСТВУЮЩИЙ код и ЗАПРОС на изменение.\n"
@@ -4671,6 +4782,8 @@ def _is_chrome_extension_request(prompt: str) -> bool:
         "расширение для chrome", "расширение браузера", "manifest.json",
         "chrome addon", "firefox extension", "sidebar extension", "sidepanel",
         "side panel extension", "content script", "background script",
+        "ai blaze", "ai расширение", "расширение ai", "боковая панель расширение",
+        "расширение с боковой", "extension sidepanel", "extension sidebar",
     ]
     pl = prompt.lower()
     return any(kw in pl for kw in keywords)
@@ -4679,65 +4792,70 @@ def _is_chrome_extension_request(prompt: str) -> bool:
 def _generate_chrome_extension_files(model: str, prompt: str, name: str) -> dict:
     """Use the LLM to generate a complete Chrome extension (Manifest V3) as multiple files.
 
+    Generates fully functional extension code with real browser API usage,
+    page analysis, image description (via Ollama vision), and Ollama AI chat.
     Returns a dict of {filename: content} for all extension files.
     """
+    ext_name = name or "AI Assistant"
     sys_prompt = (
         "You are an expert Chrome Extension developer (Manifest V3).\n"
         "Generate a COMPLETE, FULLY FUNCTIONAL Chrome Extension for the task below.\n"
         "\n"
-        "CRITICAL RULES — STRICTLY ENFORCE:\n"
-        "- NEVER write placeholder/demo text like 'В реальном расширении здесь будет...', "
-        "'This is a demo', '// TODO', '// your code here', 'placeholder content', etc.\n"
-        "- Every file must be 100% complete and working — no stubs, no ellipsis (...), "
-        "no incomplete blocks.\n"
-        "- sidepanel.js must contain REAL event listeners, REAL fetch/XMLHttpRequest calls, "
-        "REAL DOM manipulation — not commented-out code.\n"
-        "- background.js must register the side panel and handle chrome.action.onClicked.\n"
-        "- content.js must perform actual page interaction (read text, click elements, etc.) "
-        "relevant to the task.\n"
-        "- All Ollama API calls must use: fetch('http://localhost:11434/api/generate', "
-        "{method:'POST', body:JSON.stringify({model:'gemma3:4b', prompt: userMsg, stream:false})})\n"
-        "- Include real responsive CSS with dark theme directly in sidepanel.html <style> tag.\n"
-        "- Support mobile viewport: <meta name='viewport' content='width=device-width,"
-        "initial-scale=1.0'> and CSS media queries.\n"
+        "ABSOLUTE RULES — VIOLATIONS ARE UNACCEPTABLE:\n"
+        "1. NEVER write 'В реальном расширении здесь будет...', 'This is a demo', "
+        "'// TODO', '// your code here', 'placeholder', 'stub', or ANY placeholder text.\n"
+        "2. Every file must be 100% complete, working code — no ellipsis (...), "
+        "no incomplete blocks, no comments saying 'add code here'.\n"
+        "3. ALL functions must have REAL implementations — not just console.log or empty bodies.\n"
         "\n"
-        "Output EXACTLY the following files, each in its own fenced code block "
-        "preceded by a line that says exactly: === filename ===\n"
+        "REQUIRED FEATURES — IMPLEMENT ALL:\n"
+        "A. sidepanel.html — complete dark-themed UI with:\n"
+        "   - Header with extension name, model selector (gemma3:4b, qwen2.5:3b, llava:7b), status dot\n"
+        "   - Chat messages container with user/bot bubbles\n"
+        "   - Toolbar: [📸 Скриншот], [🔍 Текст страницы], [🖼 Описать], [📋 HTML]\n"
+        "   - Textarea input + Send button (Enter sends, Shift+Enter = newline)\n"
+        "   - Emoji picker button with a grid of common emojis\n"
+        "   - File/image attach button (input type=file)\n"
+        "   - Mobile-responsive CSS with @media queries\n"
+        "   - Uses sidepanel.js (separate file referenced with <script src='sidepanel.js'>)\n"
         "\n"
-        "=== manifest.json ===\n"
-        "```json\n"
-        "{\n"
-        "  \"manifest_version\": 3,\n"
-        "  \"name\": \"ExtensionName\",\n"
-        "  \"version\": \"1.0\",\n"
-        "  \"description\": \"...\",\n"
-        "  \"permissions\": [\"sidePanel\", \"activeTab\", \"scripting\", \"tabs\", \"storage\"],\n"
-        "  \"host_permissions\": [\"<all_urls>\"],\n"
-        "  \"background\": {\"service_worker\": \"background.js\"},\n"
-        "  \"content_scripts\": [{\"matches\": [\"<all_urls>\"], \"js\": [\"content.js\"]}],\n"
-        "  \"side_panel\": {\"default_path\": \"sidepanel.html\"},\n"
-        "  \"action\": {\"default_title\": \"ExtensionName\"}\n"
-        "}\n"
-        "```\n"
-        "=== sidepanel.html ===\n"
-        "```html\n"
-        "<!DOCTYPE html>... COMPLETE HTML with embedded CSS and no script src references "
-        "(all inline or in sidepanel.js) ...\n"
-        "```\n"
-        "=== sidepanel.js ===\n"
-        "```javascript\n"
-        "// COMPLETE functional JavaScript — DOM ready handler, event listeners, "
-        "Ollama API calls, storage, tab communication\n"
-        "```\n"
-        "=== background.js ===\n"
-        "```javascript\n"
-        "// COMPLETE service worker: chrome.sidePanel setup + chrome.action.onClicked listener\n"
-        "```\n"
-        "=== content.js ===\n"
-        "```javascript\n"
-        "// COMPLETE content script: page interaction logic, message listener for sidepanel\n"
-        "```\n"
-        f"\nTask: {prompt}"
+        "B. sidepanel.js — COMPLETE JavaScript implementing ALL of the following:\n"
+        "   - sendMessage(): POST to http://localhost:11434/api/chat with stream:true,\n"
+        "     read chunks via response.body.getReader(), parse JSON, append tokens\n"
+        "   - capturePageScreenshot(): chrome.runtime.sendMessage({type:'CAPTURE_SCREENSHOT'}),\n"
+        "     receive dataUrl, display preview, send to Ollama llava/gemma3 for description\n"
+        "   - getPageText(): chrome.tabs.query({active:true,currentWindow:true}), then\n"
+        "     chrome.scripting.executeScript to get document.body.innerText\n"
+        "   - getPageHTML(): executeScript to get document.documentElement.outerHTML\n"
+        "   - describeImage(base64): POST to Ollama with images array for vision description\n"
+        "   - handleFileAttach(file): FileReader to read as DataURL if image, as text otherwise\n"
+        "   - appendMessage(role, content): creates styled bubble in #messages div\n"
+        "   - showTyping() / hideTyping(): typing indicator in chat\n"
+        "   - saveHistory() / loadHistory(): chrome.storage.local for persistence\n"
+        "   - All event listeners via addEventListener, no inline handlers\n"
+        "\n"
+        "C. background.js — COMPLETE service worker:\n"
+        "   - chrome.sidePanel.setPanelBehavior({openPanelOnActionClick: true}) on install\n"
+        "   - chrome.action.onClicked: opens side panel for the tab\n"
+        "   - chrome.runtime.onMessage for 'CAPTURE_SCREENSHOT': chrome.tabs.captureVisibleTab\n"
+        "   - chrome.runtime.onMessage for 'GET_PAGE_TEXT': chrome.scripting.executeScript\n"
+        "\n"
+        "D. content.js — COMPLETE content script:\n"
+        "   - chrome.runtime.onMessage for 'GET_TEXT': returns document.body.innerText\n"
+        "   - chrome.runtime.onMessage for 'GET_HTML': returns outerHTML\n"
+        "   - chrome.runtime.onMessage for 'GET_IMAGES': returns [{src,alt}] for img tags\n"
+        "   - chrome.runtime.onMessage for 'HIGHLIGHT_TEXT': window.find() highlight\n"
+        "   - chrome.runtime.onMessage for 'SCROLL_TO': scrollIntoView on matching element\n"
+        "   - chrome.runtime.onMessage for 'CLICK_ELEMENT': click on matching element\n"
+        "\n"
+        "E. manifest.json — Manifest V3 with permissions: sidePanel, activeTab, scripting,\n"
+        "   tabs, storage; host_permissions: <all_urls>\n"
+        "\n"
+        "Output EXACTLY these 5 files. Each file preceded by === filename === on its own line,\n"
+        "then immediately a fenced code block (```json / ```html / ```javascript).\n"
+        "\n"
+        f"Extension name: {ext_name}\n"
+        f"Task: {prompt}"
     )
 
     resp = _http.post(
@@ -4774,7 +4892,6 @@ def _generate_chrome_extension_files(model: str, prompt: str, name: str) -> dict
             files["sidepanel.html"] = sidepanel_html
         if sidepanel_js:
             files["sidepanel.js"] = sidepanel_js
-        # background / content fallback
         bg_match = re.search(r'background\.js.*?```(?:javascript|js)\n([\s\S]*?)```', raw, re.IGNORECASE)
         if bg_match:
             files["background.js"] = bg_match.group(1)
@@ -4784,13 +4901,12 @@ def _generate_chrome_extension_files(model: str, prompt: str, name: str) -> dict
 
     # Ensure a manifest exists even if generation failed partially
     if "manifest.json" not in files:
-        ext_name = name or "AI Assistant"
         files["manifest.json"] = json.dumps({
             "manifest_version": 3,
             "name": ext_name,
             "version": "1.0",
             "description": prompt[:120],
-            "permissions": ["sidePanel", "activeTab", "scripting", "tabs"],
+            "permissions": ["sidePanel", "activeTab", "scripting", "tabs", "storage"],
             "host_permissions": ["<all_urls>"],
             "background": {"service_worker": "background.js"},
             "content_scripts": [{"matches": ["<all_urls>"], "js": ["content.js"]}],
@@ -4798,27 +4914,103 @@ def _generate_chrome_extension_files(model: str, prompt: str, name: str) -> dict
             "action": {"default_title": ext_name},
         }, ensure_ascii=False, indent=2)
 
+    # Ensure background.js with correct sidePanel registration
+    if "background.js" not in files:
+        files["background.js"] = (
+            "// Service Worker — Chrome Extension Manifest V3\n"
+            "chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });\n\n"
+            "chrome.action.onClicked.addListener(function(tab) {\n"
+            "  chrome.sidePanel.open({ tabId: tab.id });\n"
+            "});\n\n"
+            "chrome.runtime.onMessage.addListener(function(msg, sender, sendResponse) {\n"
+            "  if (msg.type === 'CAPTURE_SCREENSHOT') {\n"
+            "    chrome.tabs.captureVisibleTab(null, { format: 'jpeg', quality: 80 },\n"
+            "      function(dataUrl) { sendResponse({ dataUrl: dataUrl }); });\n"
+            "    return true;\n"
+            "  }\n"
+            "  if (msg.type === 'GET_PAGE_TEXT') {\n"
+            "    chrome.scripting.executeScript({\n"
+            "      target: { tabId: msg.tabId },\n"
+            "      func: function() {\n"
+            "        return document.body ? document.body.innerText.slice(0, 8000) : '';\n"
+            "      },\n"
+            "    }, function(results) {\n"
+            "      sendResponse({ text: (results && results[0]) ? results[0].result : '' });\n"
+            "    });\n"
+            "    return true;\n"
+            "  }\n"
+            "});\n"
+        )
+
+    # Ensure content.js exists
+    if "content.js" not in files:
+        files["content.js"] = (
+            "// Content Script — runs on every page\n"
+            "chrome.runtime.onMessage.addListener(function(msg, sender, sendResponse) {\n"
+            "  if (msg.type === 'GET_TEXT') {\n"
+            "    sendResponse({ text: document.body ? document.body.innerText.slice(0, 8000) : '' });\n"
+            "    return true;\n"
+            "  }\n"
+            "  if (msg.type === 'GET_HTML') {\n"
+            "    sendResponse({ html: document.documentElement.outerHTML.slice(0, 20000) });\n"
+            "    return true;\n"
+            "  }\n"
+            "  if (msg.type === 'GET_IMAGES') {\n"
+            "    var imgs = Array.from(document.querySelectorAll('img')).slice(0, 20).map(\n"
+            "      function(img) { return { src: img.src, alt: img.alt || '' }; });\n"
+            "    sendResponse({ images: imgs });\n"
+            "    return true;\n"
+            "  }\n"
+            "  if (msg.type === 'HIGHLIGHT_TEXT') {\n"
+            "    if (msg.term) window.find(msg.term, false, false, true, false, true, false);\n"
+            "    sendResponse({ ok: true });\n"
+            "    return true;\n"
+            "  }\n"
+            "  if (msg.type === 'SCROLL_TO') {\n"
+            "    var el = document.querySelector(msg.selector || 'body');\n"
+            "    if (el) el.scrollIntoView({ behavior: 'smooth' });\n"
+            "    sendResponse({ ok: !!el });\n"
+            "    return true;\n"
+            "  }\n"
+            "  if (msg.type === 'CLICK_ELEMENT') {\n"
+            "    var el = document.querySelector(msg.selector || '');\n"
+            "    if (el) el.click();\n"
+            "    sendResponse({ ok: !!el });\n"
+            "    return true;\n"
+            "  }\n"
+            "});\n"
+        )
+
     # Add README with installation instructions
     files["README.md"] = (
-        f"# {name}\n\n"
+        f"# {ext_name}\n\n"
         f"**Описание:** {prompt}\n\n"
         f"**Сгенерировано:** {_now()}\n\n"
         "## Установка Chrome Extension\n\n"
-        "1. Откройте Chrome и перейдите на `chrome://extensions/`\n"
+        "1. Откройте Chrome → `chrome://extensions/`\n"
         "2. Включите **Режим разработчика** (правый верхний угол)\n"
         "3. Нажмите **«Загрузить распакованное расширение»**\n"
         "4. Выберите папку этого проекта\n"
-        "5. Расширение установлено!\n\n"
+        "5. Нажмите иконку расширения → откроется боковая панель\n\n"
+        "## Возможности\n\n"
+        "- 💬 **AI-чат** — потоковые ответы от Ollama\n"
+        "- 📸 **Скриншот** — захват + AI описание текущей страницы\n"
+        "- 🔍 **Текст страницы** — извлечение и анализ контента\n"
+        "- 🖼 **Описание изображений** — vision-анализ через Ollama\n"
+        "- 📋 **HTML структура** — полный HTML для анализа\n"
+        "- 💾 **История чата** — сохраняется в chrome.storage.local\n\n"
+        "## Требования\n\n"
+        "Ollama должна быть запущена: `ollama serve`\n\n"
+        "Рекомендуемые модели:\n"
+        "- `ollama pull gemma3:4b` — чат\n"
+        "- `ollama pull llava:7b` — анализ изображений\n"
+        "- `ollama pull qwen2.5:3b` — код\n\n"
         "## Файлы\n\n"
         + "\n".join(f"- `{f}`" for f in files.keys() if f != "README.md")
-        + "\n\n"
-        "## Использование Ollama\n\n"
-        "Расширение подключается к `http://localhost:11434`.\n"
-        "Убедитесь, что Ollama запущена: `ollama serve`\n"
+        + "\n"
     )
 
     return files
-
 
 @app.route("/project/generate", methods=["POST"])
 def project_generate():

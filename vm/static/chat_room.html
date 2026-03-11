@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+<title>💬 DRGR Chat Room</title>
+<style>
+:root {
+  --bg:     #1e1e1e;
+  --bg2:    #252526;
+  --bg3:    #2d2d2d;
+  --bg4:    #333;
+  --border: #3c3c3c;
+  --text:   #d4d4d4;
+  --text2:  #888;
+  --accent: #0078d4;
+  --accent2:#1a8cff;
+  --me:     #1e4d2b;
+  --other:  #252526;
+  --sys:    #4d3800;
+  --green:  #4ec94e;
+  --red:    #f44747;
+  --radius: 12px;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  height: 100%; height: 100dvh;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-size: 15px;
+  overflow: hidden;
+}
+
+/* ── Layout ── */
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100%; height: 100dvh;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+/* ── Header ── */
+#header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+#header h1 { font-size: 16px; font-weight: 700; flex: 1; white-space: nowrap; }
+#online-badge {
+  font-size: 12px;
+  color: var(--green);
+  background: rgba(78,201,78,.12);
+  border: 1px solid rgba(78,201,78,.3);
+  border-radius: 20px;
+  padding: 2px 10px;
+  white-space: nowrap;
+}
+#nick-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+#nick-inp {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 5px 10px;
+  font-size: 13px;
+  width: 130px;
+  max-width: 40vw;
+}
+#nick-inp:focus { outline: none; border-color: var(--accent); }
+#nick-save {
+  background: var(--accent);
+  border: none;
+  color: #fff;
+  border-radius: 8px;
+  padding: 5px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+#nick-save:hover { filter: brightness(1.15); }
+
+/* ── Messages ── */
+#messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overscroll-behavior: contain;
+}
+#messages::-webkit-scrollbar { width: 4px; }
+#messages::-webkit-scrollbar-thumb { background: #444; border-radius: 2px; }
+
+.msg {
+  display: flex;
+  flex-direction: column;
+  max-width: 78%;
+  animation: fadeIn .18s ease;
+}
+@keyframes fadeIn { from { opacity:0; transform:translateY(4px) } to { opacity:1; transform:none } }
+.msg-me { align-self: flex-end; align-items: flex-end; }
+.msg-other { align-self: flex-start; align-items: flex-start; }
+.msg-sys { align-self: center; align-items: center; max-width: 100%; }
+
+.msg-nick {
+  font-size: 11px;
+  color: var(--text2);
+  margin-bottom: 3px;
+  padding: 0 4px;
+}
+.msg-bubble {
+  background: var(--other);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  line-height: 1.5;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+.msg-me .msg-bubble {
+  background: var(--me);
+  border-color: #2d6b3d;
+  border-radius: var(--radius) var(--radius) 4px var(--radius);
+  color: #e6ffe6;
+}
+.msg-other .msg-bubble {
+  border-radius: var(--radius) var(--radius) var(--radius) 4px;
+}
+.msg-sys .msg-bubble {
+  background: var(--sys);
+  border-color: #6b5200;
+  color: #dcdcaa;
+  font-size: 12px;
+  border-radius: 20px;
+  padding: 4px 14px;
+}
+.msg-ts {
+  font-size: 10px;
+  color: var(--text2);
+  margin-top: 2px;
+  padding: 0 4px;
+}
+
+/* ── Emoji Picker ── */
+#emoji-wrap { position: relative; display: inline-block; }
+#emoji-picker {
+  display: none;
+  position: absolute;
+  bottom: calc(100% + 6px);
+  right: 0;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px;
+  width: 280px;
+  max-height: 220px;
+  overflow-y: auto;
+  z-index: 100;
+  box-shadow: 0 8px 24px rgba(0,0,0,.5);
+}
+#emoji-picker::-webkit-scrollbar { width: 3px; }
+#emoji-picker::-webkit-scrollbar-thumb { background: #444; border-radius: 2px; }
+.ep-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, 32px);
+  gap: 2px;
+}
+.ep-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 20px;
+  padding: 3px;
+  border-radius: 6px;
+  line-height: 1;
+  transition: background .1s;
+}
+.ep-btn:hover { background: var(--bg4); }
+
+/* ── Input area ── */
+#input-area {
+  padding: 10px 14px;
+  background: var(--bg2);
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  flex-shrink: 0;
+}
+#msg-inp {
+  flex: 1;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 9px 14px;
+  font-size: 15px;
+  resize: none;
+  overflow-y: hidden;
+  min-height: 40px;
+  max-height: 120px;
+  line-height: 1.45;
+  font-family: inherit;
+}
+#msg-inp:focus { outline: none; border-color: var(--accent); }
+#msg-inp::placeholder { color: var(--text2); }
+#btn-emoji-open {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 9px 12px;
+  font-size: 18px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+#btn-emoji-open:hover { background: var(--bg4); }
+#btn-send {
+  background: var(--accent);
+  border: none;
+  color: #fff;
+  border-radius: 10px;
+  padding: 9px 18px;
+  font-size: 15px;
+  cursor: pointer;
+  flex-shrink: 0;
+  font-weight: 600;
+}
+#btn-send:hover { filter: brightness(1.15); }
+#btn-send:disabled { background: var(--bg4); color: var(--text2); cursor: not-allowed; filter: none; }
+
+/* ── Status bar ── */
+#status-bar {
+  font-size: 11px;
+  color: var(--text2);
+  padding: 3px 14px 4px;
+  background: var(--bg2);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+#status-bar .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px; }
+#status-bar .dot.ok { background: var(--green); }
+#status-bar .dot.err { background: var(--red); }
+
+/* ── Mobile tweaks ── */
+@media (max-width: 500px) {
+  #header { padding: 8px 12px; }
+  #header h1 { font-size: 15px; }
+  #nick-inp { width: 110px; }
+  #input-area { padding: 8px 10px; }
+  #emoji-picker { width: 240px; right: -40px; }
+  .msg { max-width: 88%; }
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <!-- Header -->
+  <div id="header">
+    <h1>💬 DRGR Chat Room</h1>
+    <span id="online-badge">● на связи</span>
+    <div id="nick-wrap">
+      <input id="nick-inp" type="text" maxlength="32" placeholder="Ваш ник" autocomplete="off" spellcheck="false"/>
+      <button id="nick-save" onclick="saveNick()">💾 Сохранить</button>
+    </div>
+  </div>
+
+  <!-- Messages -->
+  <div id="messages"></div>
+
+  <!-- Input -->
+  <div id="input-area">
+    <div id="emoji-wrap">
+      <button id="btn-emoji-open" onclick="toggleEmojiPicker()" title="Вставить эмодзи">😊</button>
+      <div id="emoji-picker"><div class="ep-grid"></div></div>
+    </div>
+    <textarea id="msg-inp" rows="1" maxlength="2000"
+      placeholder="Введите сообщение… (Enter — отправить, Shift+Enter — новая строка)"
+      onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMsg();}"
+      oninput="autoResize(this)"></textarea>
+    <button id="btn-send" onclick="sendMsg()">➤</button>
+  </div>
+
+  <!-- Status -->
+  <div id="status-bar">
+    <span class="dot ok" id="conn-dot"></span>
+    <span id="conn-label">Подключение…</span>
+  </div>
+</div>
+
+<script>
+// ── Config ──────────────────────────────────────────────────────────────────
+var BASE = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
+  ? 'http://' + location.host
+  : '';
+
+// ── Nick ────────────────────────────────────────────────────────────────────
+var _nick = localStorage.getItem('drgr_chat_nick') || ('User' + Math.floor(Math.random()*9000+1000));
+document.getElementById('nick-inp').value = _nick;
+
+function saveNick() {
+  var v = document.getElementById('nick-inp').value.trim();
+  if (!v) return;
+  _nick = v.slice(0, 32);
+  localStorage.setItem('drgr_chat_nick', _nick);
+  addSys('Ник сохранён: ' + _nick);
+}
+
+// ── Emoji ────────────────────────────────────────────────────────────────────
+var _EMOJIS = [
+  '😀','😃','😄','😁','😆','😅','😂','🤣','😊','😇','🙂','😉','😍','🥰',
+  '😘','😋','😜','🤪','🤑','🤗','🤔','🤐','🤨','😐','😶','😏','🙄','😬',
+  '😴','😷','🤒','🤕','🤢','🤧','🥵','🥶','😵','🤯','🤠','🥳','😎','🤓',
+  '😕','😟','😮','😲','😳','🥺','😢','😭','😱','😣','😩','😫','🥱','😤',
+  '😡','😠','🤬','😈','👿','💀','☠️','🤖','👻','👽','👾',
+  '👋','🤚','👌','✌️','🤞','👍','👎','✊','👏','🙌','🙏','💪',
+  '💻','🖥️','📱','📲','⌨️','🖱️','💾','📷','📸','📹','📡','🔋','🔌',
+  '💡','🔦','🔍','🔎','🔬','🔭','🧪','⚗️','🔩','🔧','🔨','🛠️','🔑','🗝️',
+  '🔐','🔒','🔓','🧲','💎','💰','📦','🗂️','📁','📂','📝','📋','📌',
+  '🌍','🌐','🌟','⭐','✨','🔥','💧','🌊','🌿','🌱','🌲','🌈','❄️','⛄',
+  '🚀','✅','❌','⚠️','⛔','🚫','🔴','🟢','🔵','🟡','🟠','🟣','⚫','⚪',
+  '🤖','⚙️','📊','🧠','💬','📸','🎯','🏆','⚡','🎉','🎊','🎁','🎵','🎶',
+  '❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','💕','💞','💓','💗',
+  '🍕','🍔','🍟','🌮','🍜','🍣','🍩','🍰','☕','🍺','🥤','🧃',
+];
+var _epBuilt = false;
+function toggleEmojiPicker() {
+  var picker = document.getElementById('emoji-picker');
+  if (picker.style.display === 'block') { picker.style.display = 'none'; return; }
+  if (!_epBuilt) {
+    var grid = picker.querySelector('.ep-grid');
+    _EMOJIS.forEach(function(e) {
+      var b = document.createElement('button');
+      b.className = 'ep-btn'; b.textContent = e; b.title = e;
+      b.addEventListener('click', function() {
+        var inp = document.getElementById('msg-inp');
+        var pos = inp.selectionStart || inp.value.length;
+        inp.value = inp.value.slice(0, pos) + e + inp.value.slice(pos);
+        inp.selectionStart = inp.selectionEnd = pos + e.length;
+        inp.focus(); picker.style.display = 'none';
+        autoResize(inp);
+      });
+      grid.appendChild(b);
+    });
+    _epBuilt = true;
+  }
+  picker.style.display = 'block';
+  setTimeout(function() {
+    function _close(ev) {
+      var btn = document.getElementById('btn-emoji-open');
+      if (!picker.contains(ev.target) && ev.target !== btn) {
+        picker.style.display = 'none';
+        document.removeEventListener('click', _close);
+      }
+    }
+    document.addEventListener('click', _close);
+  }, 10);
+}
+
+// ── Textarea auto-resize ──────────────────────────────────────────────────────
+function autoResize(ta) {
+  ta.style.height = 'auto';
+  ta.style.height = Math.min(ta.scrollHeight, 120) + 'px';
+}
+
+// ── Render messages ──────────────────────────────────────────────────────────
+var _msgs = document.getElementById('messages');
+var _myMsgIds = new Set();
+
+function _esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+                  .replace(/"/g,'&quot;');
+}
+
+function addMsg(m) {
+  var isMe = (m.nick === _nick);
+  var div = document.createElement('div');
+  div.className = 'msg ' + (isMe ? 'msg-me' : 'msg-other');
+  div.dataset.id = m.id || '';
+  var nickHtml = isMe ? 'Вы' : _esc(m.nick);
+  div.innerHTML =
+    '<div class="msg-nick">' + nickHtml + '</div>' +
+    '<div class="msg-bubble">' + _esc(m.text) + '</div>' +
+    '<div class="msg-ts">' + _esc(m.ts || '') + '</div>';
+  _msgs.appendChild(div);
+  _scrollBottom();
+}
+
+function addSys(text) {
+  var div = document.createElement('div');
+  div.className = 'msg msg-sys';
+  div.innerHTML = '<div class="msg-bubble">' + _esc(text) + '</div>';
+  _msgs.appendChild(div);
+  _scrollBottom();
+}
+
+function _scrollBottom() {
+  _msgs.scrollTop = _msgs.scrollHeight;
+}
+
+// ── Status bar ────────────────────────────────────────────────────────────────
+function setStatus(ok, text) {
+  var dot = document.getElementById('conn-dot');
+  var lbl = document.getElementById('conn-label');
+  dot.className = 'dot ' + (ok ? 'ok' : 'err');
+  lbl.textContent = text;
+}
+
+// ── Load history ──────────────────────────────────────────────────────────────
+function loadHistory() {
+  fetch(BASE + '/chatroom/history')
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      (d.messages || []).forEach(function(m) { addMsg(m); });
+    })
+    .catch(function() {});
+}
+
+// ── SSE connection ────────────────────────────────────────────────────────────
+var _lastMsgId = 0;
+var _es = null;
+var _reconnectDelay = 1500;
+
+function connectSSE() {
+  if (_es) { try { _es.close(); } catch(e) {} }
+  _es = new EventSource(BASE + '/chatroom/events');
+  _es.onopen = function() {
+    setStatus(true, 'Подключено');
+    _reconnectDelay = 1500;
+  };
+  _es.onmessage = function(ev) {
+    var data;
+    try { data = JSON.parse(ev.data); } catch(e) { return; }
+    if (!data || data.type === 'ping' || data.type === 'connected') return;
+    if (data.id && data.id <= _lastMsgId) return;
+    if (data.id) _lastMsgId = data.id;
+    addMsg(data);
+  };
+  _es.onerror = function() {
+    setStatus(false, 'Переподключение…');
+    _es.close();
+    setTimeout(function() {
+      _reconnectDelay = Math.min(_reconnectDelay * 1.5, 15000);
+      connectSSE();
+    }, _reconnectDelay);
+  };
+}
+
+// ── Send message ──────────────────────────────────────────────────────────────
+function sendMsg() {
+  var inp = document.getElementById('msg-inp');
+  var text = inp.value.trim();
+  if (!text) return;
+  var btn = document.getElementById('btn-send');
+  btn.disabled = true;
+  fetch(BASE + '/chatroom/send', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({nick: _nick, text: text}),
+  })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.ok) {
+        inp.value = '';
+        autoResize(inp);
+        inp.focus();
+      } else {
+        addSys('⚠ ' + (d.error || 'Ошибка отправки'));
+      }
+    })
+    .catch(function() { addSys('⚠ Ошибка соединения'); })
+    .finally(function() { btn.disabled = false; });
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+(function init() {
+  loadHistory();
+  connectSSE();
+  var inp = document.getElementById('msg-inp');
+  inp.addEventListener('input', function() { autoResize(inp); });
+  // Allow pressing Enter on nick field to save
+  document.getElementById('nick-inp').addEventListener('keydown', function(ev) {
+    if (ev.key === 'Enter') saveNick();
+  });
+})();
+</script>
+</body>
+</html>
