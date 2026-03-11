@@ -511,6 +511,7 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
     <button class="tv-btn" id="tv-chat" onclick="setView('chat')">💬 Чат</button>
     <button class="tv-btn" id="tv-vm" onclick="setView('vm')">🧠 Переученная ВМ</button>
     <button class="tv-btn" id="tv-gltf" onclick="setView('gltf')">🧊 GLTF</button>
+    <button class="tv-btn" id="tv-research" onclick="setView('research')">🔍 Исследование</button>
     <button class="tv-btn" onclick="var w=window.open('/chatroom/page','_blank','width=480,height=700');if(!w||w.closed)location.href='/chatroom/page';" title="Открыть онлайн-чат пользователей в отдельном окне">🌐 Чат-зал</button>
     <span class="tb-sep"></span>
     <span id="model-badge">нет модели</span>
@@ -823,6 +824,56 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
     </div>
   </div>
 
+  <!-- ── Research pane ─────────────────────────────────────────────── -->
+  <div id="research-pane" style="display:none;flex:1;flex-direction:column;overflow:hidden;min-height:0;background:var(--bg2)">
+    <div style="padding:14px 18px 10px;border-bottom:1px solid var(--border);flex-shrink:0">
+      <h2 style="margin:0 0 4px;font-size:16px">🔍 Веб-исследование</h2>
+      <p style="margin:0;font-size:12px;color:var(--text2)">Автоматический поиск по нескольким источникам (DDG, Wikipedia, Reddit, HackerNews), скриншоты и HTML-статья</p>
+    </div>
+    <div style="display:flex;flex:1;overflow:hidden;min-height:0">
+      <!-- Controls column -->
+      <div style="width:300px;flex-shrink:0;overflow-y:auto;padding:14px;border-right:1px solid var(--border);display:flex;flex-direction:column;gap:12px">
+        <div>
+          <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:5px">Тема для исследования</label>
+          <textarea id="research-query" rows="3" placeholder="Например: квантовые вычисления, ИИ в медицине…" style="width:100%;resize:vertical" onkeydown="if(event.ctrlKey&&event.key==='Enter'){researchRun();event.preventDefault();}"></textarea>
+        </div>
+        <div>
+          <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:5px">Макс. результатов</label>
+          <select id="research-max">
+            <option value="3">3</option>
+            <option value="5" selected>5</option>
+            <option value="8">8</option>
+            <option value="10">10</option>
+          </select>
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer">
+          <input type="checkbox" id="research-screenshots" checked style="width:auto;accent-color:var(--accent)">
+          Делать скриншоты
+        </label>
+        <button id="research-run-btn" onclick="researchRun()" style="padding:9px;background:var(--accent);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600">🔍 Исследовать</button>
+        <div id="research-status" style="font-size:12px;color:var(--text2);display:none"></div>
+        <div id="research-sources" style="display:none">
+          <div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.7px;margin-bottom:6px">Источники</div>
+          <ul id="research-src-list" style="margin:0;padding-left:16px;font-size:12px;display:flex;flex-direction:column;gap:4px"></ul>
+        </div>
+        <button id="research-to-editor-btn" onclick="researchToEditor()" style="display:none;padding:7px;background:var(--bg4);color:var(--text);border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:12px">📝 Открыть HTML в редакторе</button>
+      </div>
+      <!-- Preview column -->
+      <div style="flex:1;display:flex;flex-direction:column;min-width:0">
+        <div style="font-size:11px;color:var(--text2);padding:6px 12px;border-bottom:1px solid var(--border);flex-shrink:0;display:flex;align-items:center;gap:10px">
+          <span>📄 HTML-статья</span>
+          <button id="research-dl-btn" onclick="researchDownload()" style="display:none;margin-left:auto;padding:3px 10px;background:var(--bg4);color:var(--text);border:1px solid var(--border);border-radius:4px;cursor:pointer;font-size:11px">⬇ Скачать HTML</button>
+        </div>
+        <div style="flex:1;position:relative;background:#fff;overflow:hidden">
+          <iframe id="research-frame" src="about:blank" style="width:100%;height:100%;border:none;display:none"></iframe>
+          <div id="research-placeholder" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--text2);font-size:13px;pointer-events:none;background:var(--bg2)">
+            Введите тему и нажмите «Исследовать»
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
 </div><!-- /#app -->
 
 <div id="toast"></div>
@@ -897,20 +948,23 @@ function setView(v) {
   var cp = document.getElementById('chat-pane');
   var vmp= document.getElementById('vm-pane');
   var gp = document.getElementById('gltf-pane');
+  var rp = document.getElementById('research-pane');
   var mn = document.getElementById('main');
-  ['both','editor','preview','chat','vm','gltf'].forEach(function(x){
+  ['both','editor','preview','chat','vm','gltf','research'].forEach(function(x){
     var el = document.getElementById('tv-'+x);
     if (el) el.classList.toggle('on', x===v);
   });
-  var isChat    = (v === 'chat');
-  var isVM      = (v === 'vm');
-  var isGLTF    = (v === 'gltf');
-  var isSpecial = isChat || isVM || isGLTF;
-  cp.style.display  = isChat    ? 'flex' : 'none';
-  vmp.style.display = isVM      ? 'flex' : 'none';
-  gp.style.display  = isGLTF   ? 'flex' : 'none';
-  pb.style.display  = isSpecial ? 'none' : '';
-  mn.style.display  = isSpecial ? 'none' : 'flex';
+  var isChat     = (v === 'chat');
+  var isVM       = (v === 'vm');
+  var isGLTF     = (v === 'gltf');
+  var isResearch = (v === 'research');
+  var isSpecial  = isChat || isVM || isGLTF || isResearch;
+  cp.style.display  = isChat     ? 'flex' : 'none';
+  vmp.style.display = isVM       ? 'flex' : 'none';
+  gp.style.display  = isGLTF    ? 'flex' : 'none';
+  rp.style.display  = isResearch ? 'flex' : 'none';
+  pb.style.display  = isSpecial  ? 'none' : '';
+  mn.style.display  = isSpecial  ? 'none' : 'flex';
   if (v === 'both')   { ep.style.display='flex'; rh.style.display='block'; vp.style.display='flex'; }
   if (v === 'editor') { ep.style.display='flex'; rh.style.display='none';  vp.style.display='none'; }
   if (v === 'preview'){ ep.style.display='none'; rh.style.display='none';  vp.style.display='flex'; }
@@ -922,6 +976,10 @@ function setView(v) {
   }
   if (isVM) checkVisorStatus();
   if (isGLTF) gltfInit();
+  if (isResearch) {
+    var rq = document.getElementById('research-query');
+    if (rq) setTimeout(function(){ rq.focus(); }, 50);
+  }
 }
 
 // ── Resize handle ────────────────────────────────────────────────────────────
@@ -3826,6 +3884,108 @@ async function gltfAddTraining() {
     if (r.ok) showToast('Добавлено в данные переобучения');
     else showToast('Ошибка записи в training data');
   } catch(err) { showToast('Ошибка: ' + err.message); }
+}
+
+// ── Research view ─────────────────────────────────────────────────────────────
+var _researchLastHtml = '';
+var _researchLastTitle = 'article';
+var _researchBlobUrl = null;
+
+function researchRun() {
+  var query = (document.getElementById('research-query').value || '').trim();
+  if (!query) { showToast('Введите тему для исследования'); return; }
+  var maxR = parseInt(document.getElementById('research-max').value, 10) || 5;
+  var doSS = document.getElementById('research-screenshots').checked;
+  var btn  = document.getElementById('research-run-btn');
+  var stat = document.getElementById('research-status');
+  var frame= document.getElementById('research-frame');
+  var ph   = document.getElementById('research-placeholder');
+  var srcDiv = document.getElementById('research-sources');
+  var toEdBtn= document.getElementById('research-to-editor-btn');
+  var dlBtn  = document.getElementById('research-dl-btn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Исследую…';
+  stat.style.display = 'block';
+  stat.textContent   = '🔍 Поиск в DDG, Wikipedia, Reddit, HackerNews…';
+  frame.style.display = 'none';
+  ph.style.display    = 'flex';
+  ph.textContent      = '⏳ Выполняется исследование…';
+  srcDiv.style.display = 'none';
+  toEdBtn.style.display = 'none';
+  dlBtn.style.display   = 'none';
+  _researchLastHtml = '';
+
+  fetch('/research', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({query: query, max_results: maxR, screenshots: doSS})
+  })
+  .then(function(r){ return r.json(); })
+  .then(function(d){
+    btn.disabled = false;
+    btn.textContent = '🔍 Исследовать';
+    if (!d.success) {
+      stat.textContent = '❌ ' + (d.error || 'Ошибка');
+      ph.textContent   = d.error || 'Не удалось выполнить исследование';
+      return;
+    }
+    _researchLastHtml  = d.html || '';
+    _researchLastTitle = (d.title || 'article').replace(/[\/\\:*?"<>|]/g, '_').replace(/\s+/g, '_').slice(0, 60);
+    // Revoke previous blob URL to prevent memory leak, then create new one
+    if (_researchBlobUrl) { URL.revokeObjectURL(_researchBlobUrl); _researchBlobUrl = null; }
+    var blob = new Blob([_researchLastHtml], {type: 'text/html;charset=utf-8'});
+    var url  = URL.createObjectURL(blob);
+    _researchBlobUrl = url;
+    frame.src = url;
+    frame.style.display = 'block';
+    ph.style.display    = 'none';
+    stat.textContent    = '✅ Готово! Источников: ' + (d.sources ? d.sources.length : 0);
+    // Sources list
+    var ul = document.getElementById('research-src-list');
+    ul.innerHTML = '';
+    (d.sources || []).forEach(function(s, i){
+      var li = document.createElement('li');
+      var a  = document.createElement('a');
+      a.href   = s.url || '#';
+      a.target = '_blank';
+      a.rel    = 'noopener';
+      a.textContent = (i+1) + '. ' + (s.title || s.url || 'Источник');
+      a.style.cssText = 'color:var(--accent);text-decoration:none;word-break:break-all';
+      li.appendChild(a);
+      var badge = document.createElement('span');
+      badge.textContent = ' [' + (s.source || '?') + ']';
+      badge.style.cssText = 'color:var(--text2);font-size:10px';
+      li.appendChild(badge);
+      ul.appendChild(li);
+    });
+    srcDiv.style.display  = 'block';
+    toEdBtn.style.display = 'block';
+    dlBtn.style.display   = 'inline-block';
+  })
+  .catch(function(err){
+    btn.disabled = false;
+    btn.textContent = '🔍 Исследовать';
+    stat.textContent = '❌ Сетевая ошибка: ' + err.message;
+    ph.textContent   = 'Ошибка подключения к серверу';
+  });
+}
+
+function researchToEditor() {
+  if (!_researchLastHtml) return;
+  if (window.editor) {
+    window.editor.setValue(_researchLastHtml);
+    setView('both');
+    showToast('HTML-статья загружена в редактор');
+  }
+}
+
+function researchDownload() {
+  if (!_researchLastHtml) return;
+  var blob = new Blob([_researchLastHtml], {type: 'text/html;charset=utf-8'});
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = (_researchLastTitle || 'article') + '.html';
+  a.click();
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────

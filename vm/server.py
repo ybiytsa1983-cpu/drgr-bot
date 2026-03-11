@@ -6141,6 +6141,370 @@ def browse_proxy():
         )
 
 
+# ---------------------------------------------------------------------------
+# Research endpoint — multi-source search + screenshots + HTML article
+# ---------------------------------------------------------------------------
+
+def _research_html_escape(text: str) -> str:
+    """Minimal HTML escaper (avoids importing html at module level)."""
+    return (
+        text.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+        .replace("'", "&#39;")
+    )
+
+
+def _research_build_html(title: str, body_text: str, sources: list, screenshot_uris: list) -> str:
+    """Build a self-contained HTML research article with gallery, Chart.js and SVG."""
+    esc = _research_html_escape
+
+    # ── Photo gallery ─────────────────────────────────────────────────────
+    gallery_items = ""
+    for i, uri in enumerate(screenshot_uris):
+        src = sources[i] if i < len(sources) else {}
+        src_title = esc(src.get("title", f"Источник {i + 1}"))
+        src_url = esc(src.get("url", "#"))
+        gallery_items += (
+            f'<figure class="gallery-item">'
+            f'<a href="{src_url}" target="_blank" rel="noopener">'
+            f'<img src="{uri}" alt="{src_title}" loading="lazy"/>'
+            f'</a>'
+            f'<figcaption><a href="{src_url}" target="_blank" rel="noopener">{src_title}</a></figcaption>'
+            f'</figure>\n'
+        )
+    gallery_html = ""
+    if gallery_items:
+        gallery_html = (
+            '<section class="gallery">\n'
+            "<h2>📸 Галерея скриншотов</h2>\n"
+            '<div class="gallery-grid">\n'
+            f"{gallery_items}"
+            "</div></section>\n"
+        )
+
+    # ── Article sections ──────────────────────────────────────────────────
+    sections_html = ""
+    lines = body_text.strip().splitlines()
+    current_para: list = []
+    for line in (lines[1:] if len(lines) > 1 else lines):
+        if line.startswith("## "):
+            if current_para:
+                sections_html += "<p>" + esc(" ".join(current_para)) + "</p>\n"
+                current_para = []
+            sections_html += f"<h2>{esc(line[3:].strip())}</h2>\n"
+        elif line.strip():
+            current_para.append(line.strip())
+        else:
+            if current_para:
+                sections_html += "<p>" + esc(" ".join(current_para)) + "</p>\n"
+                current_para = []
+    if current_para:
+        sections_html += "<p>" + esc(" ".join(current_para)) + "</p>\n"
+
+    # ── Sources list ──────────────────────────────────────────────────────
+    src_items = "".join(
+        f'<li><a href="{esc(s.get("url","#"))}" target="_blank" rel="noopener">'
+        f'{esc(s.get("title","Источник"))}</a></li>\n'
+        for s in sources[:10]
+    )
+    sources_html = f'<section class="sources"><h2>📚 Источники</h2><ol>\n{src_items}</ol></section>\n'
+
+    # ── Chart.js bar chart ────────────────────────────────────────────────
+    chart_labels = json.dumps([s.get("title", "")[:30] for s in sources[:8]])
+    chart_data = json.dumps([len(s.get("snippet", "").split()) for s in sources[:8]])
+    chart_html = (
+        '<section class="chart-section"><h2>📊 Данные по источникам</h2>\n'
+        '<canvas id="srcChart" height="80"></canvas>\n'
+        '<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>\n'
+        "<script>\n"
+        "new Chart(document.getElementById('srcChart'),{"
+        f"type:'bar',data:{{labels:{chart_labels},"
+        f"datasets:[{{label:'Слова',data:{chart_data},"
+        "backgroundColor:'rgba(14,132,212,0.6)',borderColor:'#0e84d4',borderWidth:1}}]}},"
+        "options:{responsive:true,plugins:{legend:{display:false}}}"
+        "});\n</script></section>\n"
+    )
+
+    # ── SVG pipeline diagram ───────────────────────────────────────────────
+    svg_html = (
+        '<section class="svg-section"><h2>🔄 Пайплайн исследования</h2>\n'
+        '<svg viewBox="0 0 640 80" xmlns="http://www.w3.org/2000/svg"'
+        ' style="max-width:100%;font-family:sans-serif">\n'
+        '<rect x="0" y="20" width="100" height="40" rx="8" fill="#0e84d4"/>'
+        '<text x="50" y="44" text-anchor="middle" fill="#fff" font-size="11">Запрос</text>\n'
+        '<polygon points="105,40 120,30 120,50" fill="#555"/>\n'
+        '<rect x="125" y="20" width="100" height="40" rx="8" fill="#1aad5a"/>'
+        '<text x="175" y="44" text-anchor="middle" fill="#fff" font-size="11">Поиск</text>\n'
+        '<polygon points="230,40 245,30 245,50" fill="#555"/>\n'
+        '<rect x="250" y="20" width="100" height="40" rx="8" fill="#e8a020"/>'
+        '<text x="300" y="44" text-anchor="middle" fill="#fff" font-size="11">Скриншоты</text>\n'
+        '<polygon points="355,40 370,30 370,50" fill="#555"/>\n'
+        '<rect x="375" y="20" width="100" height="40" rx="8" fill="#a020e8"/>'
+        '<text x="425" y="44" text-anchor="middle" fill="#fff" font-size="11">Ollama AI</text>\n'
+        '<polygon points="480,40 495,30 495,50" fill="#555"/>\n'
+        '<rect x="500" y="20" width="130" height="40" rx="8" fill="#d94040"/>'
+        '<text x="565" y="44" text-anchor="middle" fill="#fff" font-size="11">HTML-статья</text>\n'
+        '</svg></section>\n'
+    )
+
+    css = (
+        "body{margin:0;padding:20px;font-family:'Segoe UI',system-ui,sans-serif;"
+        "background:#f5f5f5;color:#222}"
+        "article{background:#fff;padding:32px;border-radius:8px;"
+        "box-shadow:0 2px 8px rgba(0,0,0,.12);max-width:960px;margin:0 auto}"
+        "h1{font-size:1.8em;margin-bottom:16px;color:#0e84d4}"
+        "h2{font-size:1.2em;margin:24px 0 8px;color:#1aad5a}"
+        "p{line-height:1.65;margin:0 0 12px}"
+        "a{color:#0e84d4;text-decoration:none}a:hover{text-decoration:underline}"
+        ".gallery{margin:32px 0}"
+        ".gallery-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}"
+        ".gallery-item{background:#f9f9f9;border-radius:8px;overflow:hidden;transition:transform .2s}"
+        ".gallery-item:hover{transform:translateY(-3px)}"
+        ".gallery-item img{width:100%;display:block;border-bottom:1px solid #ddd}"
+        ".gallery-item figcaption{padding:8px 10px;font-size:.82em;color:#555;font-style:italic}"
+        ".gallery-item a{display:block}"
+        ".sources ol{padding-left:1.4em}.sources li{margin:4px 0}"
+        ".chart-section,.svg-section{margin:28px 0}"
+    )
+
+    return (
+        '<!DOCTYPE html>\n<html lang="ru">\n<head>\n'
+        '<meta charset="UTF-8"/>\n'
+        f"<title>{esc(title)}</title>\n"
+        f"<style>{css}</style>\n"
+        "</head>\n<body>\n<article>\n"
+        f"<h1>{esc(title)}</h1>\n"
+        f'<section class="article-body">\n{sections_html}</section>\n'
+        f"{gallery_html}"
+        f"{chart_html}"
+        f"{svg_html}"
+        f"{sources_html}"
+        "</article>\n</body>\n</html>"
+    )
+
+
+@app.route("/research", methods=["POST"])
+def web_research():
+    """Full research pipeline: search multiple sources, take screenshots, generate HTML article.
+
+    Body: {"query": "topic", "max_results": 5, "screenshots": true, "model": ""}
+    Returns: {"html": "...", "title": "...", "sources": [...], "success": true}
+    """
+    import base64 as _b64r
+    body = request.get_json(silent=True) or {}
+    query = body.get("query", "").strip()
+    max_results = min(int(body.get("max_results", 5)), 10)
+    do_screenshots = bool(body.get("screenshots", True))
+    model = body.get("model", "").strip()
+
+    if not query:
+        return jsonify({"error": "Provide query", "success": False}), 400
+
+    sources: list = []
+
+    # ── 1. DuckDuckGo search ───────────────────────────────────────────────
+    _DDGS = None
+    try:
+        try:
+            from ddgs import DDGS as _D
+        except ImportError:
+            from duckduckgo_search import DDGS as _D  # type: ignore[no-redef]
+        _DDGS = _D
+    except ImportError:
+        pass
+
+    if _DDGS is not None:
+        try:
+            def _do_ddgs() -> list:
+                try:
+                    with _DDGS() as d:
+                        return list(d.text(query, max_results=max_results))
+                except TypeError:
+                    return list(_DDGS().text(query, max_results=max_results))
+
+            for r in _do_ddgs():
+                sources.append({
+                    "title":   r.get("title", ""),
+                    "url":     r.get("href", "") or r.get("url", ""),
+                    "snippet": r.get("body", "") or r.get("snippet", ""),
+                    "source":  "ddg",
+                })
+        except Exception as _exc:  # pylint: disable=broad-except
+            _log.warning("research ddg: %s", _exc)
+
+    # ── 2. Wikipedia ───────────────────────────────────────────────────────
+    try:
+        wiki_url = "https://en.wikipedia.org/w/api.php"
+        wr = _http.get(wiki_url, params={
+            "action": "query", "list": "search", "srsearch": query,
+            "format": "json", "srlimit": 2, "utf8": 1,
+        }, timeout=8)
+        wr.raise_for_status()
+        for ws in wr.json().get("query", {}).get("search", [])[:2]:
+            page_title = ws.get("title", "")
+            snippet = re.sub(r'<[^>]+>', '', ws.get("snippet", ""))
+            sources.append({
+                "title":   page_title,
+                "url":     f"https://en.wikipedia.org/wiki/{urllib.parse.quote(page_title)}",
+                "snippet": snippet,
+                "source":  "wikipedia",
+            })
+    except Exception as _exc:  # pylint: disable=broad-except
+        _log.warning("research wikipedia: %s", _exc)
+
+    # ── 3. Reddit ──────────────────────────────────────────────────────────
+    try:
+        rr = _http.get(
+            "https://www.reddit.com/search.json",
+            params={"q": query, "sort": "relevance", "limit": 3, "type": "link"},
+            headers={"User-Agent": "DrgrBot/1.0 research-agent"},
+            timeout=8,
+        )
+        rr.raise_for_status()
+        for ch in rr.json().get("data", {}).get("children", [])[:3]:
+            d = ch.get("data", {})
+            permalink = d.get("permalink", "")
+            href = f"https://www.reddit.com{permalink}" if permalink else d.get("url", "")
+            if href.startswith("http"):
+                sources.append({
+                    "title":   d.get("title", "Reddit post"),
+                    "url":     href,
+                    "snippet": d.get("selftext", "")[:300],
+                    "source":  "reddit",
+                })
+    except Exception as _exc:  # pylint: disable=broad-except
+        _log.warning("research reddit: %s", _exc)
+
+    # ── 4. HackerNews (Algolia) ────────────────────────────────────────────
+    try:
+        hnr = _http.get(
+            "https://hn.algolia.com/api/v1/search",
+            params={"query": query, "tags": "story", "hitsPerPage": 3},
+            timeout=8,
+        )
+        hnr.raise_for_status()
+        for hit in hnr.json().get("hits", [])[:3]:
+            story_url = hit.get("url", "")
+            hn_url = f"https://news.ycombinator.com/item?id={hit.get('objectID', '')}"
+            href = story_url if story_url.startswith("http") else hn_url
+            sources.append({
+                "title":   hit.get("title", "HN story"),
+                "url":     href,
+                "snippet": hit.get("story_text", "")[:300] if hit.get("story_text") else "",
+                "source":  "hackernews",
+            })
+    except Exception as _exc:  # pylint: disable=broad-except
+        _log.warning("research hackernews: %s", _exc)
+
+    if not sources:
+        return jsonify({"error": "No results found", "success": False}), 404
+
+    # ── 5. Screenshots (base64 data URIs) ─────────────────────────────────
+    screenshot_uris: list = []
+    if do_screenshots:
+        _PLAYWRIGHT_OK = False
+        try:
+            from playwright.sync_api import sync_playwright as _sync_pw  # type: ignore
+            _PLAYWRIGHT_OK = True
+        except ImportError:
+            pass
+
+        if _PLAYWRIGHT_OK:
+            max_ss = min(3, len(sources))
+            for src in sources[:max_ss]:
+                url = src.get("url", "")
+                if not url.startswith("http"):
+                    continue
+                try:
+                    import tempfile as _tf
+                    with _tf.NamedTemporaryFile(suffix=".png", delete=False) as _tmp:
+                        tmp_path = _tmp.name
+                    with _sync_pw() as pw:
+                        browser = pw.chromium.launch(
+                            headless=True,
+                            args=["--no-sandbox", "--disable-setuid-sandbox",
+                                  "--disable-dev-shm-usage"],
+                        )
+                        page = browser.new_page(viewport={"width": 1280, "height": 800})
+                        page.goto(url, wait_until="domcontentloaded", timeout=12000)
+                        page.screenshot(path=tmp_path, full_page=False)
+                        browser.close()
+                    with open(tmp_path, "rb") as _f:
+                        uri = "data:image/png;base64," + _b64r.b64encode(_f.read()).decode()
+                    os.unlink(tmp_path)
+                    screenshot_uris.append(uri)
+                except Exception as _exc:  # pylint: disable=broad-except
+                    _log.warning("research screenshot %s: %s", url, _exc)
+
+    # ── 6. Build aggregated text for Ollama ───────────────────────────────
+    blocks = [
+        f"[{s['title']}]: {s.get('snippet','')[:600]}"
+        for s in sources[:10]
+        if s.get("snippet")
+    ]
+    aggregated = "\n\n".join(blocks)
+
+    # ── 7. Generate article text via Ollama (optional) ────────────────────
+    article_text = ""
+    if not model:
+        try:
+            mr = _http.get(f"{OLLAMA_BASE}/api/tags", timeout=5)
+            mr.raise_for_status()
+            models_list = mr.json().get("models", [])
+            if models_list:
+                model = models_list[0].get("name", "")
+        except Exception:  # pylint: disable=broad-except
+            pass
+
+    if model and aggregated:
+        try:
+            prompt = (
+                f'Ты — экспертный AI-журналист. Напиши статью на русском по теме: "{query}".\n\n'
+                f"Данные из источников:\n{aggregated}\n\n"
+                "Формат: первая строка — заголовок. Затем введение. "
+                "Разделы с подзаголовками (## Название). ## Заключение."
+            )
+            ar = _http.post(
+                f"{OLLAMA_BASE}/api/generate",
+                json={"model": model, "prompt": prompt, "stream": False},
+                timeout=int(os.environ.get("OLLAMA_TIMEOUT", 120)),
+            )
+            ar.raise_for_status()
+            article_text = ar.json().get("response", "")
+        except Exception as _exc:  # pylint: disable=broad-except
+            _log.warning("research ollama: %s", _exc)
+
+    if not article_text:
+        # Fallback: simple assembly from snippets
+        intro = f"{query}\n\n"
+        article_text = intro + aggregated
+
+    # ── 8. Build HTML article ─────────────────────────────────────────────
+    lines = article_text.strip().splitlines()
+    title = lines[0].lstrip("#* ").strip() if lines else query
+    html_article = _research_build_html(title, article_text, sources, screenshot_uris)
+
+    _record_agent_action({
+        "timestamp": _now(),
+        "action_type": "research",
+        "input": {"query": query},
+        "output": {"sources": len(sources), "screenshots": len(screenshot_uris)},
+        "success": True,
+        "duration_ms": 0,
+        "metadata": {"model": model},
+    })
+
+    return jsonify({
+        "html":    html_article,
+        "title":   title,
+        "sources": [{"title": s["title"], "url": s["url"], "source": s.get("source", "")}
+                    for s in sources[:10]],
+        "success": True,
+    })
+
+
 @app.route("/search", methods=["POST"])
 def web_search():
     """Search the web using the ddgs library (primary) or DuckDuckGo Lite HTML (fallback).
