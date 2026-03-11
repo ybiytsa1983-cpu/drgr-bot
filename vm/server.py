@@ -570,6 +570,25 @@ def _js_code_starts_with_bare_slash(code: str) -> str:
     return first_line
 
 
+def _sanitize_exec_output(text: str, tmp_path: str) -> str:
+    """Replace the temporary file path in execution output with '<code>'.
+
+    This makes error tracebacks user-friendly by hiding internal temp file
+    names like /tmp/tmpXXX.py or C:\\Users\\...\\AppData\\Local\\Temp\\tmpXXX.py.
+    Both the original path and the forward-slash normalised version are replaced.
+    """
+    if not tmp_path or not text:
+        return text
+    # Replace the exact path as returned by the OS
+    cleaned = text.replace(tmp_path, "<code>")
+    # Also replace the forward-slash normalised version (Python on Windows
+    # sometimes emits paths with '/' even when the OS uses '\')
+    normalised = tmp_path.replace("\\", "/")
+    if normalised != tmp_path:
+        cleaned = cleaned.replace(normalised, "<code>")
+    return cleaned
+
+
 _RUNNERS = {
     # Use sys.executable so user code runs in the same venv as the server and
     # has access to all installed packages (flask, requests, aiogram, etc.).
@@ -626,11 +645,13 @@ def _run_typescript(code: str) -> dict:
                 capture_output=True, text=True, timeout=10,
                 cwd=tempfile.gettempdir(),
             )
+            stdout = _sanitize_exec_output(proc.stdout, tmp_ts)
+            stderr = _sanitize_exec_output(proc.stderr, tmp_ts)
             return {
-                "output": proc.stdout[:4096],
-                "stdout": proc.stdout[:4096],
-                "error": proc.stderr[:2048],
-                "stderr": proc.stderr[:2048],
+                "output": stdout[:4096],
+                "stdout": stdout[:4096],
+                "error": stderr[:2048],
+                "stderr": stderr[:2048],
                 "success": proc.returncode == 0,
             }
 
@@ -690,11 +711,13 @@ def _run_typescript(code: str) -> dict:
                     ['node', '--no-warnings', js_path],
                     capture_output=True, text=True, timeout=10,
                     cwd=tempfile.gettempdir())
+                stdout = _sanitize_exec_output(proc.stdout, js_path)
+                stderr = _sanitize_exec_output(proc.stderr, js_path)
                 return {
-                    "output": proc.stdout[:4096],
-                    "stdout": proc.stdout[:4096],
-                    "error": proc.stderr[:2048],
-                    "stderr": proc.stderr[:2048],
+                    "output": stdout[:4096],
+                    "stdout": stdout[:4096],
+                    "error": stderr[:2048],
+                    "stderr": stderr[:2048],
                     "success": proc.returncode == 0,
                 }
             except FileNotFoundError:
@@ -832,11 +855,13 @@ def _run_code(code: str, language: str) -> dict:
             timeout=10,
             cwd=tempfile.gettempdir(),
         )
+        stdout = _sanitize_exec_output(proc.stdout, tmp_path)
+        stderr = _sanitize_exec_output(proc.stderr, tmp_path)
         return {
-            "output": proc.stdout[:4096],
-            "stdout": proc.stdout[:4096],
-            "error": proc.stderr[:2048],
-            "stderr": proc.stderr[:2048],
+            "output": stdout[:4096],
+            "stdout": stdout[:4096],
+            "error": stderr[:2048],
+            "stderr": stderr[:2048],
             "success": proc.returncode == 0,
         }
 
