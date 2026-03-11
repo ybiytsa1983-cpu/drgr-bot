@@ -1921,6 +1921,20 @@ def execute():
     if not code:
         return jsonify({"output": "", "error": "No code provided or code is empty", "success": False})
 
+    # Pre-validate Python syntax before writing to a temp file, so the error
+    # message references the actual line number in the submitted code rather
+    # than a confusing /tmp/tmpXXX.py path that the user never sees.
+    if language == "python":
+        try:
+            compile(code, "<code>", "exec")
+        except SyntaxError as exc:
+            lineno = exc.lineno if exc.lineno is not None else "?"
+            snippet = (exc.text or "").splitlines()[0].rstrip() if exc.text else ""
+            friendly = f"Синтаксическая ошибка на строке {lineno}: {exc.msg}"
+            if snippet:
+                friendly += f"\n  {snippet}"
+            return jsonify({"output": "", "error": friendly, "success": False})
+
     result = _run_code(code, language)
 
     data = load_instructions()
