@@ -310,12 +310,19 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
   #outbar { max-height: 40vh; overflow-y: auto }
 }
 @media (max-width: 480px) {
-  .tv-btn:not(.on) { display: none }
-  #topbar-title { font-size: 12px }
+  /* Keep all view buttons visible — compact emoji-only style */
+  .tv-btn { overflow: hidden; white-space: nowrap; max-width: 32px; padding: 5px 6px; font-size: 15px }
+  /* Hide text after emoji: emoji is always the first character */
+  #topbar { overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none }
+  #topbar::-webkit-scrollbar { display: none }
+  #topbar-title { font-size: 11px; flex-shrink: 0 }
   #etb .ei { padding: 3px 6px; font-size: 10px }
   #gen-input { font-size: 13px }
   #chat-messages .cm { font-size: 13px }
   .vm-card h3 { font-size: 14px }
+  /* Ensure pbar buttons wrap to multiple rows */
+  .pbar-row { flex-wrap: wrap; gap: 5px }
+  #btn-gen, #btn-patch, #btn-open-browser, #btn-save-project { flex: 1; min-width: 70px; font-size: 11px; padding: 6px 8px }
 }
 /* ── Emoji picker styles ── */
 #btn-emoji {
