@@ -563,6 +563,72 @@ async def search_wikipedia(query: str) -> Dict[str, str]:
     return {}
 
 
+async def search_reddit(query: str, max_results: int = 3) -> List[Dict[str, str]]:
+    """Search Reddit posts via Reddit JSON API (no auth required)."""
+    t0 = time.monotonic()
+    results: List[Dict[str, str]] = []
+    try:
+        url = (
+            f"https://www.reddit.com/search.json"
+            f"?q={quote_plus(query)}&sort=relevance&limit={max_results}&type=link"
+        )
+        headers = {"User-Agent": "drgr-bot/1.0 (+https://github.com/ybiytsa1983-cpu/drgr-bot)"}
+        async with aiohttp.ClientSession(headers=headers) as session:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    for child in data.get("data", {}).get("children", [])[:max_results]:
+                        post = child.get("data", {})
+                        title = post.get("title", "")
+                        permalink = post.get("permalink", "")
+                        href = f"https://www.reddit.com{permalink}" if permalink else ""
+                        selftext = (post.get("selftext") or post.get("url_overridden_by_dest") or "")[:400]
+                        body = post.get("selftext_html") or selftext
+                        if title and href:
+                            results.append({
+                                "title": f"Reddit: {title}",
+                                "href":  href,
+                                "body":  body,
+                            })
+        if results:
+            await action_logger.log_search(f"reddit:{query}", results, int((time.monotonic()-t0)*1000))
+    except Exception as exc:
+        logger.warning("Reddit search: %s", exc)
+    return results
+
+
+async def search_hackernews(query: str, max_results: int = 3) -> List[Dict[str, str]]:
+    """Search Hacker News via Algolia API (no auth required)."""
+    t0 = time.monotonic()
+    results: List[Dict[str, str]] = []
+    try:
+        url = (
+            f"https://hn.algolia.com/api/v1/search"
+            f"?query={quote_plus(query)}&hitsPerPage={max_results}&tags=story"
+        )
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    for hit in data.get("hits", [])[:max_results]:
+                        title = hit.get("title", "")
+                        story_url = hit.get("url", "")
+                        hn_url = f"https://news.ycombinator.com/item?id={hit.get('objectID','')}"
+                        href = story_url or hn_url
+                        body = (hit.get("story_text") or "")[:400]
+                        if title and href:
+                            results.append({
+                                "title": f"HackerNews: {title}",
+                                "href":  href,
+                                "body":  body,
+                            })
+        if results:
+            await action_logger.log_search(f"hn:{query}", results, int((time.monotonic()-t0)*1000))
+    except Exception as exc:
+        logger.warning("HackerNews search: %s", exc)
+    return results
+
+
 # ===========================================================================
 # PLAYWRIGHT BROWSER
 # ===========================================================================
@@ -670,6 +736,73 @@ def _safe_href(url: str) -> str:
     return url if re.match(r"^https?://", url or "") else "#"
 
 
+def _build_source_chart_js(sources: List[Dict[str, str]]) -> str:
+    """Return a Chart.js bar chart showing word count per source (inline script)."""
+    import html as _html
+    labels = []
+    values = []
+    for s in sources[:8]:
+        label = _html.escape(s.get("title", "")[:30] or "—")
+        word_count = len((s.get("body") or "").split())
+        labels.append(label)
+        values.append(word_count)
+    if not any(v > 0 for v in values):
+        return ""
+    labels_js  = ", ".join(f'"{l}"' for l in labels)
+    values_js  = ", ".join(str(v) for v in values)
+    return (
+        '<div class="chart-wrap">'
+        '<h2>\U0001f4ca Объём данных по источникам</h2>'
+        '<canvas id="srcChart" height="120"></canvas>'
+        "</div>\n"
+        '<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>\n'
+        "<script>\n"
+        "(function(){\n"
+        "  var ctx=document.getElementById('srcChart').getContext('2d');\n"
+        "  new Chart(ctx,{\n"
+        "    type:'bar',\n"
+        "    data:{\n"
+        f"      labels:[{labels_js}],\n"
+        f"      datasets:[{{label:'Слов в источнике',data:[{values_js}],"
+        "backgroundColor:'rgba(14,132,212,0.6)',borderColor:'rgba(14,132,212,1)',"
+        "borderWidth:1}}]\n"
+        "    },\n"
+        "    options:{responsive:true,plugins:{legend:{display:false}},"
+        "scales:{y:{beginAtZero:true,ticks:{stepSize:10}}}}\n"
+        "  });\n"
+        "})();\n"
+        "</script>\n"
+    )
+
+
+def _build_svg_diagram(title: str) -> str:
+    """Return a simple SVG diagram representing the research pipeline."""
+    import html as _html
+    t = _html.escape(title[:40])
+    return (
+        '<div class="svg-wrap">'
+        '<h2>\U0001f5fa Структура статьи</h2>'
+        '<svg viewBox="0 0 600 90" xmlns="http://www.w3.org/2000/svg" '
+        'style="width:100%;max-width:600px;font-family:sans-serif;font-size:12px">\n'
+        '  <rect x="10"  y="20" width="110" height="50" rx="8" fill="#0e84d4" opacity=".85"/>\n'
+        '  <text x="65"  y="49" text-anchor="middle" fill="#fff">Поиск</text>\n'
+        '  <rect x="160" y="20" width="110" height="50" rx="8" fill="#1aad5a" opacity=".85"/>\n'
+        '  <text x="215" y="49" text-anchor="middle" fill="#fff">Скриншоты</text>\n'
+        '  <rect x="310" y="20" width="110" height="50" rx="8" fill="#e94560" opacity=".85"/>\n'
+        '  <text x="365" y="49" text-anchor="middle" fill="#fff">AI-анализ</text>\n'
+        '  <rect x="460" y="20" width="110" height="50" rx="8" fill="#7b3f9e" opacity=".85"/>\n'
+        f' <text x="515" y="43" text-anchor="middle" fill="#fff">{t}</text>\n'
+        '  <text x="515" y="58" text-anchor="middle" fill="#fff" font-size="10">статья</text>\n'
+        '  <line x1="120" y1="45" x2="160" y2="45" stroke="#555" stroke-width="2" marker-end="url(#arr)"/>\n'
+        '  <line x1="270" y1="45" x2="310" y2="45" stroke="#555" stroke-width="2" marker-end="url(#arr)"/>\n'
+        '  <line x1="420" y1="45" x2="460" y2="45" stroke="#555" stroke-width="2" marker-end="url(#arr)"/>\n'
+        '  <defs><marker id="arr" markerWidth="6" markerHeight="6" refX="6" refY="3" orient="auto">'
+        '<path d="M0,0 L6,3 L0,6 Z" fill="#555"/></marker></defs>\n'
+        "</svg>\n"
+        "</div>\n"
+    )
+
+
 def build_html_article(
     title: str,
     body: str,
@@ -677,61 +810,122 @@ def build_html_article(
     screenshot_paths: List[str],
     image_descriptions: Optional[Dict[str, str]] = None,
 ) -> str:
-    """Return a self-contained HTML article with embedded screenshots and AI captions."""
-    import html as _html  # stdlib html.escape
+    """Return a self-contained HTML article with CSS-grid gallery, Chart.js, and SVG diagram."""
+    import html as _html
     image_descriptions = image_descriptions or {}
 
-    screenshots_html = ""
-    for i, path in enumerate(screenshot_paths[:3]):
+    # ── Photo gallery (CSS grid) ──────────────────────────────────────────
+    gallery_items = ""
+    valid_screenshots: List[str] = []
+    for i, path in enumerate(screenshot_paths[:6]):
         if not os.path.exists(path):
             continue
         uri  = _to_data_uri(path)
         desc = image_descriptions.get(path, "")
         cap  = _html.escape(desc[:120] if desc else f"Рисунок {i + 1}")
-        screenshots_html += (
-            '<figure class="ss">'
-            f'<img src="{uri}" alt="{cap}"/>'
+        src_href = ""
+        if i < len(sources):
+            src_href = _safe_href(sources[i].get("href", ""))
+        link_open  = f'<a href="{src_href}" target="_blank" rel="noopener noreferrer">' if src_href else ""
+        link_close = "</a>" if src_href else ""
+        gallery_items += (
+            '<figure class="gallery-item">'
+            f"{link_open}"
+            f'<img src="{uri}" alt="{cap}" loading="lazy"/>'
+            f"{link_close}"
             f"<figcaption>{cap}</figcaption>"
             "</figure>\n"
         )
+        valid_screenshots.append(path)
 
+    gallery_html = ""
+    if gallery_items:
+        gallery_html = (
+            '<section class="gallery">\n'
+            '<h2>\U0001f4f7 Галерея скриншотов</h2>\n'
+            '<div class="gallery-grid">\n'
+            f"{gallery_items}"
+            "</div>\n</section>\n"
+        )
+
+    # ── Body: split on markdown-style headings ────────────────────────────
+    sections_html = ""
+    current_section_lines: List[str] = []
+
+    def _flush_section(lines: List[str]) -> str:
+        if not lines:
+            return ""
+        text = "\n".join(lines).strip()
+        if not text:
+            return ""
+        para = re.sub(r"\n{2,}", "</p><p>", _html.escape(text))
+        para = para.replace("\n", "<br>")
+        return f'<div class="section-body"><p>{para}</p></div>\n'
+
+    for raw_line in body.splitlines():
+        line = raw_line.strip()
+        # Treat lines starting with # / ## / ### as section headings
+        if re.match(r"^#{1,3}\s+", line):
+            sections_html += _flush_section(current_section_lines)
+            current_section_lines = []
+            heading_text = _html.escape(re.sub(r"^#{1,3}\s+", "", line))
+            sections_html += f"<h2>{heading_text}</h2>\n"
+        else:
+            current_section_lines.append(raw_line)
+    sections_html += _flush_section(current_section_lines)
+
+    # ── Sources list ──────────────────────────────────────────────────────
     sources_items = "".join(
         f'<li><a href="{_safe_href(s.get("href",""))}" target="_blank" rel="noopener noreferrer">'
         f'{_html.escape(s.get("title", f"Источник {i+1}"))}</a></li>\n'
         for i, s in enumerate(sources)
     )
 
-    body_html = re.sub(r"\n{2,}", "</p><p>", _html.escape(body.strip()))
-    body_html = body_html.replace("\n", "<br>")
+    # ── Chart.js + SVG ───────────────────────────────────────────────────
+    chart_html = _build_source_chart_js(sources)
+    svg_html   = _build_svg_diagram(title)
 
+    # ── CSS ───────────────────────────────────────────────────────────────
     css = (
-        "body{font-family:Georgia,serif;max-width:860px;margin:0 auto;padding:24px;"
+        "body{font-family:Georgia,serif;max-width:960px;margin:0 auto;padding:24px;"
         "background:#f4f4f4;color:#222}"
-        "h1{color:#1a1a2e;border-bottom:3px solid #e94560;padding-bottom:8px}"
-        "h2{color:#16213e;margin-top:28px}"
+        "h1{color:#1a1a2e;border-bottom:3px solid #e94560;padding-bottom:8px;margin-bottom:20px}"
+        "h2{color:#16213e;margin-top:28px;margin-bottom:8px}"
         "article{background:#fff;padding:32px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.12)}"
-        "figure.ss{margin:24px 0;text-align:center}"
-        "figure.ss img{max-width:100%;border:1px solid #ddd;border-radius:6px;"
-        "box-shadow:0 3px 8px rgba(0,0,0,.15)}"
-        "figcaption{color:#555;font-style:italic;font-size:.88em;margin-top:6px}"
+        ".section-body p{line-height:1.8;margin:0 0 12px}"
+        "blockquote{border-left:3px solid #e94560;margin:10px 0;padding-left:15px;"
+        "color:#555;font-style:italic}"
+        ".gallery{margin:32px 0}"
+        ".gallery-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));"
+        "gap:16px;margin-top:12px}"
+        ".gallery-item{background:#f9f9f9;border-radius:8px;overflow:hidden;"
+        "box-shadow:0 2px 6px rgba(0,0,0,.1);transition:transform .2s}"
+        ".gallery-item:hover{transform:translateY(-3px)}"
+        ".gallery-item img{width:100%;display:block;border-bottom:1px solid #ddd}"
+        ".gallery-item figcaption{padding:8px 10px;font-size:.82em;color:#555;font-style:italic}"
+        ".gallery-item a{display:block}"
+        ".chart-wrap{margin:32px 0;background:#f9f9f9;border-radius:8px;padding:20px;"
+        "border:1px solid #e0e0e0}"
+        ".svg-wrap{margin:32px 0}"
         ".sources{background:#f9f9f9;border-left:4px solid #e94560;padding:16px 20px;"
         "margin-top:32px;border-radius:0 6px 6px 0}"
         ".sources h3{color:#e94560;margin-top:0}"
         ".sources a{color:#0f3460;word-break:break-all}"
-        "p{line-height:1.7}"
-        "blockquote{border-left:3px solid #e94560;margin:10px 0;padding-left:15px;"
-        "color:#555;font-style:italic}"
+        ".sources ol{padding-left:20px}"
+        ".sources li{margin-bottom:6px;line-height:1.5}"
     )
 
     return (
         '<!DOCTYPE html>\n<html lang="ru">\n<head>\n'
         '<meta charset="UTF-8">\n'
         '<meta name="viewport" content="width=device-width,initial-scale=1">\n'
-        f"<title>{title}</title>\n"
+        f"<title>{_html.escape(title)}</title>\n"
         f"<style>{css}</style>\n"
-        f"</head>\n<body>\n<article>\n<h1>{title}</h1>\n"
-        f"{screenshots_html}"
-        f'<div class="content"><p>{body_html}</p></div>\n'
+        f"</head>\n<body>\n<article>\n<h1>{_html.escape(title)}</h1>\n"
+        f"{svg_html}"
+        f"{gallery_html}"
+        f'<section class="article-body">\n{sections_html}</section>\n'
+        f"{chart_html}"
         '<div class="sources">\n<h3>\U0001f4da Источники</h3>\n'
         f"<ol>{sources_items}</ol>\n</div>\n"
         "</article>\n</body>\n</html>"
@@ -745,25 +939,31 @@ def build_html_article(
 async def research_and_reply(query: str, message: Message) -> None:
     """
     Full autonomous research pipeline:
-      1. Search DuckDuckGo + Wikipedia (parallel)
+      1. Search DuckDuckGo + Wikipedia + Reddit + HackerNews (parallel)
       2. Take screenshots of top pages
       3. Describe screenshots with Ollama vision (background)
       4. Generate article with Ollama text model
-      5. Reply: text + screenshots + HTML + sources
+      5. Reply: text + screenshots + HTML (CSS grid gallery, Chart.js, SVG) + sources
       6. All actions logged to VM for self-improvement
     """
     t0     = time.monotonic()
     status = await message.answer("\U0001f50d Ищу информацию\u2026")
 
-    # 1. Search (parallel)
-    ddg_task  = asyncio.create_task(search_duckduckgo(query, MAX_SEARCH_RESULTS))
-    wiki_task = asyncio.create_task(search_wikipedia(query))
-    ddg_results, wiki_result = await asyncio.gather(ddg_task, wiki_task)
+    # 1. Search all sources in parallel
+    ddg_task     = asyncio.create_task(search_duckduckgo(query, MAX_SEARCH_RESULTS))
+    wiki_task    = asyncio.create_task(search_wikipedia(query))
+    reddit_task  = asyncio.create_task(search_reddit(query, max_results=3))
+    hn_task      = asyncio.create_task(search_hackernews(query, max_results=3))
+    ddg_results, wiki_result, reddit_results, hn_results = await asyncio.gather(
+        ddg_task, wiki_task, reddit_task, hn_task
+    )
 
     all_sources: List[Dict[str, str]] = []
     if wiki_result.get("body"):
         all_sources.append(wiki_result)
     all_sources.extend(ddg_results)
+    all_sources.extend(reddit_results)
+    all_sources.extend(hn_results)
 
     if not all_sources:
         await status.edit_text(
@@ -777,7 +977,8 @@ async def research_and_reply(query: str, message: Message) -> None:
         return
 
     await status.edit_text(
-        f"\U0001f4d6 Найдено {len(all_sources)} источников. Делаю скриншоты\u2026"
+        f"\U0001f4d6 Найдено {len(all_sources)} источников "
+        f"(DDG, Wikipedia, Reddit, HackerNews). Делаю скриншоты\u2026"
     )
 
     # 2. Screenshots
@@ -796,10 +997,10 @@ async def research_and_reply(query: str, message: Message) -> None:
         if len(screenshot_paths) >= MAX_SCREENSHOTS:
             break
 
-    # 3. Aggregate text for AI
+    # 3. Aggregate text for AI (use more sources with multi-source pipeline)
     blocks = [
         f"[{s['title']}]: {s.get('body','')[:600]}"
-        for s in all_sources[:6]
+        for s in all_sources[:10]
         if s.get("body")
     ]
     aggregated = "\n\n".join(blocks)
@@ -811,13 +1012,13 @@ async def research_and_reply(query: str, message: Message) -> None:
 
     prompt = (
         f'Ты — экспертный AI-журналист. Напиши полноценную статью на русском языке по теме: "{query}".\n\n'
-        f"Данные из источников:\n{aggregated}\n\n"
+        f"Данные из источников (DuckDuckGo, Wikipedia, Reddit, HackerNews):\n{aggregated}\n\n"
         "Требования:\n"
         "1. Дай заголовок статьи (первая строка, без # или *).\n"
-        "2. Введение (2-3 предложения).\n"
-        "3. Несколько разделов с подзаголовками.\n"
-        "4. Выдели редкую и малоизвестную информацию по теме.\n"
-        "5. Заключение.\n"
+        "2. Введение (2-3 предложения, без заголовка).\n"
+        "3. Несколько разделов с подзаголовками (формат: ## Название раздела).\n"
+        "4. Выдели редкую и малоизвестную информацию по теме (## Интересные факты).\n"
+        "5. Заключение (## Заключение).\n"
         "Пиши связно и информативно."
     )
     article_text = await ask_ollama(prompt, model)
