@@ -18,6 +18,27 @@ irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/copilot/create-m
 
 ---
 
+## 🔄 КОМАНДА ДЛЯ СКАЧИВАНИЯ НОВЫХ ФАЙЛОВ (ОБНОВЛЕНИЕ)
+
+Если Code VM уже установлен и нужно скачать новые файлы — **открой PowerShell** (Win+X → Windows PowerShell) и вставь:
+
+```powershell
+irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/update.ps1" | iex
+```
+
+Или, если репозиторий уже скачан в `%USERPROFILE%\drgr-bot`:
+
+```powershell
+Set-Location "$env:USERPROFILE\drgr-bot"; git pull
+```
+
+> После обновления файлов перезапусти Code VM:
+> ```powershell
+> powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\drgr-bot\start.ps1"
+> ```
+
+---
+
 ## 🧠 ГДЕ ПЕРЕУЧЕННАЯ ВМ?
 
 После запуска открой браузер на **http://localhost:5000/** и нажми вкладку **`🧠 Переученная ВМ`** в верхней панели.

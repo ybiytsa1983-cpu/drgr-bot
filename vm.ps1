@@ -259,6 +259,23 @@ try {
     }
 } catch { }
 
+# -- Check LAN reachability (best-effort) --------------------------------------
+$lanReachable = $false
+if ($localIP) {
+    try {
+        $r = Invoke-WebRequest -Uri "http://${localIP}:${Port}/ping" `
+                -UseBasicParsing -TimeoutSec 3 -ErrorAction SilentlyContinue
+        if ($r -and $r.StatusCode -eq 200) { $lanReachable = $true }
+    } catch [System.Net.WebException] {
+        if ($_.Exception.Response -ne $null) { $lanReachable = $true }
+    } catch { }
+    if ($lanReachable) {
+        Write-Host "[Code VM] LAN check OK: http://${localIP}:${Port}/" -ForegroundColor Green
+    } else {
+        Write-Host "[Code VM] LAN check: server not reachable on http://${localIP}:${Port}/ — check firewall." -ForegroundColor Yellow
+    }
+}
+
 # -- Open browser --------------------------------------------------------------
 Write-Host "[Code VM] Opening browser..." -ForegroundColor Cyan
 Start-Process "http://localhost:$Port"
@@ -272,8 +289,10 @@ Write-Host ("  |  {0,-50}|" -f "This device:") -ForegroundColor Cyan
 Write-Host ("  |    {0,-48}|" -f "http://localhost:$Port/") -ForegroundColor Cyan
 Write-Host ("  |{0}|" -f ("-" * 52)) -ForegroundColor DarkGreen
 if ($localIP) {
+    $lanStatus = if ($lanReachable) { "[OK]" } else { "[недоступен — брандмауэр?]" }
+    $lanColor  = if ($lanReachable) { "Green" } else { "Yellow" }
     Write-Host ("  |  {0,-50}|" -f "Other devices on the same network:") -ForegroundColor Yellow
-    Write-Host ("  |    {0,-48}|" -f "http://${localIP}:${Port}/") -ForegroundColor Yellow
+    Write-Host ("  |    {0,-48}|" -f "http://${localIP}:${Port}/  $lanStatus") -ForegroundColor $lanColor
 } else {
     Write-Host ("  |  {0,-50}|" -f "Other devices: run 'ipconfig' to find your IP,") -ForegroundColor Yellow
     Write-Host ("  |  {0,-50}|" -f "then open http://YOUR_IP:$Port/") -ForegroundColor Yellow
