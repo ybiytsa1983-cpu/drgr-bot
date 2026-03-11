@@ -490,6 +490,7 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
         <span>📁 Сохранённые проекты</span>
         <button class="pb pb-m" style="padding:2px 8px;font-size:10px" onclick="loadProjectList()">↻</button>
       </div>
+      <div id="proj-path" role="note" aria-label="Папка проектов" style="font-size:10px;color:var(--text2);margin-bottom:4px;word-break:break-all"></div>
       <div id="proj-list" style="font-size:11px;color:var(--text2);margin-top:4px">Нет проектов</div>
     </div>
   </div>
@@ -1161,11 +1162,8 @@ async function autoSaveProject(code, lang, prompt) {
     var d = await r.json();
     if (d.success) {
       toast('💾 Сохранён в проекты: ' + (d.project_id || filename));
-      // Refresh project list if it's already loaded (check for data items)
-      var projList = document.getElementById('proj-list');
-      if (projList && projList.querySelector('[data-pid]')) {
-        loadProjectList();
-      }
+      // Always refresh project list so the user sees the new project immediately
+      loadProjectList();
     } else {
       console.error('Auto-save failed:', d.error);
     }
@@ -1178,6 +1176,17 @@ async function loadProjectList() {
   if (!box) return;
   box.innerHTML = '<span style="color:var(--text2)">⏳ Загружаю...</span>';
   try {
+    // Load projects path for display
+    var pathEl = document.getElementById('proj-path');
+    if (pathEl && !pathEl.dataset.loaded) {
+      fetch('/project/path').then(function(r){ return r.json(); }).then(function(pd){
+        if (pd.path) {
+          pathEl.innerHTML = '📂 <span title="' + esc(pd.path) + '">' + esc(pd.path) + '</span>';
+          pathEl.dataset.loaded = '1';
+        }
+      }).catch(function(e){ console.warn('Could not load projects path:', e); });
+    }
+
     var r = await fetch('/project/list');
     var d = await r.json();
     if (!d.projects || !d.projects.length) {
@@ -1198,6 +1207,8 @@ async function loadProjectList() {
       var fileCount = files.length;
       var filesBadge = fileCount > 1 ? ' <span style="color:var(--text2);font-size:9px">[' + fileCount + ' файлов]</span>' : '';
       var extBadge = isExtension ? ' <span style="background:#3a2a5a;color:#c8a0f0;font-size:9px;padding:1px 4px;border-radius:3px">🔌 Extension</span>' : '';
+      var isPy = mainFile.endsWith('.py');
+      var isJs = mainFile.endsWith('.js');
       html += '<div data-pid="' + pid + '" style="background:var(--bg3);border:1px solid var(--border);border-radius:5px;padding:7px 9px;margin-bottom:5px">'
            +  '<div style="font-weight:700;font-size:11px;color:var(--text)">' + pname + extBadge + filesBadge + '</div>'
            +  '<div style="font-size:10px;color:var(--text2);margin:2px 0">' + pcreated + '</div>'
@@ -1205,6 +1216,9 @@ async function loadProjectList() {
            +    '<button class="pb pb-s" style="font-size:10px;padding:3px 8px" onclick="loadProjectIntoEditor(\'' + pid + '\',\'' + esc(mainFile) + '\')" title="Открыть в редакторе">📝 Код</button>'
            +    (mainFile.endsWith('.html')
                   ? '<button class="pb" style="font-size:10px;padding:3px 8px;background:#1a4a6a;color:#7acfef" onclick="runProjectInVisor(\'' + pid + '\',\'' + esc(mainFile) + '\')" title="Показать в Визоре">▶ Визор</button>'
+                  : '')
+           +    ((isPy || isJs)
+                  ? '<button class="pb" style="font-size:10px;padding:3px 8px;background:#1a4a2a;color:#7acc8a" onclick="runProjectCode(\'' + pid + '\',\'' + esc(mainFile) + '\')" title="Выполнить код">▶ Запустить</button>'
                   : '')
            +    (isExtension
                   ? '<button class="pb" style="font-size:10px;padding:3px 8px;background:#2a5c3a;color:#7acc8a" onclick="downloadProjectZip(\'' + pid + '\')" title="Скачать ZIP для установки в Chrome">📦 ZIP</button>'
@@ -1231,6 +1245,42 @@ async function runProjectInVisor(projectId, filename) {
     toast('▶ Проект запущен в Визоре: ' + filename);
   } catch(e) {
     toast('❌ Ошибка запуска: ' + e.message);
+  }
+}
+
+// ── Execute a Python/JS project file from the saved projects list ─────────────
+async function runProjectCode(projectId, filename) {
+  try {
+    var r = await fetch('/project/' + encodeURIComponent(projectId) + '/' + encodeURIComponent(filename));
+    var code = await r.text();
+    if (editor) editor.setValue(code);
+    var lang = filename.endsWith('.py') ? 'python' : 'javascript';
+    setLangBadge(lang);
+    if (typeof monaco !== 'undefined') {
+      try { monaco.editor.setModelLanguage(editor.getModel(), lang); } catch(e){}
+    }
+    closePanel();
+    setView('editor');
+    toast('▶ Запускаю: ' + filename);
+    // Execute via server
+    var out = document.getElementById('outc');
+    var bar = document.getElementById('outbar');
+    if (out) out.innerHTML = '<span style="color:#888">Выполняю...</span>';
+    if (bar) bar.classList.add('show');
+    var ex = await fetch('/execute', { method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ code: code, language: lang }) });
+    var d = await ex.json();
+    var html = '';
+    if (d.stdout || d.output) html += '<span class="o-ok">' + esc(d.stdout || d.output) + '</span>';
+    if (d.stderr) html += '<span class="o-err">' + esc(d.stderr) + '</span>';
+    if (d.error && !d.stderr) html += '<span class="o-err">' + esc(d.error) + '</span>';
+    if (!html) html = '<span style="color:#888">(выполнено, нет вывода)</span>';
+    if (out) out.innerHTML = html;
+    var outputText = (d.stdout || d.output || '') + (d.stderr ? '\n[stderr]\n' + d.stderr : '') + (d.error && !d.stderr ? '\n[error] ' + d.error : '');
+    showPreview(wrapForVisor(code + (outputText ? '\n\n--- ВЫВОД ---\n' + outputText : ''), lang));
+  } catch(e) {
+    toast('❌ Ошибка выполнения: ' + e.message);
   }
 }
 
@@ -2101,6 +2151,8 @@ async function patchCode() {
       }
       else { showPreview(wrapForVisor(code, lang)); }
       status.innerHTML = '<span class="gs-ok">✓ Правки внесены! Визор обновлён.</span>';
+      // Auto-save patched code to projects
+      autoSaveProject(code, lang, prompt + ' [правки]');
     }
   } catch(e) {
     status.innerHTML = '<span class="gs-err">⚠ Ошибка: ' + esc(e.message) + '</span>';

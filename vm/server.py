@@ -2935,6 +2935,16 @@ _DEFAULT_AUTO_SYSTEM_PROMPT = (
     "Для iOS приложений — Swift/SwiftUI (```swift блок). "
     "IPA — это iOS App Archive. Для установки на устройство нужен Apple Developer аккаунт.\n"
     "Для Telegram ботов, Discord ботов — Python (```python блок) с aiogram 3.x или python-telegram-bot.\n"
+    "КРИТИЧЕСКИ ВАЖНО — КАЧЕСТВО КОДА:\n"
+    "  - СТРОГО ЗАПРЕЩЕНО генерировать demo-версии, заглушки, placeholder-код.\n"
+    "  - ЗАПРЕЩЕНЫ любые комментарии: '# TODO', '# implement later', '# ваш код', "
+    "'// TODO', 'pass', 'raise NotImplementedError', '// add code here', "
+    "'В реальном приложении здесь...', 'This is a demo', 'placeholder'.\n"
+    "  - КАЖДАЯ функция должна иметь ПОЛНУЮ, РАБОЧУЮ реализацию — никаких пустых тел.\n"
+    "  - Генерируй ПОЛНЫЙ, РАБОЧИЙ, ГОТОВЫЙ К ЗАПУСКУ код с первой попытки.\n"
+    "  - Для игр: полная игровая механика, управление, счёт, анимации, конец игры.\n"
+    "  - Для расширений браузера: все файлы manifest.json, background.js, content.js, popup.html "
+    "с полной рабочей логикой, обработкой событий, хранением данных.\n"
     "КРИТИЧЕСКИ ВАЖНО для Python-кода:\n"
     "  - Используй ТОЛЬКО стандартную библиотеку Python (os, sys, json, math, random, datetime, "
     "re, pathlib, collections, itertools, functools, string, io, time, hashlib и т.д.).\n"
@@ -5590,6 +5600,16 @@ def project_delete(project_id: str):
         return jsonify({"error": "Project not found"}), 404
     shutil.rmtree(project_dir, ignore_errors=True)
     return jsonify({"success": True})
+
+
+@app.route("/project/path", methods=["GET"])
+def project_path():
+    """Return the absolute path of the projects directory on disk.
+
+    Ensures the directory exists (creates it if missing) before returning its path.
+    """
+    _ensure_projects_dir()
+    return jsonify({"path": os.path.abspath(PROJECTS_DIR), "success": True})
 
 
 # ---------------------------------------------------------------------------
