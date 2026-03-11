@@ -39,6 +39,7 @@ Endpoints:
 """
 
 import ast
+import hashlib
 import json
 import logging
 import os
@@ -3181,11 +3182,43 @@ def chatroom_history():
     return jsonify({"messages": history})
 
 
+_CHATROOM_VALID_COLORS = {
+    "#e74c3c", "#e67e22", "#f1c40f", "#2ecc71", "#1abc9c",
+    "#3498db", "#9b59b6", "#e91e63", "#00bcd4", "#ff5722",
+    "#8bc34a", "#607d8b", "#ff9800", "#795548", "#673ab7",
+}
+# Registered users: nick -> {color, registered_at}
+_chatroom_users: dict = {}
+
+
+@app.route("/chatroom/register", methods=["POST"])
+def chatroom_register():
+    """Register or update a chat user.
+
+    Body: {"nick": "...", "color": "#rrggbb"}
+    Returns: {"ok": true, "nick": "...", "color": "#rrggbb"}
+    """
+    body = request.get_json(silent=True) or {}
+    nick = (body.get("nick") or "").strip()[:_CHATROOM_MAX_NICK_LEN]
+    if not nick:
+        return jsonify({"ok": False, "error": "nick required"}), 400
+    color = (body.get("color") or "").strip().lower()
+    if color not in _CHATROOM_VALID_COLORS:
+        h = int(hashlib.md5(nick.encode()).hexdigest(), 16)
+        color = sorted(_CHATROOM_VALID_COLORS)[h % len(_CHATROOM_VALID_COLORS)]
+    with _chatroom_lock:
+        _chatroom_users[nick] = {
+            "color": color,
+            "registered_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        }
+    return jsonify({"ok": True, "nick": nick, "color": color})
+
+
 @app.route("/chatroom/send", methods=["POST"])
 def chatroom_send():
     """Post a message to the chat room.
 
-    Body: {"nick": "...", "text": "..."}
+    Body: {"nick": "...", "text": "...", "color": "#rrggbb"}
     Returns: {"ok": true, "id": N}
     """
     global _chatroom_msg_counter
@@ -3195,12 +3228,21 @@ def chatroom_send():
     if not text:
         return jsonify({"ok": False, "error": "empty message"}), 400
 
+    # Determine avatar color: use registered color or the one sent with message
+    with _chatroom_lock:
+        user_info = _chatroom_users.get(nick, {})
+    color = user_info.get("color") or (body.get("color") or "").strip().lower()
+    if color not in _CHATROOM_VALID_COLORS:
+        h = int(hashlib.md5(nick.encode()).hexdigest(), 16)
+        color = sorted(_CHATROOM_VALID_COLORS)[h % len(_CHATROOM_VALID_COLORS)]
+
     with _chatroom_lock:
         _chatroom_msg_counter += 1
         msg_id = _chatroom_msg_counter
         msg = {
             "id": msg_id,
             "nick": nick,
+            "color": color,
             "text": text,
             "ts": datetime.now(timezone.utc).strftime("%H:%M"),
         }

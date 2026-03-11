@@ -851,21 +851,34 @@ var MONACO_CDN   = 'https://cdn.jsdelivr.net/npm/monaco-editor@0.44.0/min/vs';
 var VISOR_MODEL_NAME = 'drgr-visor';
 
 // ── Global drag-and-drop prevention ─────────────────────────────────────────
-// Prevent the browser from opening dropped files in a new tab when they land
-// outside the designated drop zone (#epane). Without this, dropping a file
-// anywhere on the page navigates away.
+// Prevent the browser from opening dropped files in a new tab anywhere on the
+// page. Uses CAPTURE phase so the handler fires before Monaco editor or any
+// child element can call stopPropagation(), which would otherwise let the
+// browser navigate to the dropped file.
 (function() {
-  function _preventBrowserOpen(e) {
+  function _preventFileDrop(e) {
+    // Only intercept drags that carry files (not in-editor text reordering)
+    var types = e.dataTransfer && e.dataTransfer.types;
+    if (!types) return;
+    var hasFiles = (typeof types.contains === 'function')
+      ? types.contains('Files')
+      : (Array.prototype.indexOf.call(types, 'Files') >= 0);
+    if (!hasFiles) return;
+
+    // Always prevent the browser from navigating to the dropped file
+    e.preventDefault();
+
     var target = e.target;
-    // Allow drops only inside #epane — everywhere else, block the browser default
     var epane = document.getElementById('epane');
     if (!epane || !epane.contains(target)) {
-      e.preventDefault();
-      e.dataTransfer && (e.dataTransfer.dropEffect = 'none');
+      // Drop outside the editor pane — show "forbidden" cursor and do nothing
+      e.dataTransfer.dropEffect = 'none';
     }
+    // Drop inside #epane — dropEffect stays 'copy'; editorDrop() handles it
   }
-  document.addEventListener('dragover',  _preventBrowserOpen, false);
-  document.addEventListener('drop',      _preventBrowserOpen, false);
+  // Capture phase (true) ensures we fire before Monaco's internal handlers
+  document.addEventListener('dragover', _preventFileDrop, true);
+  document.addEventListener('drop',     _preventFileDrop, true);
 })();
 
 // ── View switching ───────────────────────────────────────────────────────────

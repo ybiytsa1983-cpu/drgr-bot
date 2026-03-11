@@ -62,34 +62,31 @@ html, body {
   padding: 2px 10px;
   white-space: nowrap;
 }
-#nick-wrap {
+#user-info {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  cursor: pointer;
+}
+#user-info:hover { opacity: .85; }
+#header-avatar {
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; font-weight: 700; color: #fff;
   flex-shrink: 0;
 }
-#nick-inp {
+#header-nick { font-size: 13px; font-weight: 600; }
+#btn-settings {
   background: var(--bg3);
   border: 1px solid var(--border);
   color: var(--text);
   border-radius: 8px;
   padding: 5px 10px;
   font-size: 13px;
-  width: 130px;
-  max-width: 40vw;
-}
-#nick-inp:focus { outline: none; border-color: var(--accent); }
-#nick-save {
-  background: var(--accent);
-  border: none;
-  color: #fff;
-  border-radius: 8px;
-  padding: 5px 12px;
-  font-size: 13px;
   cursor: pointer;
-  white-space: nowrap;
 }
-#nick-save:hover { filter: brightness(1.15); }
+#btn-settings:hover { background: var(--bg4); }
 
 /* ── Messages ── */
 #messages {
@@ -98,7 +95,7 @@ html, body {
   padding: 12px 14px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   overscroll-behavior: contain;
 }
 #messages::-webkit-scrollbar { width: 4px; }
@@ -106,19 +103,43 @@ html, body {
 
 .msg {
   display: flex;
-  flex-direction: column;
-  max-width: 78%;
+  gap: 8px;
+  max-width: 82%;
   animation: fadeIn .18s ease;
 }
 @keyframes fadeIn { from { opacity:0; transform:translateY(4px) } to { opacity:1; transform:none } }
-.msg-me { align-self: flex-end; align-items: flex-end; }
-.msg-other { align-self: flex-start; align-items: flex-start; }
-.msg-sys { align-self: center; align-items: center; max-width: 100%; }
+.msg-me {
+  align-self: flex-end;
+  flex-direction: row-reverse;
+}
+.msg-other { align-self: flex-start; }
+.msg-sys { align-self: center; max-width: 100%; }
 
+.msg-avatar-wrap {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 2px;
+}
+.msg-avatar {
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 700; color: #fff;
+  flex-shrink: 0;
+}
+.msg-content {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.msg-me .msg-content { align-items: flex-end; }
+.msg-other .msg-content { align-items: flex-start; }
 .msg-nick {
   font-size: 11px;
   color: var(--text2);
-  margin-bottom: 3px;
   padding: 0 4px;
 }
 .msg-bubble {
@@ -150,7 +171,6 @@ html, body {
 .msg-ts {
   font-size: 10px;
   color: var(--text2);
-  margin-top: 2px;
   padding: 0 4px;
 }
 
@@ -255,14 +275,106 @@ html, body {
 #status-bar .dot.ok { background: var(--green); }
 #status-bar .dot.err { background: var(--red); }
 
+/* ── Registration / Settings Modal ── */
+#modal-overlay {
+  display: none;
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.7);
+  z-index: 200;
+  align-items: center; justify-content: center;
+}
+#modal-overlay.show { display: flex; }
+#modal {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 28px 28px 24px;
+  width: 340px;
+  max-width: calc(100vw - 32px);
+  box-shadow: 0 16px 48px rgba(0,0,0,.6);
+  animation: fadeIn .2s ease;
+}
+#modal h2 { font-size: 18px; margin-bottom: 20px; }
+.modal-field { margin-bottom: 16px; }
+.modal-field label { display: block; font-size: 12px; color: var(--text2); margin-bottom: 6px; }
+.modal-field input[type="text"] {
+  width: 100%;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 9px 12px;
+  font-size: 14px;
+}
+.modal-field input[type="text"]:focus { outline: none; border-color: var(--accent); }
+.color-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+.color-swatch {
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  cursor: pointer;
+  border: 3px solid transparent;
+  transition: border-color .15s, transform .1s;
+}
+.color-swatch.selected { border-color: #fff; transform: scale(1.15); }
+#modal-save {
+  width: 100%;
+  background: var(--accent);
+  border: none;
+  color: #fff;
+  border-radius: 10px;
+  padding: 11px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: 4px;
+}
+#modal-save:hover { filter: brightness(1.15); }
+#modal-note { font-size: 11px; color: var(--text2); text-align: center; margin-top: 10px; }
+
+/* ── Not-registered overlay ── */
+#not-registered {
+  display: none;
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.5);
+  z-index: 150;
+  align-items: center; justify-content: center;
+}
+#not-registered.show { display: flex; }
+#not-registered-box {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 28px;
+  text-align: center;
+  width: 320px;
+  max-width: calc(100vw - 32px);
+  box-shadow: 0 16px 48px rgba(0,0,0,.6);
+}
+#not-registered-box p { color: var(--text2); margin-bottom: 18px; line-height: 1.5; }
+#btn-go-register {
+  background: var(--accent);
+  border: none;
+  color: #fff;
+  border-radius: 10px;
+  padding: 10px 24px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+#btn-go-register:hover { filter: brightness(1.15); }
+
 /* ── Mobile tweaks ── */
 @media (max-width: 500px) {
   #header { padding: 8px 12px; }
   #header h1 { font-size: 15px; }
-  #nick-inp { width: 110px; }
   #input-area { padding: 8px 10px; }
   #emoji-picker { width: 240px; right: -40px; }
-  .msg { max-width: 88%; }
+  .msg { max-width: 90%; }
 }
 </style>
 </head>
@@ -272,10 +384,11 @@ html, body {
   <div id="header">
     <h1>💬 DRGR Chat Room</h1>
     <span id="online-badge">● на связи</span>
-    <div id="nick-wrap">
-      <input id="nick-inp" type="text" maxlength="32" placeholder="Ваш ник" autocomplete="off" spellcheck="false"/>
-      <button id="nick-save" onclick="saveNick()">💾 Сохранить</button>
+    <div id="user-info" onclick="openSettings()" title="Изменить профиль">
+      <div id="header-avatar">?</div>
+      <span id="header-nick">Войти</span>
     </div>
+    <button id="btn-settings" onclick="openSettings()">⚙️ Профиль</button>
   </div>
 
   <!-- Messages -->
@@ -301,22 +414,165 @@ html, body {
   </div>
 </div>
 
+<!-- Registration / Settings Modal -->
+<div id="modal-overlay" onclick="if(event.target===this&&_registered)closeModal()">
+  <div id="modal">
+    <h2 id="modal-title">👤 Регистрация</h2>
+    <div class="modal-field">
+      <label>Имя пользователя (обязательно)</label>
+      <input type="text" id="modal-nick" maxlength="32" placeholder="Ваше имя…" autocomplete="off"/>
+    </div>
+    <div class="modal-field">
+      <label>Цвет аватара</label>
+      <div class="color-grid" id="color-grid"></div>
+    </div>
+    <button id="modal-save" onclick="saveProfile()">💾 Сохранить и войти</button>
+    <div id="modal-note">Регистрация позволяет отправлять сообщения в чат</div>
+  </div>
+</div>
+
+<!-- Not-registered prompt -->
+<div id="not-registered">
+  <div id="not-registered-box">
+    <h2 style="margin-bottom:12px">🔒 Необходима регистрация</h2>
+    <p>Чтобы отправлять сообщения, укажите имя пользователя.</p>
+    <button id="btn-go-register" onclick="openRegister()">Зарегистрироваться</button>
+  </div>
+</div>
+
 <script>
 // ── Config ──────────────────────────────────────────────────────────────────
 var BASE = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
   ? 'http://' + location.host
   : '';
 
-// ── Nick ────────────────────────────────────────────────────────────────────
-var _nick = localStorage.getItem('drgr_chat_nick') || ('User' + Math.floor(Math.random()*9000+1000));
-document.getElementById('nick-inp').value = _nick;
+// ── Avatar colors ────────────────────────────────────────────────────────────
+var COLORS = [
+  "#e74c3c","#e67e22","#f1c40f","#2ecc71","#1abc9c",
+  "#3498db","#9b59b6","#e91e63","#00bcd4","#ff5722",
+  "#8bc34a","#607d8b","#ff9800","#795548","#673ab7",
+];
 
-function saveNick() {
-  var v = document.getElementById('nick-inp').value.trim();
-  if (!v) return;
-  _nick = v.slice(0, 32);
-  localStorage.setItem('drgr_chat_nick', _nick);
-  addSys('Ник сохранён: ' + _nick);
+function avatarInitial(nick) {
+  var n = (nick || '').trim();
+  return n.length ? n[0].toUpperCase() : '?';
+}
+
+function buildAvatarHTML(nick, color, size) {
+  size = size || 32;
+  return '<div style="width:' + size + 'px;height:' + size + 'px;border-radius:50%;'
+    + 'background:' + _esc(color) + ';display:flex;align-items:center;justify-content:center;'
+    + 'font-size:' + Math.round(size * 0.42) + 'px;font-weight:700;color:#fff;flex-shrink:0;">'
+    + _esc(avatarInitial(nick)) + '</div>';
+}
+
+// ── User profile ─────────────────────────────────────────────────────────────
+var _nick = '';
+var _color = '';
+var _registered = false;
+
+function _loadProfile() {
+  var stored = localStorage.getItem('drgr_chat_profile');
+  if (stored) {
+    try {
+      var p = JSON.parse(stored);
+      _nick = (p.nick || '').trim();
+      _color = p.color || '';
+      _registered = !!_nick;
+    } catch(e) {}
+  }
+}
+
+function _updateHeaderUI() {
+  var av = document.getElementById('header-avatar');
+  var nk = document.getElementById('header-nick');
+  if (_registered && _nick) {
+    av.textContent = avatarInitial(_nick);
+    av.style.background = _color || '#607d8b';
+    nk.textContent = _nick;
+  } else {
+    av.textContent = '?';
+    av.style.background = '#444';
+    nk.textContent = 'Войти';
+  }
+}
+
+// ── Color grid ───────────────────────────────────────────────────────────────
+var _selectedColor = COLORS[5];  // default blue
+
+function buildColorGrid() {
+  var grid = document.getElementById('color-grid');
+  COLORS.forEach(function(c) {
+    var sw = document.createElement('div');
+    sw.className = 'color-swatch';
+    sw.style.background = c;
+    sw.dataset.color = c;
+    sw.title = c;
+    sw.addEventListener('click', function() {
+      document.querySelectorAll('.color-swatch').forEach(function(s) { s.classList.remove('selected'); });
+      sw.classList.add('selected');
+      _selectedColor = c;
+    });
+    grid.appendChild(sw);
+  });
+}
+
+function selectColorSwatch(c) {
+  document.querySelectorAll('.color-swatch').forEach(function(s) {
+    s.classList.toggle('selected', s.dataset.color === c);
+  });
+  _selectedColor = c;
+}
+
+// ── Modal open/close ──────────────────────────────────────────────────────────
+function openRegister() {
+  document.getElementById('not-registered').classList.remove('show');
+  openModal(false);
+}
+
+function openModal(isSettings) {
+  _selectedColor = _color || COLORS[5];
+  document.getElementById('modal-nick').value = _nick || '';
+  document.getElementById('modal-title').textContent = isSettings ? '⚙️ Профиль' : '👤 Регистрация';
+  document.getElementById('modal-save').textContent = isSettings ? '💾 Сохранить' : '💾 Сохранить и войти';
+  selectColorSwatch(_selectedColor);
+  document.getElementById('modal-overlay').classList.add('show');
+  setTimeout(function() { document.getElementById('modal-nick').focus(); }, 100);
+}
+
+function closeModal() {
+  document.getElementById('modal-overlay').classList.remove('show');
+}
+
+function openSettings() {
+  openModal(true);
+}
+
+// ── Save profile ──────────────────────────────────────────────────────────────
+function saveProfile() {
+  var nick = document.getElementById('modal-nick').value.trim().slice(0, 32);
+  if (!nick) {
+    document.getElementById('modal-nick').style.borderColor = '#f44747';
+    document.getElementById('modal-nick').focus();
+    return;
+  }
+  document.getElementById('modal-nick').style.borderColor = '';
+
+  _nick = nick;
+  _color = _selectedColor;
+  _registered = true;
+  localStorage.setItem('drgr_chat_profile', JSON.stringify({nick: _nick, color: _color}));
+
+  // Register with server
+  fetch(BASE + '/chatroom/register', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({nick: _nick, color: _color}),
+  }).catch(function() {});
+
+  _updateHeaderUI();
+  closeModal();
+  addSys('Добро пожаловать, ' + _nick + '! 👋');
 }
 
 // ── Emoji ────────────────────────────────────────────────────────────────────
@@ -327,7 +583,7 @@ var _EMOJIS = [
   '😕','😟','😮','😲','😳','🥺','😢','😭','😱','😣','😩','😫','🥱','😤',
   '😡','😠','🤬','😈','👿','💀','☠️','🤖','👻','👽','👾',
   '👋','🤚','👌','✌️','🤞','👍','👎','✊','👏','🙌','🙏','💪',
-  '💻','🖥️','📱','📲','⌨️','🖱️','💾','📷','📸','📹','📡','🔋','🔌',
+  '💻','🖥️','📱','��','⌨️','🖱️','💾','📷','📸','📹','📡','🔋','🔌',
   '💡','🔦','🔍','🔎','🔬','🔭','🧪','⚗️','🔩','🔧','🔨','🛠️','🔑','🗝️',
   '🔐','🔒','🔓','🧲','💎','💰','📦','🗂️','📁','📂','📝','📋','📌',
   '🌍','🌐','🌟','⭐','✨','🔥','💧','🌊','🌿','🌱','🌲','🌈','❄️','⛄',
@@ -376,25 +632,35 @@ function autoResize(ta) {
   ta.style.height = Math.min(ta.scrollHeight, 120) + 'px';
 }
 
-// ── Render messages ──────────────────────────────────────────────────────────
-var _msgs = document.getElementById('messages');
-var _myMsgIds = new Set();
-
+// ── Helpers ───────────────────────────────────────────────────────────────────
 function _esc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
                   .replace(/"/g,'&quot;');
 }
 
+// ── Render messages ──────────────────────────────────────────────────────────
+var _msgs = document.getElementById('messages');
+
 function addMsg(m) {
   var isMe = (m.nick === _nick);
+  var color = m.color || _nickColor(m.nick);
+  var initial = avatarInitial(m.nick);
+
   var div = document.createElement('div');
   div.className = 'msg ' + (isMe ? 'msg-me' : 'msg-other');
   div.dataset.id = m.id || '';
-  var nickHtml = isMe ? 'Вы' : _esc(m.nick);
+
+  var nickLabel = isMe ? 'Вы' : _esc(m.nick);
+
   div.innerHTML =
-    '<div class="msg-nick">' + nickHtml + '</div>' +
-    '<div class="msg-bubble">' + _esc(m.text) + '</div>' +
-    '<div class="msg-ts">' + _esc(m.ts || '') + '</div>';
+    '<div class="msg-avatar-wrap">' +
+      '<div class="msg-avatar" style="background:' + _esc(color) + '">' + _esc(initial) + '</div>' +
+    '</div>' +
+    '<div class="msg-content">' +
+      '<div class="msg-nick">' + nickLabel + '</div>' +
+      '<div class="msg-bubble">' + _esc(m.text) + '</div>' +
+      '<div class="msg-ts">' + _esc(m.ts || '') + '</div>' +
+    '</div>';
   _msgs.appendChild(div);
   _scrollBottom();
 }
@@ -409,6 +675,13 @@ function addSys(text) {
 
 function _scrollBottom() {
   _msgs.scrollTop = _msgs.scrollHeight;
+}
+
+// Deterministic color from nick (for messages from users without stored color)
+function _nickColor(nick) {
+  var h = 0;
+  for (var i = 0; i < (nick || '').length; i++) h = (h * 31 + nick.charCodeAt(i)) >>> 0;
+  return COLORS[h % COLORS.length];
 }
 
 // ── Status bar ────────────────────────────────────────────────────────────────
@@ -461,6 +734,10 @@ function connectSSE() {
 
 // ── Send message ──────────────────────────────────────────────────────────────
 function sendMsg() {
+  if (!_registered) {
+    document.getElementById('not-registered').classList.add('show');
+    return;
+  }
   var inp = document.getElementById('msg-inp');
   var text = inp.value.trim();
   if (!text) return;
@@ -469,7 +746,7 @@ function sendMsg() {
   fetch(BASE + '/chatroom/send', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({nick: _nick, text: text}),
+    body: JSON.stringify({nick: _nick, text: text, color: _color}),
   })
     .then(function(r) { return r.json(); })
     .then(function(d) {
@@ -487,13 +764,24 @@ function sendMsg() {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 (function init() {
+  buildColorGrid();
+  _loadProfile();
+  _updateHeaderUI();
+
+  if (!_registered) {
+    // Show registration modal on first visit
+    openModal(false);
+  }
+
   loadHistory();
   connectSSE();
+
   var inp = document.getElementById('msg-inp');
   inp.addEventListener('input', function() { autoResize(inp); });
-  // Allow pressing Enter on nick field to save
-  document.getElementById('nick-inp').addEventListener('keydown', function(ev) {
-    if (ev.key === 'Enter') saveNick();
+
+  // Enter on nick field focuses modal-save
+  document.getElementById('modal-nick').addEventListener('keydown', function(ev) {
+    if (ev.key === 'Enter') saveProfile();
   });
 })();
 </script>
