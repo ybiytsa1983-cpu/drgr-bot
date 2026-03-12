@@ -1241,8 +1241,10 @@ async def cmd_models(message: Message) -> None:
         await message.answer("\n".join(lines), parse_mode="MarkdownV2")
     else:
         await message.answer(
-            "\u26a0\ufe0f Ollama не запущена или нет доступных моделей\\.\n"
-            "Запустите: `ollama pull llama2`",
+            "\u26a0\ufe0f Ollama не запущена или нет доступных моделей\\.\n\n"
+            "Запустите Ollama: `ollama serve`\n"
+            f"Потом скачайте модель: `ollama pull {_esc(OLLAMA_MODEL)}`\n\n"
+            f"_Если недавно было обновление — попробуйте_ /update _чтобы скачать новые файлы_",
             parse_mode="MarkdownV2",
         )
 
@@ -1637,7 +1639,8 @@ async def cmd_generate(message: Message) -> None:
         await status.edit_text(
             "\u274c VM не вернула HTML\\.\n\n"
             f"Убедитесь, что VM и Ollama запущены\\. {_MD_WEB_URL}\n\n"
-            "Или используйте /vm для подробностей\\.",
+            f"Для обновления файлов: /update\n\n"
+            "Подробности: /vm",
             parse_mode="MarkdownV2",
         )
     except Exception as exc:
@@ -1648,6 +1651,7 @@ async def cmd_generate(message: Message) -> None:
         await status.edit_text(
             "\u274c VM не запущена или недоступна\\.\n\n"
             f"\U0001f4bb {_MD_INSTALL_CMD}\n\n"
+            f"{_MD_UPDATE_CMD}\n\n"
             f"После запуска откройте: {_MD_WEB_URL}\n"
             "Или используйте /vm для подробностей\\.",
             parse_mode="MarkdownV2",
@@ -2421,7 +2425,8 @@ async def handle_photo_convert(message: Message) -> None:
             logger.error("photo_analyze: %s", exc)
         await status.edit_text(
             "\u274c VM недоступна\\. Убедитесь, что VM запущена \\(/vm\\)\\.\n\n"
-            "Для конвертации фото отправьте с подписью: `jpeg`, `png`, `webp`, `bmp`",
+            "Для конвертации фото отправьте с подписью: `jpeg`, `png`, `webp`, `bmp`\n\n"
+            f"_Для обновления файлов используйте_ /update",
             parse_mode="MarkdownV2",
         )
         return

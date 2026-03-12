@@ -108,6 +108,69 @@ _OLLAMA_HEARTBEAT_TIMEOUT  = 2    # seconds to wait for each Ollama response
 _OLLAMA_SCANNED = False
 _OLLAMA_SCAN_LOCK = threading.Lock()
 
+# Track liveness transitions so we can auto-restart Ollama when it crashes.
+_OLLAMA_ALIVE = False          # True once Ollama responded at least once
+_OLLAMA_ALIVE_LOCK = threading.Lock()
+_OLLAMA_PROC: "subprocess.Popen | None" = None   # handle for auto-restarted Ollama
+
+# Seconds to wait after restarting Ollama before re-probing ports
+_OLLAMA_RESTART_WAIT = 5
+
+# One-liner update command shown in crash warnings
+_UPDATE_CMD_URL = (
+    "irm https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/update.ps1 | iex"
+)
+
+
+def _find_ollama_exe() -> "str | None":
+    """Return the path to ollama.exe (Windows) or 'ollama' (Unix) if installed."""
+    import shutil as _shutil
+    if _shutil.which("ollama"):
+        return "ollama"
+    # Windows common install paths
+    candidates = []
+    local_app = os.environ.get("LOCALAPPDATA", "")
+    user_profile = os.environ.get("USERPROFILE", "")
+    if local_app:
+        candidates.append(os.path.join(local_app, "Programs", "Ollama", "ollama.exe"))
+    if user_profile:
+        candidates.append(os.path.join(user_profile, "AppData", "Local", "Programs", "Ollama", "ollama.exe"))
+    candidates += [
+        r"C:\Program Files\Ollama\ollama.exe",
+        r"C:\Program Files (x86)\Ollama\ollama.exe",
+    ]
+    for c in candidates:
+        if os.path.isfile(c):
+            return c
+    return None
+
+
+def _restart_ollama() -> bool:
+    """Try to restart Ollama via 'ollama serve'.  Returns True if started."""
+    global _OLLAMA_PROC  # noqa: PLW0603
+    # If a previously restarted Ollama is still running, don't spawn another.
+    if _OLLAMA_PROC is not None and _OLLAMA_PROC.poll() is None:
+        return True  # already restarting
+    exe = _find_ollama_exe()
+    if not exe:
+        return False
+    try:
+        _OLLAMA_PROC = subprocess.Popen(
+            [exe, "serve"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            close_fds=True,
+        )
+        print(
+            f"[Code VM] Ollama crashed — restarted via 'ollama serve'. "
+            f"To update: {_UPDATE_CMD_URL}",
+            flush=True,
+        )
+        return True
+    except Exception as exc:  # pylint: disable=broad-except
+        print(f"[Code VM] Could not restart Ollama: {exc}", flush=True)
+        return False
+
 
 def _autodiscover_ollama() -> None:
     """Verify OLLAMA_BASE is reachable; if not, scan ports 11434-11444.
@@ -117,7 +180,7 @@ def _autodiscover_ollama() -> None:
     Checks HTTP 200 status to confirm it is actually Ollama (not some other
     service that happens to accept connections on the same port).
     """
-    global OLLAMA_BASE, _OLLAMA_SCANNED
+    global OLLAMA_BASE, _OLLAMA_SCANNED, _OLLAMA_ALIVE  # noqa: PLW0603
     with _OLLAMA_SCAN_LOCK:
         if _OLLAMA_SCANNED:
             return
@@ -126,6 +189,8 @@ def _autodiscover_ollama() -> None:
         try:
             r = _http.get(f"{OLLAMA_BASE}/api/tags", timeout=1)
             if r.status_code == 200:
+                with _OLLAMA_ALIVE_LOCK:
+                    _OLLAMA_ALIVE = True
                 return  # configured URL is reachable — done
         except Exception:  # pylint: disable=broad-except
             pass
@@ -138,6 +203,8 @@ def _autodiscover_ollama() -> None:
                     r = _http.get(f"{url}/api/tags", timeout=1)
                     if r.status_code == 200:
                         OLLAMA_BASE = url   # update global for all subsequent requests
+                        with _OLLAMA_ALIVE_LOCK:
+                            _OLLAMA_ALIVE = True
                         return
                 except Exception:  # pylint: disable=broad-except
                     continue
@@ -152,19 +219,55 @@ def _ollama_heartbeat() -> None:
 
     This ensures the VM always picks up Ollama even when it starts or restarts
     after the VM is already running — without requiring the browser to be open.
+    When a crash is detected (was alive → now unreachable), Ollama is restarted
+    automatically via 'ollama serve'.
     """
+    global _OLLAMA_ALIVE  # noqa: PLW0603
     while True:
         time.sleep(_OLLAMA_HEARTBEAT_INTERVAL)
+        alive_now = False
         try:
             r = _http.get(f"{OLLAMA_BASE}/api/tags", timeout=_OLLAMA_HEARTBEAT_TIMEOUT)
             if r.status_code != 200:
                 raise ValueError(f"Ollama returned HTTP {r.status_code}")
+            alive_now = True
         except Exception:  # pylint: disable=broad-except
-            # Ollama appears to be gone — allow a fresh scan
+            pass
+
+        with _OLLAMA_ALIVE_LOCK:
+            was_alive = _OLLAMA_ALIVE
+            _OLLAMA_ALIVE = alive_now
+
+        if alive_now:
+            # Ollama is healthy — nothing to do
+            pass
+        else:
+            if was_alive:
+                # Transition alive → dead: Ollama likely crashed
+                print(
+                    "[Code VM] WARNING: Ollama stopped responding — attempting auto-restart.\n"
+                    f"  If the problem persists, update drgr-bot:\n"
+                    f"    {_UPDATE_CMD_URL}\n"
+                    "  Or use /update in the Telegram bot.",
+                    flush=True,
+                )
+                restarted = _restart_ollama()
+                if restarted:
+                    # Give Ollama a moment to initialise before re-scanning
+                    time.sleep(_OLLAMA_RESTART_WAIT)
+            # Allow a fresh port scan regardless of restart success
             with _OLLAMA_SCAN_LOCK:
                 if _OLLAMA_SCANNED:
                     _OLLAMA_SCANNED = False
             _autodiscover_ollama()
+            # Update alive flag if Ollama came back
+            try:
+                r = _http.get(f"{OLLAMA_BASE}/api/tags", timeout=_OLLAMA_HEARTBEAT_TIMEOUT)
+                if r.status_code == 200:
+                    with _OLLAMA_ALIVE_LOCK:
+                        _OLLAMA_ALIVE = True
+            except Exception:  # pylint: disable=broad-except
+                pass
 
 
 threading.Thread(target=_ollama_heartbeat, daemon=True).start()
