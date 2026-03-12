@@ -3021,6 +3021,21 @@ async def handle_text(message: Message) -> None:
 
     q_lower = query.lower()
 
+    # Smart routing: detect update intent → show update command
+    # (checked BEFORE general PS_CMD_KEYWORDS to avoid "где команда" swallowing
+    #  update-specific questions like "где команда для скачивания и запуска обновлений")
+    _UPDATE_KEYWORDS = (
+        "обновл", "скачать файл", "скачать обновл", "установить обновл",
+        "новые файл", "команда для скачивания", "команда для обновл",
+        "update.ps1", "как обновить",
+        "апгрейд", "апдейт", "upgrade", "запуска апгрейд", "запустить апгрейд",
+        "скачивания", "скачать и запустить", "скачать и запуск",
+        "как скачать", "скачать и установить",
+    )
+    if any(kw in q_lower for kw in _UPDATE_KEYWORDS):
+        await cmd_update(message)
+        return
+
     # Smart routing: general PowerShell/install question → show all commands via /vm
     _PS_CMD_KEYWORDS = (
         "команда для повершел", "команда для повершелл",
@@ -3033,18 +3048,6 @@ async def handle_text(message: Message) -> None:
     )
     if any(kw in q_lower for kw in _PS_CMD_KEYWORDS):
         await cmd_vm(message)
-        return
-
-    # Smart routing: detect update intent → show update command
-    _UPDATE_KEYWORDS = (
-        "обновл", "скачать файл", "скачать обновл", "установить обновл",
-        "новые файл", "команда для скачивания", "команда для обновл",
-        "update.ps1", "как обновить",
-        "апгрейд", "апдейт", "upgrade", "запуска апгрейд", "запустить апгрейд",
-        "скачивания", "скачать и запустить", "скачать и запуск",
-    )
-    if any(kw in q_lower for kw in _UPDATE_KEYWORDS):
-        await cmd_update(message)
         return
 
     # Smart routing: detect clear search intent keywords → use research_and_reply
