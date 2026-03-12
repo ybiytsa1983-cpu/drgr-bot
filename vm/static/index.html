@@ -692,7 +692,7 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
       <div class="cm cm-bot">👋 Привет! Я — ИИ-ассистент DRGR VM. Задайте любой вопрос или дайте задание.<br><br>
 Я вижу текущий код в редакторе и URL ВИЗОРА. Используйте кнопки снизу:<br>
 📎 <b>Прикрепить файл</b> — прикрепить изображение (для vision-анализа) или текстовый файл<br>
-📸 <b>Описать ВИЗОР</b> — получить AI-описание того, что показано в ВИЗОРЕ<br>
+📸 <b>Описать ВИЗОР</b> — скриншот страницы + AI-анализ через vision-модель (Ollama или LM Studio)<br>
 🔍 <b>Поиск</b> — быстрый поиск в интернете (результаты добавляются в контекст)<br>
 📰 <b>Статья</b> — глубокое исследование темы + генерация HTML-статьи в редакторе кода<br>
 ▶ <b>Запустить код</b> — выполнить код и добавить вывод в контекст<br>
@@ -3990,8 +3990,17 @@ async function chatDescribeVisor() {
       var d = await r.json();
       if (d.success && d.description) {
         description = 'Описание страницы ' + visorUrl + ':\n' + d.description;
+        // Also attach screenshot as pending image for direct vision analysis
+        if (d.screenshot_base64) {
+          window._pendingChatImage = d.screenshot_base64;
+          window._pendingChatImageDataUrl = 'data:image/png;base64,' + d.screenshot_base64;
+          window._pendingChatImageName = 'visor-screenshot.png';
+        }
       } else if (d.success && d.screenshot_base64) {
         description = 'Скриншот страницы ' + visorUrl + ' сделан (описание недоступно).';
+        window._pendingChatImage = d.screenshot_base64;
+        window._pendingChatImageDataUrl = 'data:image/png;base64,' + d.screenshot_base64;
+        window._pendingChatImageName = 'visor-screenshot.png';
       } else {
         description = 'Не удалось получить описание страницы: ' + (d.error || 'неизвестная ошибка');
       }

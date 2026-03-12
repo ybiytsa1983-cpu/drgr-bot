@@ -4161,56 +4161,71 @@ def agent_describe_image():
     else:
         return jsonify({"error": "Provide image_path or image_base64"}), 400
 
-    # Select the first available vision model
-    selected_model = None
-    try:
-        resp = _http.get(f"{OLLAMA_BASE}/api/tags", timeout=5)
-        if resp.status_code == 200:
-            available = {m["name"] for m in resp.json().get("models", [])}
-            for vm_candidate in _VISION_MODELS:
-                if vm_candidate in available:
-                    selected_model = vm_candidate
-                    break
-    except Exception:
-        pass
-
+    # Select the best available vision model (Ollama or LM Studio)
+    selected_model = _best_vision_model()
     if not selected_model:
         # No vision model available — return empty description gracefully
         return jsonify({"description": "", "model": None, "success": False,
                         "error": "No vision model available. Run: ollama pull llava"})
 
-    try:
+    _prompt_describe = (
+        "Describe this image in detail in Russian. "
+        "Include all visible text, objects, layout, and context. "
+        "Be specific and informative."
+    )
 
-        resp = _http.post(
-            f"{OLLAMA_BASE}/api/generate",
-            json={
-                "model":  selected_model,
-                "prompt": (
-                    "Describe this image in detail in Russian. "
-                    "Include all visible text, objects, layout, and context. "
-                    "Be specific and informative."
-                ),
-                "images": [img_b64],
-                "stream": False,
-            },
-            timeout=int(os.environ.get("OLLAMA_TIMEOUT", 120)),
-        )
-        if resp.status_code == 200:
-            description = resp.json().get("response", "")
+    try:
+        is_lms = selected_model.startswith(_LM_STUDIO_PREFIX)
+        if is_lms:
+            real_model = selected_model[len(_LM_STUDIO_PREFIX):]
+            resp = _http.post(
+                f"{LM_STUDIO_BASE}/v1/chat/completions",
+                json={
+                    "model": real_model,
+                    "messages": [{"role": "user", "content": [
+                        {"type": "text", "text": _prompt_describe},
+                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}},
+                    ]}],
+                    "stream": False,
+                    "max_tokens": 1024,
+                },
+                timeout=int(os.environ.get("OLLAMA_TIMEOUT", 120)),
+            )
+            description = ""
+            if resp.status_code == 200:
+                choices = resp.json().get("choices", [])
+                if choices:
+                    description = choices[0].get("message", {}).get("content", "")
+        else:
+            resp = _http.post(
+                f"{OLLAMA_BASE}/api/generate",
+                json={
+                    "model":  selected_model,
+                    "prompt": _prompt_describe,
+                    "images": [img_b64],
+                    "stream": False,
+                },
+                timeout=int(os.environ.get("OLLAMA_TIMEOUT", 120)),
+            )
+            description = ""
+            if resp.status_code == 200:
+                description = resp.json().get("response", "")
+
+        if description:
             # Log to training data
             _record_agent_action({
                 "timestamp":   _now(),
                 "action_type": "describe_image",
                 "input":       {"image_path": image_path},
                 "output":      {"description": description[:400]},
-                "success":     bool(description),
+                "success":     True,
                 "duration_ms": 0,
                 "metadata":    {"model": selected_model},
             })
             return jsonify({
                 "description": description,
                 "model":       selected_model,
-                "success":     bool(description),
+                "success":     True,
             })
         return jsonify({"description": "", "model": selected_model, "success": False,
                         "error": resp.text[:200]}), resp.status_code
@@ -5224,26 +5239,59 @@ def browse_screenshot():
     except Exception:
         pass
 
+    # Fallback to LM Studio when no Ollama vision model is available
+    if not selected_model and LM_STUDIO_BASE:
+        try:
+            r = _http.get(f"{LM_STUDIO_BASE}/v1/models", timeout=3)
+            if r.status_code == 200:
+                lms_models = r.json().get("data", [])
+                if lms_models:
+                    selected_model = f"{_LM_STUDIO_PREFIX}{lms_models[0]['id']}"
+        except Exception:
+            pass
+
     description = ""
     if selected_model:
+        _prompt_page = (
+            "Опиши эту веб-страницу подробно на русском языке. "
+            "Укажи: заголовок страницы, основной контент, навигацию, "
+            "ключевые элементы интерфейса и кнопки управления, "
+            "что происходит на странице и какие действия можно выполнить."
+        )
         try:
-            r = _http.post(
-                f"{OLLAMA_BASE}/api/generate",
-                json={
-                    "model":  selected_model,
-                    "prompt": (
-                        "Опиши эту веб-страницу подробно на русском языке. "
-                        "Укажи: заголовок страницы, основной контент, навигацию, "
-                        "ключевые элементы интерфейса и кнопки управления, "
-                        "что происходит на странице и какие действия можно выполнить."
-                    ),
-                    "images": [screenshot_b64],
-                    "stream": False,
-                },
-                timeout=int(os.environ.get("OLLAMA_TIMEOUT", 120)),
-            )
-            if r.status_code == 200:
-                description = r.json().get("response", "")
+            is_lms = selected_model.startswith(_LM_STUDIO_PREFIX)
+            if is_lms:
+                real_model = selected_model[len(_LM_STUDIO_PREFIX):]
+                r = _http.post(
+                    f"{LM_STUDIO_BASE}/v1/chat/completions",
+                    json={
+                        "model": real_model,
+                        "messages": [{"role": "user", "content": [
+                            {"type": "text", "text": _prompt_page},
+                            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{screenshot_b64}"}},
+                        ]}],
+                        "stream": False,
+                        "max_tokens": 1024,
+                    },
+                    timeout=int(os.environ.get("OLLAMA_TIMEOUT", 120)),
+                )
+                if r.status_code == 200:
+                    choices = r.json().get("choices", [])
+                    if choices:
+                        description = choices[0].get("message", {}).get("content", "")
+            else:
+                r = _http.post(
+                    f"{OLLAMA_BASE}/api/generate",
+                    json={
+                        "model":  selected_model,
+                        "prompt": _prompt_page,
+                        "images": [screenshot_b64],
+                        "stream": False,
+                    },
+                    timeout=int(os.environ.get("OLLAMA_TIMEOUT", 120)),
+                )
+                if r.status_code == 200:
+                    description = r.json().get("response", "")
         except Exception as exc:
             _log.debug("browse_screenshot vision analysis failed: %s", exc)
 
@@ -5429,22 +5477,44 @@ def browse_agent_run():
                 # Ask model for next commands
                 model_response = ""
                 try:
-                    api_body: dict = {
-                        "model": vis_model,
-                        "prompt": agent_prompt,
-                        "stream": False,
-                    }
-                    if last_screenshot_b64:
-                        api_body["images"] = [last_screenshot_b64]
-                    r = _http.post(
-                        f"{OLLAMA_BASE}/api/generate",
-                        json=api_body,
-                        timeout=int(os.environ.get("OLLAMA_TIMEOUT", 120)),
-                    )
-                    if r.status_code == 200:
-                        model_response = r.json().get("response", "")
+                    _lms_agent = vis_model.startswith(_LM_STUDIO_PREFIX)
+                    if _lms_agent:
+                        _real_vis = vis_model[len(_LM_STUDIO_PREFIX):]
+                        _content: list = [{"type": "text", "text": agent_prompt}]
+                        if last_screenshot_b64:
+                            _content.append({"type": "image_url", "image_url": {
+                                "url": f"data:image/png;base64,{last_screenshot_b64}"}})
+                        r = _http.post(
+                            f"{LM_STUDIO_BASE}/v1/chat/completions",
+                            json={
+                                "model": _real_vis,
+                                "messages": [{"role": "user", "content": _content}],
+                                "stream": False,
+                                "max_tokens": 1024,
+                            },
+                            timeout=int(os.environ.get("OLLAMA_TIMEOUT", 120)),
+                        )
+                        if r.status_code == 200:
+                            choices = r.json().get("choices", [])
+                            if choices:
+                                model_response = choices[0].get("message", {}).get("content", "")
+                    else:
+                        api_body: dict = {
+                            "model": vis_model,
+                            "prompt": agent_prompt,
+                            "stream": False,
+                        }
+                        if last_screenshot_b64:
+                            api_body["images"] = [last_screenshot_b64]
+                        r = _http.post(
+                            f"{OLLAMA_BASE}/api/generate",
+                            json=api_body,
+                            timeout=int(os.environ.get("OLLAMA_TIMEOUT", 120)),
+                        )
+                        if r.status_code == 200:
+                            model_response = r.json().get("response", "")
                 except Exception as exc:
-                    yield f"data: {json.dumps({'error': f'Ollama error: {exc}', 'cycle': cycle})}\n\n"
+                    yield f"data: {json.dumps({'error': f'Vision model error: {exc}', 'cycle': cycle})}\n\n"
                     break
 
                 # Try to parse JSON from model response
@@ -5637,24 +5707,47 @@ def visor_watch():
                     "images": [screenshot_b64],
                     "stream": False,
                 }
-                _r = _http.post(
-                    f"{OLLAMA_BASE}/api/generate",
-                    json=vis_body,
-                    timeout=60,
-                )
-                if _r.status_code == 200:
-                    description = _r.json().get("response", "")
-                    if prev_description and description:
-                        # Compute word-level overlap as a similarity proxy
-                        prev_words = set(prev_description.lower().split())
-                        curr_words = set(description.lower().split())
-                        overlap = len(prev_words & curr_words)
-                        total   = max(len(prev_words | curr_words), 1)
-                        similarity = overlap / total
-                        change_summary = (
-                            "Нет значимых изменений" if similarity > 0.85
-                            else f"Обнаружены изменения на странице (сходство: {similarity:.0%})"
-                        )
+                _vis_prompt = vis_body["prompt"]
+                _is_lms_snap = vis_model.startswith(_LM_STUDIO_PREFIX)
+                if _is_lms_snap:
+                    _real_vis_snap = vis_model[len(_LM_STUDIO_PREFIX):]
+                    _r = _http.post(
+                        f"{LM_STUDIO_BASE}/v1/chat/completions",
+                        json={
+                            "model": _real_vis_snap,
+                            "messages": [{"role": "user", "content": [
+                                {"type": "text", "text": _vis_prompt},
+                                {"type": "image_url", "image_url": {
+                                    "url": f"data:image/png;base64,{screenshot_b64}"}},
+                            ]}],
+                            "stream": False,
+                            "max_tokens": 1024,
+                        },
+                        timeout=60,
+                    )
+                    if _r.status_code == 200:
+                        _choices = _r.json().get("choices", [])
+                        if _choices:
+                            description = _choices[0].get("message", {}).get("content", "")
+                else:
+                    _r = _http.post(
+                        f"{OLLAMA_BASE}/api/generate",
+                        json=vis_body,
+                        timeout=60,
+                    )
+                    if _r.status_code == 200:
+                        description = _r.json().get("response", "")
+                if prev_description and description:
+                    # Compute word-level overlap as a similarity proxy
+                    prev_words = set(prev_description.lower().split())
+                    curr_words = set(description.lower().split())
+                    overlap = len(prev_words & curr_words)
+                    total   = max(len(prev_words | curr_words), 1)
+                    similarity = overlap / total
+                    change_summary = (
+                        "Нет значимых изменений" if similarity > 0.85
+                        else f"Обнаружены изменения на странице (сходство: {similarity:.0%})"
+                    )
             except Exception as exc:
                 description = f"Ошибка AI анализа: {exc}"
 
@@ -5681,7 +5774,8 @@ def _best_vision_model() -> str:
     """Return the best available vision model name.
 
     Preference order: drgr-visor (our retrained model), qwen3-vl:8b, llava.
-    Falls back to the first available model if none of the preferred ones exist.
+    Falls back to LM Studio model (returned as "lmstudio:<id>") when no Ollama
+    vision model is found.  Last resort: "qwen3-vl:8b".
     """
     preferred = ["drgr-visor", "qwen3-vl:8b", "qwen3-vl:235b-cloud", "llava", "llava:13b"]
     try:
@@ -5695,6 +5789,16 @@ def _best_vision_model() -> str:
                 return next(iter(available))
     except Exception:
         pass
+    # Fallback: try LM Studio — return its first model as "lmstudio:<id>"
+    if LM_STUDIO_BASE:
+        try:
+            r = _http.get(f"{LM_STUDIO_BASE}/v1/models", timeout=3)
+            if r.status_code == 200:
+                lms_models = r.json().get("data", [])
+                if lms_models:
+                    return f"{_LM_STUDIO_PREFIX}{lms_models[0]['id']}"
+        except Exception:
+            pass
     return "qwen3-vl:8b"
 
 
