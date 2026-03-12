@@ -2393,7 +2393,11 @@ async def cmd_vm(message: Message) -> None:
     """Show VM status and how to launch it."""
     vm_ok    = False
     ollama_ok = False
+    lms_ok   = False
+    lms_url  = ""
+    lms_cfg  = False
     models: List[str] = []
+    lms_models: List[str] = []
 
     try:
         async with aiohttp.ClientSession() as session:
@@ -2402,27 +2406,39 @@ async def cmd_vm(message: Message) -> None:
                 timeout=aiohttp.ClientTimeout(total=5),
             ) as resp:
                 if resp.status == 200:
-                    hdata     = await resp.json()
-                    vm_ok     = hdata.get("vm", {}).get("status") == "ok"
-                    ollama_ok = hdata.get("ollama", {}).get("status") == "ok"
-                    models    = hdata.get("ollama", {}).get("models", [])
+                    hdata       = await resp.json()
+                    vm_ok       = hdata.get("vm", {}).get("status") == "ok"
+                    ollama_ok   = hdata.get("ollama", {}).get("status") == "ok"
+                    models      = hdata.get("ollama", {}).get("models", [])
+                    lms_data    = hdata.get("lm_studio", {})
+                    lms_ok      = lms_data.get("status") == "ok"
+                    lms_cfg     = lms_data.get("status") != "not_configured"
+                    lms_url     = lms_data.get("url", "") or ""
+                    lms_models  = lms_data.get("models", [])
     except Exception:
         pass
 
     vm_icon     = "\u2705" if vm_ok     else "\u274c"
     ollama_icon = "\u2705" if ollama_ok else "\u274c"
-    models_str  = ", ".join(models[:5]) if models else "нет"
+    lms_icon    = "\u2705" if lms_ok    else ("\u26a0\ufe0f" if lms_cfg else "\u2796")
+    all_models  = (models + lms_models)[:5]
+    models_str  = ", ".join(all_models) if all_models else "нет"
+
+    lms_status_str = "подключен" if lms_ok else ("недоступен" if lms_cfg else "не настроен")
+    lms_url_str    = f" \\(`{_esc(lms_url)}`\\)" if lms_url else ""
 
     text_md = (
         "\U0001f5a5 *Статус VM*\n\n"
         f"{vm_icon} VM \\(`{_esc(VM_BASE)}`\\): {'работает' if vm_ok else 'не запущена'}\n"
         f"{ollama_icon} Ollama: {'подключена' if ollama_ok else 'не подключена'}\n"
+        f"{lms_icon} LM Studio: {_esc(lms_status_str)}{lms_url_str}\n"
         f"\U0001f9e0 Модели: `{_esc(models_str)}`\n\n"
         f"\U0001f680 {_MD_INSTALL_CMD}\n\n"
         f"{_MD_UPDATE_CMD}\n\n"
         f"{_MD_START_CMD}\n\n"
         f"*\U0001f5a5 Адрес VM в браузере:* {_MD_WEB_URL}\n\n"
-        "_Или дважды кликни ярлык «Code VM» на Рабочем столе_"
+        "_Или дважды кликни ярлык «Code VM» на Рабочем столе_\n"
+        "_Для подключения LM Studio: откройте настройки \\(☰\\) в VM → введите URL LM Studio_"
     )
     try:
         await message.answer(text_md, parse_mode="MarkdownV2")
@@ -2431,6 +2447,7 @@ async def cmd_vm(message: Message) -> None:
             f"🖥 Статус VM\n\n"
             f"{vm_icon} VM ({VM_BASE}): {'работает' if vm_ok else 'не запущена'}\n"
             f"{ollama_icon} Ollama: {'подключена' if ollama_ok else 'не подключена'}\n"
+            f"{lms_icon} LM Studio: {lms_status_str}{(' (' + lms_url + ')') if lms_url else ''}\n"
             f"🧠 Модели: {models_str}\n\n"
             "🚀 Установка и запуск VM (PowerShell, Win+X → Windows PowerShell):\n"
             f'irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/run.ps1" | iex\n\n'
@@ -2439,7 +2456,8 @@ async def cmd_vm(message: Message) -> None:
             "▶ Запуск VM:\n"
             f'powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\\drgr-bot\\start.ps1"\n\n'
             f"🖥 Адрес VM в браузере: {VM_BASE}\n\n"
-            "Или дважды кликни ярлык «Code VM» на Рабочем столе"
+            "Или дважды кликни ярлык «Code VM» на Рабочем столе\n"
+            "Для подключения LM Studio: откройте настройки (☰) в VM → введите URL LM Studio"
         )
 
 
@@ -2955,6 +2973,8 @@ async def handle_text(message: Message) -> None:
         "где команда", "пауэршелл", "повершелл",
         "как установить", "установка vm", "установить vm",
         "run.ps1", "start.ps1",
+        "lm studio", "lm-studio", "лм студио", "подключить лм", "подключить vm",
+        "подключение vm", "подключение вм", "статус vm", "статус вм",
     )
     if any(kw in q_lower for kw in _PS_CMD_KEYWORDS):
         await cmd_vm(message)
