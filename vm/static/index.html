@@ -412,6 +412,7 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
         <div class="hr"><span class="hk">URL</span><span id="h-url" class="hv" style="font-size:9px">—</span></div>
         <div class="hr"><span class="hk">LM Studio</span><span id="h-lms" class="hv">—</span></div>
         <div class="hr"><span class="hk">🌐 Remote VM</span><span id="h-rvm" class="hv">—</span></div>
+        <div class="hr"><span class="hk">👁 Vision VM</span><span id="h-vvm" class="hv">—</span></div>
         <div class="hr"><span class="hk">📱 TG Bot</span><span id="h-bot" class="hv">—</span></div>
       </div>
       <div style="margin-top:5px">
@@ -445,6 +446,16 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
       </div>
       <div id="rvm-status" style="font-size:10px;margin-top:2px"></div>
       <div style="font-size:10px;color:var(--text2)">URL VM запущенной в Google Colab (через ngrok). Локальный сервер проксирует запросы к удалённой VM.</div>
+    </div>
+
+    <!-- Vision VM URL (dedicated Ollama with vision model) -->
+    <div>
+      <div class="pl">👁 Vision VM URL (Ollama с vision-моделью)</div>
+      <input type="text" id="vvm-url" placeholder="http://127.0.0.1:11436" autocomplete="off"/>
+      <div class="pr" style="margin-top:4px">
+        <button class="pb pb-p" style="flex:1" onclick="saveVisionVmUrl()">💾 Сохранить Vision VM</button>
+      </div>
+      <div style="font-size:10px;color:var(--text2)">URL отдельного Ollama с vision-моделью (llava, minicpm-v, moondream2). Когда подключена — все vision-запросы роутятся сюда. Рекомендуем: <b>ollama pull llava:7b</b> (≈4 ГБ) или <b>ollama pull moondream</b> (≈1.7 ГБ). Запустить второй Ollama (PowerShell): <code>$env:OLLAMA_HOST="http://127.0.0.1:11436"; ollama serve</code></div>
     </div>
 
     <!-- Bot token -->
@@ -2721,6 +2732,9 @@ async function loadHealth() {
     var rvmData = d.remote_vm || {};
     var rvmOk   = rvmData.status === 'ok';
     var rvmCfg  = rvmData.status !== 'not_configured';
+    var vvmData = d.vision_vm || {};
+    var vvmOk   = vvmData.status === 'ok';
+    var vvmCfg  = vvmData.status !== 'not_configured';
     set('h-vm',  vm ? '✓ OK'        : '✗ Ошибка',    vm  ? 'ok' : 'fail');
     set('h-ol',  ol ? '✓ OK'        : '✗ Недоступна', ol  ? 'ok' : 'fail');
     document.getElementById('h-url').textContent = (d.ollama&&d.ollama.url)||'—';
@@ -2734,11 +2748,16 @@ async function loadHealth() {
       var rvmCls  = rvmOk ? 'ok'   : (rvmCfg ? 'fail'          : '');
       set('h-rvm', rvmText, rvmCls);
     }
+    if (document.getElementById('h-vvm')) {
+      var vvmText = vvmOk ? '✓ OK' : (vvmCfg ? '✗ Недоступна' : '— Не настроена');
+      var vvmCls  = vvmOk ? 'ok'   : (vvmCfg ? 'fail'          : '');
+      set('h-vvm', vvmText, vvmCls);
+    }
     set('h-bot', botRun ? '✓ Работает' : (bot ? '⚠ Не запущен' : '✗ Нет токена'),
         botRun ? 'ok' : (bot ? 'warn' : 'fail'));
-    document.getElementById('sdot').className = (ol || lmsOk || rvmOk) ? 'ok' : '';
+    document.getElementById('sdot').className = (ol || lmsOk || rvmOk || vvmOk) ? 'ok' : '';
     // Show/hide "Ollama not running" banner in chat view
-    noOl.style.display = (ol || lmsOk || rvmOk) ? 'none' : '';
+    noOl.style.display = (ol || lmsOk || rvmOk || vvmOk) ? 'none' : '';
   } catch(e) {
     noOl.style.display = '';
   }
@@ -2912,6 +2931,9 @@ async function loadOllamaUrl() {
     if (d.remote_vm_url && document.getElementById('rvm-url')) {
       document.getElementById('rvm-url').value = d.remote_vm_url;
     }
+    if (d.vision_vm_url && document.getElementById('vvm-url')) {
+      document.getElementById('vvm-url').value = d.vision_vm_url;
+    }
     // Also update bot token indicator from settings if health hasn't been polled yet
     if (typeof d.bot_token_set === 'boolean') {
       var hasToken = d.bot_token_set;
@@ -2963,6 +2985,21 @@ async function saveRemoteVmUrl() {
     if (d.ok) {
       toast('✓ Remote VM URL сохранён, проверяю соединение...');
       setTimeout(function(){ loadHealth(); }, 1500);
+    } else { toast('⚠ ' + (d.error||'Ошибка')); }
+  } catch(e) { toast('⚠ Ошибка: ' + e.message); }
+}
+async function saveVisionVmUrl() {
+  var url = ((document.getElementById('vvm-url')||{}).value || '').trim();
+  if (!url) { toast('Введите URL Vision VM, например: http://127.0.0.1:11436'); return; }
+  if (!/^https?:\/\/.+/.test(url)) { toast('Неверный формат URL'); return; }
+  try {
+    var r = await fetch('/settings', { method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ vision_vm_url: url }) });
+    var d = await r.json();
+    if (d.ok) {
+      toast('✓ Vision VM URL сохранён, проверяю соединение...');
+      setTimeout(function(){ loadHealth(); loadModels(); }, 1500);
     } else { toast('⚠ ' + (d.error||'Ошибка')); }
   } catch(e) { toast('⚠ Ошибка: ' + e.message); }
 }
@@ -3233,6 +3270,7 @@ async function colabTestConnection() {
       if (healthData.ollama) lines.push('Ollama: ' + (healthData.ollama.status||'—'));
       if (healthData.lm_studio) lines.push('LM Studio: ' + (healthData.lm_studio.status||'—'));
       if (healthData.remote_vm) lines.push('Remote VM (цепочка): ' + (healthData.remote_vm.status||'—'));
+      if (healthData.vision_vm) lines.push('Vision VM: ' + (healthData.vision_vm.status||'—'));
       if (info) info.textContent = lines.join('\n');
     } else {
       if (badge) { badge.textContent = '❌ ' + (d.error||'Недоступен'); badge.style.color='#f44336'; }

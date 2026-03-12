@@ -92,7 +92,8 @@ _img_desc_lock    = threading.Lock()
 # Ollama service base URL (override via OLLAMA_HOST env var).
 # Default is the standard Ollama port 11434; auto-discovery scans 11434-11444
 # as a fallback, so non-standard ports still work automatically.
-OLLAMA_BASE = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+_OLLAMA_DEFAULT_BASE = "http://localhost:11434"
+OLLAMA_BASE = os.environ.get("OLLAMA_HOST", _OLLAMA_DEFAULT_BASE)
 
 # LM Studio service base URL (OpenAI-compatible API).
 # Override via LM_STUDIO_URL env var or the settings panel.
@@ -104,6 +105,14 @@ _LM_STUDIO_PREFIX = "lmstudio:"
 # Remote VM URL — URL of an externally hosted VM (e.g. Google Colab via ngrok).
 # When set, the /remote/proxy endpoint forwards requests there.
 REMOTE_VM_URL = os.environ.get("REMOTE_VM_URL", "").rstrip("/")
+
+# Vision VM URL — URL of a dedicated vision-capable Ollama instance (e.g. a
+# second Ollama with llava or minicpm-v loaded).  When set and online, all
+# vision requests are routed here automatically, effectively "disconnecting"
+# the primary VM's vision capability in favour of the dedicated one.
+VISION_VM_URL = os.environ.get("VISION_VM_URL", "").rstrip("/")
+# Prefix used in model names to indicate the model lives on the Vision VM.
+_VISION_VM_PREFIX = "visionvm:"
 
 # ---------------------------------------------------------------------------
 # Remote VM polling job queue
@@ -206,12 +215,19 @@ def _autodiscover_ollama() -> None:
         if _OLLAMA_SCANNED:
             return
         _OLLAMA_SCANNED = True
+        _default_base = _OLLAMA_DEFAULT_BASE
         # 1. Try the already-configured base URL first.
         try:
             r = _http.get(f"{OLLAMA_BASE}/api/tags", timeout=1)
             if r.status_code == 200:
                 with _OLLAMA_ALIVE_LOCK:
                     _OLLAMA_ALIVE = True
+                if OLLAMA_BASE != _default_base:
+                    print(
+                        f"[Code VM] Ollama найдена по адресу {OLLAMA_BASE} "
+                        f"(нестандартный порт — сохраните в настройках: OLLAMA_HOST={OLLAMA_BASE})",
+                        flush=True,
+                    )
                 return  # configured URL is reachable — done
         except Exception:  # pylint: disable=broad-except
             pass
@@ -223,9 +239,16 @@ def _autodiscover_ollama() -> None:
                 try:
                     r = _http.get(f"{url}/api/tags", timeout=1)
                     if r.status_code == 200:
+                        prev = OLLAMA_BASE
                         OLLAMA_BASE = url   # update global for all subsequent requests
                         with _OLLAMA_ALIVE_LOCK:
                             _OLLAMA_ALIVE = True
+                        print(
+                            f"[Code VM] Ollama обнаружена на {url}"
+                            + (" (нестандартный порт)" if port != 11434 else "")
+                            + (f" — было: {prev}" if prev != url else ""),
+                            flush=True,
+                        )
                         return
                 except Exception:  # pylint: disable=broad-except
                     continue
@@ -1657,6 +1680,21 @@ def health():
         except Exception:  # pylint: disable=broad-except
             pass
 
+    # --- Vision VM (dedicated Ollama with vision models) ---
+    vvm_ok     = False
+    vvm_models: list = []
+    if VISION_VM_URL:
+        try:
+            vvm_resp = _http.get(f"{VISION_VM_URL}/api/tags", timeout=3)
+            if vvm_resp.status_code == 200:
+                vvm_ok = True
+                vvm_models = [
+                    f"{_VISION_VM_PREFIX}{m.get('name', '')}"
+                    for m in vvm_resp.json().get("models", [])
+                ]
+        except Exception:  # pylint: disable=broad-except
+            pass
+
     return jsonify({
         "vm":     {"status": "ok"},
         "ollama": {
@@ -1672,6 +1710,11 @@ def health():
         "remote_vm": {
             "status": "ok" if rvm_ok else ("unreachable" if REMOTE_VM_URL else "not_configured"),
             "url":    REMOTE_VM_URL,
+        },
+        "vision_vm": {
+            "status": "ok" if vvm_ok else ("unreachable" if VISION_VM_URL else "not_configured"),
+            "url":    VISION_VM_URL,
+            "models": vvm_models,
         },
         "bot": {
             "token_set": bot_token_set,
@@ -2419,6 +2462,7 @@ def get_settings():
         "ollama_url": OLLAMA_BASE,
         "lm_studio_url": LM_STUDIO_BASE,
         "remote_vm_url": REMOTE_VM_URL,
+        "vision_vm_url": VISION_VM_URL,
         "bot_token_set": bot_token_set,
     })
 
@@ -2426,15 +2470,16 @@ def get_settings():
 @app.route("/settings", methods=["POST"])
 def save_settings():
     """Save settings (Telegram bot token, chat ID, Ollama URL, LM Studio URL, Remote VM URL) to .env."""
-    global OLLAMA_BASE, _OLLAMA_SCANNED, LM_STUDIO_BASE, REMOTE_VM_URL  # noqa: PLW0603
+    global OLLAMA_BASE, _OLLAMA_SCANNED, LM_STUDIO_BASE, REMOTE_VM_URL, VISION_VM_URL  # noqa: PLW0603
     body = request.get_json(silent=True) or {}
     bot_token      = body.get("bot_token",      "").strip()
     chat_id        = body.get("chat_id",         "").strip()
     ollama_url     = body.get("ollama_url",      "").strip()
     lm_studio_url  = body.get("lm_studio_url",   "").strip().rstrip("/")
     remote_vm_url  = body.get("remote_vm_url",   "").strip().rstrip("/")
+    vision_vm_url  = body.get("vision_vm_url",   "").strip().rstrip("/")
 
-    if not any([bot_token, chat_id, ollama_url, lm_studio_url, remote_vm_url]):
+    if not any([bot_token, chat_id, ollama_url, lm_studio_url, remote_vm_url, vision_vm_url]):
         return jsonify({"ok": False, "error": "Nothing to save"})
 
     env_path = os.path.join(os.path.dirname(_DIR), ".env")
@@ -2513,6 +2558,19 @@ def save_settings():
             lines.append(f"REMOTE_VM_URL={remote_vm_url}\n")
         os.environ["REMOTE_VM_URL"] = remote_vm_url
         REMOTE_VM_URL = remote_vm_url
+
+    if vision_vm_url:
+        # Update or append VISION_VM_URL line
+        vvm_found = False
+        for i, line in enumerate(lines):
+            if line.startswith("VISION_VM_URL="):
+                lines[i] = f"VISION_VM_URL={vision_vm_url}\n"
+                vvm_found = True
+                break
+        if not vvm_found:
+            lines.append(f"VISION_VM_URL={vision_vm_url}\n")
+        os.environ["VISION_VM_URL"] = vision_vm_url
+        VISION_VM_URL = vision_vm_url
 
     try:
         with open(env_path, "w", encoding="utf-8") as f:
@@ -4311,8 +4369,24 @@ def agent_describe_image():
     )
 
     try:
+        is_vvm = selected_model.startswith(_VISION_VM_PREFIX)
         is_lms = selected_model.startswith(_LM_STUDIO_PREFIX)
-        if is_lms:
+        if is_vvm:
+            real_model = selected_model[len(_VISION_VM_PREFIX):]
+            resp = _http.post(
+                f"{VISION_VM_URL}/api/generate",
+                json={
+                    "model":  real_model,
+                    "prompt": _prompt_describe,
+                    "images": [img_b64],
+                    "stream": False,
+                },
+                timeout=int(os.environ.get("OLLAMA_TIMEOUT", 120)),
+            )
+            description = ""
+            if resp.status_code == 200:
+                description = resp.json().get("response", "")
+        elif is_lms:
             real_model = selected_model[len(_LM_STUDIO_PREFIX):]
             resp = _http.post(
                 f"{LM_STUDIO_BASE}/v1/chat/completions",
@@ -5368,6 +5442,20 @@ def browse_screenshot():
 
     # ── Pick vision model ─────────────────────────────────────────────────────
     selected_model = model_override or None
+    # Highest priority: dedicated Vision VM
+    if not selected_model and VISION_VM_URL:
+        try:
+            r = _http.get(f"{VISION_VM_URL}/api/tags", timeout=3)
+            if r.status_code == 200:
+                available = {m["name"] for m in r.json().get("models", [])}
+                for candidate in _VISION_MODELS:
+                    if candidate in available:
+                        selected_model = f"{_VISION_VM_PREFIX}{candidate}"
+                        break
+                if not selected_model and available:
+                    selected_model = f"{_VISION_VM_PREFIX}{next(iter(available))}"
+        except Exception:
+            pass
     if not selected_model:
         try:
             r = _http.get(f"{OLLAMA_BASE}/api/tags", timeout=5)
@@ -5407,8 +5495,23 @@ def browse_screenshot():
             "что происходит на странице и какие действия можно выполнить."
         )
         try:
+            is_vvm = selected_model.startswith(_VISION_VM_PREFIX)
             is_lms = selected_model.startswith(_LM_STUDIO_PREFIX)
-            if is_lms:
+            if is_vvm:
+                real_model = selected_model[len(_VISION_VM_PREFIX):]
+                r = _http.post(
+                    f"{VISION_VM_URL}/api/generate",
+                    json={
+                        "model":  real_model,
+                        "prompt": _prompt_page,
+                        "images": [screenshot_b64],
+                        "stream": False,
+                    },
+                    timeout=int(os.environ.get("OLLAMA_TIMEOUT", 120)),
+                )
+                if r.status_code == 200:
+                    description = r.json().get("response", "")
+            elif is_lms:
                 real_model = selected_model[len(_LM_STUDIO_PREFIX):]
                 r = _http.post(
                     f"{LM_STUDIO_BASE}/v1/chat/completions",
@@ -5625,8 +5728,25 @@ def browse_agent_run():
                 # Ask model for next commands
                 model_response = ""
                 try:
+                    _vvm_agent = vis_model.startswith(_VISION_VM_PREFIX)
                     _lms_agent = vis_model.startswith(_LM_STUDIO_PREFIX)
-                    if _lms_agent:
+                    if _vvm_agent:
+                        _real_vis = vis_model[len(_VISION_VM_PREFIX):]
+                        _vvm_body: dict = {
+                            "model": _real_vis,
+                            "prompt": agent_prompt,
+                            "stream": False,
+                        }
+                        if last_screenshot_b64:
+                            _vvm_body["images"] = [last_screenshot_b64]
+                        r = _http.post(
+                            f"{VISION_VM_URL}/api/generate",
+                            json=_vvm_body,
+                            timeout=int(os.environ.get("OLLAMA_TIMEOUT", 120)),
+                        )
+                        if r.status_code == 200:
+                            model_response = r.json().get("response", "")
+                    elif _lms_agent:
                         _real_vis = vis_model[len(_LM_STUDIO_PREFIX):]
                         _content: list = [{"type": "text", "text": agent_prompt}]
                         if last_screenshot_b64:
@@ -5856,8 +5976,23 @@ def visor_watch():
                     "stream": False,
                 }
                 _vis_prompt = vis_body["prompt"]
+                _is_vvm_snap = vis_model.startswith(_VISION_VM_PREFIX)
                 _is_lms_snap = vis_model.startswith(_LM_STUDIO_PREFIX)
-                if _is_lms_snap:
+                if _is_vvm_snap:
+                    _real_vis_snap = vis_model[len(_VISION_VM_PREFIX):]
+                    _r = _http.post(
+                        f"{VISION_VM_URL}/api/generate",
+                        json={
+                            "model": _real_vis_snap,
+                            "prompt": _vis_prompt,
+                            "images": [screenshot_b64],
+                            "stream": False,
+                        },
+                        timeout=60,
+                    )
+                    if _r.status_code == 200:
+                        description = _r.json().get("response", "")
+                elif _is_lms_snap:
                     _real_vis_snap = vis_model[len(_LM_STUDIO_PREFIX):]
                     _r = _http.post(
                         f"{LM_STUDIO_BASE}/v1/chat/completions",
@@ -5921,12 +6056,25 @@ def visor_watch():
 def _best_vision_model() -> str:
     """Return the best available vision model name.
 
-    Preference order: drgr-visor (our retrained model), qwen3-vl:8b, llava.
-    Falls back to LM Studio model (returned as "lmstudio:<id>") when no Ollama
-    vision model is found.  Prefers LM Studio models whose names contain a known
-    vision pattern (e.g. glm-4.6v-flash, llava, vl).  Last resort: "qwen3-vl:8b".
+    Priority: Vision VM (visionvm:) → Ollama (OLLAMA_BASE) → LM Studio (lmstudio:).
+    When VISION_VM_URL is configured and online, all vision requests are routed
+    to the dedicated vision instance, effectively bypassing the primary Ollama.
     """
     preferred = ["drgr-visor", "gpt-oss:latest", "qwen3-vl:8b", "qwen3-vl:235b-cloud", "llava", "llava:13b"]
+    # 1. Dedicated Vision VM (another Ollama instance) — highest priority
+    if VISION_VM_URL:
+        try:
+            r = _http.get(f"{VISION_VM_URL}/api/tags", timeout=3)
+            if r.status_code == 200:
+                available = {m.get("name", "") for m in r.json().get("models", [])}
+                for p in preferred:
+                    if p in available:
+                        return f"{_VISION_VM_PREFIX}{p}"
+                if available:
+                    return f"{_VISION_VM_PREFIX}{next(iter(available))}"
+        except Exception:  # pylint: disable=broad-except
+            pass
+    # 2. Primary Ollama instance
     try:
         r = _http.get(f"{OLLAMA_BASE}/api/tags", timeout=5)
         if r.status_code == 200:
@@ -5938,7 +6086,7 @@ def _best_vision_model() -> str:
                 return next(iter(available))
     except Exception:
         pass
-    # Fallback: try LM Studio — prefer models with known vision capability patterns
+    # 3. Fallback: try LM Studio — prefer models with known vision capability patterns
     if LM_STUDIO_BASE:
         try:
             r = _http.get(f"{LM_STUDIO_BASE}/v1/models", timeout=3)
@@ -7407,7 +7555,19 @@ def web_research():
                     f" по теме '{_safe_query}'. Извлеки ключевую информацию: заголовки,"
                     " данные, факты, ссылки."
                 )
-                if _vis_model.startswith(_LM_STUDIO_PREFIX) and LM_STUDIO_BASE:
+                if _vis_model.startswith(_VISION_VM_PREFIX) and VISION_VM_URL:
+                    _real_vis = _vis_model[len(_VISION_VM_PREFIX):]
+                    _vr = _http.post(
+                        f"{VISION_VM_URL}/api/generate",
+                        json={"model": _real_vis, "prompt": _vision_prompt,
+                              "images": [_img_b64], "stream": False},
+                        timeout=60,
+                    )
+                    if _vr.status_code == 200:
+                        _desc = _vr.json().get("response", "")
+                        if _desc:
+                            vis_descriptions.append(_desc)
+                elif _vis_model.startswith(_LM_STUDIO_PREFIX) and LM_STUDIO_BASE:
                     _real_vis = _vis_model[len(_LM_STUDIO_PREFIX):]
                     _vr = _http.post(
                         f"{LM_STUDIO_BASE}/v1/chat/completions",
@@ -7421,7 +7581,7 @@ def web_research():
                         _desc = _vr.json().get("choices", [{}])[0].get("message", {}).get("content", "")
                         if _desc:
                             vis_descriptions.append(_desc)
-                elif not _vis_model.startswith(_LM_STUDIO_PREFIX):
+                elif not _vis_model.startswith(_LM_STUDIO_PREFIX) and not _vis_model.startswith(_VISION_VM_PREFIX):
                     _vr = _http.post(
                         f"{OLLAMA_BASE}/api/generate",
                         json={"model": _vis_model, "prompt": _vision_prompt,

@@ -2547,6 +2547,9 @@ async def cmd_vm(message: Message) -> None:
     lms_ok   = False
     lms_url  = ""
     lms_cfg  = False
+    vvm_ok   = False
+    vvm_url  = ""
+    vvm_cfg  = False
     models: List[str] = []
     lms_models: List[str] = []
 
@@ -2566,23 +2569,31 @@ async def cmd_vm(message: Message) -> None:
                     lms_cfg     = lms_data.get("status") != "not_configured"
                     lms_url     = lms_data.get("url", "") or ""
                     lms_models  = lms_data.get("models", [])
+                    vvm_data    = hdata.get("vision_vm", {})
+                    vvm_ok      = vvm_data.get("status") == "ok"
+                    vvm_cfg     = vvm_data.get("status") != "not_configured"
+                    vvm_url     = vvm_data.get("url", "") or ""
     except Exception:
         pass
 
     vm_icon     = "\u2705" if vm_ok     else "\u274c"
     ollama_icon = "\u2705" if ollama_ok else "\u274c"
     lms_icon    = "\u2705" if lms_ok    else ("\u26a0\ufe0f" if lms_cfg else "\u2796")
+    vvm_icon    = "\u2705" if vvm_ok    else ("\u26a0\ufe0f" if vvm_cfg else "\u2796")
     all_models  = (models + lms_models)[:5]
     models_str  = ", ".join(all_models) if all_models else "нет"
 
     lms_status_str = "подключен" if lms_ok else ("недоступен" if lms_cfg else "не настроен")
     lms_url_str    = f" \\(`{_esc(lms_url)}`\\)" if lms_url else ""
+    vvm_status_str = "подключена" if vvm_ok else ("недоступна" if vvm_cfg else "не настроена")
+    vvm_url_str    = f" \\(`{_esc(vvm_url)}`\\)" if vvm_url else ""
 
     text_md = (
         "\U0001f5a5 *Статус VM*\n\n"
         f"{vm_icon} VM \\(`{_esc(VM_BASE)}`\\): {'работает' if vm_ok else 'не запущена'}\n"
         f"{ollama_icon} Ollama: {'подключена' if ollama_ok else 'не подключена'}\n"
         f"{lms_icon} LM Studio: {_esc(lms_status_str)}{lms_url_str}\n"
+        f"{vvm_icon} Vision VM: {_esc(vvm_status_str)}{vvm_url_str}\n"
         f"\U0001f9e0 Модели: `{_esc(models_str)}`\n\n"
         f"\U0001f680 {_MD_INSTALL_CMD}\n\n"
         f"{_MD_UPDATE_CMD}\n\n"
@@ -2591,7 +2602,8 @@ async def cmd_vm(message: Message) -> None:
         f"*🌐 Онлайн чат\\-зал:* `http://localhost:5000/chatroom/page`\n\n"
         "_Или дважды кликни ярлык «Code VM» на Рабочем столе_\n"
         "_Для подключения LM Studio: откройте настройки \\(☰\\) в VM → введите URL LM Studio_\n"
-        "_Пример: `http://localhost:1234` \\(или IP\\-адрес хоста WSL\\)_"
+        "_Vision VM: отдельный Ollama с llava/minicpm\\-v — добавьте URL в настройках \\(☰\\) → Vision VM_\n"
+        "_Пример: `http://localhost:11436` \\(второй экземпляр Ollama с vision\\-моделью\\)_"
     )
     try:
         await message.answer(text_md, parse_mode="MarkdownV2")
@@ -2601,6 +2613,7 @@ async def cmd_vm(message: Message) -> None:
             f"{vm_icon} VM ({VM_BASE}): {'работает' if vm_ok else 'не запущена'}\n"
             f"{ollama_icon} Ollama: {'подключена' if ollama_ok else 'не подключена'}\n"
             f"{lms_icon} LM Studio: {lms_status_str}{(' (' + lms_url + ')') if lms_url else ''}\n"
+            f"{vvm_icon} Vision VM: {vvm_status_str}{(' (' + vvm_url + ')') if vvm_url else ''}\n"
             f"🧠 Модели: {models_str}\n\n"
             "🚀 Установка и запуск VM (PowerShell, Win+X → Windows PowerShell):\n"
             f'irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/run.ps1" | iex\n\n'
@@ -2611,7 +2624,8 @@ async def cmd_vm(message: Message) -> None:
             f"🖥 Адрес VM в браузере: {VM_BASE}\n"
             "🌐 Онлайн чат-зал: http://localhost:5000/chatroom/page\n\n"
             "Для подключения LM Studio: откройте настройки (☰) в VM → введите URL LM Studio\n"
-            "Пример: http://localhost:1234 (или IP-адрес хоста WSL)"
+            "Vision VM: добавьте URL второго Ollama с vision-моделью в настройках (☰) → Vision VM\n"
+            "Пример Vision VM: http://localhost:11436 (llava, minicpm-v, moondream2)"
         )
 
 
