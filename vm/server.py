@@ -3028,7 +3028,7 @@ def ollama_pull():
         except _http.exceptions.ConnectionError:
             yield "data: {\"error\":\"Cannot connect to Ollama\"}\n\n"
         except Exception as exc:  # pylint: disable=broad-except
-            yield f"data: {{\"error\":{json.dumps(str(exc))}}}\n\n"
+            yield f"data: {json.dumps({'error': str(exc)})}\n\n"
 
     return Response(
         stream_with_context(_stream()),
@@ -3171,11 +3171,12 @@ def ollama_create():
                     except ValueError:
                         continue
                     yield f"data: {json.dumps({'status': obj.get('status', ''), 'error': obj.get('error', '')})}\n\n"
-            yield f"data: {{\"status\":\"Model '{name}' created successfully!\",\"done\":true}}\n\n"
+            _done_msg = f"Model '{name}' created successfully!"
+            yield f"data: {json.dumps({'status': _done_msg, 'done': True})}\n\n"
         except _http.exceptions.ConnectionError:
             yield "data: {\"error\":\"Cannot connect to Ollama\"}\n\n"
         except Exception as exc:  # pylint: disable=broad-except
-            yield f"data: {{\"error\":{json.dumps(str(exc))}}}\n\n"
+            yield f"data: {json.dumps({'error': str(exc)})}\n\n"
 
     return Response(
         stream_with_context(_stream()),
@@ -5594,7 +5595,8 @@ def create_visor_vm():
     payload    = _ollama_create_payload(model_name, modelfile_content)
 
     def _stream():
-        yield f"data: {{\"status\":\"Creating model '{model_name}' from qwen3-vl:8b...\"}}\n\n"
+        _creating_msg = f"Creating model '{model_name}' from qwen3-vl:8b..."
+        yield f"data: {json.dumps({'status': _creating_msg})}\n\n"
         try:
             with _http.post(
                 f"{OLLAMA_BASE}/api/create",
@@ -5612,14 +5614,12 @@ def create_visor_vm():
                     status = obj.get("status", "")
                     error  = obj.get("error", "")
                     yield f"data: {json.dumps({'status': status, 'error': error})}\n\n"
-            yield (
-                f"data: {{\"status\":\"✅ Модель '{model_name}' создана! "
-                f"Используй её в настройках как '{model_name}'\",\"done\":true}}\n\n"
-            )
+            _done_status = f"✅ Модель '{model_name}' создана! Используй её в настройках как '{model_name}'"
+            yield f"data: {json.dumps({'status': _done_status, 'done': True})}\n\n"
         except _http.exceptions.ConnectionError:
             yield "data: {\"error\":\"Cannot connect to Ollama — убедись что Ollama запущена\"}\n\n"
         except Exception as exc:  # pylint: disable=broad-except
-            yield f"data: {{\"error\":{json.dumps(str(exc))}}}\n\n"
+            yield f"data: {json.dumps({'error': str(exc)})}\n\n"
 
     return Response(
         stream_with_context(_stream()),
