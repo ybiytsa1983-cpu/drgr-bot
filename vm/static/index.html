@@ -2661,9 +2661,7 @@ async function saveLmStudioUrl() {
   } catch(e) { toast('⚠ Ошибка: ' + e.message); }
 }
 async function saveRemoteVmUrl() {
-  var url = (document.getElementById('rvm-url')||{}).value;
-  if (!url) url = '';
-  url = url.trim();
+  var url = ((document.getElementById('rvm-url')||{}).value || '').trim();
   if (!url) { toast('Введите URL Remote VM, например: https://xxxx.ngrok-free.app'); return; }
   if (!/^https?:\/\/.+/.test(url)) { toast('Неверный формат URL'); return; }
   try {

@@ -2637,16 +2637,32 @@ def remote_vm_proxy(subpath):
 
     Usage:  POST /remote/proxy/chat/stream  →  forwarded to <REMOTE_VM_URL>/chat/stream
     This lets the browser UI call the Google Colab VM without CORS issues.
+    Only a safe allowlist of request headers is forwarded to avoid leaking
+    sensitive client headers (cookies, auth tokens, etc.).
     """
     if not REMOTE_VM_URL:
         return jsonify({"error": "Remote VM URL not configured"}), 503
 
     target = f"{REMOTE_VM_URL}/{subpath}"
     params = request.args.to_dict(flat=False)
+
+    # Forward only safe, non-sensitive headers
+    _ALLOWED_REQUEST_HEADERS = frozenset({
+        "content-type", "accept", "accept-language", "accept-encoding",
+        "user-agent", "cache-control", "x-requested-with",
+    })
     headers = {
         k: v for k, v in request.headers
-        if k.lower() not in ("host", "content-length")
+        if k.lower() in _ALLOWED_REQUEST_HEADERS
     }
+
+    # Response headers to strip (hop-by-hop + encoding that would confuse clients)
+    _STRIP_RESPONSE_HEADERS = frozenset({
+        "transfer-encoding", "content-encoding",
+        "connection", "keep-alive", "proxy-authenticate",
+        "proxy-authorization", "te", "trailers", "upgrade",
+    })
+
     try:
         proxied = _http.request(
             method=request.method,
@@ -2668,7 +2684,7 @@ def remote_vm_proxy(subpath):
             status=proxied.status_code,
             headers={
                 k: v for k, v in proxied.headers.items()
-                if k.lower() not in ("transfer-encoding",)
+                if k.lower() not in _STRIP_RESPONSE_HEADERS
             },
         )
     except Exception as exc:  # pylint: disable=broad-except
