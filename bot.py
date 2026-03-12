@@ -215,14 +215,29 @@ class ActionLogger:
 action_logger = ActionLogger(VM_BASE)
 
 
-def _push_tg_message_to_vm(from_name: str, text: str) -> None:
+def _push_tg_message_to_vm(
+    from_name: str,
+    text: str,
+    chat_title: str = "",
+    has_photo: bool = False,
+    has_document: bool = False,
+    file_name: str = "",
+) -> None:
     """Fire-and-forget: push a TG message to the VM chat panel via /chat/push."""
     import threading
     import urllib.request as _ureq
 
     def _do():
         try:
-            payload = json.dumps({"from_name": from_name, "text": text}).encode()
+            data: dict = {"from_name": from_name, "text": text}
+            if chat_title:
+                data["chat_title"] = chat_title
+            if has_photo:
+                data["has_photo"] = True
+            if has_document:
+                data["has_document"] = True
+                data["file_name"] = file_name
+            payload = json.dumps(data).encode()
             req = _ureq.Request(
                 f"{VM_BASE}/chat/push",
                 data=payload,
@@ -233,8 +248,6 @@ def _push_tg_message_to_vm(from_name: str, text: str) -> None:
                 pass
         except Exception as exc:
             logger.debug("_push_tg_message_to_vm: %s", exc)
-
-    threading.Thread(target=_do, daemon=True).start()
 
     threading.Thread(target=_do, daemon=True).start()
 
@@ -2517,6 +2530,13 @@ async def handle_photo_convert(message: Message) -> None:
 
     if not target_format:
         # No format specified — analyze the photo with AI vision model
+        # Forward photo notification to VM chat panel
+        _push_tg_message_to_vm(
+            from_name=(message.from_user.full_name if message.from_user else "TG"),
+            text=caption or "(без подписи)",
+            chat_title=getattr(message.chat, "title", "") or "",
+            has_photo=True,
+        )
         status = await message.answer("\U0001f50d Анализирую фото\u2026")
         try:
             photo     = message.photo[-1]  # highest resolution
@@ -2943,6 +2963,7 @@ async def handle_text(message: Message) -> None:
     _push_tg_message_to_vm(
         from_name=(message.from_user.full_name if message.from_user else "TG"),
         text=query,
+        chat_title=getattr(message.chat, "title", "") or "",
     )
 
     # Smart routing: if message contains a URL, treat it as a ВИЗОР/browse request

@@ -3852,15 +3852,16 @@ _tg_chat_counter = 0
 def chat_push():
     """Receive a Telegram message and store it for the VM chat UI to poll.
 
-    Body: {"from_name": "...", "text": "..."}
+    Body: {"from_name": "...", "text": "...", "chat_title": "...",
+           "has_photo": bool, "has_document": bool, "file_name": "..."}
     Returns: {"ok": true, "id": <int>}
     """
     global _tg_chat_counter
     body = request.get_json(silent=True) or {}
     from_name = (body.get("from_name") or "TG")[:64]
     text = (body.get("text") or "").strip()[:4000]
-    if not text:
-        return jsonify({"ok": False, "error": "empty text"})
+    if not text and not body.get("has_photo") and not body.get("has_document"):
+        return jsonify({"ok": False, "error": "empty message"})
     with _tg_chat_lock:
         _tg_chat_counter += 1
         msg_id = _tg_chat_counter
@@ -3870,6 +3871,13 @@ def chat_push():
             "text": text,
             "ts": time.strftime("%H:%M"),
         }
+        if body.get("chat_title"):
+            entry["chat_title"] = str(body["chat_title"])[:64]
+        if body.get("has_photo"):
+            entry["has_photo"] = True
+        if body.get("has_document"):
+            entry["has_document"] = True
+            entry["file_name"] = str(body.get("file_name") or "")[:128]
         _tg_chat_history.append(entry)
         if len(_tg_chat_history) > _TG_CHAT_MAX:
             _tg_chat_history.pop(0)

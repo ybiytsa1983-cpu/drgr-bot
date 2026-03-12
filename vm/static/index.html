@@ -700,6 +700,10 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
 🤖 <b>Агент</b> — запустить автономного браузер-агента (введите задание в поле или нажмите кнопку)<br>
 🔄 <b>Дообучение</b> — дообучить ВМ на накопленных действиях<br><br>
 Также я сам могу использовать инструменты: напишите «напиши статью о ...» и я автоматически соберу информацию и сгенерирую HTML-статью в редакторе.<br><br>
+💡 <b>Советы:</b><br>
+🖱 Перетащите файл (изображение или текст) прямо в это поле чата — он прикрепится автоматически.<br>
+🎨 Если ответ ИИ содержит HTML-страницу, она отобразится сразу в пузырьке с кнопками «Открыть в ВИЗОРЕ» и «В редактор».<br>
+⌨ Команды: <code>/update</code> — показать команды установки/обновления, <code>/help</code> — список команд.<br><br>
 Выберите модель в настройках (кнопка ☰), затем пишите сюда.</div>
       <div id="chat-no-ollama" class="cm cm-err" style="display:none">
         ⚠ Ollama не запущена или не обнаружена.<br>
@@ -3343,6 +3347,20 @@ async function sendChat() {
   var msg = input.value.trim();
   if (!msg && !window._pendingChatImage && !window._pendingChatFileText) return;
   if (!msg) msg = window._pendingChatImage ? '(анализируй прикреплённое изображение)' : '(анализируй прикреплённый файл)';
+
+  // Handle special slash-commands before AI call
+  if (msg.startsWith('/')) {
+    var msgs0 = document.getElementById('chat-messages');
+    var userBubble0 = document.createElement('div');
+    userBubble0.className = 'cm cm-user';
+    userBubble0.textContent = msg;
+    msgs0.appendChild(userBubble0);
+    msgs0.scrollTop = msgs0.scrollHeight;
+    input.value = ''; autoResize(input);
+    chatClearAttachment();
+    if (handleChatSlashCommand(msg, msgs0)) return;
+  }
+
   if (!curModel) { toast('Выберите модель в настройках (☰)'); return; }
 
   // Grab and clear attachment before clearing input
@@ -3469,11 +3487,8 @@ async function sendChat() {
       });
     }
     if (accumulated) {
-      // Render markdown
-      botBubble.innerHTML = mdToHtml(accumulated);
-      botBubble.className = 'cm cm-bot';
-      // Enhance HTML code blocks with inline preview
-      _enhanceBotBubbleHtml(botBubble);
+      // Render: detect raw HTML or fall back to markdown
+      _finaliseBotBubble(botBubble, accumulated);
       chatHistory.push({role:'user', text: msg});
       chatHistory.push({role:'assistant', text: accumulated});
       // Execute any tool calls found in the AI response
@@ -3712,6 +3727,67 @@ function _enhanceBotBubbleHtml(botBubble) {
   });
 }
 
+// ── Finalise a bot bubble after streaming is complete ────────────────────────
+// Detects pure-HTML responses and renders them in a sandboxed iframe directly
+// inside the chat bubble; otherwise falls back to markdown + HTML block enhancement.
+function _finaliseBotBubble(botBubble, accumulated) {
+  if (!accumulated) return;
+  var trimmed = accumulated.trim();
+  var isRawHtml = /^<!DOCTYPE\s+html/i.test(trimmed) || /^<html[\s>]/i.test(trimmed);
+  if (isRawHtml) {
+    // Render as a sandboxed iframe directly in the bubble
+    botBubble.innerHTML = '';
+    var previewWrap = document.createElement('div');
+    previewWrap.className = 'cm-html-preview';
+    var iframe = document.createElement('iframe');
+    iframe.sandbox = 'allow-scripts';
+    try { iframe.srcdoc = trimmed; } catch(e) {}
+    previewWrap.appendChild(iframe);
+    botBubble.appendChild(previewWrap);
+    var btn = document.createElement('button');
+    btn.className = 'cm-html-btn';
+    btn.textContent = '▶ Открыть в ВИЗОРЕ';
+    btn.onclick = function() { showPreview(trimmed); setView('both'); };
+    botBubble.appendChild(btn);
+    var btnEdit = document.createElement('button');
+    btnEdit.className = 'cm-html-btn';
+    btnEdit.style.marginLeft = '6px';
+    btnEdit.textContent = '📋 В редактор';
+    btnEdit.onclick = function() { if (editor && editor.setValue) { editor.setValue(trimmed); setView('both'); } };
+    botBubble.appendChild(btnEdit);
+  } else {
+    botBubble.innerHTML = mdToHtml(accumulated);
+    _enhanceBotBubbleHtml(botBubble);
+  }
+  botBubble.className = 'cm cm-bot';
+}
+
+// ── Special slash-commands in chat ───────────────────────────────────────────
+// Returns true if the command was handled locally (no AI call needed).
+function handleChatSlashCommand(cmd, msgs) {
+  var lc = cmd.toLowerCase().trim();
+  if (lc === '/update' || lc === '/upgrade' || lc === '/install' || lc === '/help') {
+    var bubble = document.createElement('div');
+    bubble.className = 'cm cm-bot';
+    bubble.innerHTML =
+      '<strong>🪟 Установка и обновление DRGR VM</strong><br><br>' +
+      '<span style="color:var(--text2);font-size:11px">Шаг 1 — первая установка (PowerShell):</span><br>' +
+      '<code class="vm-ps-inline" onclick="copyText(this.textContent)" title="Нажми для копирования" style="cursor:pointer;display:block;background:var(--bg4);padding:5px 8px;border-radius:4px;margin:4px 0;user-select:all">' +
+        'irm &quot;https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/run.ps1&quot; | iex' +
+      '</code>' +
+      '<span style="color:var(--text2);font-size:11px">⬇ Обновление (уже установлена):</span><br>' +
+      '<code class="vm-ps-inline" onclick="copyText(this.textContent)" title="Нажми для копирования" style="cursor:pointer;display:block;background:var(--bg4);padding:5px 8px;border-radius:4px;margin:4px 0;user-select:all">' +
+        'irm &quot;https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/update.ps1&quot; | iex' +
+      '</code>' +
+      '<span style="color:var(--text2);font-size:10px">Нажмите на строку — скопируется в буфер обмена. ' +
+      'Полные инструкции в настройках (кнопка ☰ → 🪟 Установка).</span>';
+    msgs.appendChild(bubble);
+    msgs.scrollTop = msgs.scrollHeight;
+    return true;
+  }
+  return false;
+}
+
 // ── TG messages forwarded to VM chat ─────────────────────────────────────────
 var _tgPollLastId = 0;
 var _tgPollTimer = null;
@@ -3730,11 +3806,30 @@ function _pollTgChatMessages() {
         _tgPollLastId = m.id;
         var bubble = document.createElement('div');
         bubble.className = 'cm cm-user';
-        // TG badge
+        // TG badge with username and optional chat title
         var badge = document.createElement('div');
         badge.className = 'cm-tg-badge';
-        badge.textContent = '📱 TG: ' + (m.from_name || 'пользователь');
+        var badgeLabel = '📱 TG: ' + (m.from_name || 'пользователь');
+        if (m.chat_title && m.chat_title !== m.from_name) badgeLabel += ' · ' + m.chat_title;
+        badge.textContent = badgeLabel;
         bubble.appendChild(badge);
+        // Image attachment from TG (if forwarded photo data URL is provided)
+        if (m.photo_data_url) {
+          var imgEl = document.createElement('img');
+          imgEl.src = m.photo_data_url;
+          imgEl.style.cssText = 'max-width:180px;max-height:120px;border-radius:6px;display:block;margin-bottom:4px';
+          bubble.appendChild(imgEl);
+        } else if (m.has_photo) {
+          var photoNote = document.createElement('div');
+          photoNote.style.cssText = 'font-size:11px;color:rgba(255,255,255,.7);margin-bottom:2px';
+          photoNote.textContent = '🖼 [фото]';
+          bubble.appendChild(photoNote);
+        } else if (m.has_document) {
+          var docNote = document.createElement('div');
+          docNote.style.cssText = 'font-size:11px;color:rgba(255,255,255,.7);margin-bottom:2px';
+          docNote.textContent = '📄 ' + (m.file_name || '[документ]');
+          bubble.appendChild(docNote);
+        }
         var textEl = document.createElement('div');
         textEl.textContent = m.text || '';
         bubble.appendChild(textEl);
@@ -4051,10 +4146,7 @@ async function chatAutoResponse(message, systemExtra) {
       });
     }
     if (accumulated) {
-      botBubble.innerHTML = mdToHtml(accumulated);
-      botBubble.className = 'cm cm-bot';
-      // Enhance HTML code blocks with inline preview
-      _enhanceBotBubbleHtml(botBubble);
+      _finaliseBotBubble(botBubble, accumulated);
       chatHistory.push({ role: 'assistant', text: accumulated });
     }
   } catch(e) {
