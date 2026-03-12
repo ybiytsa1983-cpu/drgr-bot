@@ -549,8 +549,28 @@ async def describe_image_ollama(image_path: str, model: Optional[str] = None) ->
 # ===========================================================================
 
 async def search_duckduckgo(query: str, max_results: int = 5) -> List[Dict[str, str]]:
-    """Search DuckDuckGo via library or fall back to VM /search endpoint."""
+    """Search DuckDuckGo via library or fall back to VM /search endpoint.
+
+    Returns items with BOTH ``href``/``url`` and ``body``/``snippet`` keys so
+    callers that use either naming convention work correctly.
+    """
     t0 = time.monotonic()
+
+    def _normalize(items: List[Dict[str, str]]) -> List[Dict[str, str]]:
+        """Ensure each result exposes both href/url and body/snippet aliases."""
+        out = []
+        for r in items:
+            href = r.get("href", "") or r.get("url", "")
+            body = r.get("body", "") or r.get("snippet", "")
+            out.append({
+                "title":   r.get("title", ""),
+                "href":    href,   # used by research_and_reply
+                "url":     href,   # used by cmd_research
+                "body":    body,   # used by research_and_reply aggregation
+                "snippet": body,   # used by cmd_research snippet fallback
+            })
+        return out
+
     # Try library first
     if DDG_AVAILABLE:
         try:
@@ -562,14 +582,7 @@ async def search_duckduckgo(query: str, max_results: int = 5) -> List[Dict[str, 
                 except TypeError:
                     # Newer ddgs may not support context-manager style
                     raw = DDGS().text(query, max_results=max_results)
-                return [
-                    {
-                        "title": r.get("title", ""),
-                        "href":  r.get("href", "") or r.get("url", ""),
-                        "body":  r.get("body", "") or r.get("snippet", ""),
-                    }
-                    for r in (raw or [])
-                ]
+                return _normalize(list(raw or []))
             results = await asyncio.to_thread(_sync)
             if results:
                 await action_logger.log_search(f"ddg:{query}", results, int((time.monotonic()-t0)*1000))
@@ -589,14 +602,7 @@ async def search_duckduckgo(query: str, max_results: int = 5) -> List[Dict[str, 
                 if resp.status == 200:
                     data = await resp.json()
                     if data.get("success") and data.get("results"):
-                        results = [
-                            {
-                                "title": r.get("title", ""),
-                                "href":  r.get("url", "") or r.get("href", ""),
-                                "body":  r.get("snippet", "") or r.get("body", ""),
-                            }
-                            for r in data["results"]
-                        ]
+                        results = _normalize(data["results"])
                         await action_logger.log_search(f"vm:{query}", results, int((time.monotonic()-t0)*1000))
                         return results
     except Exception as exc:
@@ -1260,25 +1266,29 @@ async def cmd_start(message: Message) -> None:
         "\U0001f916 *AI Research Agent \\+ Code VM*\n\n"
         "Я автономный агент для исследования, генерации кода и HTML\\.\n\n"
         f"\U0001f5a5 *Веб\\-интерфейс VM \\(откройте в браузере\\):* {_MD_WEB_URL}\n\n"
-        "*Команды:*\n"
+        "*Главные команды:*\n"
+        "/search `<запрос>` — \U0001f50d искать в интернете, написать статью \\+ скриншоты\n"
+        "/research `<задание>` — \U0001f50e читать страницы, обобщать, отвечать\n"
+        "/generate `<описание>` — \U0001f310 сгенерировать HTML\\-страницу \\(файл\\)\n"
+        "/code `[python|js|...]` `<задача>` — написать, запустить, исправить код\n\n"
+        "*Браузер и скриншоты:*\n"
         "/agent `<задание>` — \U0001f916 автономный браузер\\-агент: Playwright \\+ vision\n"
-        "/research `<задание>` — \U0001f50e текстовый агент: ищет, читает страницы, отвечает\n"
-        "/search `<запрос>` — исследовать тему, статья \\+ скриншоты\n"
-        "/browse `<url>` — скриншот страницы \\+ AI анализ \\(qwen3\\-vl\\)\n"
+        "/browse `<url>` — скриншот страницы \\+ AI анализ\n"
         "/visor `<url>` — 🖥 ВИЗОР: скриншот \\+ AI анализ \\(qwen3\\-vl\\)\n"
-        "/code `[python|js|html|...]` `<задача>` — написать, запустить, исправить\n"
+        "/screenshot `<url>` — быстрый скриншот страницы\n\n"
+        "*Файлы и конвертация:*\n"
         "/execute `<код>` — выполнить код в VM sandbox\n"
         "/download `<url>` — \U0001f4e5 скачать файл по URL\n"
-        "/generate `<описание>` — HTML\\-страница \\(скачать файл\\)\n"
-        "/screenshot `<url>` — быстрый скриншот страницы\n"
-        "/convert — форматы конвертера; отправьте фото или файл \\(json/csv/md/html\\) для конвертации\n"
-        "/retrain — запустить цикл самообучения VM\n"
+        "/convert — форматы конвертера; отправьте фото или файл \\(json/csv/md/html\\)\n\n"
+        "*VM и настройки:*\n"
         "/vm — статус VM, URL и команда запуска\n"
-        "/update — скачать и установить новые файлы\n"
-        "/settoken — сохранить новый токен бота\n"
         "/models — доступные AI\\-модели\n"
         "/stats — статистика самообучения\n"
-        "/help — помощь\n\n"
+        "/retrain — запустить цикл самообучения VM\n"
+        "/update — скачать и установить новые файлы\n"
+        "/settoken — сохранить новый токен бота\n"
+        "/web — ссылка на веб\\-интерфейс\n"
+        "/help — полная справка\n\n"
         "_Отправьте фото — AI опишет его \\(или с подписью `jpeg`/`png` — конвертирует\\)_\n"
         "_Отправьте \\.py/\\.js/\\.sh файл — VM выполнит его и вернёт вывод_\n\n"
         "*Или просто напишите запрос* — агент исследует тему и создаст статью\\.\n\n"
@@ -1701,9 +1711,24 @@ async def cmd_visor(message: Message) -> None:
 
 @router.message(Command("generate"))
 async def cmd_generate(message: Message) -> None:
+    """Generate an HTML page via Ollama and send it as a downloadable file.
+
+    Usage: /generate <description>
+    The VM streams HTML from the AI model and sends the result as a .html file.
+    """
     parts = (message.text or "").split(maxsplit=1)
     if len(parts) < 2:
-        await message.answer("Использование: `/generate <описание>`", parse_mode="MarkdownV2")
+        await message.answer(
+            "\U0001f310 *Генератор HTML\\-страниц*\n\n"
+            "Использование: `/generate <описание>`\n\n"
+            "Примеры:\n"
+            "• `/generate лендинг для кофейни с меню и формой заказа`\n"
+            "• `/generate красивое резюме программиста`\n"
+            "• `/generate интерактивный калькулятор ипотеки`\n\n"
+            "AI сгенерирует полноценный HTML\\-файл и отправит вам для скачивания\\.\n\n"
+            "❗ Для работы требуется запущенная VM и Ollama\\. Статус: /vm",
+            parse_mode="MarkdownV2",
+        )
         return
     prompt = parts[1].strip()
     status = await message.answer(
@@ -1779,9 +1804,32 @@ async def cmd_generate(message: Message) -> None:
 
 @router.message(Command("search"))
 async def cmd_search(message: Message) -> None:
+    """Search the internet, generate a full article with screenshots and HTML.
+
+    Usage: /search <query>
+    This command:
+      1. Searches DuckDuckGo, Wikipedia, Reddit, HackerNews
+      2. Takes screenshots of top pages
+      3. Generates a full article with Ollama AI
+      4. Replies with article text, screenshots, source list, and downloadable HTML file
+    """
     parts = (message.text or "").split(maxsplit=1)
     if len(parts) < 2:
-        await message.answer("Использование: `/search <запрос>`", parse_mode="MarkdownV2")
+        await message.answer(
+            "\U0001f50d *Поиск в интернете \\+ статья*\n\n"
+            "Использование: `/search <запрос>`\n\n"
+            "Что делает команда:\n"
+            "1\\. Ищет в DuckDuckGo, Wikipedia, Reddit, HackerNews\n"
+            "2\\. Делает скриншоты топ\\-страниц\n"
+            "3\\. Генерирует статью с помощью AI\n"
+            "4\\. Присылает текст, скриншоты, источники и HTML\\-файл\n\n"
+            "Примеры:\n"
+            "• `/search квантовые компьютеры`\n"
+            "• `/search цена биткоина 2025`\n"
+            "• `/search как работает ChatGPT`\n\n"
+            "Для быстрого поиска без скриншотов используйте `/research <запрос>`",
+            parse_mode="MarkdownV2",
+        )
         return
     await research_and_reply(parts[1].strip(), message)
 
@@ -2299,9 +2347,9 @@ async def cmd_research(message: Message) -> None:
                         )
 
         if not collected_texts and results:
-            # Use snippets if no full text available
+            # Use snippets if no full text available (check both 'snippet' and 'body' keys)
             for item in results:
-                snippet = item.get("snippet", "").strip()
+                snippet = (item.get("snippet") or item.get("body") or "").strip()
                 if snippet:
                     collected_texts.append(f"[{item.get('title', '')}]\n{snippet}")
 
@@ -3140,8 +3188,9 @@ async def handle_text(message: Message) -> None:
     # Smart routing: general PowerShell/install question → show all commands via /vm
     _PS_CMD_KEYWORDS = (
         "команда для повершел", "команда для повершелл",
+        "команда для поверш",
         "команда powershell", "powershell команда",
-        "где команда", "пауэршелл", "повершелл",
+        "где команда", "пауэршелл", "повершелл", "повекршел",
         "как установить", "установка vm", "установить vm",
         "run.ps1", "start.ps1",
         "lm studio", "lm-studio", "лм студио", "подключить лм", "подключить vm",
@@ -3186,24 +3235,24 @@ async def main() -> None:
     )
     # Register bot commands so Telegram shows them in the menu
     await bot.set_my_commands([
+        BotCommand(command="search",     description="🔍 Искать в интернете + написать статью + скриншоты"),
+        BotCommand(command="research",   description="🔎 Веб-агент: ищет, читает страницы, отвечает"),
         BotCommand(command="agent",      description="🤖 Автономный браузер-агент (Playwright + vision)"),
-        BotCommand(command="research",   description="🔎 Текстовый веб-агент: ищет и читает страницы"),
-        BotCommand(command="search",     description="Исследовать тему (статья + скриншоты)"),
-        BotCommand(command="browse",     description="Скриншот страницы + AI анализ"),
-        BotCommand(command="visor",      description="ВИЗОР: скриншот + AI анализ страницы"),
-        BotCommand(command="code",       description="Написать и выполнить код (авто-исправление)"),
-        BotCommand(command="execute",    description="Выполнить код в VM sandbox"),
+        BotCommand(command="generate",   description="🌐 Сгенерировать HTML-страницу по описанию"),
+        BotCommand(command="code",       description="💻 Написать и выполнить код (авто-исправление)"),
+        BotCommand(command="execute",    description="▶ Выполнить код в VM sandbox"),
+        BotCommand(command="browse",     description="📸 Скриншот страницы + AI анализ"),
+        BotCommand(command="visor",      description="🖥 ВИЗОР: скриншот + AI анализ страницы"),
+        BotCommand(command="screenshot", description="📷 Быстрый скриншот страницы"),
         BotCommand(command="download",   description="📥 Скачать файл по URL через VM"),
-        BotCommand(command="generate",   description="Сгенерировать HTML-страницу"),
-        BotCommand(command="screenshot", description="Быстрый скриншот страницы"),
-        BotCommand(command="convert",    description="Конвертер файлов (фото, json, csv, md)"),
-        BotCommand(command="retrain",    description="Запустить цикл самообучения VM"),
-        BotCommand(command="vm",         description="Статус VM и команды запуска"),
-        BotCommand(command="update",     description="⬇ Скачать и установить новые файлы"),
-        BotCommand(command="models",     description="Доступные AI-модели"),
-        BotCommand(command="stats",      description="Статистика самообучения"),
-        BotCommand(command="help",       description="Все команды и справка"),
+        BotCommand(command="convert",    description="🔄 Конвертер файлов (фото, json, csv, md)"),
+        BotCommand(command="vm",         description="⚙ Статус VM и команды запуска"),
+        BotCommand(command="models",     description="🧠 Доступные AI-модели"),
+        BotCommand(command="stats",      description="📊 Статистика самообучения"),
+        BotCommand(command="retrain",    description="🔁 Запустить цикл самообучения VM"),
         BotCommand(command="web",        description="🌐 Открыть веб-интерфейс Code VM (localhost:5000)"),
+        BotCommand(command="update",     description="⬇ Скачать и установить новые файлы"),
+        BotCommand(command="help",       description="📖 Все команды и справка"),
     ])
     await dp.start_polling(bot, skip_updates=True)
 
