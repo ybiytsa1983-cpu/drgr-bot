@@ -100,6 +100,14 @@ if (Test-Path $retrainBatSrc) {
         Write-Host "  [OK] ПЕРЕУЧИТЬ_ВМ.bat placed on Desktop (retrain model)." -ForegroundColor Green
     } catch { }
 }
+# Copy ОБНОВИТЬ.bat (update repo + pip dependencies)
+$updateBatSrc = Join-Path $repoDir 'ОБНОВИТЬ.bat'
+if (Test-Path $updateBatSrc) {
+    try {
+        Copy-Item -Path $updateBatSrc -Destination (Join-Path $desktopPath 'ОБНОВИТЬ.bat') -Force
+        Write-Host "  [OK] ОБНОВИТЬ.bat placed on Desktop (update / git pull)." -ForegroundColor Green
+    } catch { }
+}
 Write-Host ""
 Write-Host "  Double-click 'Code VM' on your Desktop to launch the editor." -ForegroundColor Cyan
 Write-Host "  The Monaco editor opens at http://localhost:5000" -ForegroundColor Cyan
@@ -109,6 +117,7 @@ Write-Host "    Code VM.lnk       — main shortcut (start.ps1)" -ForegroundColo
 Write-Host "    ЗАПУСТИТЬ_ВМ.bat  — VM + auto-create drgr-visor retrained model" -ForegroundColor DarkGray
 Write-Host "    ПЕРЕУЧИТЬ_ВМ.bat  — recreate/update drgr-visor model only" -ForegroundColor DarkGray
 Write-Host "    ЗАПУСТИТЬ.bat     — basic launcher (backup)" -ForegroundColor DarkGray
+Write-Host "    ОБНОВИТЬ.bat      — update files (git pull + pip install)" -ForegroundColor DarkGray
 Write-Host ""
 Write-Host "  Tip: right-click the shortcut -> 'Pin to taskbar'" -ForegroundColor Yellow
 Write-Host ""

@@ -63,6 +63,15 @@ if (Test-Path $oldBat) {
     } catch {}
 }
 
+# Скопировать ОБНОВИТЬ.bat для обновления репозитория с рабочего стола
+$updateBat = Join-Path $repoDir 'ОБНОВИТЬ.bat'
+if (Test-Path $updateBat) {
+    try {
+        Copy-Item -Path $updateBat -Destination (Join-Path $desktopPath 'ОБНОВИТЬ.bat') -Force
+        Ok "ОБНОВИТЬ.bat скопирован на рабочий стол"
+    } catch { Warn "Не удалось скопировать ОБНОВИТЬ.bat: $_" }
+}
+
 # -- 2. Запустить VM ----------------------------------------------------------
 $startPs1 = Join-Path $repoDir "start.ps1"
 $vmPs1    = Join-Path $repoDir "vm.ps1"
