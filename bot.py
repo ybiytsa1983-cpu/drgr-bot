@@ -1162,6 +1162,7 @@ async def cmd_start(message: Message) -> None:
         "/models — доступные AI\\-модели\n"
         "/stats — статистика самообучения\n"
         "/help — помощь\n\n"
+        "_Отправьте фото — AI опишет его \\(или с подписью `jpeg`/`png` — конвертирует\\)_\n"
         "_Отправьте \\.py/\\.js/\\.sh файл — VM выполнит его и вернёт вывод_\n\n"
         "*Или просто напишите запрос* — агент исследует тему и создаст статью\\.\n\n"
         f"\U0001f4bb {_MD_INSTALL_CMD}\n\n"
@@ -1220,8 +1221,9 @@ async def cmd_help(message: Message) -> None:
         "• `/retrain` — запустить цикл самообучения VM вручную\n"
         "• `/vm` — статус VM и команды запуска\n"
         "• `/update` — команда для скачивания и установки новых файлов\n\n"
-        "*Конвертер файлов \\(через VM\\):*\n"
+        "*Конвертер файлов и фото \\(через VM\\):*\n"
         "• `/convert` — список всех доступных конвертаций\n"
+        "• Отправьте фото — AI опишет содержимое \\(vision\\-модель\\)\n"
         "• Отправьте фото с подписью `jpeg`, `png`, `webp` или `bmp` — конвертация изображения\n"
         "• Отправьте файл `.json`, `.csv`, `.html` или `.md` — конвертация текстового формата\n\n"
         f"{_MD_INSTALL_CMD}\n\n"
@@ -2306,19 +2308,35 @@ async def cmd_vm(message: Message) -> None:
     ollama_icon = "\u2705" if ollama_ok else "\u274c"
     models_str  = ", ".join(models[:5]) if models else "нет"
 
-    await message.answer(
+    text_md = (
         "\U0001f5a5 *Статус VM*\n\n"
         f"{vm_icon} VM \\(`{_esc(VM_BASE)}`\\): {'работает' if vm_ok else 'не запущена'}\n"
         f"{ollama_icon} Ollama: {'подключена' if ollama_ok else 'не подключена'}\n"
         f"\U0001f9e0 Модели: `{_esc(models_str)}`\n\n"
-        f"*\U0001f680 {_MD_INSTALL_CMD}\n\n"
+        f"\U0001f680 {_MD_INSTALL_CMD}\n\n"
         f"{_MD_UPDATE_CMD}\n\n"
         "*\u25b6\ufe0f Запуск VM:*\n"
         "`powershell \\-ExecutionPolicy Bypass \\-File \"$env:USERPROFILE\\\\drgr\\-bot\\\\start\\.ps1\"`\n\n"
         f"*\U0001f5a5 Адрес VM в браузере:* {_MD_WEB_URL}\n\n"
-        "_Или дважды кликни ярлык «Code VM» на Рабочем столе_",
-        parse_mode="MarkdownV2",
+        "_Или дважды кликни ярлык «Code VM» на Рабочем столе_"
     )
+    try:
+        await message.answer(text_md, parse_mode="MarkdownV2")
+    except Exception:
+        await message.answer(
+            f"🖥 Статус VM\n\n"
+            f"{vm_icon} VM ({VM_BASE}): {'работает' if vm_ok else 'не запущена'}\n"
+            f"{ollama_icon} Ollama: {'подключена' if ollama_ok else 'не подключена'}\n"
+            f"🧠 Модели: {models_str}\n\n"
+            "🚀 Установка и запуск VM (PowerShell, Win+X → Windows PowerShell):\n"
+            f'irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/run.ps1" | iex\n\n'
+            "⬇ Обновить (скачать новые файлы):\n"
+            f'irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/update.ps1" | iex\n\n'
+            "▶ Запуск VM:\n"
+            f'powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\\drgr-bot\\start.ps1"\n\n'
+            f"🖥 Адрес VM в браузере: {VM_BASE}\n\n"
+            "Или дважды кликни ярлык «Code VM» на Рабочем столе"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -2331,30 +2349,79 @@ _IMAGE_FMT_ALIASES = {"jpg": "jpeg", "jpeg": "jpeg", "png": "png", "webp": "webp
 
 @router.message(F.photo)
 async def handle_photo_convert(message: Message) -> None:
-    """Convert a received photo to another image format via VM /convert/image."""
-    caption = (message.caption or "").strip().lower()
+    """Analyze photo with AI or convert to another format via VM.
+
+    - Caption contains a format (jpeg/png/webp/bmp) → convert image
+    - Any other caption or no caption → analyze photo with AI vision model
+    """
+    caption = (message.caption or "").strip()
+    caption_lower = caption.lower()
 
     # Look for a target format anywhere in the caption
     target_format = None
-    for word in caption.split():
+    for word in caption_lower.split():
         if word in _IMAGE_FMT_ALIASES:
             target_format = _IMAGE_FMT_ALIASES[word]
             break
     if not target_format:
         for alias, fmt in _IMAGE_FMT_ALIASES.items():
-            if alias in caption:
+            if alias in caption_lower:
                 target_format = fmt
                 break
 
     if not target_format:
-        await message.answer(
-            "\U0001f5bc *Конвертация фото через VM*\n\n"
-            "Отправьте фото с подписью нужного формата:\n"
-            "\u2022 `jpeg` — JPEG \\(меньше размер\\)\n"
-            "\u2022 `png` — PNG \\(без потерь\\)\n"
-            "\u2022 `webp` — WebP \\(современный\\)\n"
-            "\u2022 `bmp` — BMP\n\n"
-            "Пример подписи: `webp` или `jpeg`",
+        # No format specified — analyze the photo with AI vision model
+        status = await message.answer("\U0001f50d Анализирую фото\u2026")
+        try:
+            photo     = message.photo[-1]  # highest resolution
+            file_info = await bot.get_file(photo.file_id)
+            buf       = io.BytesIO()
+            await bot.download_file(file_info.file_path, buf)
+            img_b64   = base64.b64encode(buf.getvalue()).decode()
+
+            # Build prompt: use caption as user question if provided
+            prompt_extra = f" Вопрос пользователя: {caption}" if caption else ""
+
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{VM_BASE}/agent/describe_image",
+                    json={"image_base64": img_b64, "filename": "photo.jpg"},
+                    timeout=aiohttp.ClientTimeout(total=60),
+                ) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        description = data.get("description", "").strip()
+                        model_used  = data.get("model", "")
+                        if description:
+                            reply = f"\U0001f5bc {description}"
+                            await status.delete()
+                            # Split long descriptions
+                            for chunk in _split_text(reply, 4000):
+                                await message.answer(chunk)
+                            if model_used:
+                                await message.answer(
+                                    f"_Модель: {_esc(model_used)}_",
+                                    parse_mode="MarkdownV2",
+                                )
+                            return
+                        err = data.get("error", "")
+                        if "No vision model" in err:
+                            await status.edit_text(
+                                "\u26a0\ufe0f Нет vision\\-модели\\. Установите:\n"
+                                "`ollama pull llava`\n\n"
+                                "Или для конвертации фото отправьте с подписью: `jpeg`, `png`, `webp`, `bmp`",
+                                parse_mode="MarkdownV2",
+                            )
+                            return
+                        await status.edit_text(f"\u274c {err[:300] or 'Ошибка анализа фото'}")
+                        return
+                    await status.edit_text(f"\u274c VM: HTTP {resp.status}")
+                    return
+        except Exception as exc:
+            logger.error("photo_analyze: %s", exc)
+        await status.edit_text(
+            "\u274c VM недоступна\\. Убедитесь, что VM запущена \\(/vm\\)\\.\n\n"
+            "Для конвертации фото отправьте с подписью: `jpeg`, `png`, `webp`, `bmp`",
             parse_mode="MarkdownV2",
         )
         return

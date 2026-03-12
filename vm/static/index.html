@@ -472,7 +472,7 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
           font-family:monospace;color:#9cdcfe;cursor:pointer;word-break:break-all;margin-bottom:6px;
           border:1px solid var(--border)"
         onclick="copyPs('ps-update-cmd')" title="Нажмите для копирования">
-        <span id="ps-update-cmd">Set-Location "$env:USERPROFILE\drgr-bot"; git pull; .\install.ps1</span>
+        <span id="ps-update-cmd">irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/update.ps1" | iex</span>
         <span style="float:right;color:var(--text2);font-size:9px">📋</span>
       </div>
       <div style="font-size:10px;color:var(--text2);margin-bottom:3px">Запустить VM:</div>
@@ -748,6 +748,11 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
         <p style="margin-top:4px;color:var(--text2);font-size:11px">Шаг 1 — первая установка (загружает всё необходимое):</p>
         <div class="vm-ps" onclick="copyText(this.querySelector('code').textContent)" title="Нажми для копирования">
           <code>irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/run.ps1" | iex</code>
+          <span style="color:var(--text2);font-size:9px;flex-shrink:0">📋</span>
+        </div>
+        <p style="margin-top:8px;color:var(--text2);font-size:11px">⬇ Скачать обновления (если VM уже установлена):</p>
+        <div class="vm-ps" onclick="copyText(this.querySelector('code').textContent)" title="Нажми для копирования">
+          <code>irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/update.ps1" | iex</code>
           <span style="color:var(--text2);font-size:9px;flex-shrink:0">📋</span>
         </div>
         <p style="margin-top:8px;color:var(--text2);font-size:11px">Шаг 2 — после установки, запуск переученной ВМ (папка уже есть):</p>
