@@ -648,11 +648,13 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
 Я вижу текущий код в редакторе и URL ВИЗОРА. Используйте кнопки снизу:<br>
 📎 <b>Прикрепить файл</b> — прикрепить изображение (для vision-анализа) или текстовый файл<br>
 📸 <b>Описать ВИЗОР</b> — получить AI-описание того, что показано в ВИЗОРЕ<br>
-🔍 <b>Поиск</b> — искать в интернете и добавить результаты в контекст<br>
+🔍 <b>Поиск</b> — быстрый поиск в интернете (результаты добавляются в контекст)<br>
+📰 <b>Статья</b> — глубокое исследование темы + генерация HTML-статьи в редакторе кода<br>
 ▶ <b>Запустить код</b> — выполнить код и добавить вывод в контекст<br>
 📋 <b>Вставить код</b> — вставить текущий код редактора в сообщение<br>
 🤖 <b>Агент</b> — запустить автономного браузер-агента (введите задание в поле или нажмите кнопку)<br>
 🔄 <b>Дообучение</b> — дообучить ВМ на накопленных действиях<br><br>
+Также я сам могу использовать инструменты: напишите «напиши статью о ...» и я автоматически соберу информацию и сгенерирую HTML-статью в редакторе.<br><br>
 Выберите модель в настройках (кнопка ☰), затем пишите сюда.</div>
       <div id="chat-no-ollama" class="cm cm-err" style="display:none">
         ⚠ Ollama не запущена или не обнаружена.<br>
@@ -691,6 +693,7 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
       <span class="ct-label">Инструменты:</span>
       <button class="ct-btn" id="btn-chat-visor" onclick="chatDescribeVisor()" title="Сделать скриншот ВИЗОРА и описать его в чате">📸 Описать ВИЗОР</button>
       <button class="ct-btn" id="btn-chat-search" onclick="chatOpenSearch()" title="Поиск в интернете и добавить результаты в чат">🔍 Поиск</button>
+      <button class="ct-btn" id="btn-chat-research" onclick="chatOpenResearch()" title="Исследовать тему: поиск в интернете + генерация HTML-статьи в редакторе" style="border-color:#0a7e8c;color:#4ecdc4">📰 Статья</button>
       <button class="ct-btn" id="btn-chat-run" onclick="chatRunCode()" title="Выполнить код из редактора и добавить результат в чат">▶ Запустить код</button>
       <button class="ct-btn" id="btn-chat-code" onclick="chatSendCode()" title="Вставить текущий код редактора в чат">📋 Вставить код</button>
       <button class="ct-btn" id="btn-chat-agent" onclick="chatRunAgent()" title="Запустить автономный браузер-агент из чата" style="border-color:#7b3f9e;color:#c47ff7">🤖 Агент</button>
@@ -2953,12 +2956,15 @@ async function sendChat() {
   var systemParts = [
     'Ты — DRGR VM, умный ИИ-ассистент встроенный в среду разработки.',
     'У тебя есть доступ к следующим инструментам (используй их если нужно):',
-    '  [SEARCH: запрос] — поиск в интернете',
+    '  [SEARCH: запрос] — быстрый поиск в интернете (5 результатов)',
+    '  [RESEARCH: тема] — глубокое веб-исследование: собирает данные из DDG, Wikipedia, Reddit, HN → генерирует HTML-статью → открывает в редакторе кода',
     '  [BROWSE: https://url] — загрузить и описать веб-страницу',
     '  [DESCRIBE_VISOR] — описать содержимое ВИЗОРА (браузер/предпросмотр)',
     '  [EXEC] — выполнить текущий код из редактора и показать результат',
+    'Используй [RESEARCH: тема] когда пользователь просит написать статью, исследовать тему или собрать информацию по теме.',
+    'Используй [SEARCH: запрос] для быстрых поисков без генерации статьи.',
     'Используй [EXEC] когда пользователь просит запустить, выполнить или протестировать код.',
-    'Отвечай на русском языке. Если нужны данные из интернета — используй [SEARCH:...].',
+    'Отвечай на русском языке.',
   ];
   // Attach current editor code as context
   var editorCode = editor && editor.getValue ? editor.getValue().trim() : '';
@@ -3021,7 +3027,7 @@ async function sendChat() {
   document.getElementById('btn-chat-send').disabled = true;
   document.getElementById('btn-chat-attach').disabled = true;
   // Disable tool buttons while chat busy
-  ['btn-chat-visor','btn-chat-search','btn-chat-run','btn-chat-code','btn-chat-agent','btn-chat-retrain'].forEach(function(id){
+  ['btn-chat-visor','btn-chat-search','btn-chat-research','btn-chat-run','btn-chat-code','btn-chat-agent','btn-chat-retrain'].forEach(function(id){
     var b = document.getElementById(id); if (b) b.disabled = true;
   });
 
@@ -3076,7 +3082,7 @@ async function sendChat() {
   chatBusy = false;
   document.getElementById('btn-chat-send').disabled = false;
   document.getElementById('btn-chat-attach').disabled = false;
-  ['btn-chat-visor','btn-chat-search','btn-chat-run','btn-chat-code','btn-chat-agent','btn-chat-retrain'].forEach(function(id){
+  ['btn-chat-visor','btn-chat-search','btn-chat-research','btn-chat-run','btn-chat-code','btn-chat-agent','btn-chat-retrain'].forEach(function(id){
     var b = document.getElementById(id); if (b) b.disabled = false;
   });
   msgs.scrollTop = msgs.scrollHeight;
@@ -3412,7 +3418,143 @@ async function chatRunSearch(query) {
   msgs.scrollTop = msgs.scrollHeight;
 }
 
-// ── Chat tool: run code from editor ───────────────────────────────────────
+// ── Chat tool: deep web research → HTML article in editor ─────────────────
+async function chatOpenResearch() {
+  var query = prompt('Введите тему для исследования (будет сгенерирована HTML-статья в редакторе):');
+  if (!query || !query.trim()) return;
+  if (chatBusy) { toast('Чат занят...'); return; }
+  var msgs = document.getElementById('chat-messages');
+  var userBubble = document.createElement('div');
+  userBubble.className = 'cm cm-user';
+  userBubble.textContent = '📰 Исследовать тему: ' + query.trim();
+  msgs.appendChild(userBubble);
+  msgs.scrollTop = msgs.scrollHeight;
+  chatBusy = true;
+  document.getElementById('btn-chat-send').disabled = true;
+  ['btn-chat-visor','btn-chat-search','btn-chat-research','btn-chat-run','btn-chat-code','btn-chat-agent','btn-chat-retrain'].forEach(function(id){
+    var b = document.getElementById(id); if (b) b.disabled = true;
+  });
+  var result = await chatRunResearch(query.trim());
+  if (result) {
+    await chatAutoResponse(
+      'Исследование по теме "' + (result.title || query) + '" завершено. ' +
+      'HTML-статья открыта в редакторе кода. Источников: ' + (result.sourceCount || 0) + '. ' +
+      'Пожалуйста, представь статью: дай краткое резюме (3-5 ключевых тезиса) и сделай вывод.',
+      'Данные исследования:\n' + result.summary
+    );
+  }
+  chatBusy = false;
+  document.getElementById('btn-chat-send').disabled = false;
+  ['btn-chat-visor','btn-chat-search','btn-chat-research','btn-chat-run','btn-chat-code','btn-chat-agent','btn-chat-retrain'].forEach(function(id){
+    var b = document.getElementById(id); if (b) b.disabled = false;
+  });
+}
+
+async function chatRunResearch(query) {
+  var msgs = document.getElementById('chat-messages');
+  var infoDiv = document.createElement('div');
+  infoDiv.className = 'cm cm-tool';
+  infoDiv.textContent = '🔬 Исследование: "' + query + '" — поиск в DDG, Wikipedia, Reddit, HackerNews…';
+  msgs.appendChild(infoDiv);
+  msgs.scrollTop = msgs.scrollHeight;
+  try {
+    var r = await fetch('/research', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ query: query, max_results: 5, screenshots: false, model: curModel })
+    });
+    var d = await r.json();
+    if (!d.success) {
+      infoDiv.className = 'cm cm-err';
+      infoDiv.textContent = '⚠ Ошибка исследования: ' + (d.error || 'неизвестно');
+      msgs.scrollTop = msgs.scrollHeight;
+      return null;
+    }
+    // Put HTML article in Monaco editor
+    if (window.editor && d.html) {
+      window.editor.setValue(d.html);
+      var sel = document.getElementById('lang-select');
+      if (sel) sel.value = 'html';
+      try { monaco.editor.setModelLanguage(editor.getModel(), 'html'); } catch(e) {}
+      // Refresh preview
+      if (typeof previewFromEditor === 'function') previewFromEditor();
+    }
+    // Switch to split view so user sees editor + article preview
+    if (window.setView) setView('both');
+    // Build text summary for chat context
+    var srcTitles = (d.sources || []).slice(0, 5).map(function(s, i) {
+      return (i+1) + '. ' + (s.title || s.url || 'Источник') + ' [' + (s.source || '?') + ']';
+    }).join('\n');
+    var summary = 'Тема: "' + (d.title || query) + '"\nИсточников: ' + (d.sources ? d.sources.length : 0) +
+      (srcTitles ? '\n' + srcTitles : '') + '\nHTML-статья загружена в редактор кода.';
+    infoDiv.className = 'cm cm-tool-result';
+    infoDiv.textContent = '📰 Статья сгенерирована — ' + (d.title || query) + ' (' + (d.sources ? d.sources.length : 0) + ' источн.) → открыта в редакторе';
+    window._pendingSearchContext = summary;
+    msgs.scrollTop = msgs.scrollHeight;
+    return { title: d.title || query, sourceCount: d.sources ? d.sources.length : 0, summary: summary, html: d.html };
+  } catch(e) {
+    infoDiv.className = 'cm cm-err';
+    infoDiv.textContent = '⚠ Ошибка: ' + e.message;
+    msgs.scrollTop = msgs.scrollHeight;
+    return null;
+  }
+}
+
+// Send an automatic follow-up AI response (used after tool results are ready)
+async function chatAutoResponse(message, systemExtra) {
+  if (!curModel) return;
+  var msgs = document.getElementById('chat-messages');
+  var botBubble = document.createElement('div');
+  botBubble.className = 'cm cm-bot streaming';
+  botBubble.textContent = '…';
+  msgs.appendChild(botBubble);
+  msgs.scrollTop = msgs.scrollHeight;
+  var sysParts = ['Ты — DRGR VM, умный ИИ-ассистент. Отвечай на русском языке.'];
+  if (systemExtra) sysParts.push(systemExtra);
+  var accumulated = '';
+  try {
+    var resp = await fetch('/chat/stream', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ message: message, model: curModel, history: chatHistory, system: sysParts.join('\n') })
+    });
+    var reader = resp.body.getReader();
+    var dec = new TextDecoder();
+    while (true) {
+      var res = await reader.read();
+      if (res.done) break;
+      dec.decode(res.value).split('\n').forEach(function(line) {
+        if (!line.startsWith('data: ')) return;
+        var payload = line.slice(6).trim();
+        if (payload === '[DONE]') return;
+        try {
+          var obj = JSON.parse(payload);
+          if (obj.error) {
+            botBubble.className = 'cm cm-err';
+            botBubble.textContent = '⚠ ' + obj.error;
+            accumulated = '';
+            return;
+          }
+          if (obj.token) {
+            accumulated += obj.token;
+            botBubble.textContent = accumulated;
+            botBubble.className = 'cm cm-bot streaming';
+            msgs.scrollTop = msgs.scrollHeight;
+          }
+        } catch(e2) {}
+      });
+    }
+    if (accumulated) {
+      botBubble.innerHTML = mdToHtml(accumulated);
+      botBubble.className = 'cm cm-bot';
+      chatHistory.push({ role: 'assistant', text: accumulated });
+    }
+  } catch(e) {
+    botBubble.className = 'cm cm-err';
+    botBubble.textContent = '⚠ Ошибка ответа: ' + e.message;
+  }
+  msgs.scrollTop = msgs.scrollHeight;
+}
 async function chatRunCode() {
   if (chatBusy) { toast('Чат занят...'); return; }
   var code = editor && editor.getValue ? editor.getValue().trim() : '';
@@ -3516,13 +3658,28 @@ function chatSendCode() {
 }
 
 // ── Parse AI response for tool calls and execute them ─────────────────────
-// AI can emit: [SEARCH: query], [BROWSE: url], [EXEC], [DESCRIBE_VISOR]
+// AI can emit: [SEARCH: query], [RESEARCH: query], [BROWSE: url], [EXEC], [DESCRIBE_VISOR]
 async function executeToolCalls(text, msgs) {
   var toolCalled = false;
   // [EXEC] — execute current editor code
   if (/\[EXEC\]/i.test(text)) {
     toolCalled = true;
     await chatRunCode();
+  }
+  // [RESEARCH: query] — deep research → HTML article in editor + auto AI summary
+  var researchRe = /\[RESEARCH:\s*([^\]]+)\]/gi;
+  var rm;
+  while ((rm = researchRe.exec(text)) !== null) {
+    toolCalled = true;
+    var rQuery = rm[1].trim();
+    var rResult = await chatRunResearch(rQuery);
+    if (rResult) {
+      await chatAutoResponse(
+        'Исследование по теме "' + rResult.title + '" завершено. HTML-статья открыта в редакторе кода. ' +
+        'Пожалуйста, представь статью: дай краткое резюме (3-5 ключевых тезиса) и сделай вывод на русском языке.',
+        'Данные исследования:\n' + rResult.summary
+      );
+    }
   }
   // [SEARCH: query]
   var searchRe = /\[SEARCH:\s*([^\]]+)\]/gi;
