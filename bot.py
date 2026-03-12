@@ -745,6 +745,43 @@ async def take_screenshot(url: str, output_path: str) -> bool:
     return success
 
 
+async def screenshot_html_article(html_path: str, output_path: str) -> bool:
+    """Render a local HTML file and capture a viewport screenshot of the rendered article.
+
+    The screenshot is viewport-only (not full-page) so it serves as a quick above-the-fold
+    visual preview showing the article title and opening.
+    """
+    if not PLAYWRIGHT_AVAILABLE:
+        return False
+    # Ensure the path stays within ARTICLES_DIR to prevent unintended file access
+    try:
+        resolved = os.path.realpath(html_path)
+        articles_dir = str(ARTICLES_DIR.resolve())
+        if not resolved.startswith(articles_dir + os.sep) and resolved != articles_dir:
+            logger.warning("screenshot_html_article: path outside ARTICLES_DIR: %s", html_path)
+            return False
+    except Exception:
+        return False
+    try:
+        file_url = "file://" + resolved
+        async with async_playwright() as pw:
+            browser = await pw.chromium.launch(headless=True)
+            page = await browser.new_page(viewport={"width": 1280, "height": 900})
+            try:
+                await page.goto(file_url, wait_until="domcontentloaded", timeout=15_000)
+                await page.wait_for_timeout(600)
+                await page.screenshot(path=output_path, full_page=False)
+                return True
+            except PlaywrightTimeout:
+                logger.warning("screenshot_html_article timeout: %s", html_path)
+                return False
+            finally:
+                await browser.close()
+    except Exception as exc:
+        logger.warning("screenshot_html_article: %s", exc)
+        return False
+
+
 async def extract_page_text(url: str, max_chars: int = 3000) -> str:
     """Extract visible text from a page via local Playwright or VM /browse/page."""
     # Try local Playwright first
@@ -1109,11 +1146,25 @@ async def research_and_reply(query: str, message: Message) -> None:
     for path in screenshot_paths:
         asyncio.create_task(describe_image_ollama(path))
 
-    # 8. Send to Telegram
+    # 8. Take a screenshot of the generated article HTML for a visual preview
+    article_preview_path = str(SCREENSHOTS_DIR / f"article_preview_{ts}.png")
+    article_preview_ok = await screenshot_html_article(article_path, article_preview_path)
+
+    # 9. Send to Telegram
     try:
         await status.delete()
     except Exception:
         pass  # message may have been deleted already
+
+    # Send article preview screenshot first (visual preview of the rendered article)
+    if article_preview_ok and os.path.exists(article_preview_path):
+        try:
+            await message.answer_photo(
+                FSInputFile(article_preview_path),
+                caption=f"\U0001f4f0 Статья: {title[:80]}",
+            )
+        except Exception as exc:
+            logger.warning("article preview screenshot send: %s", exc)
 
     header = f"\U0001f4f0 *{_esc(title)}*\n\n"
     chunks = _split_text(article_text, 4000)

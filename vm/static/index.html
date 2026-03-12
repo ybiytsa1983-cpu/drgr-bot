@@ -4137,25 +4137,54 @@ async function chatRunResearch(query) {
       msgs.scrollTop = msgs.scrollHeight;
       return null;
     }
-    // Put HTML article in Monaco editor
+    // Put HTML article in Monaco editor (background – available when user opens editor)
     if (window.editor && d.html) {
       window.editor.setValue(d.html);
       var sel = document.getElementById('lang-select');
       if (sel) sel.value = 'html';
       try { monaco.editor.setModelLanguage(editor.getModel(), 'html'); } catch(e) {}
-      // Refresh preview
+      // Refresh preview (hidden in chat view, but ready when user switches)
       if (typeof previewFromEditor === 'function') previewFromEditor();
     }
-    // Switch to split view so user sees editor + article preview
-    if (window.setView) setView('both');
+    // Show inline article preview inside the chat bubble so user stays in chat view
+    infoDiv.className = 'cm cm-tool-result';
+    infoDiv.innerHTML = '';
+    var titleBar = document.createElement('div');
+    titleBar.style.cssText = 'margin-bottom:6px;font-weight:600';
+    titleBar.textContent = '📰 Статья: ' + (d.title || query) + ' (' + (d.sources ? d.sources.length : 0) + ' источн.)';
+    infoDiv.appendChild(titleBar);
+    if (d.html) {
+      var previewWrap = document.createElement('div');
+      previewWrap.className = 'cm-html-preview';
+      previewWrap.style.marginBottom = '6px';
+      var iframe = document.createElement('iframe');
+      iframe.sandbox = 'allow-scripts';
+      try { iframe.srcdoc = d.html; } catch(eIframe) {}
+      previewWrap.appendChild(iframe);
+      infoDiv.appendChild(previewWrap);
+    }
+    var btnRow = document.createElement('div');
+    btnRow.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap';
+    var btnEditor = document.createElement('button');
+    btnEditor.className = 'cm-html-btn';
+    btnEditor.textContent = '📝 Открыть в редакторе';
+    btnEditor.onclick = function() { if (window.setView) setView('both'); };
+    btnRow.appendChild(btnEditor);
+    if (d.html) {
+      var btnVisor = document.createElement('button');
+      btnVisor.className = 'cm-html-btn';
+      btnVisor.textContent = '🖥 Открыть в ВИЗОРЕ';
+      var _html = d.html;
+      btnVisor.onclick = function() { if (typeof showPreview === 'function') showPreview(_html); if (window.setView) setView('both'); };
+      btnRow.appendChild(btnVisor);
+    }
+    infoDiv.appendChild(btnRow);
     // Build text summary for chat context
     var srcTitles = (d.sources || []).slice(0, 5).map(function(s, i) {
       return (i+1) + '. ' + (s.title || s.url || 'Источник') + ' [' + (s.source || '?') + ']';
     }).join('\n');
     var summary = 'Тема: "' + (d.title || query) + '"\nИсточников: ' + (d.sources ? d.sources.length : 0) +
       (srcTitles ? '\n' + srcTitles : '') + '\nHTML-статья загружена в редактор кода.';
-    infoDiv.className = 'cm cm-tool-result';
-    infoDiv.textContent = '📰 Статья сгенерирована — ' + (d.title || query) + ' (' + (d.sources ? d.sources.length : 0) + ' источн.) → открыта в редакторе';
     window._pendingSearchContext = summary;
     msgs.scrollTop = msgs.scrollHeight;
     return { title: d.title || query, sourceCount: d.sources ? d.sources.length : 0, summary: summary, html: d.html };
