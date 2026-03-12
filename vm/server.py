@@ -3330,7 +3330,8 @@ def generate_html_stream():
                     err_body = resp.json().get("error", resp.text[:200])
                 except Exception:  # pylint: disable=broad-except
                     err_body = resp.text[:200]
-                yield f"data: {json.dumps({'error': f'Ollama ошибка 500: {err_body}. Проверьте, что модель \"{model}\" загружена (ollama pull {model}).'})}\n\n"
+                _err_msg = f'Ollama ошибка 500: {err_body}. Проверьте, что модель "{model}" загружена (ollama pull {model}).'
+                yield f"data: {json.dumps({'error': _err_msg})}\n\n"
                 return
             resp.raise_for_status()
             for raw_line in resp.iter_lines():
@@ -3527,7 +3528,8 @@ def generate_auto_stream():
                     err_body = resp.json().get("error", resp.text[:200])
                 except Exception:
                     err_body = resp.text[:200]
-                yield f"data: {json.dumps({'error': f'Ollama ошибка 500: {err_body}. Проверьте, что модель \"{model}\" загружена (ollama pull {model}).'}  )}\n\n"
+                _err_msg = f'Ollama ошибка 500: {err_body}. Проверьте, что модель "{model}" загружена (ollama pull {model}).'
+                yield f"data: {json.dumps({'error': _err_msg})}\n\n"
                 return
             resp.raise_for_status()
             for raw_line in resp.iter_lines():
@@ -3720,7 +3722,8 @@ def chat_stream():
                     err_body = resp.json().get("error", resp.text[:200])
                 except Exception:
                     err_body = resp.text[:200]
-                yield f"data: {json.dumps({'error': f'Ollama вернул ошибку 500: {err_body}. Проверьте, что модель \"{model}\" загружена (ollama pull {model}).'}  )}\n\n"
+                _err_msg = f'Ollama вернул ошибку 500: {err_body}. Проверьте, что модель "{model}" загружена (ollama pull {model}).'
+                yield f"data: {json.dumps({'error': _err_msg})}\n\n"
                 return
             resp.raise_for_status()
             for raw_line in resp.iter_lines():
@@ -4025,7 +4028,8 @@ def patch_stream():
                     err_body = resp.json().get("error", resp.text[:200])
                 except Exception:  # pylint: disable=broad-except
                     err_body = resp.text[:200]
-                yield f"data: {json.dumps({'error': f'Ollama ошибка 500: {err_body}. Проверьте, что модель \"{model}\" загружена (ollama pull {model}).'})}\n\n"
+                _err_msg = f'Ollama ошибка 500: {err_body}. Проверьте, что модель "{model}" загружена (ollama pull {model}).'
+                yield f"data: {json.dumps({'error': _err_msg})}\n\n"
                 return
             resp.raise_for_status()
             for raw_line in resp.iter_lines():
