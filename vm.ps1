@@ -88,9 +88,10 @@ if ($LASTEXITCODE -ne 0) {
     }
 }
 
-# -- Detect Ollama: scan ports 11434-11444 first, then fall back to default ---
-# This correctly handles users who run Ollama on a non-default port (e.g. 11435)
-# without requiring them to manually set OLLAMA_HOST.
+# -- Detect Ollama: honor OLLAMA_HOST if already set, then scan 11434-11444 --
+# If OLLAMA_HOST is explicitly set in the environment, it is checked first.
+# The port scan only runs if the configured URL is unreachable.
+# This prevents overwriting a valid non-default port (e.g. 11435).
 $ollamaRunning   = $false
 $ollamaInstalled = $false
 $ollamaPort      = 11434
@@ -119,27 +120,52 @@ if (-not $ollamaInstalled) {
     }
 }
 
-# Probe ports 11434-11444 to find an already-running Ollama instance
-# Scan 127.0.0.1 first (avoids IPv6 issues on Windows where localhost → ::1).
+# Probe Ollama: if OLLAMA_HOST is explicitly set, try it first.
+# Only scan ports 11434-11444 if the configured URL is not reachable.
+# This prevents overwriting a valid non-default port (e.g. 11435) with whatever
+# port responds first in the scan.
 $detectedPort = $null
 $detectedHost = $null
-:portScan foreach ($tryHost in @("127.0.0.1", "localhost")) {
-    foreach ($tryPort in (11434..11444)) {
-        try {
-            $r = Invoke-WebRequest -Uri "http://${tryHost}:$tryPort/api/tags" `
-                    -UseBasicParsing -TimeoutSec 1 -ErrorAction SilentlyContinue
-            if ($r -and $r.StatusCode -eq 200) { $detectedPort = $tryPort; $detectedHost = $tryHost; break portScan }
-        } catch { }
+$userHostOk   = $false
+
+if ($env:OLLAMA_HOST) {
+    # Normalize: ensure http:// prefix
+    $userUrl = $env:OLLAMA_HOST
+    if ($userUrl -notmatch '^https?://') { $userUrl = "http://$userUrl" }
+    try {
+        $r = Invoke-WebRequest -Uri "$userUrl/api/tags" `
+                -UseBasicParsing -TimeoutSec 2 -ErrorAction SilentlyContinue
+        if ($r -and $r.StatusCode -eq 200) {
+            $userHostOk = $true
+            # Normalize the env var (add http:// if missing)
+            $env:OLLAMA_HOST = $userUrl
+            if ($userUrl -match ':(\d+)/?$') { $ollamaPort = [int]$Matches[1] }
+        }
+    } catch { }
+}
+
+if (-not $userHostOk) {
+    # Scan 127.0.0.1 first (avoids IPv6 issues on Windows where localhost → ::1).
+    :portScan foreach ($tryHost in @("127.0.0.1", "localhost")) {
+        foreach ($tryPort in (11434..11444)) {
+            try {
+                $r = Invoke-WebRequest -Uri "http://${tryHost}:$tryPort/api/tags" `
+                        -UseBasicParsing -TimeoutSec 1 -ErrorAction SilentlyContinue
+                if ($r -and $r.StatusCode -eq 200) { $detectedPort = $tryPort; $detectedHost = $tryHost; break portScan }
+            } catch { }
+        }
     }
 }
 
-if ($detectedPort) {
+if ($userHostOk) {
+    $ollamaRunning = $true
+    Write-Host "[Code VM] Ollama running on $($env:OLLAMA_HOST) (OLLAMA_HOST)." -ForegroundColor Green
+} elseif ($detectedPort) {
     $ollamaPort    = $detectedPort
     $ollamaRunning = $true
     $detectedUrl   = "http://${detectedHost}:${detectedPort}"
-    # Always sync OLLAMA_HOST to the actual detected URL so server.py uses the right address.
     if ($env:OLLAMA_HOST -and $env:OLLAMA_HOST -ne $detectedUrl) {
-        Write-Host "[Code VM] Updating OLLAMA_HOST from $($env:OLLAMA_HOST) to detected $detectedUrl" -ForegroundColor Yellow
+        Write-Host "[Code VM] OLLAMA_HOST ($($env:OLLAMA_HOST)) не отвечает — используется обнаруженный адрес $detectedUrl" -ForegroundColor Yellow
     }
     $env:OLLAMA_HOST = $detectedUrl
     Write-Host "[Code VM] Ollama already running on $detectedUrl." -ForegroundColor Green

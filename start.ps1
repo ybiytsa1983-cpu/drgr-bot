@@ -48,13 +48,16 @@ try { git pull --ff-only --quiet 2>$null } catch { }
     } catch { }
 }
 
-# -- Copy ЗАПУСТИТЬ.bat to Desktop as self-discovering backup launcher ---------
-# Always overwrite so the Desktop copy stays up-to-date with the repo version.
+# -- Copy launcher/update .bat files to Desktop so the user has easy access ----
+# Always overwrite so the Desktop copies stay up-to-date with the repo version.
 try {
-    $batSrc  = Join-Path $scriptRoot 'ЗАПУСТИТЬ.bat'
-    $batDest = Join-Path ([Environment]::GetFolderPath('Desktop')) 'ЗАПУСТИТЬ.bat'
-    if (Test-Path $batSrc) {
-        Copy-Item -Path $batSrc -Destination $batDest -Force -ErrorAction SilentlyContinue
+    $desktopDir = [Environment]::GetFolderPath('Desktop')
+    foreach ($batName in @('ЗАПУСТИТЬ.bat', 'ОБНОВИТЬ.bat')) {
+        $batSrc = Join-Path $scriptRoot $batName
+        if (Test-Path $batSrc) {
+            Copy-Item -Path $batSrc -Destination (Join-Path $desktopDir $batName) `
+                      -Force -ErrorAction SilentlyContinue
+        }
     }
 } catch { }
 
@@ -200,13 +203,15 @@ if (-not (Test-Path $venvPython)) {
         Write-Host "  [!] Ярлык не создан (не критично): $_" -ForegroundColor Yellow
     }
 
-    # -- Copy ЗАПУСТИТЬ.bat to Desktop as backup/recovery launcher ---------------
+    # -- Copy launcher/update .bat files to Desktop as backup/recovery launchers --
     try {
-        $batSrc = Join-Path $scriptRoot 'ЗАПУСТИТЬ.bat'
-        if (Test-Path $batSrc) {
-            Copy-Item -Path $batSrc -Destination (Join-Path $desktopPath 'ЗАПУСТИТЬ.bat') -Force
-            Write-Host "  [OK] ЗАПУСТИТЬ.bat скопирован на Рабочий стол (запасной лаунчер)" -ForegroundColor Green
+        foreach ($batName in @('ЗАПУСТИТЬ.bat', 'ОБНОВИТЬ.bat')) {
+            $batSrc = Join-Path $scriptRoot $batName
+            if (Test-Path $batSrc) {
+                Copy-Item -Path $batSrc -Destination (Join-Path $desktopPath $batName) -Force
+            }
         }
+        Write-Host "  [OK] ЗАПУСТИТЬ.bat и ОБНОВИТЬ.bat скопированы на Рабочий стол" -ForegroundColor Green
     } catch { }
 
     Write-Host ""
@@ -238,10 +243,12 @@ try {
         }
         $sc.Save()
         Write-Host "  [OK] Ярлык 'Code VM' создан на Рабочем столе" -ForegroundColor Green
-        # Also copy bat backup
-        $batBak = Join-Path $scriptRoot 'ЗАПУСТИТЬ.bat'
-        if (Test-Path $batBak) {
-            Copy-Item -Path $batBak -Destination (Join-Path $desktopCheck 'ЗАПУСТИТЬ.bat') -Force -ErrorAction SilentlyContinue
+        # Also copy bat backups
+        foreach ($batBakName in @('ЗАПУСТИТЬ.bat', 'ОБНОВИТЬ.bat')) {
+            $batBak = Join-Path $scriptRoot $batBakName
+            if (Test-Path $batBak) {
+                Copy-Item -Path $batBak -Destination (Join-Path $desktopCheck $batBakName) -Force -ErrorAction SilentlyContinue
+            }
         }
     }
 } catch { }

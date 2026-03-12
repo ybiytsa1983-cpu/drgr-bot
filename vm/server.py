@@ -93,7 +93,10 @@ _img_desc_lock    = threading.Lock()
 # Default is the standard Ollama port 11434; auto-discovery scans 11434-11444
 # as a fallback, so non-standard ports still work automatically.
 _OLLAMA_DEFAULT_BASE = "http://localhost:11434"
-OLLAMA_BASE = os.environ.get("OLLAMA_HOST", _OLLAMA_DEFAULT_BASE)
+_ollama_host_raw = os.environ.get("OLLAMA_HOST", "").rstrip("/")
+if _ollama_host_raw and not _ollama_host_raw.startswith(("http://", "https://")):
+    _ollama_host_raw = "http://" + _ollama_host_raw
+OLLAMA_BASE = _ollama_host_raw or _OLLAMA_DEFAULT_BASE
 
 # LM Studio service base URL (OpenAI-compatible API).
 # Override via LM_STUDIO_URL env var or the settings panel.
