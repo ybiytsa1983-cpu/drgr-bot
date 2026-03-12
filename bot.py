@@ -94,6 +94,10 @@ _TXT_INSTALL_CMD = (
     "🚀 Установка (PowerShell, Win+X → Windows PowerShell):\n"
     'irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/run.ps1" | iex'
 )
+_TXT_UPDATE_CMD = (
+    "⬇ Обновить (PowerShell, Win+X → Windows PowerShell):\n"
+    'irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/update.ps1" | iex'
+)
 _TXT_START_CMD = (
     "▶ Запуск VM:\n"
     'powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\\drgr-bot\\start.ps1"'
@@ -2328,13 +2332,13 @@ async def cmd_update(message: Message) -> None:
         await message.answer(
             "⬇ Скачать и установить новые файлы\n\n"
             "Открой PowerShell (Win+X → Windows PowerShell) и вставь:\n\n"
-            'irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/update.ps1" | iex\n\n'
+            f"{_TXT_UPDATE_CMD}\n\n"
             "Команда автоматически:\n"
             "1. Проверяет наличие обновлений\n"
             "2. Показывает список изменённых файлов\n"
             "3. Скачивает и устанавливает новые версии\n\n"
             "После завершения запусти VM:\n"
-            'powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\\drgr-bot\\start.ps1"\n\n'
+            f"{_TXT_START_CMD}\n\n"
             "Если папки drgr-bot нет — используй /vm для полной установки с нуля"
         )
 
@@ -3036,6 +3040,8 @@ async def handle_text(message: Message) -> None:
         "обновл", "скачать файл", "скачать обновл", "установить обновл",
         "новые файл", "команда для скачивания", "команда для обновл",
         "update.ps1", "как обновить",
+        "апгрейд", "апдейт", "upgrade", "запуска апгрейд", "запустить апгрейд",
+        "скачивания", "скачать и запустить", "скачать и запуск",
     )
     if any(kw in q_lower for kw in _UPDATE_KEYWORDS):
         await cmd_update(message)
