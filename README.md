@@ -10,7 +10,7 @@ Monaco Editor + Flask + Ollama. Пишешь промпт — получаешь
 **Открой PowerShell** (Win+X → «Windows PowerShell») и вставь одну строку:
 
 ```powershell
-irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/copilot/create-monaco-code-generator/run.ps1" | iex
+irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/run.ps1" | iex
 ```
 
 > Скрипт сам: скачает репозиторий, установит зависимости, создаст ярлыки на Рабочем столе и запустит VM.  
@@ -64,7 +64,7 @@ Set-Location "$env:USERPROFILE\drgr-bot"; git pull
 **Если файлов нет на рабочем столе** — вставь в PowerShell (Win+X → Windows PowerShell):
 
 ```powershell
-irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/copilot/create-monaco-code-generator/run.ps1" | iex
+irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/run.ps1" | iex
 ```
 
 ---
@@ -87,7 +87,7 @@ irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/copilot/create-m
 **Открой PowerShell (Win+X → Windows PowerShell) и вставь:**
 
 ```powershell
-irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/copilot/create-monaco-code-generator/run.ps1" | iex
+irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/run.ps1" | iex
 ```
 
 > Это **единственная команда**, которую нужно знать.  
@@ -118,7 +118,7 @@ powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\drgr-bot\start.ps1"
 
 Если не хочешь вводить команды — просто скачай архив и распакуй:
 
-**[📦 Скачать drgr-bot.zip](https://github.com/ybiytsa1983-cpu/drgr-bot/archive/refs/heads/copilot/create-monaco-code-generator.zip)**
+**[📦 Скачать drgr-bot.zip](https://github.com/ybiytsa1983-cpu/drgr-bot/archive/refs/heads/main.zip)**
 
 После распаковки:
 1. Открой папку из архива (имя вроде `drgr-bot-...`) — переименуй её в `drgr-bot`
@@ -132,7 +132,7 @@ powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\drgr-bot\start.ps1"
 **Нажми Win+X → «Windows PowerShell» и вставь одну строку:**
 
 ```powershell
-irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/copilot/create-monaco-code-generator/run.ps1" | iex
+irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/run.ps1" | iex
 ```
 
 > Это скачает и запустит установщик — он сам склонирует репозиторий, установит зависимости и создаст ярлык.  
