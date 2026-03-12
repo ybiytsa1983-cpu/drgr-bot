@@ -842,10 +842,23 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
 
   <!-- GLTF Figure Generator pane (shown when view=gltf) -->
   <div id="gltf-pane" style="display:none;flex:1;flex-direction:column;overflow:hidden;min-height:0;background:var(--bg2)">
-    <div style="padding:14px 18px 10px;border-bottom:1px solid var(--border);flex-shrink:0">
-      <h2 style="margin:0 0 4px;font-size:16px">🧊 Генератор GLTF-фигур</h2>
-      <p style="margin:0;font-size:12px;color:var(--text2)">Создавай 3D-фигуры в формате GLTF 2.0 — для переобучения ВМ и визуализации</p>
+    <div style="padding:14px 18px 10px;border-bottom:1px solid var(--border);flex-shrink:0;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <div style="flex:1">
+        <h2 style="margin:0 0 4px;font-size:16px">🧊 Генератор GLTF-фигур</h2>
+        <p style="margin:0;font-size:12px;color:var(--text2)">Создавай 3D-фигуры в формате GLTF 2.0 — для переобучения ВМ и визуализации</p>
+      </div>
+      <!-- View toggle: 3D / Code / Split -->
+      <div style="display:flex;gap:5px;flex-shrink:0">
+        <button id="gltf-view-3d"   onclick="gltfSetView('3d')"    class="gltf-vbtn gltf-vbtn-on">🧊 3D</button>
+        <button id="gltf-view-code" onclick="gltfSetView('code')"  class="gltf-vbtn">📝 JSON</button>
+        <button id="gltf-view-both" onclick="gltfSetView('both')"  class="gltf-vbtn">⬜ Оба</button>
+      </div>
     </div>
+    <style>
+      .gltf-vbtn{padding:4px 10px;border-radius:5px;border:1px solid var(--border);background:var(--bg4);color:var(--text2);cursor:pointer;font-size:11px;font-weight:600;transition:background .15s,color .15s}
+      .gltf-vbtn-on{background:var(--accent);color:#fff;border-color:var(--accent)}
+      .gltf-vbtn:hover:not(.gltf-vbtn-on){background:var(--bg3);color:var(--text)}
+    </style>
     <div style="display:flex;flex:1;overflow:hidden;min-height:0">
       <!-- Controls column -->
       <div id="gltf-controls" style="width:270px;flex-shrink:0;overflow-y:auto;padding:14px;border-right:1px solid var(--border);display:flex;flex-direction:column;gap:12px">
@@ -872,6 +885,7 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
         <div id="gltf-actions" style="display:none;flex-direction:column;gap:6px">
           <button onclick="gltfDownload()" style="padding:7px;background:var(--bg4);color:var(--text);border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:12px">&#x1F4BE; Скачать .gltf</button>
           <button onclick="gltfToEditor()" style="padding:7px;background:var(--bg4);color:var(--text);border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:12px">&#x1F4DD; Открыть в редакторе</button>
+          <button onclick="gltfApplyJson()" style="padding:7px;background:var(--bg4);color:var(--text);border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:12px">🔄 Применить JSON → 3D</button>
           <button onclick="gltfAddTraining()" style="padding:7px;background:var(--bg4);color:var(--text);border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:12px">&#x1F504; В данные переобучения</button>
         </div>
         <div id="gltf-stats" style="font-size:11px;color:var(--text2);display:none">
@@ -879,7 +893,7 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
         </div>
       </div>
       <!-- 3D preview column -->
-      <div style="flex:1;display:flex;flex-direction:column;min-width:0">
+      <div id="gltf-3d-col" style="flex:1;display:flex;flex-direction:column;min-width:0">
         <div style="font-size:11px;color:var(--text2);padding:6px 12px;border-bottom:1px solid var(--border);flex-shrink:0;display:flex;align-items:center;gap:10px">
           <span>&#x1F5A5; 3D-предпросмотр (Three.js)</span>
           <span style="margin-left:auto;font-size:10px;opacity:.6">ЛКМ — вращать &middot; Колёсико — масштаб</span>
@@ -890,6 +904,17 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
             Выберите фигуру и нажмите «Создать GLTF»
           </div>
         </div>
+      </div>
+      <!-- JSON code editor column -->
+      <div id="gltf-code-col" style="display:none;flex:1;flex-direction:column;min-width:0;border-left:1px solid var(--border)">
+        <div style="font-size:11px;color:var(--text2);padding:6px 12px;border-bottom:1px solid var(--border);flex-shrink:0;display:flex;align-items:center;gap:8px">
+          <span>📝 GLTF JSON</span>
+          <button onclick="gltfApplyJson()" style="margin-left:auto;padding:3px 10px;background:var(--accent);color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px">▶ Применить</button>
+          <button onclick="gltfToEditor()" style="padding:3px 10px;background:var(--bg4);color:var(--text);border:1px solid var(--border);border-radius:4px;cursor:pointer;font-size:11px">📝 → Редактор</button>
+        </div>
+        <textarea id="gltf-json-editor" spellcheck="false"
+          style="flex:1;width:100%;background:#1e1e1e;color:#9cdcfe;border:none;outline:none;resize:none;padding:10px 12px;font-family:monospace;font-size:12px;line-height:1.5;box-sizing:border-box"
+          placeholder="Сгенерируй фигуру — здесь появится GLTF JSON для редактирования"></textarea>
       </div>
     </div>
   </div>
@@ -946,65 +971,128 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
 
   <!-- ── Colab VM pane ─────────────────────────────────────────── -->
   <div id="colab-pane" style="display:none;flex:1;flex-direction:column;overflow:hidden;min-height:0;background:var(--bg2)">
-    <div style="padding:14px 18px 10px;border-bottom:1px solid var(--border);flex-shrink:0;display:flex;align-items:center;gap:14px">
-      <div style="flex:1">
+    <div style="padding:14px 18px 10px;border-bottom:1px solid var(--border);flex-shrink:0;display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+      <div style="flex:1;min-width:200px">
         <h2 style="margin:0 0 2px;font-size:16px">🌐 Google Colab / Remote VM</h2>
-        <p style="margin:0;font-size:12px;color:var(--text2)">Подключение к VM, запущенной в Google Colab (через ngrok). Позволяет использовать модели удалённого Ollama прямо в чате.</p>
+        <p style="margin:0;font-size:12px;color:var(--text2)">Режим прокси (ngrok) или очередь задач (поллинг, без ngrok).</p>
+      </div>
+      <!-- Mode toggle -->
+      <div style="display:flex;gap:6px;flex-shrink:0">
+        <button id="colab-mode-proxy" onclick="colabSetMode('proxy')" style="padding:5px 12px;border-radius:6px;border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer;font-size:12px;font-weight:600">🔌 Прокси</button>
+        <button id="colab-mode-poll"  onclick="colabSetMode('poll')"  style="padding:5px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg4);color:var(--text2);cursor:pointer;font-size:12px">📬 Поллинг</button>
       </div>
       <span id="colab-status-badge" style="font-size:12px;padding:4px 10px;border-radius:12px;background:var(--bg4);border:1px solid var(--border)">⏳ Проверка...</span>
     </div>
 
     <div style="display:flex;flex:1;overflow:hidden;min-height:0">
       <!-- Left: settings + status -->
-      <div style="width:320px;flex-shrink:0;overflow-y:auto;padding:14px;border-right:1px solid var(--border);display:flex;flex-direction:column;gap:12px">
-        <div>
-          <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:5px">URL Remote VM (ngrok)</label>
-          <input type="text" id="colab-url-input" placeholder="https://xxxx-xx-xx-xxx-xx.ngrok-free.app" autocomplete="off" style="width:100%;box-sizing:border-box"/>
-          <div style="display:flex;gap:6px;margin-top:6px">
-            <button onclick="colabSaveUrl()" style="flex:1;padding:7px;background:var(--accent);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">💾 Сохранить URL</button>
-            <button onclick="colabTestConnection()" style="padding:7px 12px;background:var(--bg4);color:var(--text);border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:12px">🔌 Тест</button>
+      <div style="width:330px;flex-shrink:0;overflow-y:auto;padding:14px;border-right:1px solid var(--border);display:flex;flex-direction:column;gap:12px">
+
+        <!-- Proxy mode settings -->
+        <div id="colab-proxy-section">
+          <div>
+            <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:5px">URL Remote VM (ngrok или публичный адрес)</label>
+            <input type="text" id="colab-url-input" placeholder="https://xxxx-xx-xx-xxx-xx.ngrok-free.app" autocomplete="off" style="width:100%;box-sizing:border-box"/>
+            <div style="display:flex;gap:6px;margin-top:6px">
+              <button onclick="colabSaveUrl()" style="flex:1;padding:7px;background:var(--accent);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">💾 Сохранить URL</button>
+              <button onclick="colabTestConnection()" style="padding:7px 12px;background:var(--bg4);color:var(--text);border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:12px">🔌 Тест</button>
+            </div>
+            <div id="colab-url-status" style="font-size:11px;color:var(--text2);margin-top:4px"></div>
           </div>
-          <div id="colab-url-status" style="font-size:11px;color:var(--text2);margin-top:4px"></div>
-        </div>
 
-        <div>
-          <div style="font-size:11px;color:var(--text2);margin-bottom:6px;font-weight:600">🤖 Модели Remote VM (Ollama)</div>
-          <div id="colab-models-list" style="display:flex;flex-direction:column;gap:4px;min-height:40px">
-            <div style="font-size:12px;color:var(--text2)">Нажмите «Обновить» для загрузки моделей</div>
+          <div>
+            <div style="font-size:11px;color:var(--text2);margin-bottom:6px;font-weight:600">🤖 Модели Remote VM (Ollama)</div>
+            <div id="colab-models-list" style="display:flex;flex-direction:column;gap:4px;min-height:40px">
+              <div style="font-size:12px;color:var(--text2)">Нажмите «Обновить» для загрузки моделей</div>
+            </div>
+            <button onclick="colabLoadModels()" style="margin-top:8px;padding:7px;width:100%;background:var(--bg4);color:var(--text);border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:12px">↻ Обновить список моделей</button>
           </div>
-          <button onclick="colabLoadModels()" style="margin-top:8px;padding:7px;width:100%;background:var(--bg4);color:var(--text);border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:12px">↻ Обновить список моделей</button>
+
+          <div style="border-top:1px solid var(--border);padding-top:12px">
+            <div style="font-size:11px;color:var(--text2);margin-bottom:6px;font-weight:600">⚡ Быстрые действия</div>
+            <button onclick="colabOpenChat()" style="width:100%;padding:8px;background:var(--bg4);color:var(--text);border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:12px;margin-bottom:6px">💬 Открыть чат с Remote VM моделью</button>
+            <button onclick="colabAddToLocalSelector()" style="width:100%;padding:8px;background:var(--bg4);color:var(--text);border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:12px">➕ Добавить remote модели в основной селектор</button>
+          </div>
+
+          <div style="font-size:10px;color:var(--text2);line-height:1.5;border-top:1px solid var(--border);padding-top:10px">
+            <b>Как запустить VM в Google Colab:</b><br>
+            1. Откройте ноутбук с сервером VM в Colab<br>
+            2. Запустите ячейку с ngrok + сервером<br>
+            3. Скопируйте ngrok URL сюда<br>
+            4. Нажмите «Сохранить» и «Тест»<br><br>
+            Модели с префиксом <code>remote:</code> в чате автоматически используют Remote VM.
+          </div>
         </div>
 
-        <div style="border-top:1px solid var(--border);padding-top:12px">
-          <div style="font-size:11px;color:var(--text2);margin-bottom:6px;font-weight:600">⚡ Быстрые действия</div>
-          <button onclick="colabOpenChat()" style="width:100%;padding:8px;background:var(--bg4);color:var(--text);border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:12px;margin-bottom:6px">💬 Открыть чат с Remote VM моделью</button>
-          <button onclick="colabAddToLocalSelector()" style="width:100%;padding:8px;background:var(--bg4);color:var(--text);border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:12px">➕ Добавить remote модели в основной селектор</button>
-        </div>
+        <!-- Polling mode settings (no ngrok) -->
+        <div id="colab-poll-section" style="display:none;flex-direction:column;gap:10px">
+          <div style="font-size:12px;color:var(--text2);background:var(--bg3);border-radius:7px;padding:10px;line-height:1.6">
+            <b>📬 Режим поллинга (без ngrok)</b><br>
+            Colab-ноутбук сам опрашивает этот сервер и забирает задания.
+            Скопируй сниппет ниже в Colab и запусти его.
+          </div>
 
-        <div style="font-size:10px;color:var(--text2);line-height:1.5;border-top:1px solid var(--border);padding-top:10px">
-          <b>Как запустить VM в Google Colab:</b><br>
-          1. Откройте ноутбук с сервером VM в Colab<br>
-          2. Запустите ячейку с ngrok + сервером<br>
-          3. Скопируйте ngrok URL сюда<br>
-          4. Нажмите «Сохранить» и «Тест»<br><br>
-          Модели с префиксом <code>remote:</code> в чате автоматически используют Remote VM.
+          <!-- Job queue UI -->
+          <div>
+            <div style="font-size:11px;color:var(--text2);margin-bottom:5px;font-weight:600">📤 Отправить задание</div>
+            <textarea id="poll-job-prompt" rows="3" placeholder="Введи промпт для модели в Colab..." style="width:100%;resize:vertical;font-size:12px"></textarea>
+            <select id="poll-job-model" style="width:100%;margin-top:5px;font-size:12px">
+              <option value="">— выбрать модель —</option>
+            </select>
+            <button onclick="pollPushJob()" style="margin-top:6px;width:100%;padding:7px;background:var(--accent);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">▶ Отправить в очередь</button>
+          </div>
+
+          <!-- Job list -->
+          <div>
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">
+              <span style="font-size:11px;color:var(--text2);font-weight:600">📋 Очередь заданий</span>
+              <button onclick="pollRefreshJobs()" style="padding:2px 8px;background:var(--bg4);color:var(--text);border:1px solid var(--border);border-radius:4px;cursor:pointer;font-size:10px">↻</button>
+              <button onclick="pollClearDone()" style="padding:2px 8px;background:var(--bg4);color:var(--text);border:1px solid var(--border);border-radius:4px;cursor:pointer;font-size:10px">🗑 Очистить</button>
+            </div>
+            <div id="poll-jobs-list" style="display:flex;flex-direction:column;gap:6px;max-height:200px;overflow-y:auto">
+              <div style="font-size:11px;color:var(--text2)">Нет заданий</div>
+            </div>
+          </div>
+
+          <!-- Colab snippet -->
+          <div>
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+              <span style="font-size:11px;color:var(--text2);font-weight:600">📓 Сниппет для Colab</span>
+              <button onclick="pollCopySnippet()" style="padding:2px 8px;background:var(--bg4);color:var(--text);border:1px solid var(--border);border-radius:4px;cursor:pointer;font-size:10px">📋 Копировать</button>
+            </div>
+            <textarea id="poll-snippet" rows="14" readonly style="width:100%;font-size:10px;font-family:monospace;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:8px;color:#aee;resize:vertical"></textarea>
+          </div>
         </div>
       </div>
 
-      <!-- Right: health info from remote VM -->
+      <!-- Right: health info / job result -->
       <div style="flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:12px">
-        <div style="font-size:13px;font-weight:600;color:var(--text2)">📊 Статус Remote VM</div>
-        <div id="colab-health-info" style="font-size:12px;line-height:1.8;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:12px;min-height:120px;white-space:pre-wrap">
-          Нет данных. Проверьте соединение.
+        <!-- Proxy mode right panel -->
+        <div id="colab-proxy-right">
+          <div style="font-size:13px;font-weight:600;color:var(--text2);margin-bottom:8px">📊 Статус Remote VM</div>
+          <div id="colab-health-info" style="font-size:12px;line-height:1.8;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:12px;min-height:120px;white-space:pre-wrap">
+            Нет данных. Проверьте соединение.
+          </div>
+
+          <div style="font-size:13px;font-weight:600;color:var(--text2);margin-top:12px;margin-bottom:8px">🧪 Тест чата с Remote VM</div>
+          <div style="display:flex;gap:8px">
+            <input type="text" id="colab-test-msg" placeholder="Тестовое сообщение..." style="flex:1" value="Привет, ты работаешь?"/>
+            <select id="colab-test-model" style="flex:1;max-width:200px"><option value="">Выберите модель</option></select>
+            <button onclick="colabTestChat()" style="padding:7px 14px;background:var(--accent);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px">▶ Отправить</button>
+          </div>
+          <div id="colab-test-result" style="font-size:12px;line-height:1.7;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:12px;min-height:80px;white-space:pre-wrap;display:none;margin-top:8px">
+          </div>
         </div>
 
-        <div style="font-size:13px;font-weight:600;color:var(--text2)">🧪 Тест чата с Remote VM</div>
-        <div style="display:flex;gap:8px">
-          <input type="text" id="colab-test-msg" placeholder="Тестовое сообщение..." style="flex:1" value="Привет, ты работаешь?"/>
-          <select id="colab-test-model" style="flex:1;max-width:200px"><option value="">Выберите модель</option></select>
-          <button onclick="colabTestChat()" style="padding:7px 14px;background:var(--accent);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px">▶ Отправить</button>
-        </div>
-        <div id="colab-test-result" style="font-size:12px;line-height:1.7;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:12px;min-height:80px;white-space:pre-wrap;display:none">
+        <!-- Polling mode right panel -->
+        <div id="colab-poll-right" style="display:none;flex-direction:column;gap:12px">
+          <div style="font-size:13px;font-weight:600;color:var(--text2)">📨 Результат задания</div>
+          <div id="poll-job-result" style="font-size:12px;line-height:1.7;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:12px;min-height:120px;white-space:pre-wrap">
+            Отправь задание и дождись ответа Colab-ноутбука.
+          </div>
+          <div style="font-size:11px;color:var(--text2)">
+            Последнее обновление: <span id="poll-last-update">—</span>
+          </div>
         </div>
       </div>
     </div>
@@ -2896,6 +2984,198 @@ async function checkRemoteVm() {
 
 // ── Colab VM tab functions ──────────────────────────────────────────────────
 var _colabModels = [];
+var _colabMode = 'proxy';  // 'proxy' | 'poll'
+var _pollJobTimer = null;
+
+function colabSetMode(mode) {
+  _colabMode = mode;
+  var proxyBtn  = document.getElementById('colab-mode-proxy');
+  var pollBtn   = document.getElementById('colab-mode-poll');
+  var proxySec  = document.getElementById('colab-proxy-section');
+  var pollSec   = document.getElementById('colab-poll-section');
+  var proxyRight= document.getElementById('colab-proxy-right');
+  var pollRight = document.getElementById('colab-poll-right');
+
+  if (mode === 'proxy') {
+    if (proxyBtn)  { proxyBtn.style.background = 'var(--accent)'; proxyBtn.style.color = '#fff'; proxyBtn.style.borderColor = 'var(--accent)'; }
+    if (pollBtn)   { pollBtn.style.background = 'var(--bg4)'; pollBtn.style.color = 'var(--text2)'; pollBtn.style.borderColor = 'var(--border)'; }
+    if (proxySec)  proxySec.style.display = '';
+    if (pollSec)   pollSec.style.display = 'none';
+    if (proxyRight) proxyRight.style.display = '';
+    if (pollRight)  pollRight.style.display = 'none';
+    if (_pollJobTimer) { clearInterval(_pollJobTimer); _pollJobTimer = null; }
+  } else {
+    if (proxyBtn)  { proxyBtn.style.background = 'var(--bg4)'; proxyBtn.style.color = 'var(--text2)'; proxyBtn.style.borderColor = 'var(--border)'; }
+    if (pollBtn)   { pollBtn.style.background = 'var(--accent)'; pollBtn.style.color = '#fff'; pollBtn.style.borderColor = 'var(--accent)'; }
+    if (proxySec)  proxySec.style.display = 'none';
+    if (pollSec)   { pollSec.style.display = 'flex'; pollSec.style.flexDirection = 'column'; }
+    if (proxyRight) proxyRight.style.display = 'none';
+    if (pollRight)  { pollRight.style.display = 'flex'; pollRight.style.flexDirection = 'column'; }
+    pollFillSnippet();
+    pollFillModelSelect();
+    pollRefreshJobs();
+    // Auto-refresh jobs every 4 s
+    if (!_pollJobTimer) {
+      _pollJobTimer = setInterval(pollRefreshJobs, 4000);
+    }
+  }
+}
+
+function pollFillSnippet() {
+  var ta = document.getElementById('poll-snippet');
+  if (!ta) return;
+  var baseUrl = window.location.origin;
+  ta.value = [
+    '# ── DRGR VM Polling Worker (вставь в ячейку Colab) ──',
+    'import requests, time, json',
+    '',
+    'VM_URL = "' + baseUrl + '"  # URL этого сервера (если Colab на той же машине/сети)',
+    'MODEL  = "qwen3:latest"     # замени на нужную модель',
+    'POLL_INTERVAL = 3           # секунды между опросами',
+    '',
+    'print("Polling", VM_URL, "every", POLL_INTERVAL, "s …")',
+    'while True:',
+    '    try:',
+    '        r = requests.get(f"{VM_URL}/remote/jobs/pending", timeout=5)',
+    '        jobs = r.json().get("jobs", [])',
+    '        for job in jobs:',
+    '            jid     = job["id"]',
+    '            payload = job.get("payload", {})',
+    '            prompt  = payload.get("prompt", "")',
+    '            model   = payload.get("model", MODEL)',
+    '            print(f"Job {jid[:8]}: {prompt[:60]}")',
+    '            # call Ollama locally in Colab',
+    '            resp = requests.post("http://127.0.0.1:11434/api/generate",',
+    '                json={"model": model, "prompt": prompt, "stream": False}, timeout=120)',
+    '            result = resp.json().get("response", resp.text[:500])',
+    '            requests.post(f"{VM_URL}/remote/jobs/{jid}/result",',
+    '                json={"result": result}, timeout=10)',
+    '            print(f"  → done ({len(result)} chars)")',
+    '    except Exception as e:',
+    '        print("Poll error:", e)',
+    '    time.sleep(POLL_INTERVAL)',
+  ].join('\n');
+}
+
+function pollFillModelSelect() {
+  var sel = document.getElementById('poll-job-model');
+  if (!sel) return;
+  // Populate from main model selector
+  var mainSel = document.getElementById('sel-model');
+  if (mainSel) {
+    for (var i = 0; i < mainSel.options.length; i++) {
+      var v = mainSel.options[i].value;
+      if (!v) continue;
+      var exists = false;
+      for (var j = 0; j < sel.options.length; j++) { if (sel.options[j].value === v) { exists = true; break; } }
+      if (!exists) { var o = document.createElement('option'); o.value = v; o.textContent = v; sel.appendChild(o); }
+    }
+  }
+}
+
+async function pollPushJob() {
+  var prompt = (document.getElementById('poll-job-prompt').value || '').trim();
+  if (!prompt) { toast('Введите промпт'); return; }
+  var model = document.getElementById('poll-job-model').value || curModel || '';
+  try {
+    var r = await fetch('/remote/jobs', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({prompt: prompt, model: model})
+    });
+    var d = await r.json();
+    if (d.ok) {
+      toast('✓ Задание отправлено: ' + d.job_id.slice(0,8));
+      document.getElementById('poll-job-prompt').value = '';
+      await pollRefreshJobs();
+      // Start polling for result
+      if (!_pollJobTimer) _pollJobTimer = setInterval(pollRefreshJobs, 4000);
+    } else { toast('⚠ ' + (d.error || 'Ошибка')); }
+  } catch(e) { toast('⚠ ' + e.message); }
+}
+
+async function pollRefreshJobs() {
+  try {
+    var r = await fetch('/remote/jobs');
+    var d = await r.json();
+    var jobs = d.jobs || [];
+    var list = document.getElementById('poll-jobs-list');
+    var resultDiv = document.getElementById('poll-job-result');
+    var lastUpd   = document.getElementById('poll-last-update');
+    if (!list) return;
+    if (!jobs.length) {
+      list.innerHTML = '<div style="font-size:11px;color:var(--text2)">Нет заданий</div>';
+      return;
+    }
+    list.innerHTML = '';
+    var doneResult = '';
+    jobs.forEach(function(job) {
+      var statusColor = job.status === 'done' ? 'var(--accent2)' : job.status === 'running' ? 'var(--warn)' : 'var(--text2)';
+      var statusIcon  = job.status === 'done' ? '✅' : job.status === 'running' ? '⏳' : '📬';
+      var card = document.createElement('div');
+      card.style.cssText = 'background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:7px 9px;font-size:11px';
+
+      // Header row: status + job id (safe — statusIcon is a literal, job.id is UUID)
+      var header = document.createElement('div');
+      header.style.cssText = 'display:flex;justify-content:space-between;gap:6px';
+      var statusSpan = document.createElement('span');
+      statusSpan.style.color = statusColor;
+      statusSpan.textContent = statusIcon + ' ' + job.status;
+      var idSpan = document.createElement('span');
+      idSpan.style.cssText = 'color:var(--text2);font-size:10px';
+      idSpan.textContent = job.id.slice(0, 8);
+      header.appendChild(statusSpan);
+      header.appendChild(idSpan);
+      card.appendChild(header);
+
+      // Prompt text (escaped via textContent)
+      var prompt = (job.payload || {}).prompt || '(нет)';
+      var promptDiv = document.createElement('div');
+      promptDiv.style.cssText = 'color:var(--text);margin-top:3px;white-space:pre-wrap;max-height:50px;overflow:hidden';
+      promptDiv.textContent = prompt.slice(0, 120);
+      card.appendChild(promptDiv);
+
+      // Result preview (escaped via textContent)
+      if (job.result) {
+        var resultPreview = document.createElement('div');
+        resultPreview.style.cssText = 'color:var(--accent2);margin-top:4px;white-space:pre-wrap;max-height:60px;overflow:hidden';
+        resultPreview.textContent = String(job.result).slice(0, 200);
+        card.appendChild(resultPreview);
+        doneResult = String(job.result);
+      }
+      list.appendChild(card);
+    });
+    if (doneResult && resultDiv) {
+      resultDiv.textContent = doneResult;
+      if (lastUpd) lastUpd.textContent = new Date().toLocaleTimeString();
+    }
+  } catch(e) {}
+}
+
+async function pollClearDone() {
+  try {
+    var r = await fetch('/remote/jobs');
+    var d = await r.json();
+    var done = (d.jobs || []).filter(function(j){ return j.status === 'done'; });
+    await Promise.all(done.map(function(j){
+      return fetch('/remote/jobs/' + j.id, {method:'DELETE'});
+    }));
+    await pollRefreshJobs();
+    toast('Выполненные задания удалены');
+  } catch(e) { toast('Ошибка: ' + e.message); }
+}
+
+function pollCopySnippet() {
+  var ta = document.getElementById('poll-snippet');
+  if (!ta) return;
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(ta.value).then(function(){ toast('📋 Сниппет скопирован'); });
+  } else {
+    ta.select();
+    document.execCommand('copy');
+    toast('📋 Скопировано');
+  }
+}
 
 async function colabInit() {
   // Sync URL from settings panel
@@ -4654,6 +4934,9 @@ async function gltfGenerate() {
     if (!r.ok) { var e = await r.json(); throw new Error(e.error || r.statusText); }
     _gltfLastData = await r.json();
     gltfShowInPreview(_gltfLastData, color);
+    // Populate JSON editor
+    var jsonEd = document.getElementById('gltf-json-editor');
+    if (jsonEd) jsonEd.value = JSON.stringify(_gltfLastData, null, 2);
     var vc = _gltfLastData.accessors[1].count;
     var tc = _gltfLastData.accessors[0].count / 3;
     document.getElementById('gltf-stat-v').textContent = vc;
@@ -4758,6 +5041,50 @@ async function gltfAddTraining() {
     if (r.ok) showToast('Добавлено в данные переобучения');
     else showToast('Ошибка записи в training data');
   } catch(err) { showToast('Ошибка: ' + err.message); }
+}
+
+// ── GLTF view mode toggle ─────────────────────────────────────────────────────
+var _gltfViewMode = '3d';
+function gltfSetView(mode) {
+  _gltfViewMode = mode;
+  var col3d   = document.getElementById('gltf-3d-col');
+  var colCode = document.getElementById('gltf-code-col');
+  var btn3d   = document.getElementById('gltf-view-3d');
+  var btnCode = document.getElementById('gltf-view-code');
+  var btnBoth = document.getElementById('gltf-view-both');
+  [btn3d, btnCode, btnBoth].forEach(function(b){ if(b) b.classList.remove('gltf-vbtn-on'); });
+  if (mode === '3d') {
+    if (col3d)   { col3d.style.display = 'flex'; col3d.style.flex = '1'; }
+    if (colCode) { colCode.style.display = 'none'; }
+    if (btn3d)   btn3d.classList.add('gltf-vbtn-on');
+  } else if (mode === 'code') {
+    if (col3d)   { col3d.style.display = 'none'; }
+    if (colCode) { colCode.style.display = 'flex'; colCode.style.flex = '1'; }
+    if (btnCode) btnCode.classList.add('gltf-vbtn-on');
+  } else { // both
+    if (col3d)   { col3d.style.display = 'flex'; col3d.style.flex = '1'; }
+    if (colCode) { colCode.style.display = 'flex'; colCode.style.flex = '1'; }
+    if (btnBoth) btnBoth.classList.add('gltf-vbtn-on');
+  }
+}
+
+function gltfApplyJson() {
+  var ta = document.getElementById('gltf-json-editor');
+  if (!ta || !ta.value.trim()) { showToast('JSON пустой'); return; }
+  try {
+    var gltf = JSON.parse(ta.value);
+    _gltfLastData = gltf;
+    var pbr   = (gltf.materials||[{}])[0].pbrMetallicRoughness || {};
+    var bc    = pbr.baseColorFactor || [0.4, 0.67, 1, 1];
+    gltfShowInPreview(gltf, {r: bc[0], g: bc[1], b: bc[2]});
+    document.getElementById('gltf-placeholder').style.display = 'none';
+    document.getElementById('gltf-actions').style.display = 'flex';
+    showToast('✓ GLTF применён из JSON');
+    // switch to 3D view or keep both
+    if (_gltfViewMode === 'code') gltfSetView('both');
+  } catch(e) {
+    showToast('❌ Ошибка парсинга JSON: ' + e.message);
+  }
 }
 
 // ── Research view ─────────────────────────────────────────────────────────────

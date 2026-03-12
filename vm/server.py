@@ -52,6 +52,7 @@ import queue
 import threading
 import time
 import urllib.parse
+import uuid
 from datetime import datetime, timezone
 
 # Load .env from project root (parent of vm/) so OLLAMA_HOST / BOT_TOKEN etc.
@@ -103,6 +104,14 @@ _LM_STUDIO_PREFIX = "lmstudio:"
 # Remote VM URL — URL of an externally hosted VM (e.g. Google Colab via ngrok).
 # When set, the /remote/proxy endpoint forwards requests there.
 REMOTE_VM_URL = os.environ.get("REMOTE_VM_URL", "").rstrip("/")
+
+# ---------------------------------------------------------------------------
+# Remote VM polling job queue
+# ---------------------------------------------------------------------------
+# Jobs are stored here so a Colab notebook can poll /remote/jobs/pending
+# and POST results back — no ngrok tunnel required on the local side.
+_remote_jobs: "dict[str, dict]" = {}   # job_id -> job dict
+_remote_jobs_lock = threading.Lock()
 
 # Heartbeat configuration
 _OLLAMA_HEARTBEAT_INTERVAL = 60   # seconds between liveness pings
@@ -2710,6 +2719,81 @@ def remote_vm_models():
         return jsonify({"models": [], "error": f"Нет соединения с Remote VM ({REMOTE_VM_URL})"})
     except Exception as exc:  # pylint: disable=broad-except
         return jsonify({"models": [], "error": str(exc)})
+
+
+# ---------------------------------------------------------------------------
+# Remote VM polling job queue — no-ngrok alternative
+# ---------------------------------------------------------------------------
+# Workflow:
+#   1. Local UI  → POST /remote/jobs           (push a new job)
+#   2. Colab     → GET  /remote/jobs/pending   (poll for new work)
+#   3. Colab     → POST /remote/jobs/<id>/result (post result)
+#   4. Local UI  → GET  /remote/jobs/<id>       (poll for result)
+# ---------------------------------------------------------------------------
+
+@app.route("/remote/jobs", methods=["POST"])
+def remote_jobs_push():
+    """Push a new job onto the queue.  Returns {job_id, ok}."""
+    body = request.get_json(silent=True) or {}
+    if not body:
+        return jsonify({"ok": False, "error": "Empty body"}), 400
+    job_id = str(uuid.uuid4())
+    job = {
+        "id": job_id,
+        "status": "pending",
+        "payload": body,
+        "result": None,
+        "created_at": time.time(),
+    }
+    with _remote_jobs_lock:
+        _remote_jobs[job_id] = job
+    return jsonify({"ok": True, "job_id": job_id})
+
+
+@app.route("/remote/jobs/pending", methods=["GET"])
+def remote_jobs_pending():
+    """Return all pending jobs (for Colab to poll).  Marks returned jobs as 'running'."""
+    with _remote_jobs_lock:
+        pending = [j for j in _remote_jobs.values() if j["status"] == "pending"]
+        for j in pending:
+            _remote_jobs[j["id"]]["status"] = "running"
+    return jsonify({"jobs": pending})
+
+
+@app.route("/remote/jobs/<job_id>/result", methods=["POST"])
+def remote_job_result(job_id):
+    """Colab posts the result for a completed job."""
+    body = request.get_json(silent=True) or {}
+    with _remote_jobs_lock:
+        if job_id not in _remote_jobs:
+            return jsonify({"ok": False, "error": "Unknown job"}), 404
+        _remote_jobs[job_id]["status"] = "done"
+        _remote_jobs[job_id]["result"] = body.get("result")
+    return jsonify({"ok": True})
+
+
+@app.route("/remote/jobs/<job_id>", methods=["GET", "DELETE"])
+def remote_job_get(job_id):
+    """GET: return the status and result of a job (local UI polls this).
+    DELETE: remove the job from the queue.
+    """
+    if request.method == "DELETE":
+        with _remote_jobs_lock:
+            removed = _remote_jobs.pop(job_id, None)
+        return jsonify({"ok": removed is not None})
+    with _remote_jobs_lock:
+        job = _remote_jobs.get(job_id)
+    if not job:
+        return jsonify({"ok": False, "error": "Unknown job"}), 404
+    return jsonify({"ok": True, "job": job})
+
+
+@app.route("/remote/jobs", methods=["GET"])
+def remote_jobs_list():
+    """Return all jobs sorted by creation time (for the dashboard)."""
+    with _remote_jobs_lock:
+        jobs = list(_remote_jobs.values())
+    return jsonify({"jobs": sorted(jobs, key=lambda j: j.get("created_at", 0), reverse=True)})
 
 
 @app.route("/ollama/ask", methods=["POST"])
