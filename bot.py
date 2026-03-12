@@ -79,11 +79,8 @@ _MD_INSTALL_CMD = (
 )
 
 # Raw PowerShell one-liner for the update command (no label, no MarkdownV2 escaping).
-# Uses try-catch fallback so it works before the PR is merged to main as well as after.
-# NOTE: if the fallback branch is renamed or deleted, update the URL below.
 _UPDATE_PS1_CMD = (
-    "try { irm 'https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/update.ps1' | iex }"
-    " catch { irm 'https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/copilot/create-monaco-code-generator/update.ps1' | iex }"
+    "irm 'https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/update.ps1' | iex"
 )
 
 _MD_UPDATE_CMD = (

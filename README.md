@@ -25,7 +25,7 @@ irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/run.ps1" | 
 **Способ 2 — через PowerShell** (Win+X → Windows PowerShell):
 
 ```powershell
-try { irm 'https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/update.ps1' | iex } catch { irm 'https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/copilot/create-monaco-code-generator/update.ps1' | iex }
+irm 'https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/update.ps1' | iex
 ```
 
 **Способ 3 — вручную** (если репозиторий уже скачан в `%USERPROFILE%\drgr-bot`):
