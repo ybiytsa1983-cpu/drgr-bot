@@ -89,6 +89,16 @@ _MD_START_CMD = (
     "\"$env:USERPROFILE\\\\drgr\\-bot\\\\start\\.ps1\"`"
 )
 
+# Plain-text versions (no MarkdownV2 escaping) for fallback messages
+_TXT_INSTALL_CMD = (
+    "🚀 Установка (PowerShell, Win+X → Windows PowerShell):\n"
+    'irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/run.ps1" | iex'
+)
+_TXT_START_CMD = (
+    "▶ Запуск VM:\n"
+    'powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\\drgr-bot\\start.ps1"'
+)
+
 _MD_WEB_URL = "`http://localhost:5000/`"
 
 logging.basicConfig(
@@ -2359,7 +2369,8 @@ async def cmd_settoken(message: Message) -> None:
         await message.answer(
             "✅ *Токен сохранён\\!*\n\n"
             "Бот перезапускается с новым токеном\\.\n"
-            "Если бот не отвечает — запусти заново:\n\n"
+            "Если бот не отвечает через 10 секунд — запусти заново:\n\n"
+            f"{_MD_INSTALL_CMD}\n\n"
             f"{_MD_START_CMD}",
             parse_mode="MarkdownV2",
         )
@@ -2367,8 +2378,9 @@ async def cmd_settoken(message: Message) -> None:
         await message.answer(
             "✅ Токен сохранён!\n\n"
             "Бот перезапускается с новым токеном.\n"
-            "Если бот не отвечает — запусти заново:\n"
-            'powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\\drgr-bot\\start.ps1"'
+            "Если бот не отвечает через 10 секунд — запусти заново:\n\n"
+            f"{_TXT_INSTALL_CMD}\n\n"
+            f"{_TXT_START_CMD}"
         )
 
 

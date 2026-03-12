@@ -93,6 +93,13 @@ _img_desc_lock    = threading.Lock()
 # as a fallback, so non-standard ports still work automatically.
 OLLAMA_BASE = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 
+# LM Studio service base URL (OpenAI-compatible API).
+# Override via LM_STUDIO_URL env var or the settings panel.
+# LM Studio typically runs on port 1234 and exposes /v1/models, /v1/chat/completions etc.
+LM_STUDIO_BASE = os.environ.get("LM_STUDIO_URL", "").rstrip("/")
+# Prefix used in model selector to distinguish LM Studio models from Ollama ones.
+_LM_STUDIO_PREFIX = "lmstudio:"
+
 # Heartbeat configuration
 _OLLAMA_HEARTBEAT_INTERVAL = 60   # seconds between liveness pings
 _OLLAMA_HEARTBEAT_TIMEOUT  = 2    # seconds to wait for each Ollama response
@@ -1585,12 +1592,33 @@ def health():
         _proc = _bot_proc
     bot_running = _proc is not None and _proc.poll() is None
 
+    # --- LM Studio (OpenAI-compatible) ---
+    lms_ok     = False
+    lms_models: list = []
+    if LM_STUDIO_BASE:
+        try:
+            lms_resp = _http.get(f"{LM_STUDIO_BASE}/v1/models", timeout=3)
+            if lms_resp.status_code == 200:
+                lms_ok = True
+                lms_data = lms_resp.json()
+                lms_models = [
+                    f"{_LM_STUDIO_PREFIX}{m['id']}"
+                    for m in lms_data.get("data", [])
+                ]
+        except Exception:  # pylint: disable=broad-except
+            pass
+
     return jsonify({
         "vm":     {"status": "ok"},
         "ollama": {
             "status": "ok" if ollama_ok else "unreachable",
             "url":    OLLAMA_BASE,
             "models": ollama_models,
+        },
+        "lm_studio": {
+            "status":  "ok" if lms_ok else ("unreachable" if LM_STUDIO_BASE else "not_configured"),
+            "url":     LM_STUDIO_BASE,
+            "models":  lms_models,
         },
         "bot": {
             "token_set": bot_token_set,
@@ -2334,19 +2362,24 @@ def get_settings():
     except Exception:  # pylint: disable=broad-except
         pass
 
-    return jsonify({"ollama_url": OLLAMA_BASE, "bot_token_set": bot_token_set})
+    return jsonify({
+        "ollama_url": OLLAMA_BASE,
+        "lm_studio_url": LM_STUDIO_BASE,
+        "bot_token_set": bot_token_set,
+    })
 
 
 @app.route("/settings", methods=["POST"])
 def save_settings():
-    """Save settings (Telegram bot token, chat ID, Ollama URL) to .env."""
-    global OLLAMA_BASE, _OLLAMA_SCANNED  # noqa: PLW0603
+    """Save settings (Telegram bot token, chat ID, Ollama URL, LM Studio URL) to .env."""
+    global OLLAMA_BASE, _OLLAMA_SCANNED, LM_STUDIO_BASE  # noqa: PLW0603
     body = request.get_json(silent=True) or {}
-    bot_token  = body.get("bot_token",  "").strip()
-    chat_id    = body.get("chat_id",    "").strip()
-    ollama_url = body.get("ollama_url", "").strip()
+    bot_token     = body.get("bot_token",     "").strip()
+    chat_id       = body.get("chat_id",       "").strip()
+    ollama_url    = body.get("ollama_url",    "").strip()
+    lm_studio_url = body.get("lm_studio_url", "").strip().rstrip("/")
 
-    if not bot_token and not chat_id and not ollama_url:
+    if not any([bot_token, chat_id, ollama_url, lm_studio_url]):
         return jsonify({"ok": False, "error": "Nothing to save"})
 
     env_path = os.path.join(os.path.dirname(_DIR), ".env")
@@ -2399,6 +2432,19 @@ def save_settings():
         with _OLLAMA_SCAN_LOCK:
             _OLLAMA_SCANNED = False
         threading.Thread(target=_autodiscover_ollama, daemon=True).start()
+
+    if lm_studio_url:
+        # Update or append LM_STUDIO_URL line
+        lms_found = False
+        for i, line in enumerate(lines):
+            if line.startswith("LM_STUDIO_URL="):
+                lines[i] = f"LM_STUDIO_URL={lm_studio_url}\n"
+                lms_found = True
+                break
+        if not lms_found:
+            lines.append(f"LM_STUDIO_URL={lm_studio_url}\n")
+        os.environ["LM_STUDIO_URL"] = lm_studio_url
+        LM_STUDIO_BASE = lm_studio_url
 
     try:
         with open(env_path, "w", encoding="utf-8") as f:
@@ -2485,16 +2531,55 @@ def bot_test():
 
 @app.route("/ollama/models", methods=["GET"])
 def ollama_models():
-    """Return the list of models available in the local Ollama instance."""
+    """Return the list of models available in Ollama and (if configured) LM Studio."""
+    models = []
+    preferred = ""
+
+    # --- Ollama models ---
     try:
         resp = _http.get(f"{OLLAMA_BASE}/api/tags", timeout=3)
         resp.raise_for_status()
-        models = [m["name"] for m in resp.json().get("models", [])]
-        # Pick the preferred default (first match from _PREFERRED_MODELS list)
-        preferred = next((m for m in _PREFERRED_MODELS if m in models), models[0] if models else "")
-        return jsonify({"models": models, "available": True, "preferred": preferred})
+        ol_models = [m["name"] for m in resp.json().get("models", [])]
+        models.extend(ol_models)
+        if not preferred:
+            preferred = next((m for m in _PREFERRED_MODELS if m in ol_models), ol_models[0] if ol_models else "")
     except Exception:  # pylint: disable=broad-except
-        return jsonify({"models": [], "available": False, "preferred": ""})
+        pass
+
+    # --- LM Studio models (OpenAI-compatible /v1/models) ---
+    if LM_STUDIO_BASE:
+        try:
+            lms_resp = _http.get(f"{LM_STUDIO_BASE}/v1/models", timeout=3)
+            lms_resp.raise_for_status()
+            lms_models = [
+                f"{_LM_STUDIO_PREFIX}{m['id']}"
+                for m in lms_resp.json().get("data", [])
+            ]
+            models.extend(lms_models)
+            # Set LM Studio model as preferred if no Ollama model was found
+            if not preferred and lms_models:
+                preferred = lms_models[0]
+        except Exception:  # pylint: disable=broad-except
+            pass
+
+    available = bool(models)
+    if not preferred and models:
+        preferred = models[0]
+    return jsonify({"models": models, "available": available, "preferred": preferred})
+
+
+@app.route("/lmstudio/models", methods=["GET"])
+def lmstudio_models():
+    """Return the list of models available in LM Studio (OpenAI-compatible /v1/models)."""
+    if not LM_STUDIO_BASE:
+        return jsonify({"models": [], "available": False, "url": "", "error": "LM Studio URL not configured"})
+    try:
+        resp = _http.get(f"{LM_STUDIO_BASE}/v1/models", timeout=5)
+        resp.raise_for_status()
+        models = [m["id"] for m in resp.json().get("data", [])]
+        return jsonify({"models": models, "available": bool(models), "url": LM_STUDIO_BASE})
+    except Exception as exc:  # pylint: disable=broad-except
+        return jsonify({"models": [], "available": False, "url": LM_STUDIO_BASE, "error": str(exc)})
 
 
 @app.route("/ollama/ask", methods=["POST"])
@@ -3041,6 +3126,66 @@ def generate_html_stream():
 
     full_prompt = f"{sys_prompt}\n\nЗадание: {prompt}"
 
+    # LM Studio model support (OpenAI-compatible /v1/chat/completions)
+    is_lms_gen = model.startswith(_LM_STUDIO_PREFIX)
+
+    if is_lms_gen:
+        real_model = model[len(_LM_STUDIO_PREFIX):]
+        lms_url    = LM_STUDIO_BASE
+
+        def _stream_lms_gen():
+            if not lms_url:
+                yield 'data: {"error":"LM Studio URL не настроен — укажите URL в настройках (☰)"}\n\n'
+                return
+            try:
+                resp = _http.post(
+                    f"{lms_url}/v1/chat/completions",
+                    json={
+                        "model": real_model,
+                        "messages": [
+                            {"role": "system", "content": sys_prompt},
+                            {"role": "user",   "content": f"Задание: {prompt}"},
+                        ],
+                        "stream": True,
+                    },
+                    stream=True,
+                    timeout=int(os.environ.get("OLLAMA_TIMEOUT", 240)),
+                )
+                resp.raise_for_status()
+                for raw_line in resp.iter_lines():
+                    if not raw_line:
+                        continue
+                    line_str = raw_line.decode("utf-8") if isinstance(raw_line, bytes) else raw_line
+                    if line_str.startswith("data: "):
+                        line_str = line_str[6:]
+                    if line_str.strip() in ("[DONE]", ""):
+                        _record_generation("html", model, prompt)
+                        yield "data: [DONE]\n\n"
+                        return
+                    try:
+                        chunk = json.loads(line_str)
+                    except ValueError:
+                        continue
+                    delta  = chunk.get("choices", [{}])[0].get("delta", {})
+                    token  = delta.get("content", "")
+                    finish = chunk.get("choices", [{}])[0].get("finish_reason")
+                    if token:
+                        yield f"data: {json.dumps({'token': token})}\n\n"
+                    if finish:
+                        _record_generation("html", model, prompt)
+                        yield "data: [DONE]\n\n"
+                        return
+            except _http.exceptions.ConnectionError:
+                yield f'data: {json.dumps({"error": f"Нет соединения с LM Studio по адресу {lms_url}"})}\n\n'
+            except Exception as exc:  # pylint: disable=broad-except
+                yield f"data: {json.dumps({'error': str(exc)})}\n\n"
+
+        return Response(
+            stream_with_context(_stream_lms_gen()),
+            mimetype="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
     def _stream():
         try:
             resp = _http.post(
@@ -3225,12 +3370,15 @@ def generate_auto_stream():
 # ---------------------------------------------------------------------------
 @app.route("/chat/stream", methods=["POST"])
 def chat_stream():
-    """Stream a plain chat response from Ollama.
+    """Stream a plain chat response from Ollama or LM Studio.
 
     Body: {"message": "...", "model": "...", "history": [...optional chat history...]}
     Streams SSE tokens ending with data: [DONE]
     Unlike /generate/html/stream this returns raw model text without any
     HTML-generation system prompt so it works for any question.
+
+    If the model name starts with "lmstudio:" the request is routed to the
+    LM Studio OpenAI-compatible /v1/chat/completions endpoint.
     """
     body         = request.get_json(silent=True) or {}
     model        = body.get("model", "").strip()
@@ -3249,7 +3397,7 @@ def chat_stream():
             yield 'data: {"error":"Введите сообщение"}\n\n'
         return Response(stream_with_context(_no_msg()), mimetype="text/event-stream")
 
-    # Build messages list for /api/chat (role-based, better for multi-turn)
+    # Build messages list for chat API
     messages = []
     if system:
         messages.append({"role": "system", "content": system})
@@ -3259,11 +3407,74 @@ def chat_stream():
         if text:
             messages.append({"role": role, "content": text})
     # Build the user message — attach image if provided
-    user_msg = {"role": "user", "content": message}
+    user_msg: dict = {"role": "user", "content": message}
     if image_base64:
         user_msg["images"] = [image_base64]
     messages.append(user_msg)
 
+    # Route to LM Studio when the model has the lmstudio: prefix
+    is_lms = model.startswith(_LM_STUDIO_PREFIX)
+
+    if is_lms:
+        # LM Studio uses OpenAI-compatible /v1/chat/completions
+        real_model = model[len(_LM_STUDIO_PREFIX):]
+        lms_url    = LM_STUDIO_BASE
+
+        # For OpenAI-compatible API, image must be in content array format
+        if image_base64:
+            user_msg["content"] = [
+                {"type": "text",       "text": message},
+                {"type": "image_url",  "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"}},
+            ]
+            # Remove the Ollama-style 'images' key
+            user_msg.pop("images", None)
+
+        def _stream_lms():
+            if not lms_url:
+                yield 'data: {"error":"LM Studio URL не настроен — укажите URL в настройках (☰)"}\n\n'
+                return
+            try:
+                resp = _http.post(
+                    f"{lms_url}/v1/chat/completions",
+                    json={"model": real_model, "messages": messages, "stream": True},
+                    stream=True,
+                    timeout=int(os.environ.get("OLLAMA_TIMEOUT", 240)),
+                )
+                resp.raise_for_status()
+                for raw_line in resp.iter_lines():
+                    if not raw_line:
+                        continue
+                    line_str = raw_line.decode("utf-8") if isinstance(raw_line, bytes) else raw_line
+                    if line_str.startswith("data: "):
+                        line_str = line_str[6:]
+                    if line_str.strip() in ("[DONE]", ""):
+                        yield "data: [DONE]\n\n"
+                        return
+                    try:
+                        chunk = json.loads(line_str)
+                    except ValueError:
+                        continue
+                    # OpenAI-style delta token
+                    delta   = chunk.get("choices", [{}])[0].get("delta", {})
+                    token   = delta.get("content", "")
+                    finish  = chunk.get("choices", [{}])[0].get("finish_reason")
+                    if token:
+                        yield f"data: {json.dumps({'token': token})}\n\n"
+                    if finish:
+                        yield "data: [DONE]\n\n"
+                        return
+            except _http.exceptions.ConnectionError:
+                yield f'data: {json.dumps({"error": f"Нет соединения с LM Studio по адресу {lms_url}"})}\n\n'
+            except Exception as exc:  # pylint: disable=broad-except
+                yield f"data: {json.dumps({'error': str(exc)})}\n\n"
+
+        return Response(
+            stream_with_context(_stream_lms()),
+            mimetype="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
+    # --- Default: Ollama ---
     def _stream():
         try:
             resp = _http.post(

@@ -385,6 +385,7 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
         <div class="hr"><span class="hk">VM</span><span id="h-vm" class="hv">—</span></div>
         <div class="hr"><span class="hk">Ollama</span><span id="h-ol" class="hv">—</span></div>
         <div class="hr"><span class="hk">URL</span><span id="h-url" class="hv" style="font-size:9px">—</span></div>
+        <div class="hr"><span class="hk">LM Studio</span><span id="h-lms" class="hv">—</span></div>
         <div class="hr"><span class="hk">📱 TG Bot</span><span id="h-bot" class="hv">—</span></div>
       </div>
       <div style="margin-top:5px">
@@ -398,6 +399,14 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
       <input type="text" id="ol-url" placeholder="http://127.0.0.1:11434" autocomplete="off"/>
       <button class="pb pb-p pb-f" style="margin-top:4px" onclick="saveOllamaUrl()">💾 Сохранить URL Ollama</button>
       <div style="font-size:10px;color:var(--text2)">Если Ollama на нестандартном порту — укажите URL вручную</div>
+    </div>
+
+    <!-- LM Studio URL -->
+    <div>
+      <div class="pl">🤖 LM Studio URL</div>
+      <input type="text" id="lms-url" placeholder="http://172.28.240.1:1234" autocomplete="off"/>
+      <button class="pb pb-p pb-f" style="margin-top:4px" onclick="saveLmStudioUrl()">💾 Сохранить LM Studio URL</button>
+      <div style="font-size:10px;color:var(--text2)">URL вашего LM Studio сервера (OpenAI-совместимый API, порт 1234). Модели LM Studio отображаются в селекторе с префиксом <b>lmstudio:</b></div>
     </div>
 
     <!-- Bot token -->
@@ -660,6 +669,7 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
         ⚠ Ollama не запущена или не обнаружена.<br>
         Запусти Ollama: <code>ollama serve</code><br>
         Нужна модель? Скачать: <code>ollama pull qwen3-vl:8b</code><br>
+        <b>Альтернатива:</b> подключи LM Studio — укажи URL в настройках (☰) → LM Studio URL.<br>
         Переученная ВМ: перейди на вкладку <b>🧠 Переученная ВМ</b> и нажми кнопку создания.
       </div>
     </div>
@@ -2422,14 +2432,22 @@ async function loadHealth() {
     var r = await fetch('/health'); var d = await r.json();
     var vm=d.vm&&d.vm.status==='ok', ol=d.ollama&&d.ollama.status==='ok',
         bot=d.bot&&d.bot.token_set, botRun=d.bot&&d.bot.running;
+    var lmsData = d.lm_studio || {};
+    var lmsOk   = lmsData.status === 'ok';
+    var lmsCfg  = lmsData.status !== 'not_configured';
     set('h-vm',  vm ? '✓ OK'        : '✗ Ошибка',    vm  ? 'ok' : 'fail');
     set('h-ol',  ol ? '✓ OK'        : '✗ Недоступна', ol  ? 'ok' : 'fail');
     document.getElementById('h-url').textContent = (d.ollama&&d.ollama.url)||'—';
+    if (document.getElementById('h-lms')) {
+      var lmsText = lmsOk ? '✓ OK' : (lmsCfg ? '✗ Недоступен' : '— Не настроен');
+      var lmsCls  = lmsOk ? 'ok'   : (lmsCfg ? 'fail'          : '');
+      set('h-lms', lmsText, lmsCls);
+    }
     set('h-bot', botRun ? '✓ Работает' : (bot ? '⚠ Не запущен' : '✗ Нет токена'),
         botRun ? 'ok' : (bot ? 'warn' : 'fail'));
-    document.getElementById('sdot').className = ol ? 'ok' : '';
+    document.getElementById('sdot').className = (ol || lmsOk) ? 'ok' : '';
     // Show/hide "Ollama not running" banner in chat view
-    noOl.style.display = ol ? 'none' : '';
+    noOl.style.display = (ol || lmsOk) ? 'none' : '';
   } catch(e) {
     noOl.style.display = '';
   }
@@ -2576,6 +2594,9 @@ async function loadOllamaUrl() {
   try {
     var r = await fetch('/settings'); var d = await r.json();
     if (d.ollama_url) document.getElementById('ol-url').value = d.ollama_url;
+    if (d.lm_studio_url && document.getElementById('lms-url')) {
+      document.getElementById('lms-url').value = d.lm_studio_url;
+    }
     // Also update bot token indicator from settings if health hasn't been polled yet
     if (typeof d.bot_token_set === 'boolean') {
       var hasToken = d.bot_token_set;
@@ -2594,6 +2615,23 @@ async function saveOllamaUrl() {
     var d = await r.json();
     if (d.ok) {
       toast('✓ Ollama URL сохранён, проверяю соединение...');
+      setTimeout(function(){ loadHealth(); loadModels(); }, 1500);
+    } else { toast('⚠ ' + (d.error||'Ошибка')); }
+  } catch(e) { toast('⚠ Ошибка: ' + e.message); }
+}
+async function saveLmStudioUrl() {
+  var url = (document.getElementById('lms-url')||{}).value;
+  if (!url) url = '';
+  url = url.trim();
+  if (!url) { toast('Введите URL LM Studio, например: http://172.28.240.1:1234'); return; }
+  if (!/^https?:\/\/.+/.test(url)) { toast('Неверный формат URL'); return; }
+  try {
+    var r = await fetch('/settings', { method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ lm_studio_url: url }) });
+    var d = await r.json();
+    if (d.ok) {
+      toast('✓ LM Studio URL сохранён, проверяю соединение...');
       setTimeout(function(){ loadHealth(); loadModels(); }, 1500);
     } else { toast('⚠ ' + (d.error||'Ошибка')); }
   } catch(e) { toast('⚠ Ошибка: ' + e.message); }
