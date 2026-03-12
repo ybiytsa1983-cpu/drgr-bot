@@ -386,6 +386,7 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
         <div class="hr"><span class="hk">Ollama</span><span id="h-ol" class="hv">—</span></div>
         <div class="hr"><span class="hk">URL</span><span id="h-url" class="hv" style="font-size:9px">—</span></div>
         <div class="hr"><span class="hk">LM Studio</span><span id="h-lms" class="hv">—</span></div>
+        <div class="hr"><span class="hk">🌐 Remote VM</span><span id="h-rvm" class="hv">—</span></div>
         <div class="hr"><span class="hk">📱 TG Bot</span><span id="h-bot" class="hv">—</span></div>
       </div>
       <div style="margin-top:5px">
@@ -407,6 +408,18 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
       <input type="text" id="lms-url" placeholder="http://172.28.240.1:1234" autocomplete="off"/>
       <button class="pb pb-p pb-f" style="margin-top:4px" onclick="saveLmStudioUrl()">💾 Сохранить LM Studio URL</button>
       <div style="font-size:10px;color:var(--text2)">URL вашего LM Studio сервера (OpenAI-совместимый API, порт 1234). Модели LM Studio отображаются в селекторе с префиксом <b>lmstudio:</b></div>
+    </div>
+
+    <!-- Remote VM URL (Google Colab / ngrok) -->
+    <div>
+      <div class="pl">🌐 Remote VM URL (Google Colab)</div>
+      <input type="text" id="rvm-url" placeholder="https://xxxx-xx-xx-xxx-xx.ngrok-free.app" autocomplete="off"/>
+      <div class="pr" style="margin-top:4px">
+        <button class="pb pb-p" style="flex:1" onclick="saveRemoteVmUrl()">💾 Сохранить Remote VM</button>
+        <button class="pb pb-m" style="flex:1" onclick="checkRemoteVm()" title="Проверить соединение">🔗 Проверить</button>
+      </div>
+      <div id="rvm-status" style="font-size:10px;margin-top:2px"></div>
+      <div style="font-size:10px;color:var(--text2)">URL VM запущенной в Google Colab (через ngrok). Локальный сервер проксирует запросы к удалённой VM.</div>
     </div>
 
     <!-- Bot token -->
@@ -2435,6 +2448,9 @@ async function loadHealth() {
     var lmsData = d.lm_studio || {};
     var lmsOk   = lmsData.status === 'ok';
     var lmsCfg  = lmsData.status !== 'not_configured';
+    var rvmData = d.remote_vm || {};
+    var rvmOk   = rvmData.status === 'ok';
+    var rvmCfg  = rvmData.status !== 'not_configured';
     set('h-vm',  vm ? '✓ OK'        : '✗ Ошибка',    vm  ? 'ok' : 'fail');
     set('h-ol',  ol ? '✓ OK'        : '✗ Недоступна', ol  ? 'ok' : 'fail');
     document.getElementById('h-url').textContent = (d.ollama&&d.ollama.url)||'—';
@@ -2443,11 +2459,16 @@ async function loadHealth() {
       var lmsCls  = lmsOk ? 'ok'   : (lmsCfg ? 'fail'          : '');
       set('h-lms', lmsText, lmsCls);
     }
+    if (document.getElementById('h-rvm')) {
+      var rvmText = rvmOk ? '✓ OK' : (rvmCfg ? '✗ Недоступен' : '— Не настроен');
+      var rvmCls  = rvmOk ? 'ok'   : (rvmCfg ? 'fail'          : '');
+      set('h-rvm', rvmText, rvmCls);
+    }
     set('h-bot', botRun ? '✓ Работает' : (bot ? '⚠ Не запущен' : '✗ Нет токена'),
         botRun ? 'ok' : (bot ? 'warn' : 'fail'));
-    document.getElementById('sdot').className = (ol || lmsOk) ? 'ok' : '';
+    document.getElementById('sdot').className = (ol || lmsOk || rvmOk) ? 'ok' : '';
     // Show/hide "Ollama not running" banner in chat view
-    noOl.style.display = (ol || lmsOk) ? 'none' : '';
+    noOl.style.display = (ol || lmsOk || rvmOk) ? 'none' : '';
   } catch(e) {
     noOl.style.display = '';
   }
@@ -2597,6 +2618,9 @@ async function loadOllamaUrl() {
     if (d.lm_studio_url && document.getElementById('lms-url')) {
       document.getElementById('lms-url').value = d.lm_studio_url;
     }
+    if (d.remote_vm_url && document.getElementById('rvm-url')) {
+      document.getElementById('rvm-url').value = d.remote_vm_url;
+    }
     // Also update bot token indicator from settings if health hasn't been polled yet
     if (typeof d.bot_token_set === 'boolean') {
       var hasToken = d.bot_token_set;
@@ -2635,6 +2659,38 @@ async function saveLmStudioUrl() {
       setTimeout(function(){ loadHealth(); loadModels(); }, 1500);
     } else { toast('⚠ ' + (d.error||'Ошибка')); }
   } catch(e) { toast('⚠ Ошибка: ' + e.message); }
+}
+async function saveRemoteVmUrl() {
+  var url = (document.getElementById('rvm-url')||{}).value;
+  if (!url) url = '';
+  url = url.trim();
+  if (!url) { toast('Введите URL Remote VM, например: https://xxxx.ngrok-free.app'); return; }
+  if (!/^https?:\/\/.+/.test(url)) { toast('Неверный формат URL'); return; }
+  try {
+    var r = await fetch('/settings', { method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ remote_vm_url: url }) });
+    var d = await r.json();
+    if (d.ok) {
+      toast('✓ Remote VM URL сохранён, проверяю соединение...');
+      setTimeout(function(){ loadHealth(); }, 1500);
+    } else { toast('⚠ ' + (d.error||'Ошибка')); }
+  } catch(e) { toast('⚠ Ошибка: ' + e.message); }
+}
+async function checkRemoteVm() {
+  var statusEl = document.getElementById('rvm-status');
+  if (statusEl) statusEl.textContent = '⏳ Проверяю...';
+  try {
+    var r = await fetch('/remote/status'); var d = await r.json();
+    if (d.ok) {
+      if (statusEl) statusEl.textContent = '✓ Remote VM доступна: ' + (d.url||'');
+    } else {
+      if (statusEl) statusEl.textContent = '✗ ' + (d.error || 'Недоступна');
+    }
+    loadHealth();
+  } catch(e) {
+    if (statusEl) statusEl.textContent = '✗ Ошибка: ' + e.message;
+  }
 }
 
 // ── Workshop ──────────────────────────────────────────────────────────────────

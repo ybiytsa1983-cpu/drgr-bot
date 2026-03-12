@@ -100,6 +100,10 @@ LM_STUDIO_BASE = os.environ.get("LM_STUDIO_URL", "").rstrip("/")
 # Prefix used in model selector to distinguish LM Studio models from Ollama ones.
 _LM_STUDIO_PREFIX = "lmstudio:"
 
+# Remote VM URL — URL of an externally hosted VM (e.g. Google Colab via ngrok).
+# When set, the /remote/proxy endpoint forwards requests there.
+REMOTE_VM_URL = os.environ.get("REMOTE_VM_URL", "").rstrip("/")
+
 # Heartbeat configuration
 _OLLAMA_HEARTBEAT_INTERVAL = 60   # seconds between liveness pings
 _OLLAMA_HEARTBEAT_TIMEOUT  = 2    # seconds to wait for each Ollama response
@@ -1608,6 +1612,15 @@ def health():
         except Exception:  # pylint: disable=broad-except
             pass
 
+    # --- Remote VM (Google Colab / ngrok) ---
+    rvm_ok = False
+    if REMOTE_VM_URL:
+        try:
+            rvm_resp = _http.get(f"{REMOTE_VM_URL}/health", timeout=3)
+            rvm_ok = rvm_resp.status_code < 400
+        except Exception:  # pylint: disable=broad-except
+            pass
+
     return jsonify({
         "vm":     {"status": "ok"},
         "ollama": {
@@ -1619,6 +1632,10 @@ def health():
             "status":  "ok" if lms_ok else ("unreachable" if LM_STUDIO_BASE else "not_configured"),
             "url":     LM_STUDIO_BASE,
             "models":  lms_models,
+        },
+        "remote_vm": {
+            "status": "ok" if rvm_ok else ("unreachable" if REMOTE_VM_URL else "not_configured"),
+            "url":    REMOTE_VM_URL,
         },
         "bot": {
             "token_set": bot_token_set,
@@ -2365,21 +2382,23 @@ def get_settings():
     return jsonify({
         "ollama_url": OLLAMA_BASE,
         "lm_studio_url": LM_STUDIO_BASE,
+        "remote_vm_url": REMOTE_VM_URL,
         "bot_token_set": bot_token_set,
     })
 
 
 @app.route("/settings", methods=["POST"])
 def save_settings():
-    """Save settings (Telegram bot token, chat ID, Ollama URL, LM Studio URL) to .env."""
-    global OLLAMA_BASE, _OLLAMA_SCANNED, LM_STUDIO_BASE  # noqa: PLW0603
+    """Save settings (Telegram bot token, chat ID, Ollama URL, LM Studio URL, Remote VM URL) to .env."""
+    global OLLAMA_BASE, _OLLAMA_SCANNED, LM_STUDIO_BASE, REMOTE_VM_URL  # noqa: PLW0603
     body = request.get_json(silent=True) or {}
-    bot_token     = body.get("bot_token",     "").strip()
-    chat_id       = body.get("chat_id",       "").strip()
-    ollama_url    = body.get("ollama_url",    "").strip()
-    lm_studio_url = body.get("lm_studio_url", "").strip().rstrip("/")
+    bot_token      = body.get("bot_token",      "").strip()
+    chat_id        = body.get("chat_id",         "").strip()
+    ollama_url     = body.get("ollama_url",      "").strip()
+    lm_studio_url  = body.get("lm_studio_url",   "").strip().rstrip("/")
+    remote_vm_url  = body.get("remote_vm_url",   "").strip().rstrip("/")
 
-    if not any([bot_token, chat_id, ollama_url, lm_studio_url]):
+    if not any([bot_token, chat_id, ollama_url, lm_studio_url, remote_vm_url]):
         return jsonify({"ok": False, "error": "Nothing to save"})
 
     env_path = os.path.join(os.path.dirname(_DIR), ".env")
@@ -2445,6 +2464,19 @@ def save_settings():
             lines.append(f"LM_STUDIO_URL={lm_studio_url}\n")
         os.environ["LM_STUDIO_URL"] = lm_studio_url
         LM_STUDIO_BASE = lm_studio_url
+
+    if remote_vm_url:
+        # Update or append REMOTE_VM_URL line
+        rvm_found = False
+        for i, line in enumerate(lines):
+            if line.startswith("REMOTE_VM_URL="):
+                lines[i] = f"REMOTE_VM_URL={remote_vm_url}\n"
+                rvm_found = True
+                break
+        if not rvm_found:
+            lines.append(f"REMOTE_VM_URL={remote_vm_url}\n")
+        os.environ["REMOTE_VM_URL"] = remote_vm_url
+        REMOTE_VM_URL = remote_vm_url
 
     try:
         with open(env_path, "w", encoding="utf-8") as f:
@@ -2580,6 +2612,67 @@ def lmstudio_models():
         return jsonify({"models": models, "available": bool(models), "url": LM_STUDIO_BASE})
     except Exception as exc:  # pylint: disable=broad-except
         return jsonify({"models": [], "available": False, "url": LM_STUDIO_BASE, "error": str(exc)})
+
+
+# ---------------------------------------------------------------------------
+# Remote VM (Google Colab / ngrok) — status probe and transparent proxy
+# ---------------------------------------------------------------------------
+
+@app.route("/remote/status", methods=["GET"])
+def remote_vm_status():
+    """Check connectivity to the configured Remote VM URL (e.g. Google Colab via ngrok)."""
+    if not REMOTE_VM_URL:
+        return jsonify({"ok": False, "url": "", "error": "Remote VM URL not configured"})
+    try:
+        resp = _http.get(f"{REMOTE_VM_URL}/health", timeout=5)
+        data = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {}
+        return jsonify({"ok": resp.status_code < 400, "url": REMOTE_VM_URL, "status_code": resp.status_code, "data": data})
+    except Exception as exc:  # pylint: disable=broad-except
+        return jsonify({"ok": False, "url": REMOTE_VM_URL, "error": str(exc)})
+
+
+@app.route("/remote/proxy/<path:subpath>", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
+def remote_vm_proxy(subpath):
+    """Transparent proxy — forward requests to the configured Remote VM URL.
+
+    Usage:  POST /remote/proxy/chat/stream  →  forwarded to <REMOTE_VM_URL>/chat/stream
+    This lets the browser UI call the Google Colab VM without CORS issues.
+    """
+    if not REMOTE_VM_URL:
+        return jsonify({"error": "Remote VM URL not configured"}), 503
+
+    target = f"{REMOTE_VM_URL}/{subpath}"
+    params = request.args.to_dict(flat=False)
+    headers = {
+        k: v for k, v in request.headers
+        if k.lower() not in ("host", "content-length")
+    }
+    try:
+        proxied = _http.request(
+            method=request.method,
+            url=target,
+            params=params,
+            headers=headers,
+            data=request.get_data(),
+            stream=True,
+            timeout=120,
+        )
+        # Stream the response back (supports SSE endpoints)
+        def _generate():
+            for chunk in proxied.iter_content(chunk_size=None):
+                if chunk:
+                    yield chunk
+
+        return app.response_class(
+            response=_generate(),
+            status=proxied.status_code,
+            headers={
+                k: v for k, v in proxied.headers.items()
+                if k.lower() not in ("transfer-encoding",)
+            },
+        )
+    except Exception as exc:  # pylint: disable=broad-except
+        return jsonify({"error": str(exc)}), 502
 
 
 @app.route("/ollama/ask", methods=["POST"])
