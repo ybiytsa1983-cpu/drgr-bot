@@ -6059,11 +6059,16 @@ def project_generate():
         else:
             sys_prompt = (
                 "You are an expert full-stack web developer. "
-                "Generate a complete, self-contained, production-ready web application "
+                "Generate a COMPLETE, FULLY FUNCTIONAL, production-ready web application "
                 "for the task described below. "
+                "ABSOLUTE RULES — VIOLATIONS ARE UNACCEPTABLE:\n"
+                "1. NEVER write demo versions, stubs, placeholders, or incomplete code.\n"
+                "2. NEVER use '// TODO', '// add code here', '/* implement */', "
+                "'В реальном приложении здесь...', 'This is a demo', 'placeholder'.\n"
+                "3. Every function must have a REAL, WORKING implementation.\n"
                 "The application MUST be a single HTML file with all CSS and JavaScript inline. "
                 "Use a dark, modern design with CSS variables, responsive layout (flexbox/grid), "
-                "and smooth animations. Include all functionality described in the task. "
+                "and smooth animations. Include ALL functionality described in the task. "
                 "Return ONLY the complete HTML document inside a fenced ```html code block. "
                 "Do not write anything outside that block.\n\n"
                 f"Task: {prompt}"

@@ -2286,6 +2286,16 @@ function clearOutput() {
 }
 
 // ── Qwen HTML Generator (streaming) ─────────────────────────────────────────
+// Detect if a prompt is asking for a Chrome/browser extension
+function _isExtensionPrompt(p) {
+  var pl = p.toLowerCase();
+  return ['chrome extension','browser extension','расширение chrome',
+          'расширение для chrome','расширение браузера','manifest.json',
+          'chrome addon','firefox extension','sidebar extension','sidepanel',
+          'side panel extension','content script','background script',
+          'боковая панель расширение','расширение с боковой'].some(function(kw){ return pl.indexOf(kw) !== -1; });
+}
+
 async function generateCode() {
   if (genBusy) return;
   var prompt = document.getElementById('gen-input').value.trim();
@@ -2297,6 +2307,53 @@ async function generateCode() {
   var status = document.getElementById('gen-status');
   btn.disabled = true;
   btn.textContent = '⏳ Генерирую...';
+
+  // ── Chrome Extension: route to /project/generate for multi-file output ──
+  if (_isExtensionPrompt(prompt)) {
+    status.innerHTML = '<span style="color:var(--warn)">⏳ Генерирую Chrome Extension (все файлы)...</span>';
+    if (editor) editor.setValue('');
+    try {
+      var er = await fetch('/project/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: prompt, model: curModel })
+      });
+      var ed = await er.json();
+      if (!er.ok || !ed.success) {
+        status.innerHTML = '<span class="gs-err">⚠ ' + esc(ed.error || 'Ошибка генерации расширения') + '</span>';
+      } else {
+        // Show manifest.json or sidepanel.html in editor; prefer sidepanel.html
+        var files = ed.files || {};
+        var _mainPriority = ['sidepanel.html','popup.html','manifest.json'];
+        var mainName = _mainPriority.find(function(f){ return files[f]; }) || Object.keys(files)[0] || 'manifest.json';
+        var mainFile = files[mainName] || '';
+        if (editor && mainFile) {
+          editor.setValue(mainFile);
+          var lang = detectLang(mainFile);
+          setLangBadge(lang);
+          var sel = document.getElementById('lang-select');
+          if (sel) sel.value = '';
+          if (lang === 'html') showPreview(mainFile);
+          else showPreview(wrapForVisor(mainFile, lang));
+        }
+        var fileNames = Object.keys(files).join(', ');
+        var pid = esc(ed.project_id || '');
+        status.innerHTML = '<span class="gs-ok">✓ Chrome Extension готово! '
+          + Object.keys(files).length + ' файлов: ' + esc(fileNames)
+          + (pid ? ' · <a href="#" onclick="openPanel();loadProjectList();return false" style="color:var(--accent)">Открыть в проектах →</a>' : '')
+          + '</span>';
+        toast('🔌 Extension сохранён: ' + (ed.project_id || ''));
+        loadProjectList();
+      }
+    } catch(e) {
+      status.innerHTML = '<span class="gs-err">⚠ Ошибка: ' + esc(e.message) + '</span>';
+    }
+    genBusy = false;
+    btn.disabled = false;
+    btn.textContent = '▶ Сгенерировать';
+    return;
+  }
+
   status.innerHTML = '<span style="color:var(--warn)">⏳ ИИ генерирует код — определяет язык автоматически...</span>';
 
   var accumulated = '';
