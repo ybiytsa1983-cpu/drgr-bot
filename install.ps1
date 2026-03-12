@@ -368,6 +368,18 @@ if (Test-Path $retrainSrc) {
     }
 }
 
+# Copy ОБНОВИТЬ.bat (update launcher — download and install new files)
+$updateRuSrc  = Join-Path $repoDir "ОБНОВИТЬ.bat"
+$updateRuDest = Join-Path $desktopPath "ОБНОВИТЬ.bat"
+if (Test-Path $updateRuSrc) {
+    try {
+        Copy-Item -Path $updateRuSrc -Destination $updateRuDest -Force
+        Ok "Лаунчер обновления скопирован: «ОБНОВИТЬ.bat» на Рабочем столе"
+    } catch {
+        Warn "Не удалось скопировать ОБНОВИТЬ.bat на Рабочий стол: $_"
+    }
+}
+
 # -- 9. Done -------------------------------------------------------------------
 Write-Host ""
 Write-Host "  =============================================" -ForegroundColor Green
@@ -380,6 +392,7 @@ if ($shortcutOk) {
     Write-Host "    'ЗАПУСТИТЬ.bat'      — резервный лаунчер (работает откуда угодно)" -ForegroundColor Cyan
     Write-Host "    'ЗАПУСТИТЬ_ВМ.bat'   — Code VM + создание переученной модели drgr-visor" -ForegroundColor Green
     Write-Host "    'ПЕРЕУЧИТЬ_ВМ.bat'   — только переучить (создать/обновить drgr-visor)" -ForegroundColor Green
+    Write-Host "    'ОБНОВИТЬ.bat'       — скачать и установить новые файлы (обновление)" -ForegroundColor Yellow
 } else {
     Write-Host "  [!!] Ярлык не удалось создать автоматически." -ForegroundColor Yellow
     Write-Host "  Чтобы создать значок «Code VM» на Рабочем столе, выполни:" -ForegroundColor Yellow

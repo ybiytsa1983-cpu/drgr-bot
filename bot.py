@@ -2316,9 +2316,11 @@ async def cmd_update(message: Message) -> None:
     """Show the PowerShell one-liner to check for updates and install new files."""
     text_md = (
         "\u2b07\ufe0f *Скачать и установить новые файлы*\n\n"
-        "Открой *PowerShell* \\(Win\\+X → Windows PowerShell\\) и вставь:\n\n"
+        "🖱 *Способ 1 — двойной клик:*\n"
+        "Найди файл `ОБНОВИТЬ\\.bat` на Рабочем столе \\(или в папке `drgr\\-bot`\\) и дважды кликни по нему\\.\n\n"
+        "⌨️ *Способ 2 — через PowerShell* \\(Win\\+X → Windows PowerShell\\):\n\n"
         f"{_MD_UPDATE_CMD}\n\n"
-        "Команда автоматически:\n"
+        "Скрипт автоматически:\n"
         "1\\. Проверяет наличие обновлений\n"
         "2\\. Показывает список изменённых файлов\n"
         "3\\. Скачивает и устанавливает новые версии\n\n"
@@ -2331,9 +2333,11 @@ async def cmd_update(message: Message) -> None:
     except Exception:
         await message.answer(
             "⬇ Скачать и установить новые файлы\n\n"
-            "Открой PowerShell (Win+X → Windows PowerShell) и вставь:\n\n"
+            "🖱 Способ 1 — двойной клик:\n"
+            "Найди файл ОБНОВИТЬ.bat на Рабочем столе (или в папке drgr-bot) и дважды кликни.\n\n"
+            "⌨ Способ 2 — через PowerShell (Win+X → Windows PowerShell):\n\n"
             f"{_TXT_UPDATE_CMD}\n\n"
-            "Команда автоматически:\n"
+            "Скрипт автоматически:\n"
             "1. Проверяет наличие обновлений\n"
             "2. Показывает список изменённых файлов\n"
             "3. Скачивает и устанавливает новые версии\n\n"
@@ -3026,6 +3030,7 @@ async def handle_text(message: Message) -> None:
     #  update-specific questions like "где команда для скачивания и запуска обновлений")
     _UPDATE_KEYWORDS = (
         "обновл", "скачать файл", "скачать обновл", "установить обновл",
+        "устоновить обновл", "устоновить", "обновить.bat", "обновить bat",
         "новые файл", "команда для скачивания", "команда для обновл",
         "update.ps1", "как обновить",
         "апгрейд", "апдейт", "upgrade", "запуска апгрейд", "запустить апгрейд",
