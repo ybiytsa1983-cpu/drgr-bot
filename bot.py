@@ -215,6 +215,30 @@ class ActionLogger:
 action_logger = ActionLogger(VM_BASE)
 
 
+def _push_tg_message_to_vm(from_name: str, text: str) -> None:
+    """Fire-and-forget: push a TG message to the VM chat panel via /chat/push."""
+    import threading
+    import urllib.request as _ureq
+
+    def _do():
+        try:
+            payload = json.dumps({"from_name": from_name, "text": text}).encode()
+            req = _ureq.Request(
+                f"{VM_BASE}/chat/push",
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with _ureq.urlopen(req, timeout=3):
+                pass
+        except Exception as exc:
+            logger.debug("_push_tg_message_to_vm: %s", exc)
+
+    threading.Thread(target=_do, daemon=True).start()
+
+    threading.Thread(target=_do, daemon=True).start()
+
+
 # ===========================================================================
 # PER-USER CHAT HISTORY  (used by chat_via_vm)
 # ===========================================================================
@@ -2914,6 +2938,12 @@ async def handle_text(message: Message) -> None:
         )
         return
     user_id = message.from_user.id if message.from_user else 0
+
+    # Forward the incoming TG message to the VM chat panel (fire-and-forget)
+    _push_tg_message_to_vm(
+        from_name=(message.from_user.full_name if message.from_user else "TG"),
+        text=query,
+    )
 
     # Smart routing: if message contains a URL, treat it as a ВИЗОР/browse request
     url_match = _URL_IN_TEXT_RE.search(query)

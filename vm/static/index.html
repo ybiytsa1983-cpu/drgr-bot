@@ -272,6 +272,26 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
 .cm-tool-result{background:#1a3a1a;border:1px solid #2a5a2a;color:#7fc97f;font-size:11px;
   padding:6px 10px;border-radius:6px;align-self:flex-start;white-space:pre-wrap;
   word-break:break-word;max-width:95%}
+/* TG source badge */
+.cm-tg-badge{display:inline-flex;align-items:center;gap:4px;font-size:10px;
+  background:rgba(41,182,246,.15);color:#29b6f6;border:1px solid rgba(41,182,246,.3);
+  border-radius:4px;padding:1px 6px;margin-bottom:4px;font-weight:600}
+/* HTML preview inside chat bubble */
+.cm-html-preview{border:1px solid var(--border);border-radius:6px;overflow:hidden;
+  margin-top:6px;max-height:220px;background:#fff}
+.cm-html-preview iframe{width:100%;height:220px;border:none;display:block}
+.cm-html-btn{display:inline-block;margin-top:6px;padding:4px 10px;font-size:11px;
+  background:var(--accent);color:#fff;border:none;border-radius:5px;cursor:pointer;
+  font-family:inherit}
+.cm-html-btn:hover{filter:brightness(1.15)}
+/* Chat pane drag-over indicator */
+#chat-pane.chat-drag-over #chat-messages{outline:2px dashed var(--accent);
+  outline-offset:-2px;background:rgba(0,212,255,.04);position:relative}
+#chat-pane.chat-drag-over #chat-messages::after{content:'⬇ Перетащите файл в чат';
+  position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
+  background:var(--bg2);color:var(--accent);font-size:16px;padding:14px 28px;
+  border-radius:8px;border:2px dashed var(--accent);pointer-events:none;
+  z-index:199;white-space:nowrap}
 
 /* ── Toast ── */
 #toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);
@@ -1019,18 +1039,24 @@ var VISOR_MODEL_NAME = 'drgr-visor';
 
     var target = e.target;
     var epane = document.getElementById('epane');
-    if (!epane || !epane.contains(target)) {
-      // Drop outside the editor pane — show "forbidden" cursor and do nothing
+    var chatPane = document.getElementById('chat-pane');
+    if (epane && epane.contains(target)) {
+      // Drop inside editor pane — dropEffect stays 'copy'; editorDrop() handles it
+    } else if (chatPane && chatPane.contains(target)) {
+      // Drop inside chat pane — chatDrop() handles it
+    } else {
+      // Drop outside known zones — show "forbidden" cursor and do nothing
       e.dataTransfer.dropEffect = 'none';
     }
-    // Drop inside #epane — dropEffect stays 'copy'; editorDrop() handles it
   }
   // When a file drag leaves the browser window entirely (relatedTarget === null),
-  // make sure the #epane drag-over indicator is removed.
+  // make sure the #epane and #chat-pane drag-over indicators are removed.
   function _cleanDragLeave(e) {
     if (e.relatedTarget === null) {
       var epane = document.getElementById('epane');
       if (epane) epane.classList.remove('drag-over');
+      var chatPane = document.getElementById('chat-pane');
+      if (chatPane) chatPane.classList.remove('chat-drag-over');
     }
   }
   // Capture phase (true) ensures we fire before Monaco's internal handlers
@@ -3446,6 +3472,8 @@ async function sendChat() {
       // Render markdown
       botBubble.innerHTML = mdToHtml(accumulated);
       botBubble.className = 'cm cm-bot';
+      // Enhance HTML code blocks with inline preview
+      _enhanceBotBubbleHtml(botBubble);
       chatHistory.push({role:'user', text: msg});
       chatHistory.push({role:'assistant', text: accumulated});
       // Execute any tool calls found in the AI response
@@ -3620,7 +3648,106 @@ function chatClearAttachment() {
   if (prev) { prev.src = ''; prev.style.display = 'none'; }
 }
 
-// ── Chat tool: run autonomous browser agent ───────────────────────────────
+// ── Chat pane drag-and-drop ───────────────────────────────────────────────────
+function chatDragOver(e) {
+  if (!_dragHasFiles(e)) return;
+  e.preventDefault();
+  e.stopPropagation();
+  e.dataTransfer.dropEffect = 'copy';
+  var chatPane = document.getElementById('chat-pane');
+  if (chatPane) chatPane.classList.add('chat-drag-over');
+}
+
+function chatDragLeave(e) {
+  if (!_dragHasFiles(e)) return;
+  var chatPane = document.getElementById('chat-pane');
+  if (!chatPane) return;
+  if (e.relatedTarget && chatPane.contains(e.relatedTarget)) return;
+  e.preventDefault();
+  e.stopPropagation();
+  chatPane.classList.remove('chat-drag-over');
+}
+
+async function chatDrop(e) {
+  if (!_dragHasFiles(e)) return;
+  e.preventDefault();
+  e.stopPropagation();
+  var chatPane = document.getElementById('chat-pane');
+  if (chatPane) chatPane.classList.remove('chat-drag-over');
+  var files = e.dataTransfer && e.dataTransfer.files;
+  if (!files || !files.length) return;
+  // Use the first file for chat attachment (same logic as handleChatFileAttach)
+  var fakeInput = { files: files };
+  await handleChatFileAttach(fakeInput);
+  // Focus the chat input so the user can type a message
+  var ci = document.getElementById('chat-input');
+  if (ci) ci.focus();
+}
+
+// ── HTML rendering in chat bot bubbles ────────────────────────────────────────
+// After streaming is complete, scan the bot bubble for HTML code blocks and
+// add an inline mini-preview + "Open in ВИЗОР" button.
+function _enhanceBotBubbleHtml(botBubble) {
+  var pres = botBubble.querySelectorAll('pre[data-lang="html"]');
+  if (!pres.length) return;
+  pres.forEach(function(pre) {
+    if (pre.dataset.htmlEnhanced) return;
+    pre.dataset.htmlEnhanced = '1';
+    var code = pre.querySelector('code');
+    var html = code ? code.textContent : pre.textContent;
+    // Mini preview iframe
+    var previewWrap = document.createElement('div');
+    previewWrap.className = 'cm-html-preview';
+    var iframe = document.createElement('iframe');
+    iframe.sandbox = 'allow-scripts';
+    try { iframe.srcdoc = html; } catch(e) {}
+    previewWrap.appendChild(iframe);
+    pre.parentNode.insertBefore(previewWrap, pre.nextSibling);
+    // "Open in ВИЗОР" button
+    var btn = document.createElement('button');
+    btn.className = 'cm-html-btn';
+    btn.textContent = '▶ Открыть в ВИЗОРЕ';
+    btn.onclick = function() { showPreview(html); setView('both'); };
+    previewWrap.parentNode.insertBefore(btn, previewWrap.nextSibling);
+  });
+}
+
+// ── TG messages forwarded to VM chat ─────────────────────────────────────────
+var _tgPollLastId = 0;
+var _tgPollTimer = null;
+
+function _pollTgChatMessages() {
+  if (_tgPollTimer) return;
+  _tgPollTimer = setInterval(async function() {
+    try {
+      var r = await fetch('/chat/tg_messages?after=' + _tgPollLastId);
+      if (!r.ok) return;
+      var data = await r.json();
+      if (!data.messages || !data.messages.length) return;
+      var msgs = document.getElementById('chat-messages');
+      data.messages.forEach(function(m) {
+        if (m.id <= _tgPollLastId) return;
+        _tgPollLastId = m.id;
+        var bubble = document.createElement('div');
+        bubble.className = 'cm cm-user';
+        // TG badge
+        var badge = document.createElement('div');
+        badge.className = 'cm-tg-badge';
+        badge.textContent = '📱 TG: ' + (m.from_name || 'пользователь');
+        bubble.appendChild(badge);
+        var textEl = document.createElement('div');
+        textEl.textContent = m.text || '';
+        bubble.appendChild(textEl);
+        if (msgs) {
+          msgs.appendChild(bubble);
+          msgs.scrollTop = msgs.scrollHeight;
+        }
+      });
+    } catch(e) { console.error('[TG poll]', e); }
+  }, 3000);
+}
+
+
 async function chatRunAgent() {
   var ci = document.getElementById('chat-input');
   var inputTask = ci ? ci.value.trim() : '';
@@ -3926,6 +4053,8 @@ async function chatAutoResponse(message, systemExtra) {
     if (accumulated) {
       botBubble.innerHTML = mdToHtml(accumulated);
       botBubble.className = 'cm cm-bot';
+      // Enhance HTML code blocks with inline preview
+      _enhanceBotBubbleHtml(botBubble);
       chatHistory.push({ role: 'assistant', text: accumulated });
     }
   } catch(e) {
@@ -4539,6 +4668,17 @@ window.addEventListener('load', function(){
   epane.addEventListener('dragover',  editorDragOver,  true);
   epane.addEventListener('dragleave', editorDragLeave, true);
   epane.addEventListener('drop',      editorDrop,      true);
+
+  // Register chat pane drag-drop handlers
+  var chatPane = document.getElementById('chat-pane');
+  if (chatPane) {
+    chatPane.addEventListener('dragover',  chatDragOver,  true);
+    chatPane.addEventListener('dragleave', chatDragLeave, true);
+    chatPane.addEventListener('drop',      chatDrop,      true);
+  }
+
+  // Start polling for TG messages forwarded to VM chat
+  _pollTgChatMessages();
 });
 </script>
 </body>

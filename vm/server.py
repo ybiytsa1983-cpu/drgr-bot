@@ -3839,6 +3839,58 @@ def chatroom_events():
     )
 
 
+# ---------------------------------------------------------------------------
+# TG → VM chat: Telegram messages forwarded to the VM AI chat panel
+# ---------------------------------------------------------------------------
+_TG_CHAT_MAX = 200          # keep last N TG messages in memory
+_tg_chat_history: list = []  # [{id, from_name, text, ts}]
+_tg_chat_lock = threading.Lock()
+_tg_chat_counter = 0
+
+
+@app.route("/chat/push", methods=["POST"])
+def chat_push():
+    """Receive a Telegram message and store it for the VM chat UI to poll.
+
+    Body: {"from_name": "...", "text": "..."}
+    Returns: {"ok": true, "id": <int>}
+    """
+    global _tg_chat_counter
+    body = request.get_json(silent=True) or {}
+    from_name = (body.get("from_name") or "TG")[:64]
+    text = (body.get("text") or "").strip()[:4000]
+    if not text:
+        return jsonify({"ok": False, "error": "empty text"})
+    with _tg_chat_lock:
+        _tg_chat_counter += 1
+        msg_id = _tg_chat_counter
+        entry = {
+            "id": msg_id,
+            "from_name": from_name,
+            "text": text,
+            "ts": time.strftime("%H:%M"),
+        }
+        _tg_chat_history.append(entry)
+        if len(_tg_chat_history) > _TG_CHAT_MAX:
+            _tg_chat_history.pop(0)
+    return jsonify({"ok": True, "id": msg_id})
+
+
+@app.route("/chat/tg_messages", methods=["GET"])
+def chat_tg_messages():
+    """Return TG messages with id > after parameter for polling.
+
+    Query param: after=<int>  (default 0)
+    Returns: {"messages": [...]}
+    """
+    try:
+        after = int(request.args.get("after", 0))
+    except (ValueError, TypeError):
+        after = 0
+    with _tg_chat_lock:
+        msgs = [m for m in _tg_chat_history if m["id"] > after]
+    return jsonify({"messages": msgs})
+
 
 _DEFAULT_PATCH_SYSTEM_PROMPT = (
     "Ты DRGR Code Patcher — эксперт-программист на базе Qwen.\n"
