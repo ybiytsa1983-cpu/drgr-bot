@@ -83,6 +83,12 @@ _MD_UPDATE_CMD = (
     "`irm \"https://raw.githubusercontent.com/ybiytsa1983\\-cpu/drgr\\-bot/main/update\\.ps1\" | iex`"
 )
 
+_MD_START_CMD = (
+    "*▶️ Запуск VM:*\n"
+    "`powershell \\-ExecutionPolicy Bypass \\-File "
+    "\"$env:USERPROFILE\\\\drgr\\-bot\\\\start\\.ps1\"`"
+)
+
 _MD_WEB_URL = "`http://localhost:5000/`"
 
 logging.basicConfig(
@@ -1159,6 +1165,7 @@ async def cmd_start(message: Message) -> None:
         "/retrain — запустить цикл самообучения VM\n"
         "/vm — статус VM, URL и команда запуска\n"
         "/update — скачать и установить новые файлы\n"
+        "/settoken — сохранить новый токен бота\n"
         "/models — доступные AI\\-модели\n"
         "/stats — статистика самообучения\n"
         "/help — помощь\n\n"
@@ -1221,7 +1228,8 @@ async def cmd_help(message: Message) -> None:
         "• `/stats` — что VM узнала из своих действий\n"
         "• `/retrain` — запустить цикл самообучения VM вручную\n"
         "• `/vm` — статус VM и команды запуска\n"
-        "• `/update` — команда для скачивания и установки новых файлов\n\n"
+        "• `/update` — команда для скачивания и установки новых файлов\n"
+        "• `/settoken <токен>` — сохранить новый токен бота \\(@BotFather\\)\n\n"
         "*Конвертер файлов и фото \\(через VM\\):*\n"
         "• `/convert` — список всех доступных конвертаций\n"
         "• Отправьте фото — AI опишет содержимое \\(vision\\-модель\\)\n"
@@ -2264,7 +2272,7 @@ async def cmd_update(message: Message) -> None:
         "2\\. Показывает список изменённых файлов\n"
         "3\\. Скачивает и устанавливает новые версии\n\n"
         "После завершения запусти VM:\n"
-        "`powershell \\-ExecutionPolicy Bypass \\-File \"$env:USERPROFILE\\\\drgr\\-bot\\\\start\\.ps1\"`\n\n"
+        f"{_MD_START_CMD}\n\n"
         "_Если папки `drgr\\-bot` нет — используй_ /vm _для полной установки с нуля_"
     )
     try:
@@ -2281,6 +2289,86 @@ async def cmd_update(message: Message) -> None:
             "После завершения запусти VM:\n"
             'powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\\drgr-bot\\start.ps1"\n\n'
             "Если папки drgr-bot нет — используй /vm для полной установки с нуля"
+        )
+
+
+# /settoken command — save a new Telegram bot token via VM /settings API
+# ---------------------------------------------------------------------------
+
+
+@router.message(Command("settoken"))
+async def cmd_settoken(message: Message) -> None:
+    """Save a new Telegram bot token.  Usage: /settoken <token>"""
+    args = (message.text or "").split(maxsplit=1)
+    if len(args) < 2 or not args[1].strip():
+        await message.answer(
+            "ℹ️ Использование: /settoken <токен>\n\n"
+            "Пример:\n"
+            "/settoken 1234567890:ABCdefGHIjklMNOpqrSTUvwxyz\n\n"
+            "Токен можно получить у @BotFather.\n"
+            "После сохранения бот автоматически перезапустится с новым токеном."
+        )
+        return
+
+    new_token = args[1].strip()
+    if not re.match(r"^\d{8,}:[A-Za-z0-9_-]{35,}$", new_token):
+        await message.answer(
+            "❌ Неверный формат токена.\n"
+            "Токен должен иметь вид: 1234567890:ABCdefGHIjklMNOpqrSTUvwxyz\n\n"
+            "Получи токен у @BotFather командой /newbot или /token."
+        )
+        return
+
+    saved = False
+    # First try via VM /settings API (VM will restart the bot automatically)
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{VM_BASE}/settings",
+                json={"bot_token": new_token},
+                timeout=aiohttp.ClientTimeout(total=8),
+            ) as resp:
+                data = await resp.json()
+                if data.get("ok"):
+                    saved = True
+    except Exception as exc:
+        logger.warning("cmd_settoken: VM /settings unreachable (%s), falling back to .env write", exc)
+
+    if not saved:
+        # Fallback: write directly to .env in repo root
+        try:
+            env_path = Path(__file__).resolve().parent / ".env"
+            lines: list[str] = []
+            if env_path.exists():
+                lines = env_path.read_text(encoding="utf-8").splitlines(keepends=True)
+            token_found = False
+            for i, line in enumerate(lines):
+                if line.startswith("BOT_TOKEN="):
+                    lines[i] = f"BOT_TOKEN={new_token}\n"
+                    token_found = True
+                    break
+            if not token_found:
+                lines.append(f"BOT_TOKEN={new_token}\n")
+            env_path.write_text("".join(lines), encoding="utf-8")
+            saved = True
+        except Exception as exc:
+            await message.answer(f"❌ Не удалось сохранить токен: {exc}")
+            return
+
+    try:
+        await message.answer(
+            "✅ *Токен сохранён\\!*\n\n"
+            "Бот перезапускается с новым токеном\\.\n"
+            "Если бот не отвечает — запусти заново:\n\n"
+            f"{_MD_START_CMD}",
+            parse_mode="MarkdownV2",
+        )
+    except Exception:
+        await message.answer(
+            "✅ Токен сохранён!\n\n"
+            "Бот перезапускается с новым токеном.\n"
+            "Если бот не отвечает — запусти заново:\n"
+            'powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\\drgr-bot\\start.ps1"'
         )
 
 
@@ -2320,8 +2408,7 @@ async def cmd_vm(message: Message) -> None:
         f"\U0001f9e0 Модели: `{_esc(models_str)}`\n\n"
         f"\U0001f680 {_MD_INSTALL_CMD}\n\n"
         f"{_MD_UPDATE_CMD}\n\n"
-        "*\u25b6\ufe0f Запуск VM:*\n"
-        "`powershell \\-ExecutionPolicy Bypass \\-File \"$env:USERPROFILE\\\\drgr\\-bot\\\\start\\.ps1\"`\n\n"
+        f"{_MD_START_CMD}\n\n"
         f"*\U0001f5a5 Адрес VM в браузере:* {_MD_WEB_URL}\n\n"
         "_Или дважды кликни ярлык «Code VM» на Рабочем столе_"
     )
@@ -2849,14 +2936,23 @@ async def handle_text(message: Message) -> None:
 
     q_lower = query.lower()
 
-    # Smart routing: detect update/PowerShell intent → show update command
+    # Smart routing: general PowerShell/install question → show all commands via /vm
+    _PS_CMD_KEYWORDS = (
+        "команда для повершел", "команда для повершелл",
+        "команда powershell", "powershell команда",
+        "где команда", "пауэршелл", "повершелл",
+        "как установить", "установка vm", "установить vm",
+        "run.ps1", "start.ps1",
+    )
+    if any(kw in q_lower for kw in _PS_CMD_KEYWORDS):
+        await cmd_vm(message)
+        return
+
+    # Smart routing: detect update intent → show update command
     _UPDATE_KEYWORDS = (
         "обновл", "скачать файл", "скачать обновл", "установить обновл",
         "новые файл", "команда для скачивания", "команда для обновл",
-        "команда для повершел", "команда для повершелл",
-        "команда powershell", "powershell команда",
-        "где команда", "update.ps1", "как обновить",
-        "пауэршелл", "повершелл",
+        "update.ps1", "как обновить",
     )
     if any(kw in q_lower for kw in _UPDATE_KEYWORDS):
         await cmd_update(message)
