@@ -1306,10 +1306,12 @@ async def cmd_web(message: Message) -> None:
         "*Что доступно в веб\\-интерфейсе:*\n"
         "• 🧑‍💻 Monaco редактор кода\n"
         "• 🌐 HTML\\-генератор \\(вкладка **HTML**\\)\n"
-        "• 💬 Чат с AI \\(вкладка **AI**\\)\n"
-        "• 🖥 ВИЗОР — браузер\\-инспектор\n"
-        "• 🔧 Workshop — управление моделями Ollama\n"
-        "• ⚙️ Настройки — токен бота, модель, промпт\n\n"
+        "• 💬 Чат с AI \\(вкладка 💬 **Чат**\\)\n"
+        "• 🌐 Чат\\-зал \\(онлайн\\-чат\\): `http://localhost:5000/chatroom/page`\n"
+        "• 🖥 ВИЗОР — браузер\\-инспектор \\(скриншоты\\+AI анализ\\)\n"
+        "• 🔍 Поиск\\+Статья — поиск в интернете \\+ HTML отчёт\n"
+        "• 🔧 Visor VM — управление моделями Ollama\n"
+        "• ⚙️ Настройки — токен бота, модель, LM Studio URL, промпт\n\n"
         f"*Если VM не запущена —* {_MD_INSTALL_CMD}\n\n"
         "После установки — двойной клик на ярлыке *«Code VM»* на Рабочем столе\\.",
         parse_mode="MarkdownV2",
@@ -2585,9 +2587,11 @@ async def cmd_vm(message: Message) -> None:
         f"\U0001f680 {_MD_INSTALL_CMD}\n\n"
         f"{_MD_UPDATE_CMD}\n\n"
         f"{_MD_START_CMD}\n\n"
-        f"*\U0001f5a5 Адрес VM в браузере:* {_MD_WEB_URL}\n\n"
+        f"*\U0001f5a5 Адрес VM в браузере:* {_MD_WEB_URL}\n"
+        f"*🌐 Онлайн чат\\-зал:* `http://localhost:5000/chatroom/page`\n\n"
         "_Или дважды кликни ярлык «Code VM» на Рабочем столе_\n"
-        "_Для подключения LM Studio: откройте настройки \\(☰\\) в VM → введите URL LM Studio_"
+        "_Для подключения LM Studio: откройте настройки \\(☰\\) в VM → введите URL LM Studio_\n"
+        "_Пример: `http://localhost:1234` \\(или IP\\-адрес хоста WSL\\)_"
     )
     try:
         await message.answer(text_md, parse_mode="MarkdownV2")
@@ -2604,9 +2608,10 @@ async def cmd_vm(message: Message) -> None:
             f"{_UPDATE_PS1_CMD}\n\n"
             "▶ Запуск VM:\n"
             f'powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\\drgr-bot\\start.ps1"\n\n'
-            f"🖥 Адрес VM в браузере: {VM_BASE}\n\n"
-            "Или дважды кликни ярлык «Code VM» на Рабочем столе\n"
-            "Для подключения LM Studio: откройте настройки (☰) в VM → введите URL LM Studio"
+            f"🖥 Адрес VM в браузере: {VM_BASE}\n"
+            "🌐 Онлайн чат-зал: http://localhost:5000/chatroom/page\n\n"
+            "Для подключения LM Studio: откройте настройки (☰) в VM → введите URL LM Studio\n"
+            "Пример: http://localhost:1234 (или IP-адрес хоста WSL)"
         )
 
 
@@ -3143,6 +3148,35 @@ async def handle_text(message: Message) -> None:
     )
     if any(kw in q_lower for kw in _UPDATE_KEYWORDS):
         await cmd_update(message)
+        return
+
+    # Smart routing: chatroom / online chat page queries → show the chatroom URL
+    _CHATROOM_KEYWORDS = (
+        "чат онлайн", "онлайн чат", "чат-зал", "чат зал", "чат комната",
+        "chat room", "chatroom", "онлайн страница", "страница чата",
+        "открыть чат", "войти в чат", "чат страница",
+        "чат не найден", "чат не работает", "страница не найдена",
+    )
+    if any(kw in q_lower for kw in _CHATROOM_KEYWORDS):
+        try:
+            await message.answer(
+                "🌐 *Онлайн чат \\(Чат\\-зал\\)*\n\n"
+                "Откройте в браузере на компьютере, где запущена VM:\n\n"
+                "🔗 `http://localhost:5000/chatroom/page`\n\n"
+                "Или нажмите кнопку *🌐 Чат\\-зал* в веб\\-интерфейсе VM:\n"
+                "`http://localhost:5000/`\n\n"
+                "Чат\\-зал — это многопользовательский онлайн\\-чат, "
+                "доступный в локальной сети\\.",
+                parse_mode="MarkdownV2",
+            )
+        except Exception:
+            await message.answer(
+                "🌐 Онлайн чат (Чат-зал)\n\n"
+                "Откройте в браузере:\n"
+                "http://localhost:5000/chatroom/page\n\n"
+                "Или нажмите кнопку 🌐 Чат-зал в веб-интерфейсе VM:\n"
+                "http://localhost:5000/"
+            )
         return
 
     # Smart routing: questions about article screenshots → explain /research + /search commands

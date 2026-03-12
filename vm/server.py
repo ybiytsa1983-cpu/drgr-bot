@@ -65,7 +65,7 @@ except ImportError:
     pass  # python-dotenv not installed — rely on environment variables
 
 import requests as _http
-from flask import Flask, Response, jsonify, request, send_from_directory, stream_with_context
+from flask import Flask, Response, jsonify, redirect, request, send_from_directory, stream_with_context
 
 app = Flask(__name__, static_folder="static")
 _log = logging.getLogger("CodeVM")
@@ -1240,8 +1240,18 @@ _VISION_MODELS = [
         "bakllava:latest",
         "moondream:latest",
         "llava-phi3:latest",
+        # GPT-OSS / GLM variants that may have vision capability
+        "gpt-oss:latest",
+        "glm-4v:latest",
     ] if m
 ]
+
+# LM Studio model name patterns known to support vision (image_url content type).
+# Used to prefer these over plain text models when selecting from LM Studio.
+_LM_STUDIO_VISION_PATTERNS = (
+    "vision", "vl", "llava", "bakllava", "glm-4v", "glm-4.6v",
+    "moondream", "phi3-vision", "minicpm-v",
+)
 
 
 def _save_image_description(summary: dict, full_description: str) -> None:
@@ -1539,6 +1549,22 @@ def _regenerate_instructions(data: dict) -> None:
 @app.route("/")
 def index():
     return send_from_directory(app.static_folder, "index.html")
+
+
+@app.route("/chat", methods=["GET"])
+def chat_page():
+    """Serve the main UI with the AI chat view active.
+
+    Fixes 'chat online page not found' — navigating to /chat now returns the
+    index page (the chat panel is accessible via the 💬 Чат button inside it).
+    """
+    return send_from_directory(app.static_folder, "index.html")
+
+
+@app.route("/chatroom", methods=["GET"])
+def chatroom_redirect():
+    """Convenience alias for /chatroom/page — the standalone multi-user chat room."""
+    return redirect("/chatroom/page")
 
 
 @app.route("/ping", methods=["GET"])
@@ -5235,7 +5261,9 @@ def convert_text():
 def browse_screenshot():
     """Take a screenshot of a URL and analyse it with the best available vision model.
 
-    Body: {"url": "https://example.com"}
+    Body: {"url": "https://example.com", "model": "gpt-oss:latest"}
+      - model (optional): Ollama model name or "lmstudio:<id>" to use a specific
+        model for analysis.  Defaults to the best available vision model.
     Returns:
       {"screenshot_base64": "<base64 png>", "description": "...", "url": "...",
        "model": "qwen3-vl:8b", "success": true}
@@ -5248,6 +5276,8 @@ def browse_screenshot():
 
     body = request.get_json(silent=True) or {}
     url  = body.get("url", "").strip()
+    # Optional explicit model override (e.g. "gpt-oss:latest" or "lmstudio:zai-org/glm-4.6v-flash")
+    model_override = body.get("model", "").strip()
     if not url:
         return jsonify({"error": "Provide url", "success": False}), 400
     if not url.startswith(("http://", "https://")):
@@ -5337,17 +5367,18 @@ def browse_screenshot():
             return jsonify({"error": str(exc2), "url": url, "success": False}), 500
 
     # ── Pick vision model ─────────────────────────────────────────────────────
-    selected_model = None
-    try:
-        r = _http.get(f"{OLLAMA_BASE}/api/tags", timeout=5)
-        if r.status_code == 200:
-            available = {m["name"] for m in r.json().get("models", [])}
-            for candidate in _VISION_MODELS:
-                if candidate in available:
-                    selected_model = candidate
-                    break
-    except Exception:
-        pass
+    selected_model = model_override or None
+    if not selected_model:
+        try:
+            r = _http.get(f"{OLLAMA_BASE}/api/tags", timeout=5)
+            if r.status_code == 200:
+                available = {m["name"] for m in r.json().get("models", [])}
+                for candidate in _VISION_MODELS:
+                    if candidate in available:
+                        selected_model = candidate
+                        break
+        except Exception:
+            pass
 
     # Fallback to LM Studio when no Ollama vision model is available
     if not selected_model and LM_STUDIO_BASE:
@@ -5356,7 +5387,14 @@ def browse_screenshot():
             if r.status_code == 200:
                 lms_models = r.json().get("data", [])
                 if lms_models:
-                    selected_model = f"{_LM_STUDIO_PREFIX}{lms_models[0]['id']}"
+                    # Prefer models with known vision patterns
+                    for lm in lms_models:
+                        mid = (lm.get("id") or "").lower()
+                        if any(pat in mid for pat in _LM_STUDIO_VISION_PATTERNS):
+                            selected_model = f"{_LM_STUDIO_PREFIX}{lm['id']}"
+                            break
+                    if not selected_model:
+                        selected_model = f"{_LM_STUDIO_PREFIX}{lms_models[0]['id']}"
         except Exception:
             pass
 
@@ -5885,7 +5923,8 @@ def _best_vision_model() -> str:
 
     Preference order: drgr-visor (our retrained model), qwen3-vl:8b, llava.
     Falls back to LM Studio model (returned as "lmstudio:<id>") when no Ollama
-    vision model is found.  Last resort: "qwen3-vl:8b".
+    vision model is found.  Prefers LM Studio models whose names contain a known
+    vision pattern (e.g. glm-4.6v-flash, llava, vl).  Last resort: "qwen3-vl:8b".
     """
     preferred = ["drgr-visor", "qwen3-vl:8b", "qwen3-vl:235b-cloud", "llava", "llava:13b"]
     try:
@@ -5899,13 +5938,19 @@ def _best_vision_model() -> str:
                 return next(iter(available))
     except Exception:
         pass
-    # Fallback: try LM Studio — return its first model as "lmstudio:<id>"
+    # Fallback: try LM Studio — prefer models with known vision capability patterns
     if LM_STUDIO_BASE:
         try:
             r = _http.get(f"{LM_STUDIO_BASE}/v1/models", timeout=3)
             if r.status_code == 200:
                 lms_models = r.json().get("data", [])
                 if lms_models:
+                    # Prefer models whose name matches a known vision pattern
+                    for lm in lms_models:
+                        mid = (lm.get("id") or "").lower()
+                        if any(pat in mid for pat in _LM_STUDIO_VISION_PATTERNS):
+                            return f"{_LM_STUDIO_PREFIX}{lm['id']}"
+                    # Fall back to first available LM Studio model
                     return f"{_LM_STUDIO_PREFIX}{lms_models[0]['id']}"
         except Exception:
             pass
