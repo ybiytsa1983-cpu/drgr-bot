@@ -1250,7 +1250,7 @@ _VISION_MODELS = [
 # Used to prefer these over plain text models when selecting from LM Studio.
 _LM_STUDIO_VISION_PATTERNS = (
     "vision", "vl", "llava", "bakllava", "glm-4v", "glm-4.6v",
-    "moondream", "phi3-vision", "minicpm-v",
+    "moondream", "phi3-vision", "minicpm-v", "gpt-oss",
 )
 
 
@@ -5926,7 +5926,7 @@ def _best_vision_model() -> str:
     vision model is found.  Prefers LM Studio models whose names contain a known
     vision pattern (e.g. glm-4.6v-flash, llava, vl).  Last resort: "qwen3-vl:8b".
     """
-    preferred = ["drgr-visor", "qwen3-vl:8b", "qwen3-vl:235b-cloud", "llava", "llava:13b"]
+    preferred = ["drgr-visor", "gpt-oss:latest", "qwen3-vl:8b", "qwen3-vl:235b-cloud", "llava", "llava:13b"]
     try:
         r = _http.get(f"{OLLAMA_BASE}/api/tags", timeout=5)
         if r.status_code == 200:
@@ -7387,12 +7387,62 @@ def web_research():
                 except Exception as _exc:  # pylint: disable=broad-except
                     _log.warning("research screenshot %s: %s", url, _exc)
 
+    # ── 5b. Vision analysis of screenshots ────────────────────────────────
+    vis_descriptions: list = []
+    if screenshot_uris:
+        _vis_model = model or _best_vision_model()
+        # Sanitize query for use in prompt (limit length, no control chars)
+        _safe_query = re.sub(r'[\x00-\x1f]', ' ', query)[:200]
+        for _uri in screenshot_uris:
+            try:
+                # Validate data URI format; skip if malformed
+                if not (_uri.startswith("data:image/") and "," in _uri):
+                    _log.debug("research vision: skipping malformed data URI")
+                    continue
+                _img_b64 = _uri.split(",", 1)[1]
+                if not _img_b64:
+                    continue
+                _vision_prompt = (
+                    f"Опиши подробно что ты видишь на этом скриншоте веб-страницы"
+                    f" по теме '{_safe_query}'. Извлеки ключевую информацию: заголовки,"
+                    " данные, факты, ссылки."
+                )
+                if _vis_model.startswith(_LM_STUDIO_PREFIX) and LM_STUDIO_BASE:
+                    _real_vis = _vis_model[len(_LM_STUDIO_PREFIX):]
+                    _vr = _http.post(
+                        f"{LM_STUDIO_BASE}/v1/chat/completions",
+                        json={"model": _real_vis, "messages": [{"role": "user", "content": [
+                            {"type": "text", "text": _vision_prompt},
+                            {"type": "image_url", "image_url": {"url": _uri}},
+                        ]}], "stream": False, "max_tokens": 600},
+                        timeout=60,
+                    )
+                    if _vr.status_code == 200:
+                        _desc = _vr.json().get("choices", [{}])[0].get("message", {}).get("content", "")
+                        if _desc:
+                            vis_descriptions.append(_desc)
+                elif not _vis_model.startswith(_LM_STUDIO_PREFIX):
+                    _vr = _http.post(
+                        f"{OLLAMA_BASE}/api/generate",
+                        json={"model": _vis_model, "prompt": _vision_prompt,
+                              "images": [_img_b64], "stream": False},
+                        timeout=60,
+                    )
+                    if _vr.status_code == 200:
+                        _desc = _vr.json().get("response", "")
+                        if _desc:
+                            vis_descriptions.append(_desc)
+            except Exception as _vexc:  # pylint: disable=broad-except
+                _log.warning("research vision analysis: %s", _vexc)
+
     # ── 6. Build aggregated text for Ollama ───────────────────────────────
     blocks = [
         f"[{s['title']}]: {s.get('snippet','')[:600]}"
         for s in sources[:10]
         if s.get("snippet")
     ]
+    if vis_descriptions:
+        blocks += [f"[Скриншот {i+1}]: {d[:600]}" for i, d in enumerate(vis_descriptions)]
     aggregated = "\n\n".join(blocks)
 
     # ── 7. Generate article text via Ollama or LM Studio ─────────────────

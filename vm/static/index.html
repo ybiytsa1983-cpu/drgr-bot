@@ -4427,10 +4427,12 @@ async function chatRunResearch(query) {
   msgs.appendChild(infoDiv);
   msgs.scrollTop = msgs.scrollHeight;
   try {
+    var ssEl = document.getElementById('research-screenshots');
+    var doScreenshots = ssEl ? ssEl.checked : false;
     var r = await fetch('/research', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ query: query, max_results: 5, screenshots: false, model: curModel })
+      body: JSON.stringify({ query: query, max_results: 5, screenshots: doScreenshots, model: curModel })
     });
     var d = await r.json();
     if (!d.success) {
