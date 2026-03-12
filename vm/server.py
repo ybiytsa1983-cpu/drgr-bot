@@ -129,7 +129,8 @@ _OLLAMA_RESTART_WAIT = 5
 
 # One-liner update command shown in crash warnings
 _UPDATE_CMD_URL = (
-    "irm https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/update.ps1 | iex"
+    "try { irm https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/update.ps1 | iex }"
+    " catch { irm https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/copilot/create-monaco-code-generator/update.ps1 | iex }"
 )
 
 

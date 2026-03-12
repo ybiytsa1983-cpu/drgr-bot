@@ -78,9 +78,17 @@ _MD_INSTALL_CMD = (
     "`irm \"https://raw.githubusercontent.com/ybiytsa1983\\-cpu/drgr\\-bot/main/run\\.ps1\" | iex`"
 )
 
+# Raw PowerShell one-liner for the update command (no label, no MarkdownV2 escaping).
+# Uses try-catch fallback so it works before the PR is merged to main as well as after.
+# NOTE: if the fallback branch is renamed or deleted, update the URL below.
+_UPDATE_PS1_CMD = (
+    "try { irm 'https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/update.ps1' | iex }"
+    " catch { irm 'https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/copilot/create-monaco-code-generator/update.ps1' | iex }"
+)
+
 _MD_UPDATE_CMD = (
     "*⬇ Обновить \\(PowerShell, Win\\+X → Windows PowerShell\\):*\n"
-    "`irm \"https://raw.githubusercontent.com/ybiytsa1983\\-cpu/drgr\\-bot/main/update\\.ps1\" | iex`"
+    f"`{_UPDATE_PS1_CMD}`"
 )
 
 _MD_START_CMD = (
@@ -96,7 +104,7 @@ _TXT_INSTALL_CMD = (
 )
 _TXT_UPDATE_CMD = (
     "⬇ Обновить (PowerShell, Win+X → Windows PowerShell):\n"
-    'irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/update.ps1" | iex'
+    + _UPDATE_PS1_CMD
 )
 _TXT_START_CMD = (
     "▶ Запуск VM:\n"
@@ -2497,7 +2505,7 @@ async def cmd_vm(message: Message) -> None:
             "🚀 Установка и запуск VM (PowerShell, Win+X → Windows PowerShell):\n"
             f'irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/run.ps1" | iex\n\n'
             "⬇ Обновить (скачать новые файлы):\n"
-            f'irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/update.ps1" | iex\n\n'
+            f"{_UPDATE_PS1_CMD}\n\n"
             "▶ Запуск VM:\n"
             f'powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\\drgr-bot\\start.ps1"\n\n'
             f"🖥 Адрес VM в браузере: {VM_BASE}\n\n"
@@ -3039,6 +3047,43 @@ async def handle_text(message: Message) -> None:
     )
     if any(kw in q_lower for kw in _UPDATE_KEYWORDS):
         await cmd_update(message)
+        return
+
+    # Smart routing: questions about article screenshots → explain /research + /search commands
+    _ARTICLE_SCREENSHOT_KEYWORDS = (
+        "скрин статьи", "скрин сгенер", "скриншот статьи", "скриншот сгенер",
+        "screenshot статьи", "где скрин", "где скриншот",
+        "сгенерированной статьи",
+    )
+    if any(kw in q_lower for kw in _ARTICLE_SCREENSHOT_KEYWORDS):
+        md = (
+            "\U0001f4f0 *Статья со скриншотами*\n\n"
+            "Чтобы получить статью с иллюстрациями:\n"
+            "1\\. Напиши `/research <тема>` или `/search <тема>` — бот найдёт источники, "
+            "сделает скриншоты страниц и пришлёт полную статью\\.\n"
+            "2\\. Или просто напиши тему — бот определит намерение автоматически\\.\n\n"
+            "Статья придёт тремя частями:\n"
+            "• Текст статьи\n"
+            "• 📸 Скриншоты страниц\\-источников\n"
+            "• 📄 HTML\\-файл с оформленной версией\n\n"
+            f"*⬇ Обновить файлы бота \\(PowerShell\\):*\n"
+            f"`{_UPDATE_PS1_CMD}`"
+        )
+        try:
+            await message.answer(md, parse_mode="MarkdownV2")
+        except Exception:
+            await message.answer(
+                "📰 Статья со скриншотами\n\n"
+                "Чтобы получить статью с иллюстрациями:\n"
+                "1. Напиши /research <тема> или /search <тема> — бот найдёт источники, "
+                "сделает скриншоты страниц и пришлёт полную статью.\n"
+                "2. Или просто напиши тему — бот определит намерение автоматически.\n\n"
+                "Статья придёт тремя частями:\n"
+                "• Текст статьи\n"
+                "• 📸 Скриншоты страниц-источников\n"
+                "• 📄 HTML-файл с оформленной версией\n\n"
+                f"⬇ Обновить файлы бота (PowerShell):\n{_UPDATE_PS1_CMD}"
+            )
         return
 
     # Smart routing: general PowerShell/install question → show all commands via /vm
