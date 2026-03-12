@@ -1166,6 +1166,7 @@ async def cmd_start(message: Message) -> None:
         "_Отправьте \\.py/\\.js/\\.sh файл — VM выполнит его и вернёт вывод_\n\n"
         "*Или просто напишите запрос* — агент исследует тему и создаст статью\\.\n\n"
         f"\U0001f4bb {_MD_INSTALL_CMD}\n\n"
+        f"{_MD_UPDATE_CMD}\n\n"
         "\U0001f5a5 После установки: ярлык *«Code VM»* и *«ЗАПУСТИТЬ ВМ»* на Рабочем столе",
         parse_mode="MarkdownV2",
     )
@@ -2846,8 +2847,22 @@ async def handle_text(message: Message) -> None:
             )
         return
 
-    # Smart routing: detect clear search intent keywords → use research_and_reply
     q_lower = query.lower()
+
+    # Smart routing: detect update/PowerShell intent → show update command
+    _UPDATE_KEYWORDS = (
+        "обновл", "скачать файл", "скачать обновл", "установить обновл",
+        "новые файл", "команда для скачивания", "команда для обновл",
+        "команда для повершел", "команда для повершелл",
+        "команда powershell", "powershell команда",
+        "где команда", "update.ps1", "как обновить",
+        "пауэршелл", "повершелл",
+    )
+    if any(kw in q_lower for kw in _UPDATE_KEYWORDS):
+        await cmd_update(message)
+        return
+
+    # Smart routing: detect clear search intent keywords → use research_and_reply
     if any(kw in q_lower for kw in _SEARCH_KEYWORDS_RU):
         await research_and_reply(query, message)
         return
