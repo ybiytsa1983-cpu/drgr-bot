@@ -2691,6 +2691,26 @@ def remote_vm_proxy(subpath):
         return jsonify({"error": str(exc)}), 502
 
 
+@app.route("/remote/models", methods=["GET"])
+def remote_vm_models():
+    """Fetch the list of Ollama models available on the configured Remote VM."""
+    if not REMOTE_VM_URL:
+        return jsonify({"models": [], "error": "Remote VM URL not configured"})
+    try:
+        resp = _http.get(f"{REMOTE_VM_URL}/ollama/models", timeout=8)
+        data = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {}
+        models = data.get("models", [])
+        # Prefix each model name so the UI can distinguish remote from local
+        prefixed = [f"remote:{m}" for m in models]
+        return jsonify({"models": prefixed, "raw_models": models, "url": REMOTE_VM_URL})
+    except _http.exceptions.Timeout:
+        return jsonify({"models": [], "error": f"Таймаут при подключении к Remote VM ({REMOTE_VM_URL})"})
+    except _http.exceptions.ConnectionError:
+        return jsonify({"models": [], "error": f"Нет соединения с Remote VM ({REMOTE_VM_URL})"})
+    except Exception as exc:  # pylint: disable=broad-except
+        return jsonify({"models": [], "error": str(exc)})
+
+
 @app.route("/ollama/ask", methods=["POST"])
 def ollama_ask():
     """Forward a code + prompt to an Ollama model and return the response."""
@@ -3523,6 +3543,46 @@ def chat_stream():
 
     # Route to LM Studio when the model has the lmstudio: prefix
     is_lms = model.startswith(_LM_STUDIO_PREFIX)
+
+    # Route to Remote VM when the model has the remote: prefix
+    _REMOTE_PREFIX = "remote:"
+    is_remote = model.startswith(_REMOTE_PREFIX)
+
+    if is_remote:
+        real_model = model[len(_REMOTE_PREFIX):]
+        rvm_url    = REMOTE_VM_URL
+
+        def _stream_remote():
+            if not rvm_url:
+                yield 'data: {"error":"Remote VM URL не настроен — укажите URL в настройках (☰)"}\n\n'
+                return
+            try:
+                resp = _http.post(
+                    f"{rvm_url}/chat/stream",
+                    json={"model": real_model, "messages": messages,
+                          "message": message, "history": history,
+                          "system": system, "image_base64": image_base64},
+                    stream=True,
+                    timeout=int(os.environ.get("OLLAMA_TIMEOUT", 240)),
+                )
+                resp.raise_for_status()
+                for raw_line in resp.iter_lines():
+                    if not raw_line:
+                        continue
+                    line_str = raw_line.decode("utf-8", errors="replace") if isinstance(raw_line, bytes) else raw_line
+                    yield f"{line_str}\n\n"
+                    if "[DONE]" in line_str:
+                        return
+            except _http.exceptions.ConnectionError:
+                yield f'data: {json.dumps({"error": f"Нет соединения с Remote VM по адресу {rvm_url}"})}\n\n'
+            except Exception as exc:  # pylint: disable=broad-except
+                yield f"data: {json.dumps({'error': str(exc)})}\n\n"
+
+        return Response(
+            stream_with_context(_stream_remote()),
+            mimetype="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
 
     if is_lms:
         # LM Studio uses OpenAI-compatible /v1/chat/completions

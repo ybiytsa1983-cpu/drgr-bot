@@ -313,6 +313,8 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
   .ct-btn { font-size: 11px; padding: 4px 7px }
   /* VM pane on mobile */
   #vm-pane { min-height: 100vh }
+  /* Colab pane on mobile */
+  #colab-pane { min-height: 100vh }
   /* Prompt bar buttons wrap properly */
   .pbar-row { flex-wrap: wrap }
   #btn-gen, #btn-patch, #btn-open-browser, #btn-save-project { padding: 8px 10px; font-size: 12px; min-height: 40px }
@@ -534,6 +536,7 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
     <button class="tv-btn" id="tv-vm" onclick="setView('vm')">🧠 Переученная ВМ</button>
     <button class="tv-btn" id="tv-gltf" onclick="setView('gltf')">🧊 GLTF</button>
     <button class="tv-btn" id="tv-research" onclick="setView('research')">🔍 Исследование</button>
+    <button class="tv-btn" id="tv-colab" onclick="setView('colab')">🌐 Colab VM</button>
     <button class="tv-btn" onclick="var w=window.open('/chatroom/page','_blank','width=480,height=700');if(!w||w.closed)location.href='/chatroom/page';" title="Открыть онлайн-чат пользователей в отдельном окне">🌐 Чат-зал</button>
     <span class="tb-sep"></span>
     <span id="model-badge">нет модели</span>
@@ -905,6 +908,72 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
     </div>
   </div>
 
+  <!-- ── Colab VM pane ─────────────────────────────────────────── -->
+  <div id="colab-pane" style="display:none;flex:1;flex-direction:column;overflow:hidden;min-height:0;background:var(--bg2)">
+    <div style="padding:14px 18px 10px;border-bottom:1px solid var(--border);flex-shrink:0;display:flex;align-items:center;gap:14px">
+      <div style="flex:1">
+        <h2 style="margin:0 0 2px;font-size:16px">🌐 Google Colab / Remote VM</h2>
+        <p style="margin:0;font-size:12px;color:var(--text2)">Подключение к VM, запущенной в Google Colab (через ngrok). Позволяет использовать модели удалённого Ollama прямо в чате.</p>
+      </div>
+      <span id="colab-status-badge" style="font-size:12px;padding:4px 10px;border-radius:12px;background:var(--bg4);border:1px solid var(--border)">⏳ Проверка...</span>
+    </div>
+
+    <div style="display:flex;flex:1;overflow:hidden;min-height:0">
+      <!-- Left: settings + status -->
+      <div style="width:320px;flex-shrink:0;overflow-y:auto;padding:14px;border-right:1px solid var(--border);display:flex;flex-direction:column;gap:12px">
+        <div>
+          <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:5px">URL Remote VM (ngrok)</label>
+          <input type="text" id="colab-url-input" placeholder="https://xxxx-xx-xx-xxx-xx.ngrok-free.app" autocomplete="off" style="width:100%;box-sizing:border-box"/>
+          <div style="display:flex;gap:6px;margin-top:6px">
+            <button onclick="colabSaveUrl()" style="flex:1;padding:7px;background:var(--accent);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">💾 Сохранить URL</button>
+            <button onclick="colabTestConnection()" style="padding:7px 12px;background:var(--bg4);color:var(--text);border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:12px">🔌 Тест</button>
+          </div>
+          <div id="colab-url-status" style="font-size:11px;color:var(--text2);margin-top:4px"></div>
+        </div>
+
+        <div>
+          <div style="font-size:11px;color:var(--text2);margin-bottom:6px;font-weight:600">🤖 Модели Remote VM (Ollama)</div>
+          <div id="colab-models-list" style="display:flex;flex-direction:column;gap:4px;min-height:40px">
+            <div style="font-size:12px;color:var(--text2)">Нажмите «Обновить» для загрузки моделей</div>
+          </div>
+          <button onclick="colabLoadModels()" style="margin-top:8px;padding:7px;width:100%;background:var(--bg4);color:var(--text);border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:12px">↻ Обновить список моделей</button>
+        </div>
+
+        <div style="border-top:1px solid var(--border);padding-top:12px">
+          <div style="font-size:11px;color:var(--text2);margin-bottom:6px;font-weight:600">⚡ Быстрые действия</div>
+          <button onclick="colabOpenChat()" style="width:100%;padding:8px;background:var(--bg4);color:var(--text);border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:12px;margin-bottom:6px">💬 Открыть чат с Remote VM моделью</button>
+          <button onclick="colabAddToLocalSelector()" style="width:100%;padding:8px;background:var(--bg4);color:var(--text);border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:12px">➕ Добавить remote модели в основной селектор</button>
+        </div>
+
+        <div style="font-size:10px;color:var(--text2);line-height:1.5;border-top:1px solid var(--border);padding-top:10px">
+          <b>Как запустить VM в Google Colab:</b><br>
+          1. Откройте ноутбук с сервером VM в Colab<br>
+          2. Запустите ячейку с ngrok + сервером<br>
+          3. Скопируйте ngrok URL сюда<br>
+          4. Нажмите «Сохранить» и «Тест»<br><br>
+          Модели с префиксом <code>remote:</code> в чате автоматически используют Remote VM.
+        </div>
+      </div>
+
+      <!-- Right: health info from remote VM -->
+      <div style="flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:12px">
+        <div style="font-size:13px;font-weight:600;color:var(--text2)">📊 Статус Remote VM</div>
+        <div id="colab-health-info" style="font-size:12px;line-height:1.8;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:12px;min-height:120px;white-space:pre-wrap">
+          Нет данных. Проверьте соединение.
+        </div>
+
+        <div style="font-size:13px;font-weight:600;color:var(--text2)">🧪 Тест чата с Remote VM</div>
+        <div style="display:flex;gap:8px">
+          <input type="text" id="colab-test-msg" placeholder="Тестовое сообщение..." style="flex:1" value="Привет, ты работаешь?"/>
+          <select id="colab-test-model" style="flex:1;max-width:200px"><option value="">Выберите модель</option></select>
+          <button onclick="colabTestChat()" style="padding:7px 14px;background:var(--accent);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px">▶ Отправить</button>
+        </div>
+        <div id="colab-test-result" style="font-size:12px;line-height:1.7;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:12px;min-height:80px;white-space:pre-wrap;display:none">
+        </div>
+      </div>
+    </div>
+  </div>
+
 </div><!-- /#app -->
 
 <div id="toast"></div>
@@ -980,8 +1049,9 @@ function setView(v) {
   var vmp= document.getElementById('vm-pane');
   var gp = document.getElementById('gltf-pane');
   var rp = document.getElementById('research-pane');
+  var clp= document.getElementById('colab-pane');
   var mn = document.getElementById('main');
-  ['both','editor','preview','chat','vm','gltf','research'].forEach(function(x){
+  ['both','editor','preview','chat','vm','gltf','research','colab'].forEach(function(x){
     var el = document.getElementById('tv-'+x);
     if (el) el.classList.toggle('on', x===v);
   });
@@ -989,11 +1059,13 @@ function setView(v) {
   var isVM       = (v === 'vm');
   var isGLTF     = (v === 'gltf');
   var isResearch = (v === 'research');
-  var isSpecial  = isChat || isVM || isGLTF || isResearch;
+  var isColab    = (v === 'colab');
+  var isSpecial  = isChat || isVM || isGLTF || isResearch || isColab;
   cp.style.display  = isChat     ? 'flex' : 'none';
   vmp.style.display = isVM       ? 'flex' : 'none';
   gp.style.display  = isGLTF    ? 'flex' : 'none';
   rp.style.display  = isResearch ? 'flex' : 'none';
+  if (clp) clp.style.display = isColab ? 'flex' : 'none';
   pb.style.display  = isSpecial  ? 'none' : '';
   mn.style.display  = isSpecial  ? 'none' : 'flex';
   if (v === 'both')   { ep.style.display='flex'; rh.style.display='block'; vp.style.display='flex'; }
@@ -1011,6 +1083,7 @@ function setView(v) {
     var rq = document.getElementById('research-query');
     if (rq) setTimeout(function(){ rq.focus(); }, 50);
   }
+  if (isColab) colabInit();
 }
 
 // ── Resize handle ────────────────────────────────────────────────────────────
@@ -2498,6 +2571,27 @@ async function loadModels() {
       }
     }
     curModel = sel.value; updateBadge();
+    // Also load remote models if available (non-blocking)
+    try {
+      var rr = await fetch('/remote/models'); var rd = await rr.json();
+      var rmodels = rd.models || [];
+      if (rmodels.length) {
+        var prevVal = sel.value;
+        var grp = document.createElement('optgroup'); grp.label = '🌐 Remote VM (Colab)';
+        rmodels.forEach(function(m) {
+          var o = document.createElement('option'); o.value=m; o.textContent=m;
+          if(m===prev) o.selected=true; grp.appendChild(o);
+        });
+        sel.appendChild(grp);
+        // Restore selection if remote model was previously selected
+        if (prev && (prev.startsWith('remote:') || rmodels.includes(prev))) {
+          sel.value = prev;
+        } else if (!sel.value) {
+          sel.selectedIndex = 0;
+        }
+        curModel = sel.value; updateBadge();
+      }
+    } catch(e2) { /* remote models optional */ }
   } catch(e) {}
 }
 function updateBadge() {
@@ -2688,6 +2782,190 @@ async function checkRemoteVm() {
     loadHealth();
   } catch(e) {
     if (statusEl) statusEl.textContent = '✗ Ошибка: ' + e.message;
+  }
+}
+
+// ── Colab VM tab functions ──────────────────────────────────────────────────
+var _colabModels = [];
+
+async function colabInit() {
+  // Sync URL from settings panel
+  var urlInput = document.getElementById('colab-url-input');
+  var settingsUrl = (document.getElementById('rvm-url')||{}).value || '';
+  if (urlInput && !urlInput.value && settingsUrl) urlInput.value = settingsUrl;
+  await colabTestConnection();
+  if (_colabModels.length === 0) await colabLoadModels();
+}
+
+// Helper: add a model option to a <select> if not already present
+function _addModelOptionIfMissing(sel, modelName) {
+  for (var i = 0; i < sel.options.length; i++) {
+    if (sel.options[i].value === modelName) return false;
+  }
+  var opt = document.createElement('option');
+  opt.value = modelName; opt.textContent = modelName;
+  sel.appendChild(opt);
+  return true;
+}
+
+async function colabSaveUrl() {
+  var urlInput = document.getElementById('colab-url-input');
+  var url = (urlInput ? urlInput.value : '').trim();
+  if (!url) { toast('Введите URL Remote VM'); return; }
+  try { new URL(url); } catch(e) { toast('Неверный формат URL'); return; }
+  // Sync with settings panel
+  var rvmInput = document.getElementById('rvm-url');
+  if (rvmInput) rvmInput.value = url;
+  try {
+    var r = await fetch('/settings', { method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ remote_vm_url: url }) });
+    var d = await r.json();
+    if (d.ok) {
+      toast('✓ Remote VM URL сохранён');
+      document.getElementById('colab-url-status').textContent = '✓ Сохранено';
+      await colabTestConnection();
+      await colabLoadModels();
+      loadHealth();
+    } else { toast('⚠ ' + (d.error||'Ошибка')); }
+  } catch(e) { toast('⚠ Ошибка: ' + e.message); }
+}
+
+async function colabTestConnection() {
+  var badge = document.getElementById('colab-status-badge');
+  var info  = document.getElementById('colab-health-info');
+  if (badge) badge.textContent = '⏳ Подключение...';
+  try {
+    var r = await fetch('/remote/status'); var d = await r.json();
+    if (d.ok) {
+      if (badge) { badge.textContent = '✅ Подключено'; badge.style.color='#4caf50'; }
+      var healthData = d.data || {};
+      var lines = ['URL: ' + (d.url||'—')];
+      if (healthData.ollama) lines.push('Ollama: ' + (healthData.ollama.status||'—'));
+      if (healthData.lm_studio) lines.push('LM Studio: ' + (healthData.lm_studio.status||'—'));
+      if (healthData.remote_vm) lines.push('Remote VM (цепочка): ' + (healthData.remote_vm.status||'—'));
+      if (info) info.textContent = lines.join('\n');
+    } else {
+      if (badge) { badge.textContent = '❌ ' + (d.error||'Недоступен'); badge.style.color='#f44336'; }
+      if (info) info.textContent = 'Ошибка: ' + (d.error||'Сервер недоступен') + '\nURL: ' + (d.url||'не настроен');
+    }
+    // Update settings status too
+    var rvmStatusEl = document.getElementById('rvm-status');
+    if (rvmStatusEl) rvmStatusEl.textContent = d.ok ? '✓ OK' : ('✗ ' + (d.error||'Недоступен'));
+    loadHealth();
+  } catch(e) {
+    if (badge) { badge.textContent = '❌ Ошибка'; badge.style.color='#f44336'; }
+    if (info) info.textContent = 'Исключение: ' + e.message;
+  }
+}
+
+async function colabLoadModels() {
+  var listEl = document.getElementById('colab-models-list');
+  var testSel = document.getElementById('colab-test-model');
+  if (listEl) listEl.innerHTML = '<div style="font-size:12px;color:var(--text2)">⏳ Загрузка моделей...</div>';
+  try {
+    var r = await fetch('/remote/models'); var d = await r.json();
+    _colabModels = d.models || [];
+    var raw = d.raw_models || [];
+    if (listEl) {
+      listEl.innerHTML = '';
+      if (!_colabModels.length) {
+        var noModelDiv = document.createElement('div');
+        noModelDiv.style.cssText = 'font-size:12px;color:var(--text2)';
+        noModelDiv.textContent = d.error ? '⚠ ' + d.error : 'Нет моделей на Remote VM';
+        listEl.appendChild(noModelDiv);
+      } else {
+        raw.forEach(function(m) {
+          var row = document.createElement('div');
+          row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid var(--border)';
+          var nameSpan = document.createElement('span');
+          nameSpan.style.cssText = 'flex:1;font-size:12px;font-family:monospace';
+          nameSpan.textContent = m;
+          var btn = document.createElement('button');
+          btn.style.cssText = 'padding:3px 8px;font-size:11px;background:var(--bg4);border:1px solid var(--border);border-radius:4px;cursor:pointer';
+          btn.textContent = '💬 В чат';
+          btn.onclick = (function(model){ return function(){ colabSelectModel('remote:' + model); }; })(m);
+          row.appendChild(nameSpan); row.appendChild(btn);
+          listEl.appendChild(row);
+        });
+      }
+    }
+    if (testSel) {
+      testSel.innerHTML = '';
+      var defOpt = document.createElement('option'); defOpt.value = ''; defOpt.textContent = 'Выберите модель';
+      testSel.appendChild(defOpt);
+      raw.forEach(function(m) {
+        var opt = document.createElement('option');
+        opt.value = 'remote:' + m; opt.textContent = 'remote:' + m;
+        testSel.appendChild(opt);
+      });
+    }
+  } catch(e) {
+    if (listEl) { listEl.innerHTML = ''; var errDiv = document.createElement('div'); errDiv.style.cssText='font-size:12px;color:#f44336'; errDiv.textContent = '⚠ Ошибка: ' + e.message; listEl.appendChild(errDiv); }
+  }
+}
+
+function colabSelectModel(modelName) {
+  // Set the model in the main selector and open chat
+  var sel = document.getElementById('sel-model');
+  if (sel) {
+    _addModelOptionIfMissing(sel, modelName);
+    sel.value = modelName;
+    curModel = modelName;
+    updateBadge();
+  }
+  setView('chat');
+  toast('✓ Выбрана модель: ' + modelName + ' — введите сообщение и отправьте');
+}
+
+function colabOpenChat() {
+  var testSel = document.getElementById('colab-test-model');
+  var model = testSel ? testSel.value : (_colabModels[0]||'');
+  if (!model && _colabModels.length) model = _colabModels[0];
+  if (model) colabSelectModel(model);
+  else { toast('Сначала загрузите модели Remote VM'); setView('chat'); }
+}
+
+function colabAddToLocalSelector() {
+  if (!_colabModels.length) { toast('Сначала загрузите модели Remote VM'); return; }
+  var sel = document.getElementById('sel-model');
+  if (!sel) return;
+  var added = 0;
+  _colabModels.forEach(function(m) {
+    if (_addModelOptionIfMissing(sel, m)) added++;
+  });
+  toast(added ? '✓ Добавлено ' + added + ' remote моделей в селектор' : 'Модели уже в селекторе');
+}
+
+async function colabTestChat() {
+  var msg = (document.getElementById('colab-test-msg')||{}).value || 'Привет';
+  var model = (document.getElementById('colab-test-model')||{}).value || '';
+  if (!model) { toast('Выберите модель для теста'); return; }
+  var resEl = document.getElementById('colab-test-result');
+  if (resEl) { resEl.style.display='block'; resEl.textContent = '⏳ Отправляю запрос к Remote VM...'; }
+  try {
+    var r = await fetch('/chat/stream', { method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ message: msg, model: model }) });
+    var reader = r.body.getReader(); var dec = new TextDecoder();
+    var result = '';
+    if (resEl) resEl.textContent = '';
+    while (true) {
+      var chunk = await reader.read(); if (chunk.done) break;
+      dec.decode(chunk.value).split('\n').forEach(function(line) {
+        if (!line.startsWith('data:')) return;
+        var s = line.slice(5).trim();
+        if (s === '[DONE]') return;
+        try {
+          var j = JSON.parse(s);
+          if (j.token) { result += j.token; if (resEl) resEl.textContent = result; }
+          if (j.error) { if (resEl) resEl.textContent = '⚠ Ошибка: ' + j.error; }
+        } catch(e2) {}
+      });
+    }
+    if (resEl && !resEl.textContent) resEl.textContent = '(пустой ответ)';
+  } catch(e) {
+    if (resEl) resEl.textContent = '⚠ Исключение: ' + e.message;
   }
 }
 
