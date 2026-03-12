@@ -2951,6 +2951,7 @@ async function sendChat() {
 
   // Grab and clear attachment before clearing input
   var attachImage = window._pendingChatImage || null;
+  var attachImageDataUrl = window._pendingChatImageDataUrl || null;
   var attachFileName = window._pendingChatImageName || '';
   var attachFileText = window._pendingChatFileText || null;
   chatClearAttachment();
@@ -3007,7 +3008,7 @@ async function sendChat() {
   userBubble.className = 'cm cm-user';
   if (attachImage) {
     var imgEl = document.createElement('img');
-    imgEl.src = 'data:image/jpeg;base64,' + attachImage;
+    imgEl.src = attachImageDataUrl;
     imgEl.style.cssText = 'max-width:180px;max-height:120px;border-radius:6px;display:block;margin-bottom:4px';
     userBubble.appendChild(imgEl);
     var txtEl = document.createElement('span');
@@ -3204,6 +3205,7 @@ async function handleChatFileAttach(input) {
       var b64 = commaIdx >= 0 ? dataUrl.slice(commaIdx + 1) : '';
       if (!b64) { toast('⚠ Не удалось прочитать изображение'); return; }
       window._pendingChatImage = b64;
+      window._pendingChatImageDataUrl = dataUrl;
       window._pendingChatImageName = file.name;
       window._pendingChatFileText = null;
       // Show preview bar
@@ -3223,6 +3225,7 @@ async function handleChatFileAttach(input) {
       window._pendingChatFileText = e.target.result || '';
       window._pendingChatImageName = file.name;
       window._pendingChatImage = null;
+      window._pendingChatImageDataUrl = null;
       var bar = document.getElementById('chat-attach-bar');
       var prev = document.getElementById('chat-attach-preview');
       var nameEl = document.getElementById('chat-attach-name');
@@ -3238,6 +3241,7 @@ async function handleChatFileAttach(input) {
 
 function chatClearAttachment() {
   window._pendingChatImage = null;
+  window._pendingChatImageDataUrl = null;
   window._pendingChatImageName = '';
   window._pendingChatFileText = null;
   var bar = document.getElementById('chat-attach-bar');

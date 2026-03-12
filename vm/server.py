@@ -6434,7 +6434,8 @@ def web_research():
         _log.warning("research hackernews: %s", _exc)
 
     if not sources:
-        return jsonify({"error": "No results found", "success": False}), 404
+        # No internet sources found — fall through to Ollama-only article generation
+        _log.warning("research: no internet sources found for %r; generating AI-only article", query)
 
     # ── 5. Screenshots (base64 data URIs) ─────────────────────────────────
     screenshot_uris: list = []
@@ -6510,8 +6511,30 @@ def web_research():
             article_text = ar.json().get("response", "")
         except Exception as _exc:  # pylint: disable=broad-except
             _log.warning("research ollama: %s", _exc)
+    elif model and not sources:
+        # No internet sources available — generate article from AI knowledge alone
+        try:
+            prompt = (
+                f'Ты — экспертный AI-журналист. Напиши подробную статью на русском по теме: "{query}".\n\n'
+                "Используй свои знания по данной теме. "
+                "Формат: первая строка — заголовок. Затем введение. "
+                "Разделы с подзаголовками (## Название). ## Заключение.\n\n"
+                "Примечание: статья создана на основе AI-знаний (без интернет-поиска)."
+            )
+            ar = _http.post(
+                f"{OLLAMA_BASE}/api/generate",
+                json={"model": model, "prompt": prompt, "stream": False},
+                timeout=int(os.environ.get("OLLAMA_TIMEOUT", 120)),
+            )
+            ar.raise_for_status()
+            article_text = ar.json().get("response", "")
+        except Exception as _exc:  # pylint: disable=broad-except
+            _log.warning("research ollama (no-internet fallback): %s", _exc)
 
     if not article_text:
+        if not sources:
+            # Neither internet nor Ollama available
+            return jsonify({"error": "No results found and no AI model available", "success": False}), 404
         # Fallback: simple assembly from snippets
         intro = f"{query}\n\n"
         article_text = intro + aggregated
