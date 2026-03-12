@@ -4089,18 +4089,23 @@ def retrain():
 # ---------------------------------------------------------------------------
 
 @app.route("/agent/log", methods=["POST"])
+@app.route("/agent/log_action", methods=["POST"])
 def agent_log():
-    """Receive one action record from the Telegram bot and persist it.
+    """Receive one action record from the Telegram bot or UI and persist it.
 
-    Body: {
-      "timestamp":   "2026-...",
-      "action_type": "search|screenshot|article|describe_image|generate_html|...",
-      "input":       {...},
-      "output":      {...},
-      "success":     true|false,
-      "duration_ms": 1234,
-      "metadata":    {...}
-    }
+    Body (full format):
+      {
+        "timestamp":   "2026-...",
+        "action_type": "search|screenshot|article|describe_image|generate_html|gltf_generated|...",
+        "input":       {...},
+        "output":      {...},
+        "success":     true|false,
+        "duration_ms": 1234,
+        "metadata":    {...}
+      }
+
+    Body (short format, accepted by /agent/log_action alias):
+      {"action": "gltf_generated", "details": "{...}"}
 
     The record is:
       1. Appended to vm/training_data/actions.jsonl (one JSON object per line)
@@ -4110,6 +4115,22 @@ def agent_log():
     record = request.get_json(silent=True)
     if not record or not isinstance(record, dict):
         return jsonify({"error": "Invalid JSON body"}), 400
+    # Normalise short-form {"action": "...", "details": "..."} sent by gltfAddTraining()
+    if "action" in record and "action_type" not in record:
+        details_raw = record.get("details", "{}")
+        try:
+            details = json.loads(details_raw) if isinstance(details_raw, str) else details_raw
+        except (ValueError, TypeError):
+            details = {"raw": str(details_raw)}
+        record = {
+            "timestamp":   record.get("timestamp", _now()),
+            "action_type": record["action"],
+            "input":       details,
+            "output":      {},
+            "success":     True,
+            "duration_ms": 0,
+            "metadata":    {},
+        }
     try:
         threading.Thread(target=_record_agent_action, args=(record,), daemon=True).start()
         return jsonify({"ok": True})
