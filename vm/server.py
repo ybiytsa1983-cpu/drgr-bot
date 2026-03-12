@@ -4184,7 +4184,7 @@ def agent_describe_image():
                     "model": real_model,
                     "messages": [{"role": "user", "content": [
                         {"type": "text", "text": _prompt_describe},
-                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}},
+                        {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img_b64}"}},
                     ]}],
                     "stream": False,
                     "max_tokens": 1024,
