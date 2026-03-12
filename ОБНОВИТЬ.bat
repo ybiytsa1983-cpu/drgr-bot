@@ -33,7 +33,8 @@ for %%D in (
 )
 
 REM update.ps1 не найден — запускаем онлайн через irm
-powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "irm 'https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/update.ps1' | iex"
+REM Пробуем main ветку, если 404 — используем PR ветку
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "try { irm 'https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/update.ps1' | iex } catch { irm 'https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/copilot/create-monaco-code-generator/update.ps1' | iex }"
 exit /b
 #>
 # PowerShell path — runs when the .bat is executed via PowerShell directly
@@ -56,7 +57,11 @@ if (Test-Path $updatePs1) {
         if (Test-Path $p) { & $p; $found = $true; break }
     }
     if (-not $found) {
-        # Fall back to online version
-        irm 'https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/update.ps1' | iex
+        # Fall back to online version — try main branch, then PR branch
+        try {
+            irm 'https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/update.ps1' | iex
+        } catch {
+            irm 'https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/copilot/create-monaco-code-generator/update.ps1' | iex
+        }
     }
 }

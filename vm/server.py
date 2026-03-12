@@ -3432,6 +3432,7 @@ def generate_auto_stream():
     Body: {"prompt": "...", "model": "..."}
     Streams SSE tokens ending with data: [DONE]
     The model decides what language to use based on the task description.
+    Supports Ollama models and LM Studio models (prefix "lmstudio:").
     """
     body   = request.get_json(silent=True) or {}
     model  = body.get("model", "").strip()
@@ -3449,6 +3450,66 @@ def generate_auto_stream():
 
     data       = load_instructions()
     sys_prompt = data.get("system_prompt", "").strip() or _DEFAULT_AUTO_SYSTEM_PROMPT
+
+    # Route to LM Studio when model has the "lmstudio:" prefix
+    is_lms = model.startswith(_LM_STUDIO_PREFIX)
+    if is_lms:
+        real_model = model[len(_LM_STUDIO_PREFIX):]
+        lms_url    = LM_STUDIO_BASE
+
+        def _stream_lms_auto():
+            if not lms_url:
+                yield 'data: {"error":"LM Studio URL не настроен — укажите URL в настройках (☰)"}\n\n'
+                return
+            try:
+                resp = _http.post(
+                    f"{lms_url}/v1/chat/completions",
+                    json={
+                        "model": real_model,
+                        "messages": [
+                            {"role": "system", "content": sys_prompt},
+                            {"role": "user",   "content": f"Задание: {prompt}"},
+                        ],
+                        "stream": True,
+                    },
+                    stream=True,
+                    timeout=int(os.environ.get("OLLAMA_TIMEOUT", 240)),
+                )
+                resp.raise_for_status()
+                for raw_line in resp.iter_lines():
+                    if not raw_line:
+                        continue
+                    line_str = raw_line.decode("utf-8") if isinstance(raw_line, bytes) else raw_line
+                    if line_str.startswith("data: "):
+                        line_str = line_str[6:]
+                    if line_str.strip() in ("[DONE]", ""):
+                        _record_generation("auto", model, prompt)
+                        yield "data: [DONE]\n\n"
+                        return
+                    try:
+                        chunk = json.loads(line_str)
+                    except ValueError:
+                        continue
+                    delta  = chunk.get("choices", [{}])[0].get("delta", {})
+                    token  = delta.get("content", "")
+                    finish = chunk.get("choices", [{}])[0].get("finish_reason")
+                    if token:
+                        yield f"data: {json.dumps({'token': token})}\n\n"
+                    if finish:
+                        _record_generation("auto", model, prompt)
+                        yield "data: [DONE]\n\n"
+                        return
+            except _http.exceptions.ConnectionError:
+                yield f'data: {json.dumps({"error": f"Нет соединения с LM Studio по адресу {lms_url}"})}\n\n'
+            except Exception as exc:  # pylint: disable=broad-except
+                yield f"data: {json.dumps({'error': str(exc)})}\n\n"
+
+        return Response(
+            stream_with_context(_stream_lms_auto()),
+            mimetype="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
     full_prompt = f"{sys_prompt}\n\nЗадание: {prompt}"
 
     def _stream():
@@ -5813,6 +5874,7 @@ def _generate_chrome_extension_files(model: str, prompt: str, name: str) -> dict
     Generates fully functional extension code with real browser API usage,
     page analysis, image description (via Ollama vision), and Ollama AI chat.
     Returns a dict of {filename: content} for all extension files.
+    Supports Ollama models and LM Studio models (prefix "lmstudio:").
     """
     ext_name = name or "AI Assistant"
     sys_prompt = (
@@ -5876,13 +5938,32 @@ def _generate_chrome_extension_files(model: str, prompt: str, name: str) -> dict
         f"Task: {prompt}"
     )
 
-    resp = _http.post(
-        f"{OLLAMA_BASE}/api/generate",
-        json={"model": model, "prompt": sys_prompt, "stream": False},
-        timeout=int(os.environ.get("OLLAMA_TIMEOUT", 300)),
-    )
-    resp.raise_for_status()
-    raw = resp.json().get("response", "")
+    is_lms = model.startswith(_LM_STUDIO_PREFIX)
+    if is_lms:
+        real_model = model[len(_LM_STUDIO_PREFIX):]
+        lms_url    = LM_STUDIO_BASE
+        resp = _http.post(
+            f"{lms_url}/v1/chat/completions",
+            json={
+                "model": real_model,
+                "messages": [
+                    {"role": "system", "content": "You are an expert Chrome Extension developer (Manifest V3). Generate only complete, fully functional code."},
+                    {"role": "user",   "content": sys_prompt},
+                ],
+                "stream": False,
+            },
+            timeout=int(os.environ.get("OLLAMA_TIMEOUT", 300)),
+        )
+        resp.raise_for_status()
+        raw = resp.json().get("choices", [{}])[0].get("message", {}).get("content", "")
+    else:
+        resp = _http.post(
+            f"{OLLAMA_BASE}/api/generate",
+            json={"model": model, "prompt": sys_prompt, "stream": False},
+            timeout=int(os.environ.get("OLLAMA_TIMEOUT", 300)),
+        )
+        resp.raise_for_status()
+        raw = resp.json().get("response", "")
 
     # Parse the response: look for === filename === markers followed by code blocks
     # Pattern allows word chars, dots and hyphens — no slashes to prevent path traversal.
@@ -6032,13 +6113,14 @@ def _generate_chrome_extension_files(model: str, prompt: str, name: str) -> dict
 
 @app.route("/project/generate", methods=["POST"])
 def project_generate():
-    """Generate a complete web project from a task description using Ollama.
+    """Generate a complete web project from a task description using Ollama or LM Studio.
 
     Body: {"model": "...", "prompt": "...", "name": "optional project name"}
     Returns: {"project_id": "...", "files": {"index.html": "...", ...}, "success": true}
 
     Detects Chrome extension requests and generates a full multi-file extension
     (manifest.json, sidepanel.html, sidepanel.js, background.js, content.js, README.md).
+    Supports models with "lmstudio:" prefix routed to LM Studio OpenAI-compatible API.
     """
     body    = request.get_json(silent=True) or {}
     model   = body.get("model", "").strip()
@@ -6049,6 +6131,8 @@ def project_generate():
         return jsonify({"error": "No model selected", "success": False})
     if not prompt:
         return jsonify({"error": "No prompt provided", "success": False})
+
+    is_lms = model.startswith(_LM_STUDIO_PREFIX)
 
     try:
         # Chrome extension: generate multi-file project
@@ -6074,13 +6158,35 @@ def project_generate():
                 f"Task: {prompt}"
             )
 
-            resp = _http.post(
-                f"{OLLAMA_BASE}/api/generate",
-                json={"model": model, "prompt": sys_prompt, "stream": False},
-                timeout=int(os.environ.get("OLLAMA_TIMEOUT", 240)),
-            )
-            resp.raise_for_status()
-            raw  = resp.json().get("response", "")
+            if is_lms:
+                # Route to LM Studio OpenAI-compatible API
+                real_model = model[len(_LM_STUDIO_PREFIX):]
+                lms_url    = LM_STUDIO_BASE
+                if not lms_url:
+                    return jsonify({"error": "LM Studio URL не настроен — укажите URL в настройках (☰)", "success": False})
+                resp = _http.post(
+                    f"{lms_url}/v1/chat/completions",
+                    json={
+                        "model": real_model,
+                        "messages": [
+                            {"role": "system", "content": "You are an expert full-stack web developer. Generate only complete, fully functional code."},
+                            {"role": "user",   "content": sys_prompt},
+                        ],
+                        "stream": False,
+                    },
+                    timeout=int(os.environ.get("OLLAMA_TIMEOUT", 240)),
+                )
+                resp.raise_for_status()
+                raw = resp.json().get("choices", [{}])[0].get("message", {}).get("content", "")
+            else:
+                resp = _http.post(
+                    f"{OLLAMA_BASE}/api/generate",
+                    json={"model": model, "prompt": sys_prompt, "stream": False},
+                    timeout=int(os.environ.get("OLLAMA_TIMEOUT", 240)),
+                )
+                resp.raise_for_status()
+                raw  = resp.json().get("response", "")
+
             html = _extract_code_block(raw, "html")
             if not html:
                 return jsonify({"error": "Model returned no HTML", "success": False})
@@ -7030,17 +7136,31 @@ def web_research():
     ]
     aggregated = "\n\n".join(blocks)
 
-    # ── 7. Generate article text via Ollama (optional) ────────────────────
+    # ── 7. Generate article text via Ollama or LM Studio ─────────────────
     article_text = ""
+    is_lms_research = model.startswith(_LM_STUDIO_PREFIX) if model else False
+
     if not model:
-        try:
-            mr = _http.get(f"{OLLAMA_BASE}/api/tags", timeout=5)
-            mr.raise_for_status()
-            models_list = mr.json().get("models", [])
-            if models_list:
-                model = models_list[0].get("name", "")
-        except Exception:  # pylint: disable=broad-except
-            pass
+        # Auto-detect: prefer LM Studio if configured, then Ollama
+        if LM_STUDIO_BASE:
+            try:
+                lms_mr = _http.get(f"{LM_STUDIO_BASE}/v1/models", timeout=5)
+                if lms_mr.status_code == 200:
+                    lms_model_list = lms_mr.json().get("data", [])
+                    if lms_model_list:
+                        model = f"{_LM_STUDIO_PREFIX}{lms_model_list[0]['id']}"
+                        is_lms_research = True
+            except Exception:  # pylint: disable=broad-except
+                pass
+        if not model:
+            try:
+                mr = _http.get(f"{OLLAMA_BASE}/api/tags", timeout=5)
+                mr.raise_for_status()
+                models_list = mr.json().get("models", [])
+                if models_list:
+                    model = models_list[0].get("name", "")
+            except Exception:  # pylint: disable=broad-except
+                pass
 
     if model and aggregated:
         try:
@@ -7050,13 +7170,25 @@ def web_research():
                 "Формат: первая строка — заголовок. Затем введение. "
                 "Разделы с подзаголовками (## Название). ## Заключение."
             )
-            ar = _http.post(
-                f"{OLLAMA_BASE}/api/generate",
-                json={"model": model, "prompt": prompt, "stream": False},
-                timeout=int(os.environ.get("OLLAMA_TIMEOUT", 120)),
-            )
-            ar.raise_for_status()
-            article_text = ar.json().get("response", "")
+            if is_lms_research:
+                real_model = model[len(_LM_STUDIO_PREFIX):]
+                ar = _http.post(
+                    f"{LM_STUDIO_BASE}/v1/chat/completions",
+                    json={"model": real_model,
+                          "messages": [{"role": "user", "content": prompt}],
+                          "stream": False},
+                    timeout=int(os.environ.get("OLLAMA_TIMEOUT", 120)),
+                )
+                ar.raise_for_status()
+                article_text = ar.json().get("choices", [{}])[0].get("message", {}).get("content", "")
+            else:
+                ar = _http.post(
+                    f"{OLLAMA_BASE}/api/generate",
+                    json={"model": model, "prompt": prompt, "stream": False},
+                    timeout=int(os.environ.get("OLLAMA_TIMEOUT", 120)),
+                )
+                ar.raise_for_status()
+                article_text = ar.json().get("response", "")
         except Exception as _exc:  # pylint: disable=broad-except
             _log.warning("research ollama: %s", _exc)
     elif model and not sources:
@@ -7069,13 +7201,25 @@ def web_research():
                 "Разделы с подзаголовками (## Название). ## Заключение.\n\n"
                 "Примечание: статья создана на основе AI-знаний (без интернет-поиска)."
             )
-            ar = _http.post(
-                f"{OLLAMA_BASE}/api/generate",
-                json={"model": model, "prompt": prompt, "stream": False},
-                timeout=int(os.environ.get("OLLAMA_TIMEOUT", 120)),
-            )
-            ar.raise_for_status()
-            article_text = ar.json().get("response", "")
+            if is_lms_research:
+                real_model = model[len(_LM_STUDIO_PREFIX):]
+                ar = _http.post(
+                    f"{LM_STUDIO_BASE}/v1/chat/completions",
+                    json={"model": real_model,
+                          "messages": [{"role": "user", "content": prompt}],
+                          "stream": False},
+                    timeout=int(os.environ.get("OLLAMA_TIMEOUT", 120)),
+                )
+                ar.raise_for_status()
+                article_text = ar.json().get("choices", [{}])[0].get("message", {}).get("content", "")
+            else:
+                ar = _http.post(
+                    f"{OLLAMA_BASE}/api/generate",
+                    json={"model": model, "prompt": prompt, "stream": False},
+                    timeout=int(os.environ.get("OLLAMA_TIMEOUT", 120)),
+                )
+                ar.raise_for_status()
+                article_text = ar.json().get("response", "")
         except Exception as _exc:  # pylint: disable=broad-except
             _log.warning("research ollama (no-internet fallback): %s", _exc)
 

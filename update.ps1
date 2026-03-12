@@ -2,6 +2,9 @@
 # Использование: .\update.ps1
 # Или через PowerShell без клонирования репозитория:
 #   irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/update.ps1" | iex
+#
+# Если main ещё не обновлён — используй ветку напрямую:
+#   irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/copilot/create-monaco-code-generator/update.ps1" | iex
 
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
