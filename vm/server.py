@@ -1992,6 +1992,25 @@ def health():
         except Exception:  # pylint: disable=broad-except
             pass
 
+    # --- Light vision model (moondream / minicpm-v in local Ollama) ---
+    # Priority order: moondream:latest > moondream:1.8b > moondream (any tag) > minicpm-v variants
+    _light_vision_candidates = ["moondream:latest", "moondream:1.8b", "moondream", "minicpm-v:latest", "minicpm-v"]
+    light_vision_model = ""
+    if ollama_ok:
+        _ollama_set = set(ollama_models)
+        for _lv in _light_vision_candidates:
+            if _lv in _ollama_set:
+                light_vision_model = _lv
+                break
+        if not light_vision_model:
+            # Fuzzy match: find any installed model whose name starts with a candidate prefix
+            for _lv in _light_vision_candidates:
+                _prefix = _lv.split(":")[0]
+                _match = next((_m for _m in ollama_models if _m.startswith(_prefix)), "")
+                if _match:
+                    light_vision_model = _match
+                    break
+
     # --- Ollama CORS relay ---
     relay_ok = False
     if _OLLAMA_RELAY_PORT > 0:
@@ -2050,6 +2069,11 @@ def health():
             "status": "ok" if vvm_ok else ("unreachable" if VISION_VM_URL else "not_configured"),
             "url":    VISION_VM_URL,
             "models": vvm_models,
+        },
+        "vision_light": {
+            "status": "ok" if light_vision_model else ("inactive" if vvm_ok else "none"),
+            "model":  light_vision_model,
+            "note":   "auto-disabled" if vvm_ok else ("active" if light_vision_model else "not_installed"),
         },
         "stable_diffusion": {
             "status": "ok" if sd_ok else ("unreachable" if SD_BASE else "not_configured"),

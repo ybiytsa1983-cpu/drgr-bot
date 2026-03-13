@@ -420,6 +420,7 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
         <div class="hr"><span class="hk">🎬 VidEdit</span><span id="h-videditor" class="hv">—</span></div>
         <div class="hr"><span class="hk">🌐 Remote VM</span><span id="h-rvm" class="hv">—</span></div>
         <div class="hr"><span class="hk">👁 Vision VM</span><span id="h-vvm" class="hv">—</span></div>
+        <div class="hr"><span class="hk">👁‍🗨 Лёгк.Зрение</span><span id="h-light-vision" class="hv">—</span></div>
         <div class="hr"><span class="hk">🎨 SD</span><span id="h-sd" class="hv">—</span></div>
         <div class="hr"><span class="hk">⚙ ComfyUI</span><span id="h-comfyui" class="hv">—</span></div>
         <div class="hr"><span class="hk">📱 TG Bot</span><span id="h-bot" class="hv">—</span></div>
@@ -886,9 +887,12 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
           <div class="vm-ai-item" id="vai-relay">⏳ Relay…</div>
           <div class="vm-ai-item" id="vai-sd">⏳ SD…</div>
           <div class="vm-ai-item" id="vai-comfyui">⏳ ComfyUI…</div>
+          <div class="vm-ai-item" id="vai-vvm">⏳ Vision VM…</div>
+          <div class="vm-ai-item" id="vai-light-vision">⏳ Лёгкое зрение…</div>
         </div>
         <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
           <button class="pb pb-s" style="flex:1;padding:7px;min-width:130px" onclick="vmDetectLmStudio()" id="vm-btn-detect-lms">🔍 Найти LM Studio</button>
+          <button class="pb pb-s" style="flex:1;padding:7px;min-width:130px" onclick="vmCheckLightVision()">👁 Лёгкое зрение</button>
           <button class="pb pb-m" style="flex:1;padding:7px;min-width:130px" onclick="openPanel()">⚙ Настройки / Токен</button>
         </div>
         <div id="vm-lms-detect-result" style="margin-top:6px;font-size:11px;color:var(--text2)"></div>
@@ -3299,6 +3303,18 @@ async function loadHealth() {
       var vvmCls  = vvmOk ? 'ok'   : (vvmCfg ? 'fail'          : '');
       set('h-vvm', vvmText, vvmCls);
     }
+    if (document.getElementById('h-light-vision')) {
+      var lvData = d.vision_light || {};
+      var lvText, lvCls;
+      if (lvData.note === 'auto-disabled') {
+        lvText = '— Vision VM'; lvCls = '';
+      } else if (lvData.status === 'ok') {
+        lvText = '✓ ' + (lvData.model || 'moondream').split(':')[0]; lvCls = 'ok';
+      } else {
+        lvText = '— Нет модели'; lvCls = '';
+      }
+      set('h-light-vision', lvText, lvCls);
+    }
     var sdData   = d.stable_diffusion || {};
     var sdOk     = sdData.status === 'ok';
     var sdCfg    = sdData.status !== 'not_configured';
@@ -4263,6 +4279,8 @@ async function vmRefreshAiStatus() {
   var relayEl   = document.getElementById('vai-relay');
   var sdEl      = document.getElementById('vai-sd');
   var comfyEl   = document.getElementById('vai-comfyui');
+  var vvmEl     = document.getElementById('vai-vvm');
+  var lvEl      = document.getElementById('vai-light-vision');
   if (!ollamaEl) return;
   try {
     var r = await fetch('/health');
@@ -4297,6 +4315,26 @@ async function vmRefreshAiStatus() {
         ? '✅ ComfyUI ' + (cf.url || '').replace('http://', '')
         : (cf.status === 'not_configured' ? '➖ ComfyUI (нет URL)' : '⚠ ComfyUI недоступен');
       comfyEl.style.color = cf.status === 'ok' ? '#50fa7b' : '#888';
+    }
+    if (vvmEl) {
+      var vvm = d.vision_vm || {};
+      vvmEl.textContent = vvm.status === 'ok'
+        ? '✅ Vision VM'
+        : (vvm.status === 'not_configured' ? '➖ Vision VM (нет URL)' : '⚠ Vision VM недост.');
+      vvmEl.style.color = vvm.status === 'ok' ? '#50fa7b' : '#888';
+    }
+    if (lvEl) {
+      var lv = d.vision_light || {};
+      if (lv.note === 'auto-disabled') {
+        lvEl.textContent = '➖ Лёгк. зрение (Vision VM активна)';
+        lvEl.style.color = '#888';
+      } else if (lv.status === 'ok') {
+        lvEl.textContent = '✅ ' + (lv.model || 'moondream');
+        lvEl.style.color = '#50fa7b';
+      } else {
+        lvEl.textContent = '⚪ Лёгк. зрение (нет модели)';
+        lvEl.style.color = '#888';
+      }
     }
   } catch(e) {
     ollamaEl.textContent  = '⚠ Сервер недоступен';
@@ -4335,6 +4373,33 @@ async function vmSaveLmsUrl(url) {
     if (d.ok) { toast('✅ LM Studio URL сохранён: ' + url); vmRefreshAiStatus(); loadModels(); }
     else toast('⚠ ' + (d.error || 'Ошибка сохранения'));
   } catch(e) { toast('⚠ ' + e.message); }
+}
+
+// Check / auto-install lightweight vision model (moondream) for photo/video description
+async function vmCheckLightVision(silent) {
+  var lvEl = document.getElementById('vai-light-vision');
+  if (lvEl) { lvEl.textContent = '⏳ Проверяю лёгкое зрение…'; lvEl.style.color = '#888'; }
+  try {
+    var r = await fetch('/vision/light/check?pull_if_absent=1');
+    var d = await r.json();
+    if (d.status === 'vision_vm_active') {
+      if (lvEl) { lvEl.textContent = '➖ Лёгк. зрение (Vision VM активна)'; lvEl.style.color = '#888'; }
+      if (!silent) toast('👁 Vision VM активна — лёгкая модель не нужна');
+    } else if (d.status === 'ok') {
+      if (lvEl) { lvEl.textContent = '✅ ' + (d.model || 'moondream'); lvEl.style.color = '#50fa7b'; }
+      if (!silent) toast('✅ Лёгкая vision-модель готова: ' + (d.model || 'moondream'));
+    } else if (d.status === 'pulling') {
+      if (lvEl) { lvEl.textContent = '⬇ Скачиваю moondream (~1 ГБ)…'; lvEl.style.color = '#f1fa8c'; }
+      if (!silent) toast('⬇ Устанавливаю moondream:latest (~1 ГБ) — подождите минуту');
+      // Re-check after 90s
+      setTimeout(function(){ vmCheckLightVision(true); vmRefreshAiStatus(); }, 90000);
+    } else {
+      if (lvEl) { lvEl.textContent = '⚪ Лёгк. зрение (нет модели)'; lvEl.style.color = '#888'; }
+      if (!silent) toast('⚠ Лёгкая vision-модель не найдена. Ollama доступна?');
+    }
+  } catch(e) {
+    if (!silent) toast('⚠ Ошибка проверки лёгкого зрения: ' + e.message);
+  }
 }
 
 // Quick-connect to LM Studio on the default LAN VM address 172.22.208.1:1234
@@ -6320,6 +6385,11 @@ window.addEventListener('load', function(){
   loadModels();
   loadSystemPrompt();
   loadOllamaUrl();
+
+  // Auto-check/install lightweight vision model (moondream) on startup.
+  // Runs silently: if Vision VM is already active, the endpoint returns immediately.
+  // If no lightweight model is present and Ollama is running, moondream pull is triggered.
+  setTimeout(function(){ vmCheckLightVision(true); }, 3000);
 
   // Handle URL parameters for deep-linking and auto-start
   var _params = new URLSearchParams(window.location.search);
