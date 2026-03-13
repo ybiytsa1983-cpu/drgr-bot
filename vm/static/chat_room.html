@@ -185,8 +185,8 @@ html, body {
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 8px;
-  width: 280px;
-  max-height: 220px;
+  width: 300px;
+  max-height: 300px;
   overflow-y: auto;
   z-index: 100;
   box-shadow: 0 8px 24px rgba(0,0,0,.5);
@@ -543,7 +543,12 @@ html, body {
   <div id="input-area">
     <div id="emoji-wrap">
       <button id="btn-emoji-open" onclick="toggleEmojiPicker()" title="Вставить эмодзи">😊</button>
-      <div id="emoji-picker"><div class="ep-grid"></div></div>
+      <div id="emoji-picker">
+        <input id="ep-search" type="text" placeholder="Поиск эмодзи…"
+          style="width:100%;padding:4px 8px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;margin-bottom:6px;box-sizing:border-box"
+          oninput="filterEmojis(this.value)" autocomplete="off"/>
+        <div class="ep-grid"></div>
+      </div>
     </div>
     <textarea id="msg-inp" rows="1" maxlength="2000"
       placeholder="Введите сообщение… (Enter — отправить, Shift+Enter — новая строка)"
@@ -751,22 +756,58 @@ function saveProfile() {
 
 // ── Emoji ────────────────────────────────────────────────────────────────────
 var _EMOJIS = [
+  // Faces & Feelings
   '😀','😃','😄','😁','😆','😅','😂','🤣','😊','😇','🙂','😉','😍','🥰',
   '😘','😋','😜','🤪','🤑','🤗','🤔','🤐','🤨','😐','😶','😏','🙄','😬',
   '😴','😷','🤒','🤕','🤢','🤧','🥵','🥶','😵','🤯','🤠','🥳','😎','🤓',
   '😕','😟','😮','😲','😳','🥺','😢','😭','😱','😣','😩','😫','🥱','😤',
   '😡','😠','🤬','😈','👿','💀','☠️','🤖','👻','👽','👾',
-  '👋','🤚','👌','✌️','🤞','👍','👎','✊','👏','🙌','🙏','💪',
-  '💻','🖥️','📱','📟','⌨️','🖱️','💾','📷','📸','📹','📡','🔋','🔌',
-  '💡','🔦','🔍','🔎','🔬','🔭','🧪','⚗️','🔩','🔧','🔨','🛠️','🔑','🗝️',
-  '🔐','🔒','🔓','🧲','💎','💰','📦','🗂️','📁','📂','📝','📋','📌',
-  '🌍','🌐','🌟','⭐','✨','🔥','💧','🌊','🌿','🌱','🌲','🌈','❄️','⛄',
-  '🚀','✅','❌','⚠️','⛔','🚫','🔴','🟢','🔵','🟡','🟠','🟣','⚫','⚪',
-  '🤖','⚙️','📊','🧠','💬','📸','🎯','🏆','⚡','🎉','🎊','🎁','🎵','🎶',
-  '❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','💕','💞','💓','💗',
-  '🍕','🍔','🍟','🌮','🍜','🍣','🍩','🍰','☕','🍺','🥤','🧃',
+  // Gestures & Hands
+  '👋','🤚','🖐️','✋','🤙','👈','👉','👆','👇','☝️','👌','✌️','🤞','👍','👎',
+  '✊','👊','🤛','🤜','👏','🙌','🙏','🤲','💪','🦾',
+  // Tech & Code
+  '💻','🖥️','📱','📟','⌨️','🖱️','💾','💿','🖨️','📷','📸','📹','📡','🔋','🔌',
+  '💡','🔦','🔍','🔎','🔬','🔭','🧪','⚗️','🔩','🔧','🔨','🛠️','⛏️','🔑','🗝️',
+  '🔐','🔒','🔓','🧲','📶','📲','🌐','🖧','🖲️',
+  // Files & Docs
+  '💎','💰','📦','🗂️','📁','📂','📝','📋','📌','📎','✂️','📏','📐','✒️','🖊️',
+  '📊','📈','📉','🗃️','🗄️','📃','📄','📑','📜','📰','🗞️',
+  // Nature & Space
+  '🌍','🌐','🌟','⭐','🌠','✨','🔥','💧','🌊','🌿','🌱','🌲','🌈','❄️','⛄',
+  '🚀','🛸','🌙','☀️','⚡','🌩️','🌪️','🌀','🔮',
+  // Status & Marks
+  '✅','❌','⚠️','⛔','🚫','🔴','🟢','🔵','🟡','🟠','🟣','⚫','⚪','🟤',
+  '❓','❗','‼️','⁉️','🆗','🆒','🆕','🆓','🔁','🔂','▶️','⏸️','⏹️','⏺️',
+  // Activities & Objects
+  '⚙️','🧠','💬','💭','🗨️','🗯️','🎯','🏆','🥇','🎮','🕹️','🎲','🧩','🎪',
+  '🎉','🎊','🎁','🎵','🎶','🎸','🥁','🎤','🎬','🎨','🖼️','🎭',
+  // Hearts & Love
+  '❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','💕','💞','💓','💗','💖','💝',
+  // Food
+  '🍕','🍔','🍟','🌮','🌯','🍜','🍣','🍩','🍰','🎂','☕','🍵','🍺','🥤','🧃','🥂',
+  // Developer favourites
+  '👨‍💻','👩‍💻','🧑‍💻','🏗️','🐛','🐞','🛡️','🔐','🔓','📡','🤖','⚙️','🗺️','📦',
+  '🐍','🦀','🦕','🐘','💠','🔷','🔶','🟥','🟩','🟦',
 ];
 var _epBuilt = false;
+function _insertEmoji(e) {
+  var inp = document.getElementById('msg-inp');
+  var pos = inp.selectionStart || inp.value.length;
+  inp.value = inp.value.slice(0, pos) + e + inp.value.slice(pos);
+  inp.selectionStart = inp.selectionEnd = pos + e.length;
+  inp.focus();
+  document.getElementById('emoji-picker').style.display = 'none';
+  autoResize(inp);
+}
+function filterEmojis(q) {
+  var grid = document.querySelector('#emoji-picker .ep-grid');
+  if (!grid) return;
+  var btns = grid.querySelectorAll('.ep-btn');
+  var lower = q.toLowerCase();
+  btns.forEach(function(b) {
+    b.style.display = (!lower || b.textContent.includes(q)) ? '' : 'none';
+  });
+}
 function toggleEmojiPicker() {
   var picker = document.getElementById('emoji-picker');
   if (picker.style.display === 'block') { picker.style.display = 'none'; return; }
@@ -775,19 +816,16 @@ function toggleEmojiPicker() {
     _EMOJIS.forEach(function(e) {
       var b = document.createElement('button');
       b.className = 'ep-btn'; b.textContent = e; b.title = e;
-      b.addEventListener('click', function() {
-        var inp = document.getElementById('msg-inp');
-        var pos = inp.selectionStart || inp.value.length;
-        inp.value = inp.value.slice(0, pos) + e + inp.value.slice(pos);
-        inp.selectionStart = inp.selectionEnd = pos + e.length;
-        inp.focus(); picker.style.display = 'none';
-        autoResize(inp);
-      });
+      b.addEventListener('click', function() { _insertEmoji(e); });
       grid.appendChild(b);
     });
     _epBuilt = true;
   }
+  // Reset search
+  var search = document.getElementById('ep-search');
+  if (search) { search.value = ''; filterEmojis(''); }
   picker.style.display = 'block';
+  if (search) setTimeout(function() { search.focus(); }, 30);
   setTimeout(function() {
     function _close(ev) {
       var btn = document.getElementById('btn-emoji-open');

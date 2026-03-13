@@ -215,6 +215,8 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
   border:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:4px}
 .vm-ps:hover{border-color:var(--accent)}
 .vm-ps code{background:none;padding:0;font-size:10px;color:inherit;flex:1}
+.vm-ai-item{background:var(--bg4);border:1px solid var(--border);border-radius:6px;
+  padding:6px 8px;font-size:11px;color:var(--text2);min-height:28px;display:flex;align-items:center}
 .gltf-shape-btn{padding:5px 9px;font-size:11px;background:var(--bg4);color:var(--text);border:1px solid var(--border);border-radius:5px;cursor:pointer;transition:background .15s,border-color .15s}
 .gltf-shape-btn:hover{background:var(--bg3);border-color:var(--accent)}
 .gltf-shape-btn.gltf-active{background:var(--accent);color:#fff;border-color:var(--accent)}
@@ -436,9 +438,12 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
     <!-- LM Studio URL -->
     <div>
       <div class="pl">🤖 LM Studio URL</div>
-      <input type="text" id="lms-url" placeholder="http://172.28.240.1:1234" autocomplete="off"/>
-      <button class="pb pb-p pb-f" style="margin-top:4px" onclick="saveLmStudioUrl()">💾 Сохранить LM Studio URL</button>
-      <div style="font-size:10px;color:var(--text2)">URL вашего LM Studio сервера (OpenAI-совместимый API, порт 1234). Модели LM Studio отображаются в селекторе с префиксом <b>lmstudio:</b></div>
+      <input type="text" id="lms-url" placeholder="http://127.0.0.1:1234" autocomplete="off"/>
+      <div style="display:flex;gap:4px;margin-top:4px;flex-wrap:wrap">
+        <button class="pb pb-p pb-f" style="flex:2" onclick="saveLmStudioUrl()">💾 Сохранить LM Studio URL</button>
+        <button class="pb pb-m" style="flex:1" onclick="autoDetectLmStudio()" title="Автоматически найти LM Studio в сети">🔍 Авто-поиск</button>
+      </div>
+      <div style="font-size:10px;color:var(--text2);margin-top:3px">URL LM Studio сервера (OpenAI-совместимый API, порт 1234). Модели LM Studio отображаются в селекторе с префиксом <b>lmstudio:</b></div>
     </div>
 
     <!-- text-generation-webui URL -->
@@ -841,82 +846,91 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
   <!-- Retrained VM pane (shown when view=vm) -->
   <div id="vm-pane">
     <div id="vm-header">
-      <h2>🧠 Переученная ВМ — drgr-visor</h2>
-      <p>Создай и используй переученную модель <b>drgr-visor</b> (qwen3-vl:8b + Monaco + ВИЗОР)</p>
+      <h2>🧠 Центр управления ВМ</h2>
+      <p>Управляй всеми редакторами, генераторами и ИИ-моделями из одного места</p>
     </div>
     <div id="vm-body">
-      <!-- Quick action buttons -->
-      <div style="display:flex;gap:8px;flex-wrap:wrap;padding:10px 16px 0;flex-shrink:0">
-        <button class="pb pb-p" onclick="setView('chat-code')" title="Открыть чат с ИИ и редактор кода одновременно" style="flex:1;min-width:160px;padding:10px">💬+📝 Чат+Код (редактор одновременно)</button>
-        <button class="pb pb-s" onclick="setView('research')" title="Поиск в интернете и генерация HTML-статьи" style="flex:1;min-width:160px;padding:10px">🔍 Поиск+Статья (интернет+HTML)</button>
-        <button class="pb pb-m" onclick="setView('chat')" title="Открыть чат с ИИ" style="flex:1;min-width:120px;padding:10px">💬 Чат с ИИ</button>
-      </div>
 
-      <div id="vm-status-box">
-        <div class="vm-status-row">
-          <div id="vm-dot" class="vm-dot"></div>
-          <span id="vm-status-text">Проверяю статус...</span>
+      <!-- ── AI Connections ── -->
+      <div class="vm-card" style="padding:10px 14px">
+        <h3>🔌 Подключения ИИ</h3>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px" id="vm-ai-status">
+          <div class="vm-ai-item" id="vai-ollama">⏳ Ollama…</div>
+          <div class="vm-ai-item" id="vai-lmstudio">⏳ LM Studio…</div>
+          <div class="vm-ai-item" id="vai-model">⏳ Модель…</div>
+          <div class="vm-ai-item" id="vai-relay">⏳ Relay…</div>
         </div>
-        <div id="vm-status-hint">Нажми кнопку ниже чтобы создать переученную модель drgr-visor</div>
-        <button id="vm-create-btn" onclick="doCreateVisorVM()">⚡ Создать переученную ВМ (drgr-visor)</button>
+        <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+          <button class="pb pb-s" style="flex:1;padding:7px;min-width:130px" onclick="vmDetectLmStudio()" id="vm-btn-detect-lms">🔍 Найти LM Studio</button>
+          <button class="pb pb-m" style="flex:1;padding:7px;min-width:130px" onclick="openPanel()">⚙ Настройки / Токен</button>
+        </div>
+        <div id="vm-lms-detect-result" style="margin-top:6px;font-size:11px;color:var(--text2)"></div>
       </div>
 
-      <div id="vm-log">Лог создания появится здесь...</div>
+      <!-- ── Editors & Generators ── -->
+      <div class="vm-card" style="padding:10px 14px">
+        <h3>🛠 Редакторы и генераторы</h3>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px">
+          <button class="pb pb-p" onclick="setView('both')" title="Monaco + Предпросмотр" style="padding:9px;font-size:12px">📝 Monaco Редактор</button>
+          <button class="pb pb-p" onclick="setView('chat-code')" title="Чат + Код одновременно" style="padding:9px;font-size:12px">💬+📝 Чат + Код</button>
+          <button class="pb pb-s" onclick="setView('chat')" title="ИИ чат" style="padding:9px;font-size:12px">💬 ИИ Чат</button>
+          <button class="pb pb-s" onclick="setView('preview')" title="Полноэкранный предпросмотр" style="padding:9px;font-size:12px">👁 Предпросмотр</button>
+          <button class="pb pb-m" onclick="setView('research')" title="Поиск + HTML статья" style="padding:9px;font-size:12px">🔍 Поиск + Статья</button>
+          <button class="pb pb-m" onclick="setView('gltf')" title="GLTF 3D генератор" style="padding:9px;font-size:12px">🧩 GLTF Генератор</button>
+          <button class="pb" onclick="setView('3dgen')" title="3D генератор (TripoSR/Hunyuan3D)" style="padding:9px;font-size:12px;background:rgba(189,147,249,.15);border-color:#bd93f9;color:#bd93f9">🧊 3D Генератор</button>
+          <button class="pb" onclick="setView('webbuilder')" title="Генератор сайтов" style="padding:9px;font-size:12px;background:rgba(139,233,253,.1);border-color:#8be9fd;color:#8be9fd">🌐 Генератор сайтов</button>
+          <button class="pb" onclick="setView('videditor')" title="Видеоредактор" style="padding:9px;font-size:12px;background:rgba(255,121,198,.1);border-color:#ff79c6;color:#ff79c6">🎬 Видеоредактор</button>
+          <button class="pb" onclick="setView('goose')" title="Goose AI агент" style="padding:9px;font-size:12px;background:rgba(80,250,123,.1);border-color:#50fa7b;color:#50fa7b">🐦 Goose Агент</button>
+          <button class="pb" onclick="openChatroom()" title="Онлайн чат-зал" style="padding:9px;font-size:12px;background:rgba(241,250,140,.1);border-color:#f1fa8c;color:#f1fa8c">🌐 Чат-зал</button>
+          <button class="pb" onclick="setView('colab')" title="Google Colab / Remote VM" style="padding:9px;font-size:12px;background:rgba(255,184,108,.1);border-color:#ffb86c;color:#ffb86c">☁ Colab / Remote VM</button>
+        </div>
+      </div>
 
-      <div class="vm-card">
-        <h3>📋 Как пользоваться переученной ВМ</h3>
-        <ul>
-          <li>Нажми <b>Создать переученную ВМ</b> выше — дождись завершения (1–3 мин)</li>
-          <li>После создания модель <code>drgr-visor</code> появится в списке моделей</li>
-          <li>Открой настройки (кнопка <b>☰</b> слева вверху) → выбери <code>drgr-visor</code> в поле <b>Модель</b></li>
-          <li>Перейди на вкладку <b>💬+📝 Чат+Код</b> — чат с ИИ <i>и</i> Monaco-редактор одновременно</li>
-          <li>Или перейди на <b>💬 Чат</b> — там кнопки <b>🔍 Поиск</b> и <b>📰 Статья</b> для веб-поиска и генерации статей</li>
-        </ul>
+      <!-- ── drgr-visor quick actions ── -->
+      <div class="vm-card" style="padding:10px 14px">
+        <h3>⚡ Переученная ВМ — drgr-visor</h3>
+        <div id="vm-status-box" style="margin-bottom:8px">
+          <div class="vm-status-row">
+            <div id="vm-dot" class="vm-dot"></div>
+            <span id="vm-status-text">Проверяю статус...</span>
+          </div>
+          <div id="vm-status-hint" style="font-size:11px;color:var(--text2);margin-top:4px">Нажми кнопку ниже чтобы создать переученную модель drgr-visor</div>
+          <button id="vm-create-btn" onclick="doCreateVisorVM()" style="margin-top:8px">⚡ Создать / обновить drgr-visor</button>
+        </div>
+        <div id="vm-log" style="max-height:120px">Лог создания появится здесь...</div>
         <p style="margin-top:8px;font-size:10px;color:var(--text2)">
-          ℹ️ <b>Примечание:</b> <code>drgr-visor</code> — это <code>qwen3-vl:8b</code> с особым системным промптом
-          (оптимизированным для работы с Code VM, Monaco, ВИЗОРОМ и Telegram-ботом).
-          Размер модели одинаков, так как изменяется только системный промпт, а не веса модели.
-          Для работы требует запущенного Ollama и скачанной модели <code>qwen3-vl:8b</code>.
+          <code>drgr-visor</code> — это <code>qwen3-vl:8b</code> с системным промптом для Code VM.
+          Требует Ollama + скачанная модель <code>qwen3-vl:8b</code>.
         </p>
       </div>
 
-      <div class="vm-card">
-        <h3>🪟 Запуск с рабочего стола (Windows)</h3>
-        <p>На рабочем столе должны быть файлы — двойной клик запускает Code VM и создаёт drgr-visor:</p>
-        <ul style="margin-top:6px">
-          <li><code>ЗАПУСТИТЬ_ВМ.bat</code> — запуск VM + автосоздание drgr-visor</li>
-          <li><code>ПЕРЕУЧИТЬ_ВМ.bat</code> — только переучить (создать/обновить drgr-visor)</li>
-          <li><code>Code VM.lnk</code> — основной ярлык запуска</li>
-        </ul>
-        <p style="margin-top:8px"><b>Если значков нет на рабочем столе</b> — вставь в <b>PowerShell</b> (Win+X → Windows PowerShell):</p>
-        <p style="margin-top:4px;color:var(--text2);font-size:11px">Шаг 1 — первая установка (загружает всё необходимое):</p>
+      <!-- ── Code interactions ── -->
+      <div class="vm-card" style="padding:10px 14px">
+        <h3>📝 Взаимодействие с редактором кода</h3>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
+          <button class="pb pb-p" onclick="vmLoadToEditor()" title="Загрузить код из буфера обмена в редактор" style="flex:1;min-width:130px;padding:8px">📋 Вставить в редактор</button>
+          <button class="pb pb-s" onclick="vmCopyFromEditor()" title="Скопировать код из редактора" style="flex:1;min-width:130px;padding:8px">📄 Копировать из редактора</button>
+          <button class="pb pb-m" onclick="vmRunEditor()" title="Запустить код в редакторе" style="flex:1;min-width:130px;padding:8px">▶ Запустить код</button>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
+          <button class="pb" onclick="setView('both');setTimeout(function(){document.getElementById('gen-input')&&document.getElementById('gen-input').focus();},300)" title="Сгенерировать код с помощью ИИ" style="flex:1;min-width:160px;padding:8px;background:rgba(80,250,123,.1);border-color:#50fa7b;color:#50fa7b">🤖 Генерировать код (ИИ)</button>
+          <button class="pb" onclick="setView('both');setTimeout(function(){var b=document.getElementById('btn-patch');if(b)b.scrollIntoView({behavior:'smooth'});},300)" title="Внести правки в код через ИИ" style="flex:1;min-width:160px;padding:8px;background:rgba(255,184,108,.1);border-color:#ffb86c;color:#ffb86c">✏ Правки кода (ИИ)</button>
+        </div>
+      </div>
+
+      <!-- ── Launcher ── -->
+      <div class="vm-card" style="padding:10px 14px">
+        <h3>🪟 Запуск (Windows)</h3>
+        <p style="margin-top:4px;font-size:11px;color:var(--text2)">Первая установка:</p>
         <div class="vm-ps" onclick="copyText(this.querySelector('code').textContent)" title="Нажми для копирования">
           <code>irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/run.ps1" | iex</code>
           <span style="color:var(--text2);font-size:9px;flex-shrink:0">📋</span>
         </div>
-        <p style="margin-top:8px;color:var(--text2);font-size:11px">⬇ Скачать обновления (если VM уже установлена):</p>
+        <p style="margin-top:6px;font-size:11px;color:var(--text2)">Обновление:</p>
         <div class="vm-ps" onclick="copyText(this.querySelector('code').textContent)" title="Нажми для копирования">
           <code>irm 'https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/update.ps1' | iex</code>
           <span style="color:var(--text2);font-size:9px;flex-shrink:0">📋</span>
         </div>
-        <p style="margin-top:8px;color:var(--text2);font-size:11px">Шаг 2 — после установки, запуск переученной ВМ (папка уже есть):</p>
-        <div class="vm-ps" onclick="copyText(this.querySelector('code').textContent)" title="Нажми для копирования">
-          <code>powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\drgr-bot\ЗАПУСТИТЬ_ВМ.ps1"</code>
-          <span style="color:var(--text2);font-size:9px;flex-shrink:0">📋</span>
-        </div>
-        <p style="margin-top:8px;color:var(--text2);font-size:11px">Или просто запустить VM без переобучения:</p>
-        <div class="vm-ps" onclick="copyText(this.querySelector('code').textContent)" title="Нажми для копирования">
-          <code>powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\drgr-bot\vm.ps1"</code>
-          <span style="color:var(--text2);font-size:9px;flex-shrink:0">📋</span>
-        </div>
-        <p style="margin-top:8px;color:var(--text2);font-size:11px">После запуска откройте браузер: <a href="http://127.0.0.1:5000" target="_blank" style="color:var(--accent)">http://127.0.0.1:5000</a></p>
-      </div>
-
-      <div class="vm-card">
-        <h3>🔑 Токен Telegram-бота</h3>
-        <p>Чтобы сменить токен бота — открой <b>☰ Настройки</b> (кнопка слева вверху) → раздел <b>Telegram Bot Token</b>.</p>
-        <p style="margin-top:6px">Или нажми кнопку:</p>
-        <button class="pb pb-s" style="margin-top:8px;width:100%;padding:9px" onclick="openPanel()">⚙ Открыть настройки (токен бота, модель)</button>
       </div>
 
     </div>
@@ -2668,12 +2682,30 @@ async function runCode() {
     return;
   }
 
-  // CSS → show in visor
+  // CSS → show in visor with a richer demo scaffold
   if (lang === 'css') {
-    var demoHtml = '<!DOCTYPE html><html><head><meta charset="UTF-8"><style>' + code
-      + '</style></head><body style="background:#1a1a1a;padding:20px">'
-      + '<h1>CSS Preview</h1><p class="demo">Демо-параграф</p>'
-      + '<button class="demo">Демо-кнопка</button><div class="demo">Демо-блок</div>'
+    var demoHtml = '<!DOCTYPE html><html><head><meta charset="UTF-8"><style>'
+      + 'body{font-family:system-ui,sans-serif;background:#1a1a1a;color:#d4d4d4;padding:24px;margin:0}'
+      + 'h1{font-size:20px;margin-bottom:8px} h2{font-size:16px;margin:16px 0 6px}'
+      + '.row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}'
+      + '</style>'
+      + '<style id="user-css">' + code + '</style></head>'
+      + '<body>'
+      + '<h1 class="demo-title">🎨 CSS Предпросмотр</h1>'
+      + '<div class="row">'
+      + '<button class="demo">Кнопка</button>'
+      + '<button class="demo btn-primary">Primary</button>'
+      + '<button class="demo btn-secondary">Secondary</button>'
+      + '</div>'
+      + '<div class="row">'
+      + '<div class="demo card" style="flex:1;min-width:120px">Карточка 1</div>'
+      + '<div class="demo card" style="flex:1;min-width:120px">Карточка 2</div>'
+      + '<div class="demo card" style="flex:1;min-width:120px">Карточка 3</div>'
+      + '</div>'
+      + '<p class="demo text">Параграф с классом <code>.demo</code></p>'
+      + '<input class="demo" type="text" placeholder="Поле ввода" style="display:block;margin:8px 0">'
+      + '<ul class="demo"><li>Пункт 1</li><li>Пункт 2</li><li>Пункт 3</li></ul>'
+      + '<div class="demo container" style="margin-top:12px"><span class="demo badge">Бейдж</span></div>'
       + '</body></html>';
     showPreview(demoHtml);
     toast('🎨 CSS — показан предпросмотр в визоре');
@@ -3365,7 +3397,7 @@ async function saveLmStudioUrl() {
   var url = (document.getElementById('lms-url')||{}).value;
   if (!url) url = '';
   url = url.trim();
-  if (!url) { toast('Введите URL LM Studio, например: http://172.28.240.1:1234'); return; }
+  if (!url) { toast('Введите URL LM Studio, например: http://127.0.0.1:1234'); return; }
   if (!/^https?:\/\/.+/.test(url)) { toast('Неверный формат URL'); return; }
   try {
     var r = await fetch('/settings', { method:'POST',
@@ -3377,6 +3409,29 @@ async function saveLmStudioUrl() {
       setTimeout(function(){ loadHealth(); loadModels(); }, 1500);
     } else { toast('⚠ ' + (d.error||'Ошибка')); }
   } catch(e) { toast('⚠ Ошибка: ' + e.message); }
+}
+async function autoDetectLmStudio() {
+  var inp = document.getElementById('lms-url');
+  var hint = (inp && inp.value.trim()) ? inp.value.trim() : '';
+  // Extract host hint (strip port) if URL given
+  var hostHint = '';
+  if (hint) {
+    try {
+      var u = new URL(hint.startsWith('http') ? hint : 'http://' + hint);
+      hostHint = u.hostname;
+    } catch(e) { hostHint = hint; }
+  }
+  toast('🔍 Ищу LM Studio...');
+  try {
+    var r = await fetch('/lmstudio/detect' + (hostHint ? '?hint=' + encodeURIComponent(hostHint) : ''));
+    var d = await r.json();
+    if (d.url) {
+      if (inp) inp.value = d.url;
+      toast('✅ LM Studio найден: ' + d.url + (d.models&&d.models.length ? ' (' + d.models[0] + ')' : ''));
+    } else {
+      toast('⚠ LM Studio не найден. Введите URL вручную.');
+    }
+  } catch(e) { toast('⚠ ' + e.message); }
 }
 async function saveTgwuiUrl() {
   var url = ((document.getElementById('tgwui-url')||{}).value || '').trim();
@@ -3893,12 +3948,104 @@ async function retrain() {
 }
 
 // ── Retrained VM pane ────────────────────────────────────────────────────────
+
+// Populate AI connection status tiles in the VM control panel
+async function vmRefreshAiStatus() {
+  var ollamaEl  = document.getElementById('vai-ollama');
+  var lmsEl     = document.getElementById('vai-lmstudio');
+  var modelEl   = document.getElementById('vai-model');
+  var relayEl   = document.getElementById('vai-relay');
+  if (!ollamaEl) return;
+  try {
+    var r = await fetch('/health');
+    var d = await r.json();
+    var ol = d.ollama || {};
+    ollamaEl.textContent  = ol.status === 'ok'
+      ? '✅ Ollama ' + (ol.url || '').replace('http://', '')
+      : ('⚠ Ollama ' + (ol.error || 'недоступна'));
+    ollamaEl.style.color  = ol.status === 'ok' ? '#50fa7b' : '#ff5555';
+    var lms = d.lm_studio || {};
+    lmsEl.textContent = lms.status === 'ok'
+      ? '✅ LM Studio ' + (lms.url || '').replace('http://', '')
+      : (lms.status === 'not_configured' ? '➖ LM Studio (не настроен)' : '⚠ LM Studio недоступен');
+    lmsEl.style.color = lms.status === 'ok' ? '#50fa7b' : (lms.status === 'not_configured' ? '#888' : '#ff5555');
+    var relay = d.ollama_relay || {};
+    relayEl.textContent = relay.status === 'ok'
+      ? '✅ Relay :' + (relay.port || 11435)
+      : (relay.status === 'disabled' ? '➖ Relay выключен' : '⚠ Relay стартует...');
+    relayEl.style.color = relay.status === 'ok' ? '#50fa7b' : '#888';
+    modelEl.textContent = curModel ? ('🤖 ' + curModel) : '➖ Модель не выбрана';
+    modelEl.style.color = curModel ? '#f1fa8c' : '#888';
+  } catch(e) {
+    ollamaEl.textContent  = '⚠ Сервер недоступен';
+    ollamaEl.style.color  = '#ff5555';
+  }
+}
+
+// Detect LM Studio automatically
+async function vmDetectLmStudio() {
+  var btn = document.getElementById('vm-btn-detect-lms');
+  var res = document.getElementById('vm-lms-detect-result');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Ищу...'; }
+  if (res) res.textContent = '🔍 Сканирую порты LM Studio...';
+  try {
+    var r = await fetch('/lmstudio/detect');
+    var d = await r.json();
+    if (d.url) {
+      if (res) res.innerHTML = '✅ Найден LM Studio: <b>' + d.url + '</b> — модели: ' + (d.models || []).join(', ') + '<br>'
+        + '<button class="pb pb-s" style="margin-top:6px;padding:5px 10px" onclick="vmSaveLmsUrl(\'' + d.url + '\')">💾 Сохранить URL</button>';
+    } else {
+      if (res) res.textContent = '⚠ LM Studio не найден на стандартных портах (1234, 1235...). Введи URL вручную в ⚙ Настройки.';
+    }
+  } catch(e) {
+    if (res) res.textContent = '⚠ Ошибка поиска: ' + e.message;
+  }
+  if (btn) { btn.disabled = false; btn.textContent = '🔍 Найти LM Studio'; }
+}
+
+async function vmSaveLmsUrl(url) {
+  try {
+    var r = await fetch('/settings', { method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ lm_studio_url: url }) });
+    var d = await r.json();
+    if (d.ok) { toast('✅ LM Studio URL сохранён: ' + url); vmRefreshAiStatus(); loadModels(); }
+    else toast('⚠ ' + (d.error || 'Ошибка сохранения'));
+  } catch(e) { toast('⚠ ' + e.message); }
+}
+
+// VM pane code editor interactions
+function vmLoadToEditor() {
+  navigator.clipboard.readText().then(function(text) {
+    if (!text.trim()) { toast('Буфер обмена пуст'); return; }
+    if (editor) { editor.setValue(text); setView('both'); toast('✅ Код вставлен в редактор'); }
+  }).catch(function() {
+    toast('⚠ Нет доступа к буферу обмена — вставь через Ctrl+V в редакторе');
+    setView('both');
+  });
+}
+
+function vmCopyFromEditor() {
+  if (!editor) { toast('Редактор не загружен'); return; }
+  var code = editor.getValue();
+  if (!code.trim()) { toast('Редактор пуст'); return; }
+  navigator.clipboard.writeText(code)
+    .then(function() { toast('📋 Код скопирован (' + code.length + ' символов)'); })
+    .catch(function() { toast('⚠ Ошибка копирования'); });
+}
+
+function vmRunEditor() {
+  setView('both');
+  setTimeout(function() { if (typeof runCode === 'function') runCode(); }, 300);
+}
+
 async function checkVisorStatus() {
   var dot  = document.getElementById('vm-dot');
   var text = document.getElementById('vm-status-text');
   var hint = document.getElementById('vm-status-hint');
   var btn  = document.getElementById('vm-create-btn');
   if (!dot) return;
+  vmRefreshAiStatus();
   try {
     var r = await fetch('/ollama/models');
     var d = await r.json();
@@ -3907,18 +4054,18 @@ async function checkVisorStatus() {
     if (hasVisor) {
       dot.className = 'vm-dot ready';
       text.textContent = '✅ Переученная ВМ готова (' + VISOR_MODEL_NAME + ')';
-      hint.textContent = 'Выбери ' + VISOR_MODEL_NAME + ' в настройках (☰ → Модель) и общайся в чате (💬 Чат)';
-      btn.textContent  = '🔄 Пересоздать ' + VISOR_MODEL_NAME;
+      if (hint) hint.textContent = 'Выбери ' + VISOR_MODEL_NAME + ' в настройках (☰ → Модель) и общайся в чате (💬 Чат)';
+      if (btn) btn.textContent  = '🔄 Пересоздать ' + VISOR_MODEL_NAME;
     } else {
       dot.className = 'vm-dot';
       text.textContent = '⚠ ' + VISOR_MODEL_NAME + ' не создана';
-      hint.textContent = 'Нажми кнопку ниже чтобы создать переученную модель ' + VISOR_MODEL_NAME + ' (qwen3-vl:8b)';
-      btn.textContent  = '⚡ Создать переученную ВМ (' + VISOR_MODEL_NAME + ')';
+      if (hint) hint.textContent = 'Нажми кнопку ниже чтобы создать переученную модель ' + VISOR_MODEL_NAME + ' (qwen3-vl:8b)';
+      if (btn) btn.textContent  = '⚡ Создать переученную ВМ (' + VISOR_MODEL_NAME + ')';
     }
   } catch(e) {
     dot.className = 'vm-dot';
     text.textContent = '⚠ Ollama не запущена?';
-    hint.textContent = 'Запусти: ollama serve — потом обнови страницу или нажми кнопку повторно';
+    if (hint) hint.textContent = 'Запусти: ollama serve — потом обнови страницу или нажми кнопку повторно';
   }
 }
 

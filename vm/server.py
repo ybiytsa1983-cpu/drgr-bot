@@ -378,6 +378,21 @@ def _start_ollama_cors_relay() -> None:
     """Start a CORS-aware HTTP proxy for Ollama on _OLLAMA_RELAY_PORT."""
     if _OLLAMA_RELAY_PORT == 0:
         return  # disabled by user
+    # If OLLAMA_BASE itself uses the relay port (e.g. user set OLLAMA_HOST=...:11435
+    # and Ollama really is there), starting the relay on that port would either
+    # fail (port taken) or create an infinite forwarding loop.  Skip the relay.
+    try:
+        from urllib.parse import urlparse as _urlparse_relay
+        _relay_base_port = _urlparse_relay(OLLAMA_BASE).port
+        if _relay_base_port == _OLLAMA_RELAY_PORT:
+            print(
+                f"[Code VM] Ollama CORS relay disabled: OLLAMA_BASE ({OLLAMA_BASE}) "
+                f"already uses port {_OLLAMA_RELAY_PORT} — relay would loop.",
+                flush=True,
+            )
+            return
+    except Exception:  # pylint: disable=broad-except
+        pass
     import http.server as _hs
     import socketserver as _ss
     import urllib.request as _ur
@@ -3086,6 +3101,54 @@ def lmstudio_models():
         return jsonify({"models": models, "available": bool(models), "url": LM_STUDIO_BASE})
     except Exception as exc:  # pylint: disable=broad-except
         return jsonify({"models": [], "available": False, "url": LM_STUDIO_BASE, "error": str(exc)})
+
+
+@app.route("/lmstudio/detect", methods=["GET"])
+def lmstudio_detect():
+    """Scan common LM Studio ports/addresses and return the first reachable one.
+
+    Scans 127.0.0.1 and localhost on ports 1234, 1235, 11434, 8080, 8000.
+    If an extra host hint is provided via ?hint=<host>, that is probed first
+    (useful for LAN addresses like 172.22.208.1).
+    Returns {"url": "<base_url>", "models": [...]} or {"url": null}.
+    """
+    hint = request.args.get("hint", "").strip().rstrip("/")
+    candidates = []
+    if hint:
+        for port in (1234, 1235, 11434, 8080, 8000):
+            base = hint if hint.startswith("http") else f"http://{hint}"
+            # If hint already includes port, use as-is first
+            if ":" in hint.split("//")[-1]:
+                candidates.append(base)
+                break
+            candidates.append(f"{base}:{port}")
+    # Common local addresses
+    for host in ("127.0.0.1", "localhost"):
+        for port in (1234, 1235, 11434, 8080, 8000):
+            candidates.append(f"http://{host}:{port}")
+    seen: set = set()
+    for url in candidates:
+        if url in seen:
+            continue
+        seen.add(url)
+        if url == LM_STUDIO_BASE:
+            # Already configured — return current config without extra probe
+            try:
+                resp = _http.get(f"{url}/v1/models", timeout=2)
+                if resp.status_code == 200:
+                    models = [m["id"] for m in resp.json().get("data", [])]
+                    return jsonify({"url": url, "models": models})
+            except Exception:  # pylint: disable=broad-except
+                pass
+            continue
+        try:
+            resp = _http.get(f"{url}/v1/models", timeout=1)
+            if resp.status_code == 200:
+                models = [m["id"] for m in resp.json().get("data", [])]
+                return jsonify({"url": url, "models": models})
+        except Exception:  # pylint: disable=broad-except
+            continue
+    return jsonify({"url": None, "models": []})
 
 
 @app.route("/tgwui/models", methods=["GET"])
