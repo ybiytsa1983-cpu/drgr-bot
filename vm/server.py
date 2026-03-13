@@ -143,6 +143,9 @@ VISION_VM_URL = os.environ.get("VISION_VM_URL", "").rstrip("/")
 # Prefix used in model names to indicate the model lives on the Vision VM.
 _VISION_VM_PREFIX = "visionvm:"
 
+# Sources that produce poor screenshots (JS-heavy, login walls, etc.)
+_EXCLUDED_SCREENSHOT_SOURCES = frozenset({"reddit", "hackernews"})
+
 # CORS relay port — a lightweight HTTP server on this port proxies /api/*
 # requests to OLLAMA_BASE with permissive CORS headers so Chrome extensions
 # (sidepanel, content scripts) can call Ollama directly from the browser
@@ -7020,7 +7023,7 @@ def generate_auto_complete():
                     model = models_list[0].get("name", "")
         except Exception:  # pylint: disable=broad-except
             pass
-        if not model and LM_STUDIO_BASE:
+        if not model and LM_STUDIO_BASE and LM_STUDIO_BASE.strip():
             try:
                 lms_mr = _http.get(f"{LM_STUDIO_BASE}/v1/models", timeout=5)
                 if lms_mr.status_code == 200:
@@ -7029,7 +7032,7 @@ def generate_auto_complete():
                         model = f"{_LM_STUDIO_PREFIX}{lms_list[0]['id']}"
             except Exception:  # pylint: disable=broad-except
                 pass
-        if not model and TGWUI_BASE:
+        if not model and TGWUI_BASE and TGWUI_BASE.strip():
             try:
                 tw_mr = _http.get(f"{TGWUI_BASE}/v1/models", timeout=5)
                 if tw_mr.status_code == 200:
@@ -8578,7 +8581,7 @@ def web_research():
             _ss_sources = [
                 s for s in sources
                 if s.get("url", "").startswith("http")
-                and s.get("source", "") not in ("reddit", "hackernews")
+                and s.get("source", "") not in _EXCLUDED_SCREENSHOT_SOURCES
             ]
             max_ss = min(3, len(_ss_sources))
             for src in _ss_sources[:max_ss]:
