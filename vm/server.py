@@ -4058,6 +4058,7 @@ def webbuilder_generate():
         return jsonify({"ok": False, "error": "prompt обязателен"})
 
     # If external website builder service is configured, forward to it.
+    # On connection failure fall through to the local LLM fallback below.
     if WEBBUILDER_BASE:
         try:
             timeout = int(os.environ.get("OLLAMA_TIMEOUT", 300))
@@ -4068,10 +4069,8 @@ def webbuilder_generate():
             )
             resp.raise_for_status()
             return jsonify({"ok": True, "data": resp.json()})
-        except _http.exceptions.ConnectionError:
-            return jsonify({"ok": False, "error": f"Нет соединения с WebBuilder по адресу {WEBBUILDER_BASE}"})
-        except _http.exceptions.Timeout:
-            return jsonify({"ok": False, "error": "Таймаут — WebBuilder не отвечает"})
+        except (_http.exceptions.ConnectionError, _http.exceptions.Timeout):
+            pass  # External service unavailable — fall through to local LLM below
         except Exception as exc:  # pylint: disable=broad-except
             return jsonify({"ok": False, "error": str(exc)})
 
@@ -4199,6 +4198,7 @@ def videditor_project():
         return jsonify({"ok": False, "error": "description или script обязателен"})
 
     # If external video editor service is configured, forward to it.
+    # On connection failure fall through to the local LLM fallback below.
     if VIDEDITOR_BASE:
         try:
             timeout = int(os.environ.get("OLLAMA_TIMEOUT", 300))
@@ -4209,10 +4209,8 @@ def videditor_project():
             )
             resp.raise_for_status()
             return jsonify({"ok": True, "data": resp.json()})
-        except _http.exceptions.ConnectionError:
-            return jsonify({"ok": False, "error": f"Нет соединения с видеоредактором по адресу {VIDEDITOR_BASE}"})
-        except _http.exceptions.Timeout:
-            return jsonify({"ok": False, "error": "Таймаут — видеоредактор не отвечает"})
+        except (_http.exceptions.ConnectionError, _http.exceptions.Timeout):
+            pass  # External service unavailable — fall through to local LLM below
         except Exception as exc:  # pylint: disable=broad-except
             return jsonify({"ok": False, "error": str(exc)})
 
@@ -6324,7 +6322,10 @@ def patch_stream():
             if _real_model.startswith(_LM_STUDIO_PREFIX):
                 _m = _real_model[len(_LM_STUDIO_PREFIX):]
                 _base = _resolve_lms_url()  # auto-discover if not yet configured
-                _use_chat = bool(_base)
+                if not _base:
+                    yield 'data: {"error":"LM Studio URL не настроен — укажите URL в настройках (☰)"}\n\n'
+                    return
+                _use_chat = True
                 _timeout = _LMS_TIMEOUT
             elif _real_model.startswith(_TGWUI_PREFIX) and TGWUI_BASE:
                 _m = _real_model[len(_TGWUI_PREFIX):]
