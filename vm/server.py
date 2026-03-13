@@ -5251,7 +5251,7 @@ def patch_stream():
                     token = delta.get("content", "")
                     if token:
                         yield f"data: {json.dumps({'token': token})}\n\n"
-                _record_generation("patch", model, full_prompt)
+                _record_generation("patch", _m, full_prompt)
                 yield "data: [DONE]\n\n"
                 return
 
@@ -5283,7 +5283,7 @@ def patch_stream():
                 if token:
                     yield f"data: {json.dumps({'token': token})}\n\n"
                 if chunk.get("done"):
-                    _record_generation("patch", model, full_prompt)
+                    _record_generation("patch", _m, full_prompt)
                     yield "data: [DONE]\n\n"
                     return
         except _http.exceptions.Timeout:

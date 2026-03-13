@@ -1118,10 +1118,12 @@ function connectDmSSE() {
     if (_dmTarget === partner) {
       addDmMsg(data);
     } else {
-      // Increment unread
-      _dmUnread[data.from] = (_dmUnread[data.from] || 0) + 1;
-      // Refresh users list if open
-      if (_usersPanelOpen) refreshUsers();
+      // Only increment unread for incoming messages (not own echoed sends)
+      if (data.from !== _nick) {
+        _dmUnread[data.from] = (_dmUnread[data.from] || 0) + 1;
+        // Refresh users list if open
+        if (_usersPanelOpen) refreshUsers();
+      }
     }
   };
   _dmEs.onerror = function() {

@@ -642,7 +642,7 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
     <button class="tv-btn" id="tv-3dgen" onclick="setView('3dgen')" title="3D генерация из текста/картинки (TripoSR/Hunyuan3D)" style="border-color:#bd93f9;color:#bd93f9">🧊 3D Gen</button>
     <button class="tv-btn" id="tv-webbuilder" onclick="setView('webbuilder')" title="AI-генератор сайтов (build-a-site / AI-Website-Builder)" style="border-color:#8be9fd;color:#8be9fd">🌐 Сайт</button>
     <button class="tv-btn" id="tv-videditor" onclick="setView('videditor')" title="AI видеоредактор (omniclip / twick)" style="border-color:#ff79c6;color:#ff79c6">🎬 Видео</button>
-    <button class="tv-btn" onclick="(function(){var w=window.open('/chatroom/page','drgr_chatroom','width=520,height=750');if(w){w.focus();}else{location.href='/chatroom/page';}})()" title="Открыть онлайн-чат пользователей в отдельном окне">🌐 Чат-зал</button>
+    <button class="tv-btn" onclick="openChatroom()" title="Открыть онлайн-чат пользователей в отдельном окне">🌐 Чат-зал</button>
     <button class="tv-btn" onclick="copyPs('ps-update-cmd');openPanel();setTimeout(function(){var el=document.getElementById('ps-update');if(el)el.scrollIntoView({behavior:'smooth'});},300);" title="Скопировать команду обновления в буфер обмена и открыть раздел обновлений" style="border-color:#e8a020;color:#e8a020">⬆ Обновить</button>
     <span class="tb-sep"></span>
     <span id="model-badge">нет модели</span>
@@ -2582,6 +2582,12 @@ async function doWebSearch() {
   }
 }
 
+
+// ── Chat room window ─────────────────────────────────────────────────────────
+function openChatroom() {
+  var w = window.open('/chatroom/page', 'drgr_chatroom', 'width=520,height=750');
+  if (w) { w.focus(); } else { location.href = '/chatroom/page'; }
+}
 
 // ── Debug mode ────────────────────────────────────────────────────────────────
 var _debugMode = false;
