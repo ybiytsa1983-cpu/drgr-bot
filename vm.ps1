@@ -399,8 +399,12 @@ Write-Host ("  |  {0,-50}|" -f "This device:") -ForegroundColor Cyan
 Write-Host ("  |    {0,-48}|" -f "${scheme}://localhost:$Port/") -ForegroundColor Cyan
 Write-Host ("  |{0}|" -f ("-" * 52)) -ForegroundColor DarkGreen
 if ($localIP) {
-    $lanStatus = if ($lanReachable) { "[OK]" } else { "[недоступен — брандмауэр?]" }
-    $lanColor  = if ($lanReachable) { "Green" } else { "Yellow" }
+    $lanStatus = if ($lanReachable -and $fwCreated) { "[OK]" } `
+                 elseif ($lanReachable) { "[брандмауэр — см. ниже]" } `
+                 else { "[недоступен — брандмауэр?]" }
+    $lanColor  = if ($lanReachable -and $fwCreated) { "Green" } `
+                 elseif ($lanReachable) { "Yellow" } `
+                 else { "Red" }
     Write-Host ("  |  {0,-50}|" -f "Other devices on the same network:") -ForegroundColor Yellow
     Write-Host ("  |    {0,-48}|" -f "${scheme}://${localIP}:${Port}/  $lanStatus") -ForegroundColor $lanColor
     if ($useHttps) {
@@ -427,6 +431,14 @@ Write-Host ("  |  {0,-50}|" -f "Server runs in the background.") -ForegroundColo
 Write-Host ("  |  {0,-50}|" -f "This window can be closed safely.") -ForegroundColor White
 Write-Host ("  |  {0,-50}|" -f "To stop: double-click stop.bat") -ForegroundColor DarkGray
 Write-Host ("  |{0}|" -f ("-" * 52)) -ForegroundColor DarkGreen
+if ($localIP -and -not $fwCreated) {
+    Write-Host ("  |  {0,-50}|" -f "⚠ Другие устройства не могут подключиться?") -ForegroundColor Yellow
+    Write-Host ("  |  {0,-50}|" -f "  Запусти в PowerShell от имени Администратора:") -ForegroundColor Yellow
+    Write-Host ("  |    {0,-48}|" -f "netsh advfirewall firewall add rule") -ForegroundColor Cyan
+    Write-Host ("  |    {0,-48}|" -f "  name=`"Code VM`" dir=in action=allow") -ForegroundColor Cyan
+    Write-Host ("  |    {0,-48}|" -f "  protocol=TCP localport=$Port") -ForegroundColor Cyan
+    Write-Host ("  |{0}|" -f ("-" * 52)) -ForegroundColor DarkGreen
+}
 Write-Host ("  |  {0,-50}|" -f "To restart from PowerShell:") -ForegroundColor White
 Write-Host ("  |    {0,-48}|" -f "powershell -ExecutionPolicy Bypass -File") -ForegroundColor Cyan
 Write-Host ("  |    {0,-48}|" -f "  `"$repoDir\start.ps1`"") -ForegroundColor Cyan

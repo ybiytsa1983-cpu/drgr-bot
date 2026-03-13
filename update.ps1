@@ -31,14 +31,42 @@ if (-not $repoDir) {
         "$env:USERPROFILE\Documents\drgr-bot",
         "$env:USERPROFILE\Desktop\drgr-bot",
         "$env:USERPROFILE\Downloads\drgr-bot",
+        "$env:USERPROFILE\projects\drgr-bot",
+        "$env:USERPROFILE\Projects\drgr-bot",
+        "$env:USERPROFILE\code\drgr-bot",
+        "$env:USERPROFILE\Code\drgr-bot",
+        "$env:USERPROFILE\repos\drgr-bot",
+        "$env:USERPROFILE\Repos\drgr-bot",
         "C:\drgr-bot",
-        "D:\drgr-bot"
+        "C:\projects\drgr-bot",
+        "C:\Projects\drgr-bot",
+        "C:\code\drgr-bot",
+        "C:\Code\drgr-bot",
+        "C:\Users\$env:USERNAME\drgr-bot",
+        "D:\drgr-bot",
+        "D:\projects\drgr-bot",
+        "D:\Projects\drgr-bot",
+        "D:\code\drgr-bot",
+        "D:\Code\drgr-bot"
     )
     foreach ($d in $candidates) {
         if (Test-Path (Join-Path $d ".git")) {
             $repoDir = $d
             break
         }
+    }
+}
+
+# 3. Disk scan fallback (C: and D:) — limited depth to avoid slowness
+if (-not $repoDir) {
+    Write-Host "  Поиск репозитория на дисках C: и D: ..." -ForegroundColor Cyan
+    foreach ($root in @('C:\', 'D:\')) {
+        Get-ChildItem $root -Filter 'drgr-bot' -Directory -Recurse -Depth 5 -ErrorAction SilentlyContinue | ForEach-Object {
+            if (-not $repoDir -and (Test-Path (Join-Path $_.FullName '.git'))) {
+                $repoDir = $_.FullName
+            }
+        }
+        if ($repoDir) { break }
     }
 }
 
@@ -128,7 +156,7 @@ Push-Location $repoDir
 try {
     Write-Host ""
     Write-Host "Получаю обновления..." -ForegroundColor Cyan
-    $output = & git pull 2>&1
+    $output = & git pull origin $currentBranch 2>&1
     Write-Host $output
     if ($LASTEXITCODE -ne 0) {
         Write-Host ""
