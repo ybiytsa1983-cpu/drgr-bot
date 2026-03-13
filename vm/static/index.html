@@ -762,6 +762,7 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
     <button class="tv-btn" id="tv-webbuilder" onclick="setView('webbuilder')" title="AI-генератор сайтов (build-a-site / AI-Website-Builder)" style="border-color:#8be9fd;color:#8be9fd">🌐 Сайт</button>
     <button class="tv-btn" id="tv-videditor" onclick="setView('videditor')" title="AI видеоредактор (omniclip / twick)" style="border-color:#ff79c6;color:#ff79c6">🎬 Видео</button>
     <button class="tv-btn" id="tv-imagegen" onclick="setView('imagegen')" title="Генерация изображений (Stable Diffusion / ComfyUI)" style="border-color:#ffb86c;color:#ffb86c">🎨 Арт</button>
+    <button class="tv-btn" id="tv-android" onclick="setView('android')" title="Android эмулятор и генерация мобильных приложений" style="border-color:#a4c639;color:#a4c639">📱 Android</button>
     <button class="tv-btn" onclick="openChatroom()" title="Открыть онлайн-чат пользователей в отдельном окне">🌐 Чат-зал</button>
     <button class="tv-btn" onclick="copyPs('ps-update-cmd');openPanel();setTimeout(function(){var el=document.getElementById('ps-update');if(el)el.scrollIntoView({behavior:'smooth'});},300);" title="Скопировать команду обновления в буфер обмена и открыть раздел обновлений" style="border-color:#e8a020;color:#e8a020">⬆ Обновить</button>
     <span class="tb-sep"></span>
@@ -1002,6 +1003,7 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
           <button class="pb" onclick="setView('webbuilder')" title="Генератор сайтов" style="padding:9px;font-size:12px;background:rgba(139,233,253,.1);border-color:#8be9fd;color:#8be9fd">🌐 Генератор сайтов</button>
           <button class="pb" onclick="setView('videditor')" title="Видеоредактор" style="padding:9px;font-size:12px;background:rgba(255,121,198,.1);border-color:#ff79c6;color:#ff79c6">🎬 Видеоредактор</button>
           <button class="pb" onclick="setView('imagegen')" title="Генерация изображений (SD/ComfyUI)" style="padding:9px;font-size:12px;background:rgba(255,184,108,.1);border-color:#ffb86c;color:#ffb86c">🎨 Арт / SD</button>
+          <button class="pb" onclick="setView('android')" title="Android эмулятор + генерация мобильных приложений" style="padding:9px;font-size:12px;background:rgba(164,198,57,.1);border-color:#a4c639;color:#a4c639">📱 Android</button>
           <button class="pb" onclick="setView('goose')" title="Goose AI агент" style="padding:9px;font-size:12px;background:rgba(80,250,123,.1);border-color:#50fa7b;color:#50fa7b">🐦 Goose Агент</button>
           <button class="pb" onclick="openChatroom()" title="Онлайн чат-зал" style="padding:9px;font-size:12px;background:rgba(241,250,140,.1);border-color:#f1fa8c;color:#f1fa8c">🌐 Чат-зал</button>
           <button class="pb" onclick="setView('colab')" title="Google Colab / Remote VM" style="padding:9px;font-size:12px;background:rgba(255,184,108,.1);border-color:#ffb86c;color:#ffb86c">☁ Colab / Remote VM</button>
@@ -1599,8 +1601,126 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
   </div>
 </div>
 
-<script>
-// ── Globals ─────────────────────────────────────────────────────────────────
+<!-- ═══════════════════════════════════════════════════════════════════════
+     Android Emulator + Mobile Code Generation pane
+     ════════════════════════════════════════════════════════════════════════ -->
+<div id="android-pane" style="display:none;flex:1;flex-direction:column;overflow:hidden;min-height:0;background:var(--bg2)">
+  <div style="padding:16px;overflow-y:auto;flex:1">
+    <h2 style="margin:0 0 4px;font-size:16px">📱 Android — Мобильные приложения</h2>
+    <p style="margin:0 0 14px;font-size:12px;color:var(--text2)">
+      Генерация кода для мобильных приложений (Kotlin, React Native, Flutter) + загрузка APK файлов.<br>
+      Предпросмотр приложения — через <b>Appetize.io</b> (онлайн-эмулятор Android в браузере).
+    </p>
+
+    <div style="display:flex;gap:16px;flex-wrap:wrap;max-width:1100px">
+
+      <!-- ── Left column: code generation ─────────────────────────────── -->
+      <div style="flex:1;min-width:300px;display:flex;flex-direction:column;gap:10px">
+        <div style="font-size:13px;font-weight:700;color:var(--accent);border-bottom:1px solid var(--border);padding-bottom:6px;margin-bottom:2px">
+          🤖 Генерация кода приложения
+        </div>
+
+        <div>
+          <div class="pl">📱 Платформа</div>
+          <select id="and-platform" style="width:100%;padding:6px;border-radius:6px;border:1px solid var(--border);background:var(--bg4);color:var(--text1)" onchange="androidPlatformChanged()">
+            <option value="kotlin">Android (Kotlin + Gradle)</option>
+            <option value="react-native">React Native (Expo)</option>
+            <option value="flutter">Flutter (Dart)</option>
+          </select>
+        </div>
+
+        <div>
+          <div class="pl">✏️ Описание приложения</div>
+          <textarea id="and-prompt" rows="5" placeholder="Например: Навигатор с GPS и картой OpenStreetMap, пошаговая навигация, офлайн-режим, тёмная тема" style="width:100%;resize:vertical"></textarea>
+        </div>
+
+        <div id="and-model-row">
+          <div class="pl">🧠 Модель ИИ</div>
+          <select id="and-model" style="width:100%;padding:6px;border-radius:6px;border:1px solid var(--border);background:var(--bg4);color:var(--text1)">
+            <option value="">— выберите модель —</option>
+          </select>
+        </div>
+
+        <div style="display:flex;gap:8px">
+          <button class="pb pb-p" onclick="androidGenerate()" id="and-btn" style="flex:2">🤖 Сгенерировать код</button>
+          <button class="pb pb-s" onclick="androidCopyCode()" id="and-copy-btn" style="flex:1;display:none">📋 Скопировать</button>
+        </div>
+
+        <div id="and-status" style="font-size:12px;color:var(--text2);min-height:16px"></div>
+
+        <!-- Generated files list -->
+        <div id="and-files-wrap" style="display:none">
+          <div style="font-size:11px;font-weight:700;color:var(--accent);margin-bottom:4px">📁 Сгенерированные файлы</div>
+          <div id="and-files-list" style="display:flex;flex-direction:column;gap:4px;max-height:200px;overflow-y:auto"></div>
+        </div>
+
+        <hr style="border-color:var(--border);margin:4px 0">
+
+        <!-- APK management -->
+        <div style="font-size:13px;font-weight:700;color:var(--accent);margin-bottom:4px">📦 APK файлы</div>
+        <p style="font-size:11px;color:var(--text2);margin:0 0 8px">
+          Загрузи готовый APK — он будет доступен для скачивания из Telegram-чата.<br>
+          Команда для сборки: <code style="background:var(--bg4);padding:1px 4px;border-radius:3px">./gradlew assembleDebug</code>
+        </p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="pb pb-p" onclick="androidUploadApk()" style="flex:1;min-width:120px">📤 Загрузить APK</button>
+          <button class="pb pb-s" onclick="androidRefreshApks()" style="flex:1;min-width:120px">🔄 Обновить список</button>
+        </div>
+        <div id="and-apk-list" style="display:flex;flex-direction:column;gap:5px;margin-top:8px;max-height:180px;overflow-y:auto"></div>
+        <input type="file" id="and-apk-input" accept=".apk" style="display:none" onchange="androidDoUploadApk(this)">
+
+        <!-- ADB / emulator status -->
+        <hr style="border-color:var(--border);margin:4px 0">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:13px;font-weight:700;color:var(--accent)">🔌 ADB / Эмулятор</span>
+          <button class="pb pb-s" onclick="androidCheckAdb()" style="padding:3px 10px;font-size:11px">Проверить</button>
+        </div>
+        <div id="and-adb-status" style="font-size:11px;color:var(--text2);margin-top:4px">Нажмите «Проверить» для диагностики</div>
+      </div>
+
+      <!-- ── Right column: emulator preview ───────────────────────────── -->
+      <div style="flex:1;min-width:320px;display:flex;flex-direction:column;gap:10px">
+        <div style="font-size:13px;font-weight:700;color:var(--accent);border-bottom:1px solid var(--border);padding-bottom:6px;margin-bottom:2px">
+          📺 Предпросмотр (Appetize.io)
+        </div>
+        <p style="font-size:11px;color:var(--text2);margin:0 0 8px">
+          Бесплатный онлайн-эмулятор Android.
+          Для запуска своего APK — загрузи на <a href="https://appetize.io/upload" target="_blank" style="color:var(--accent)">appetize.io/upload</a>
+          и вставь ключ сессии ниже.
+        </p>
+        <div style="display:flex;gap:6px">
+          <input id="and-appetize-key" placeholder="Ключ сессии Appetize.io (необязательно)" style="flex:1;padding:6px;border-radius:6px;border:1px solid var(--border);background:var(--bg4);color:var(--text1);font-size:12px">
+          <button class="pb pb-p" onclick="androidLoadEmulator()" style="padding:6px 12px">▶ Запустить</button>
+        </div>
+        <!-- Emulator iframe -->
+        <div id="and-emu-wrap" style="position:relative;width:100%;aspect-ratio:9/16;max-height:580px;border:2px solid var(--border);border-radius:12px;overflow:hidden;background:#111">
+          <div id="and-emu-placeholder" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:var(--text2);font-size:13px">
+            <div style="font-size:48px">📱</div>
+            <div style="text-align:center;max-width:220px">
+              Нажмите «▶ Запустить» для открытия демо-эмулятора<br>
+              <span style="font-size:11px;opacity:.7">(онлайн через Appetize.io)</span>
+            </div>
+            <button class="pb pb-p" onclick="androidLoadDefaultEmulator()" style="padding:8px 16px;font-size:12px">📱 Открыть демо Android</button>
+          </div>
+          <iframe id="and-emu-frame" style="display:none;width:100%;height:100%;border:none" allow="autoplay; fullscreen" sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>
+        </div>
+        <div style="font-size:10px;color:var(--text2);text-align:center">
+          Полноэкранный эмулятор: <a href="https://appetize.io/demo" target="_blank" style="color:var(--accent)">appetize.io/demo</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Generated code display -->
+    <div id="and-code-wrap" style="display:none;margin-top:16px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <span style="font-size:13px;font-weight:700;color:var(--accent)">💻 Сгенерированный код</span>
+        <button class="pb pb-s" onclick="androidLoadToEditor()" style="padding:3px 10px;font-size:11px">📝 В редактор</button>
+        <button class="pb pb-s" onclick="androidSendToChat()" style="padding:3px 10px;font-size:11px">💬 В чат</button>
+      </div>
+      <pre id="and-code-output" style="background:var(--bg4);border:1px solid var(--border);border-radius:8px;padding:12px;max-height:400px;overflow:auto;font-size:11px;white-space:pre-wrap;word-break:break-word;margin:0"></pre>
+    </div>
+  </div>
+</div>
 var editor = null;
 var curModel = '';
 var genBusy = false;
@@ -1672,10 +1792,11 @@ function setView(v) {
   var wbp  = document.getElementById('webbuilder-pane');
   var vep  = document.getElementById('videditor-pane');
   var igp  = document.getElementById('imagegen-pane');
+  var andp = document.getElementById('android-pane');
   var mn = document.getElementById('main');
   var appEl = document.getElementById('app') || document.body;
   appEl.classList.remove('chat-code-mode');
-  ['both','editor','preview','chat','chat-code','vm','gltf','research','colab','goose','3dgen','webbuilder','videditor','imagegen'].forEach(function(x){
+  ['both','editor','preview','chat','chat-code','vm','gltf','research','colab','goose','3dgen','webbuilder','videditor','imagegen','android'].forEach(function(x){
     var el = document.getElementById('tv-'+x);
     if (el) el.classList.toggle('on', x===v);
   });
@@ -1690,7 +1811,8 @@ function setView(v) {
   var isWebBuilder = (v === 'webbuilder');
   var isVidEditor  = (v === 'videditor');
   var isImageGen   = (v === 'imagegen');
-  var isSpecial  = isChat || isVM || isGLTF || isResearch || isColab || isGoose || is3DGen || isWebBuilder || isVidEditor || isImageGen;
+  var isAndroid    = (v === 'android');
+  var isSpecial  = isChat || isVM || isGLTF || isResearch || isColab || isGoose || is3DGen || isWebBuilder || isVidEditor || isImageGen || isAndroid;
   cp.style.display  = (isChat || isChatCode) ? 'flex' : 'none';
   vmp.style.display = isVM       ? 'flex' : 'none';
   gp.style.display  = isGLTF    ? 'flex' : 'none';
@@ -1701,6 +1823,7 @@ function setView(v) {
   if (wbp)  wbp.style.display  = isWebBuilder? 'flex' : 'none';
   if (vep)  vep.style.display  = isVidEditor ? 'flex' : 'none';
   if (igp)  igp.style.display  = isImageGen  ? 'flex' : 'none';
+  if (andp) andp.style.display = isAndroid   ? 'flex' : 'none';
   pb.style.display  = (isSpecial || isChatCode) ? 'none' : '';
   mn.style.display  = isSpecial ? 'none' : 'flex';
   if (v === 'both')     { ep.style.display='flex'; rh.style.display='block'; vp.style.display='flex'; }
@@ -1727,6 +1850,7 @@ function setView(v) {
   }
   if (isColab) colabInit();
   if (isImageGen) imagegenRefreshStatus();
+  if (isAndroid) androidInit();
   _updateMobileNav(v);
 }
 
@@ -3990,6 +4114,271 @@ function imagegenCopyPrompt() {
   navigator.clipboard.writeText(_igLastPrompt)
     .then(function() { toast('📋 Промпт скопирован'); })
     .catch(function() { toast('⚠ Ошибка копирования'); });
+}
+
+// ── Android / Mobile pane ────────────────────────────────────────────────────
+var _androidCode = '';
+var _androidBusy = false;
+
+function androidInit() {
+  // Populate model selector with current models
+  var sel = document.getElementById('and-model');
+  var mainSel = document.getElementById('model-select') || document.getElementById('model');
+  if (sel && mainSel && sel.options.length <= 1) {
+    Array.from(mainSel.options).forEach(function(o) {
+      if (o.value) {
+        var opt = document.createElement('option');
+        opt.value = o.value; opt.text = o.text;
+        sel.appendChild(opt);
+      }
+    });
+    // Select the current model
+    if (mainSel.value && sel.querySelector('option[value="' + mainSel.value + '"]')) {
+      sel.value = mainSel.value;
+    }
+  }
+  androidRefreshApks();
+}
+
+function androidPlatformChanged() {
+  var p = document.getElementById('and-platform').value;
+  var ph = {
+    'kotlin': 'Например: Навигатор с GPS и картой OpenStreetMap, пошаговая навигация, тёмная тема',
+    'react-native': 'Например: Мессенджер с авторизацией, чатом в реальном времени и push-уведомлениями',
+    'flutter': 'Например: Менеджер задач с синхронизацией в облаке, тёмная тема, анимации',
+  };
+  var ta = document.getElementById('and-prompt');
+  if (ta) ta.placeholder = ph[p] || '';
+}
+
+async function androidGenerate() {
+  if (_androidBusy) return;
+  var prompt   = (document.getElementById('and-prompt').value || '').trim();
+  var platform = document.getElementById('and-platform').value;
+  var model    = document.getElementById('and-model').value;
+  var statusEl = document.getElementById('and-status');
+
+  if (!prompt)   { toast('Введите описание приложения'); return; }
+  if (!model)    { toast('Выберите модель ИИ'); return; }
+
+  _androidBusy = true;
+  var btn = document.getElementById('and-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Генерирую...'; }
+  if (statusEl) statusEl.textContent = '⏳ Генерирую код ' + platform + ' приложения...';
+
+  try {
+    var resp = await fetch('/android/generate', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({prompt: prompt, platform: platform, model: model}),
+    });
+    var data = await resp.json();
+    if (data.error) {
+      if (statusEl) statusEl.textContent = '❌ ' + data.error;
+      toast('Ошибка: ' + data.error);
+    } else {
+      _androidCode = data.code || '';
+      if (statusEl) statusEl.textContent = '✅ Код сгенерирован! Файлов: ' + Object.keys(data.files || {}).length;
+      // Show code output
+      var codeWrap = document.getElementById('and-code-wrap');
+      var codeOut  = document.getElementById('and-code-output');
+      if (codeOut) codeOut.textContent = _androidCode;
+      if (codeWrap) codeWrap.style.display = 'block';
+      // Show files list
+      var filesWrap = document.getElementById('and-files-wrap');
+      var filesList = document.getElementById('and-files-list');
+      if (filesWrap && filesList && data.files && Object.keys(data.files).length) {
+        filesList.innerHTML = '';
+        Object.keys(data.files).forEach(function(path) {
+          var d = document.createElement('div');
+          d.style.cssText = 'display:flex;align-items:center;gap:6px;background:var(--bg4);border:1px solid var(--border);border-radius:5px;padding:4px 8px;font-size:11px';
+          var nameSpan = document.createElement('span');
+          nameSpan.style.cssText = 'flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+          nameSpan.title = path;
+          nameSpan.textContent = '📄 ' + path;
+          var editBtn = document.createElement('button');
+          editBtn.style.cssText = 'border:none;background:var(--accent);color:#000;border-radius:3px;padding:2px 6px;cursor:pointer;font-size:10px';
+          editBtn.textContent = '📝';
+          editBtn.dataset.filePath = path;
+          editBtn.addEventListener('click', function() { androidOpenFile(this.dataset.filePath); });
+          d.appendChild(nameSpan);
+          d.appendChild(editBtn);
+          filesList.appendChild(d);
+        });
+        filesWrap.style.display = 'block';
+        window._androidFiles = data.files;
+      }
+      var copyBtn = document.getElementById('and-copy-btn');
+      if (copyBtn) copyBtn.style.display = '';
+      toast('✅ Код сгенерирован!');
+    }
+  } catch(e) {
+    if (statusEl) statusEl.textContent = '❌ Ошибка: ' + e.message;
+    toast('Ошибка: ' + e.message);
+  } finally {
+    _androidBusy = false;
+    if (btn) { btn.disabled = false; btn.textContent = '🤖 Сгенерировать код'; }
+  }
+}
+
+function androidOpenFile(path) {
+  var files = window._androidFiles || {};
+  var code  = files[path] || '';
+  if (!code) return;
+  if (editor) { editor.setValue(code); setView('both'); toast('📝 ' + path); }
+}
+
+function androidCopyCode() {
+  if (!_androidCode) { toast('Нет кода'); return; }
+  navigator.clipboard.writeText(_androidCode)
+    .then(function() { toast('📋 Код скопирован'); })
+    .catch(function() { toast('⚠ Ошибка копирования'); });
+}
+
+function androidLoadToEditor() {
+  if (!_androidCode) { toast('Нет кода'); return; }
+  if (editor) { editor.setValue(_androidCode); setView('both'); toast('📝 Код в редакторе'); }
+}
+
+function androidSendToChat() {
+  if (!_androidCode) { toast('Нет кода'); return; }
+  var ci = document.getElementById('chat-input');
+  if (ci) { ci.value = '```\n' + _androidCode.slice(0, 3000) + '\n```\nПроверь этот код'; }
+  setView('chat');
+}
+
+function androidUploadApk() {
+  document.getElementById('and-apk-input').click();
+}
+
+async function androidDoUploadApk(input) {
+  var file = input.files[0];
+  if (!file) return;
+  var form = new FormData();
+  form.append('file', file);
+  var statusEl = document.getElementById('and-apk-list');
+  if (statusEl) {
+    var li = document.createElement('div');
+    li.textContent = '⏳ Загружаю ' + file.name + '...';
+    statusEl.insertBefore(li, statusEl.firstChild);
+  }
+  try {
+    var resp = await fetch('/android/apk/upload', {method:'POST', body: form});
+    var data = await resp.json();
+    if (data.url) {
+      toast('✅ APK загружен: ' + data.name);
+      androidRefreshApks();
+    } else {
+      toast('❌ Ошибка: ' + (data.error||'unknown'));
+    }
+  } catch(e) {
+    toast('❌ Ошибка загрузки: ' + e.message);
+  }
+  input.value = '';
+}
+
+async function androidRefreshApks() {
+  var listEl = document.getElementById('and-apk-list');
+  if (!listEl) return;
+  try {
+    var resp = await fetch('/android/apk/list');
+    var data = await resp.json();
+    listEl.innerHTML = '';
+    if (!data.apks || !data.apks.length) {
+      listEl.innerHTML = '<div style="font-size:11px;color:var(--text2)">APK файлов нет</div>';
+      return;
+    }
+    data.apks.forEach(function(apk) {
+      var sz = apk.size > 1024*1024 ? (apk.size/1024/1024).toFixed(1) + ' МБ' : (apk.size/1024).toFixed(0) + ' КБ';
+      var row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:8px;background:var(--bg4);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:12px';
+      var nameSpan = document.createElement('span');
+      nameSpan.style.flex = '1';
+      nameSpan.textContent = '📦 ' + apk.name + ' (' + sz + ')';
+      var dlLink = document.createElement('a');
+      dlLink.href = apk.url;
+      dlLink.download = '';
+      dlLink.className = 'pb pb-p';
+      dlLink.style.cssText = 'padding:3px 10px;font-size:11px;text-decoration:none';
+      dlLink.textContent = '⬇ Скачать';
+      var tgBtn = document.createElement('button');
+      tgBtn.className = 'pb pb-s';
+      tgBtn.style.cssText = 'padding:3px 10px;font-size:11px';
+      tgBtn.title = 'Отправить APK в Telegram-чат';
+      tgBtn.textContent = '📤 TG';
+      tgBtn.dataset.apkName = apk.name;
+      tgBtn.addEventListener('click', function() { androidSendApkToTg(this.dataset.apkName); });
+      row.appendChild(nameSpan);
+      row.appendChild(dlLink);
+      row.appendChild(tgBtn);
+      listEl.appendChild(row);
+    });
+  } catch(e) {
+    listEl.innerHTML = '<div style="font-size:11px;color:var(--text2)">Ошибка: ' + e.message + '</div>';
+  }
+}
+
+async function androidCheckAdb() {
+  var statusEl = document.getElementById('and-adb-status');
+  if (statusEl) statusEl.textContent = '⏳ Проверяю ADB...';
+  try {
+    var resp = await fetch('/android/emulator/status');
+    var data = await resp.json();
+    if (data.adb_available) {
+      var devs = data.devices.length;
+      statusEl.textContent = devs > 0
+        ? '✅ ADB доступен. Устройств: ' + devs + '\n' + data.devices.join('\n')
+        : '⚠ ADB найден, но устройства не подключены (запусти эмулятор)';
+    } else {
+      statusEl.textContent = '❌ ADB не найден. ' + (data.error || 'Установи Android SDK.');
+    }
+  } catch(e) {
+    if (statusEl) statusEl.textContent = '❌ Ошибка: ' + e.message;
+  }
+}
+
+function androidLoadEmulator() {
+  var key = (document.getElementById('and-appetize-key').value || '').trim();
+  var url;
+  if (key) {
+    url = 'https://appetize.io/embed/' + key + '?device=pixel7&osVersion=13&scale=auto&autoplay=true&orientation=portrait&deviceColor=black';
+  } else {
+    androidLoadDefaultEmulator();
+    return;
+  }
+  var frame = document.getElementById('and-emu-frame');
+  var ph    = document.getElementById('and-emu-placeholder');
+  if (frame) { frame.src = url; frame.style.display = 'block'; }
+  if (ph) ph.style.display = 'none';
+}
+
+function androidLoadDefaultEmulator() {
+  // Load Appetize.io demo (built-in demo app)
+  var url = 'https://appetize.io/demo?device=pixel7&osVersion=13&scale=auto&autoplay=true&orientation=portrait&deviceColor=black';
+  var frame = document.getElementById('and-emu-frame');
+  var ph    = document.getElementById('and-emu-placeholder');
+  if (frame) { frame.src = url; frame.style.display = 'block'; }
+  if (ph) ph.style.display = 'none';
+  toast('📱 Открываю Android эмулятор...');
+}
+
+async function androidSendApkToTg(name) {
+  toast('📤 Отправляю ' + name + ' в Telegram...');
+  try {
+    var resp = await fetch('/android/apk/send', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({name: name}),
+    });
+    var data = await resp.json();
+    if (data.ok) {
+      toast('✅ APK отправлен в Telegram-чат!');
+    } else {
+      toast('❌ Ошибка: ' + (data.error || 'unknown'));
+    }
+  } catch(e) {
+    toast('❌ Ошибка отправки: ' + e.message);
+  }
 }
 async function checkRemoteVm() {
   var statusEl = document.getElementById('rvm-status');
@@ -7048,6 +7437,7 @@ function veOpenInEditor() {
   <button class="mnav-more-btn" onclick="setView('chat-code');closeMobileMore()"><span class="mn-icon">💬</span>Чат+Код</button>
   <button class="mnav-more-btn" onclick="setView('research');closeMobileMore()"><span class="mn-icon">🔍</span>Поиск</button>
   <button class="mnav-more-btn" onclick="setView('imagegen');closeMobileMore()"><span class="mn-icon">🎨</span>Арт</button>
+  <button class="mnav-more-btn" onclick="setView('android');closeMobileMore()"><span class="mn-icon">📱</span>Android</button>
   <button class="mnav-more-btn" onclick="setView('colab');closeMobileMore()"><span class="mn-icon">🌐</span>Colab</button>
   <button class="mnav-more-btn" onclick="setView('3dgen');closeMobileMore()"><span class="mn-icon">🧊</span>3D</button>
   <button class="mnav-more-btn" onclick="setView('webbuilder');closeMobileMore()"><span class="mn-icon">🌐</span>Сайт</button>

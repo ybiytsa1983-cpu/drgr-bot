@@ -911,6 +911,74 @@ def _js_code_starts_with_bare_slash(code: str) -> str:
     return first_line
 
 
+# Words that strongly suggest the content is a human-readable prose description
+# rather than JavaScript / TypeScript source code.
+_PROSE_START_WORDS = frozenset({
+    "the", "this", "a", "an", "it", "its", "is", "are", "was", "were",
+    "i", "we", "you", "he", "she", "they",
+    "note", "description", "overview", "summary", "introduction",
+    "here", "below", "above",
+    # Russian
+    "это", "этот", "данный", "данная", "модель", "система",
+    "программа", "приложение", "файл", "скрипт", "код",
+    "добавьте", "создайте", "напишите", "реализуйте",
+})
+
+_PROSE_SENTENCE_RE = re.compile(
+    r"^[A-ZА-ЯЁ][a-zA-Zа-яА-ЯёЁ\s,\.\!\?\-\–\—\«\»\"\']{40,}$",
+    re.MULTILINE,
+)
+
+
+def _is_prose_text(code: str) -> bool:
+    """Return True when *code* looks like plain prose text rather than
+    executable JavaScript / TypeScript.
+
+    Heuristics (all must pass — we want low false-positive rate):
+    1. First non-empty word (lowercased) is in the known prose-starter list, OR
+       the first non-empty line looks like a natural-language sentence.
+    2. The snippet has no common JS keywords / punctuation at all.
+    3. The snippet has at least 3 prose-like sentences.
+    """
+    stripped = code.strip()
+    if not stripped:
+        return False
+
+    # Quick-exit: if there's any obvious JS syntax, it's probably code
+    _js_signals = (
+        "function ", "const ", "let ", "var ", "=>", "require(", "import ",
+        "export ", "class ", "return ", "console.", "module.", "async ",
+        "await ", "new ", "if (", "for (", "while (", "try {", "catch (",
+        "===", "!==", "&&", "||", "null", "undefined", "true", "false",
+        "0x", ".js", ".ts",
+    )
+    for sig in _js_signals:
+        if sig in stripped:
+            return False
+
+    first_line = stripped.split("\n")[0].strip()
+    first_word = first_line.split()[0].lower().rstrip(",:;.") if first_line.split() else ""
+
+    # Condition 1 — first word is a known prose starter
+    starts_like_prose = first_word in _PROSE_START_WORDS
+
+    # Condition 2 — first line looks like a natural-language sentence
+    # (starts with uppercase, contains spaces, no code punctuation)
+    sentence_like = bool(
+        first_line
+        and first_line[0].isupper()
+        and " " in first_line
+        and not any(c in first_line for c in ("{", "}", "(", ")", "[", "]", ";", "=", ":"))
+    )
+
+    if not (starts_like_prose or sentence_like):
+        return False
+
+    # Condition 3 — multiple prose-like lines / sentences
+    prose_lines = sum(1 for ln in stripped.splitlines() if _PROSE_SENTENCE_RE.match(ln.strip()))
+    return prose_lines >= 2
+
+
 def _sanitize_exec_output(text: str, tmp_path: str) -> str:
     """Replace the temporary file path in execution output with '<code>'.
 
@@ -1183,6 +1251,24 @@ def _run_code(code: str, language: str) -> dict:
                 "     создайте manifest.json + popup.html и загрузите через chrome://extensions/\n"
                 "  3. Для визуализации в браузере — попросите сгенерировать HTML-файл\n"
                 "  4. Используйте кнопку '🌐 Открыть' для просмотра HTML-версии в браузере"
+            ),
+            "success": False,
+        }
+
+    # Guard: plain prose text (e.g. a model description or README) is not JS
+    if language in ("javascript", "typescript") and _is_prose_text(code):
+        first_line = code.strip().splitlines()[0][:80] if code.strip() else ""
+        return {
+            "output": "",
+            "error": (
+                f"⛔ Содержимое редактора выглядит как текст, а не как JavaScript-код.\n"
+                f"Первая строка: «{first_line}»\n\n"
+                "Node.js не может выполнить обычный текст — он ожидает JavaScript-код.\n\n"
+                "Что делать:\n"
+                "  1. Нажмите '▶ Сгенерировать' и опишите задачу на русском или английском —\n"
+                "     ИИ напишет готовый JavaScript-код.\n"
+                "  2. Если хотите запустить Python — выберите язык 'Python' в выпадающем списке.\n"
+                "  3. Если хотите отобразить текст — выберите язык 'plaintext' или 'markdown'."
             ),
             "success": False,
         }
@@ -6677,6 +6763,242 @@ def agent_generate_image():
         "duration_ms":  duration_ms,
         "saved_path":   saved_path,
     })
+
+
+# ---------------------------------------------------------------------------
+# Android emulator / mobile code generation endpoints
+# ---------------------------------------------------------------------------
+
+_ANDROID_APK_DIR = os.path.join(os.path.dirname(__file__), "static", "android_apks")
+os.makedirs(_ANDROID_APK_DIR, exist_ok=True)
+
+
+@app.route("/android/generate", methods=["POST"])
+def android_generate():
+    """Generate mobile app code (Kotlin/React Native/Flutter) using the local LLM.
+
+    Body (JSON):
+      {
+        "prompt":   "Навигатор с GPS и картой OSM",   // required
+        "platform": "kotlin" | "react-native" | "flutter",  // optional, default "kotlin"
+        "model":    "...",   // optional, overrides default model
+      }
+
+    Returns:
+      { "code": "...", "files": {...}, "platform": "kotlin" }
+    """
+    body     = request.get_json(silent=True) or {}
+    prompt   = (body.get("prompt") or "").strip()
+    platform = (body.get("platform") or "kotlin").strip().lower()
+    model    = (body.get("model") or "").strip()
+
+    if not prompt:
+        return jsonify({"error": "prompt is required"}), 400
+    if not model:
+        return jsonify({"error": "model is required — select a model first"}), 400
+
+    platform_hints = {
+        "kotlin": (
+            "Generate complete Android app source code in Kotlin with Gradle build files. "
+            "Include: AndroidManifest.xml, MainActivity.kt, layout XML, build.gradle. "
+            "Wrap each file in a ```kotlin or ```xml code block with a comment on the first line "
+            "showing the file path, e.g.: // app/src/main/kotlin/com/example/MainActivity.kt"
+        ),
+        "react-native": (
+            "Generate a complete React Native (Expo) mobile app. "
+            "Include: App.tsx (or App.js), package.json, app.json. "
+            "Wrap each file in a ```javascript or ```typescript code block with a comment "
+            "on the first line showing the file path, e.g.: // App.tsx"
+        ),
+        "flutter": (
+            "Generate a complete Flutter mobile app in Dart. "
+            "Include: lib/main.dart, pubspec.yaml. "
+            "Wrap each file in a ```dart or ```yaml code block with a comment "
+            "on the first line showing the file path, e.g.: // lib/main.dart"
+        ),
+    }
+    system_hint = platform_hints.get(platform, platform_hints["kotlin"])
+
+    full_prompt = (
+        f"You are an expert mobile developer.\n{system_hint}\n\n"
+        f"Task: {prompt}\n\n"
+        "Requirements:\n"
+        "- Fully working, compilable code — no placeholders or TODOs\n"
+        "- Russian-language UI (text labels, strings, comments)\n"
+        "- Dark theme\n"
+        "- Mobile-first design\n"
+        "- Offline-capable where possible\n\n"
+        "Return ONLY the code blocks. No explanations outside the code blocks."
+    )
+
+    try:
+        if model.startswith("lmstudio:"):
+            lm_model = model[len("lmstudio:"):]
+            resp = _http.post(
+                f"{LM_STUDIO_BASE}/v1/chat/completions",
+                json={"model": lm_model, "messages": [{"role": "user", "content": full_prompt}],
+                      "max_tokens": 4096, "temperature": 0.2},
+                timeout=int(os.environ.get("OLLAMA_TIMEOUT", 300)),
+            )
+            resp.raise_for_status()
+            raw = resp.json()["choices"][0]["message"]["content"]
+        elif model.startswith("tgwui:"):
+            tg_model = model[len("tgwui:"):]
+            resp = _http.post(
+                f"{TGWUI_BASE}/v1/chat/completions",
+                json={"model": tg_model, "messages": [{"role": "user", "content": full_prompt}],
+                      "max_tokens": 4096, "temperature": 0.2},
+                timeout=int(os.environ.get("OLLAMA_TIMEOUT", 300)),
+            )
+            resp.raise_for_status()
+            raw = resp.json()["choices"][0]["message"]["content"]
+        else:
+            resp = _http.post(
+                f"{OLLAMA_BASE}/api/generate",
+                json={"model": model, "prompt": full_prompt, "stream": False},
+                timeout=int(os.environ.get("OLLAMA_TIMEOUT", 300)),
+            )
+            resp.raise_for_status()
+            raw = resp.json().get("response", "")
+    except _http.exceptions.ConnectionError:
+        return jsonify({"error": "Cannot connect to AI — is Ollama/LM Studio running?"}), 503
+    except _http.exceptions.Timeout:
+        return jsonify({"error": "AI request timed out"}), 504
+    except Exception as exc:  # pylint: disable=broad-except
+        return jsonify({"error": str(exc)}), 500
+
+    # Parse named file blocks from the response.
+    # Uses a split-based approach rather than a regex with [^`]*? to correctly
+    # handle code blocks that contain backtick characters (e.g. template literals).
+    files = {}
+    _FENCE_RE = re.compile(
+        r"```(?:kotlin|java|xml|dart|yaml|javascript|typescript|json|groovy)\s*\n"
+        r"(?:(?://|#)\s*(?P<path>[^\n]+)\n)?",
+    )
+    pos = 0
+    for m in _FENCE_RE.finditer(raw):
+        end_of_fence = m.end()
+        close_idx = raw.find("\n```", end_of_fence)
+        if close_idx == -1:
+            continue
+        block_code = raw[end_of_fence:close_idx].strip()
+        path_hint  = (m.group("path") or "").strip()
+        if block_code:
+            key = path_hint if path_hint else f"file_{len(files)+1}"
+            files[key] = block_code
+        pos = close_idx + 4
+
+    return jsonify({
+        "code":     raw,
+        "files":    files,
+        "platform": platform,
+    })
+
+
+@app.route("/android/apk/upload", methods=["POST"])
+def android_apk_upload():
+    """Accept an APK file upload and return a download URL.
+
+    Multipart form data:
+      file: the APK file
+    """
+    from werkzeug.utils import secure_filename as _sf
+    f = request.files.get("file")
+    if not f:
+        return jsonify({"error": "no file"}), 400
+    name = _sf(f.filename or "app.apk")
+    if not name.endswith(".apk"):
+        name += ".apk"
+    dest = os.path.join(_ANDROID_APK_DIR, name)
+    f.save(dest)
+    return jsonify({"url": f"/android/apk/{name}", "name": name})
+
+
+@app.route("/android/apk/<path:filename>")
+def android_apk_serve(filename):
+    """Serve an APK file for download."""
+    from werkzeug.utils import secure_filename as _sf
+    safe = _sf(filename)
+    return send_from_directory(_ANDROID_APK_DIR, safe, as_attachment=True)
+
+
+@app.route("/android/apk/list", methods=["GET"])
+def android_apk_list():
+    """Return a list of uploaded APK files."""
+    try:
+        files = [
+            {"name": f, "url": f"/android/apk/{f}",
+             "size": os.path.getsize(os.path.join(_ANDROID_APK_DIR, f))}
+            for f in os.listdir(_ANDROID_APK_DIR)
+            if f.endswith(".apk")
+        ]
+    except Exception:
+        files = []
+    return jsonify({"apks": files})
+
+
+@app.route("/android/apk/send", methods=["POST"])
+def android_apk_send():
+    """Send an APK file to the configured Telegram chat via the Bot API.
+
+    Body (JSON):
+      { "name": "app-debug.apk", "chat_id": "<optional override>" }
+    """
+    body = request.get_json(silent=True) or {}
+    from werkzeug.utils import secure_filename as _sf
+    name = _sf((body.get("name") or "").strip())
+    if not name:
+        return jsonify({"ok": False, "error": "APK name required"}), 400
+
+    apk_path = os.path.join(_ANDROID_APK_DIR, name)
+    if not os.path.isfile(apk_path):
+        return jsonify({"ok": False, "error": f"APK not found: {name}"}), 404
+
+    token   = os.environ.get("BOT_TOKEN", "").strip()
+    chat_id = body.get("chat_id") or os.environ.get("TELEGRAM_CHAT_ID", "").strip()
+    if not token:
+        return jsonify({"ok": False, "error": "BOT_TOKEN not configured"}), 503
+    if not chat_id:
+        return jsonify({"ok": False, "error": "TELEGRAM_CHAT_ID not configured"}), 503
+
+    try:
+        import io as _io
+        with open(apk_path, "rb") as fh:
+            resp = _http.post(
+                f"https://api.telegram.org/bot{token}/sendDocument",
+                data={"chat_id": chat_id,
+                      "caption": f"📦 {name}\n⚙ Установи: Настройки → Безопасность → Неизвестные источники"},
+                files={"document": (name, fh, "application/vnd.android.package-archive")},
+                timeout=60,
+            )
+        resp.raise_for_status()
+        return jsonify({"ok": True, "name": name})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+@app.route("/android/emulator/status", methods=["GET"])
+def android_emulator_status():
+    """Check if an Android emulator (ADB) is reachable on localhost."""
+    import subprocess as _sp
+    try:
+        r = _sp.run(
+            ["adb", "devices"],
+            capture_output=True, text=True, timeout=5
+        )
+        lines = [ln.strip() for ln in r.stdout.splitlines()
+                 if ln.strip() and "List of devices" not in ln]
+        devices = [ln for ln in lines if "\t" in ln]
+        return jsonify({
+            "adb_available": r.returncode == 0,
+            "devices": devices,
+            "raw": r.stdout.strip(),
+        })
+    except FileNotFoundError:
+        return jsonify({"adb_available": False, "devices": [],
+                        "error": "adb not found — install Android SDK"})
+    except Exception as exc:
+        return jsonify({"adb_available": False, "devices": [], "error": str(exc)})
 
 
 # ---------------------------------------------------------------------------
