@@ -420,6 +420,8 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
         <div class="hr"><span class="hk">🎬 VidEdit</span><span id="h-videditor" class="hv">—</span></div>
         <div class="hr"><span class="hk">🌐 Remote VM</span><span id="h-rvm" class="hv">—</span></div>
         <div class="hr"><span class="hk">👁 Vision VM</span><span id="h-vvm" class="hv">—</span></div>
+        <div class="hr"><span class="hk">🎨 SD</span><span id="h-sd" class="hv">—</span></div>
+        <div class="hr"><span class="hk">⚙ ComfyUI</span><span id="h-comfyui" class="hv">—</span></div>
         <div class="hr"><span class="hk">📱 TG Bot</span><span id="h-bot" class="hv">—</span></div>
       </div>
       <div style="margin-top:5px">
@@ -526,6 +528,28 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
         <button class="pb pb-p" style="flex:1" onclick="saveVisionVmUrl()">💾 Сохранить Vision VM</button>
       </div>
       <div style="font-size:10px;color:var(--text2)">URL отдельного Ollama с vision-моделью (llava, minicpm-v, moondream2). Когда подключена — все vision-запросы роутятся сюда. Рекомендуем: <b>ollama pull llava:7b</b> (≈4 ГБ) или <b>ollama pull moondream</b> (≈1.7 ГБ). Запустить второй Ollama (PowerShell): <code>$env:OLLAMA_HOST="http://127.0.0.1:11436"; ollama serve</code></div>
+    </div>
+
+    <!-- Stable Diffusion URL -->
+    <div>
+      <div class="pl">🎨 Stable Diffusion URL (AUTOMATIC1111 / SD.Next)</div>
+      <input type="text" id="sd-url" placeholder="http://127.0.0.1:7860" autocomplete="off"/>
+      <div class="pr" style="margin-top:4px">
+        <button class="pb pb-p" style="flex:1" onclick="saveSdUrl()">💾 Сохранить SD URL</button>
+      </div>
+      <div id="sd-status" style="font-size:10px;margin-top:2px"></div>
+      <div style="font-size:10px;color:var(--text2)">Запустить AUTOMATIC1111: <code>webui.bat --api</code> (порт 7860). Генерация изображений по тексту.</div>
+    </div>
+
+    <!-- ComfyUI URL -->
+    <div>
+      <div class="pl">⚙ ComfyUI URL</div>
+      <input type="text" id="comfyui-url" placeholder="http://127.0.0.1:8188" autocomplete="off"/>
+      <div class="pr" style="margin-top:4px">
+        <button class="pb pb-p" style="flex:1" onclick="saveComfyuiUrl()">💾 Сохранить ComfyUI URL</button>
+      </div>
+      <div id="comfyui-status" style="font-size:10px;margin-top:2px"></div>
+      <div style="font-size:10px;color:var(--text2)">Запустить ComfyUI: <code>python main.py</code> (порт 8188). Резервный бэкенд для генерации изображений.</div>
     </div>
 
     <!-- Bot token -->
@@ -647,6 +671,7 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
     <button class="tv-btn" id="tv-3dgen" onclick="setView('3dgen')" title="3D генерация из текста/картинки (TripoSR/Hunyuan3D)" style="border-color:#bd93f9;color:#bd93f9">🧊 3D Gen</button>
     <button class="tv-btn" id="tv-webbuilder" onclick="setView('webbuilder')" title="AI-генератор сайтов (build-a-site / AI-Website-Builder)" style="border-color:#8be9fd;color:#8be9fd">🌐 Сайт</button>
     <button class="tv-btn" id="tv-videditor" onclick="setView('videditor')" title="AI видеоредактор (omniclip / twick)" style="border-color:#ff79c6;color:#ff79c6">🎬 Видео</button>
+    <button class="tv-btn" id="tv-imagegen" onclick="setView('imagegen')" title="Генерация изображений (Stable Diffusion / ComfyUI)" style="border-color:#ffb86c;color:#ffb86c">🎨 Арт</button>
     <button class="tv-btn" onclick="openChatroom()" title="Открыть онлайн-чат пользователей в отдельном окне">🌐 Чат-зал</button>
     <button class="tv-btn" onclick="copyPs('ps-update-cmd');openPanel();setTimeout(function(){var el=document.getElementById('ps-update');if(el)el.scrollIntoView({behavior:'smooth'});},300);" title="Скопировать команду обновления в буфер обмена и открыть раздел обновлений" style="border-color:#e8a020;color:#e8a020">⬆ Обновить</button>
     <span class="tb-sep"></span>
@@ -859,6 +884,8 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
           <div class="vm-ai-item" id="vai-lmstudio">⏳ LM Studio…</div>
           <div class="vm-ai-item" id="vai-model">⏳ Модель…</div>
           <div class="vm-ai-item" id="vai-relay">⏳ Relay…</div>
+          <div class="vm-ai-item" id="vai-sd">⏳ SD…</div>
+          <div class="vm-ai-item" id="vai-comfyui">⏳ ComfyUI…</div>
         </div>
         <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
           <button class="pb pb-s" style="flex:1;padding:7px;min-width:130px" onclick="vmDetectLmStudio()" id="vm-btn-detect-lms">🔍 Найти LM Studio</button>
@@ -880,6 +907,7 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
           <button class="pb" onclick="setView('3dgen')" title="3D генератор (TripoSR/Hunyuan3D)" style="padding:9px;font-size:12px;background:rgba(189,147,249,.15);border-color:#bd93f9;color:#bd93f9">🧊 3D Генератор</button>
           <button class="pb" onclick="setView('webbuilder')" title="Генератор сайтов" style="padding:9px;font-size:12px;background:rgba(139,233,253,.1);border-color:#8be9fd;color:#8be9fd">🌐 Генератор сайтов</button>
           <button class="pb" onclick="setView('videditor')" title="Видеоредактор" style="padding:9px;font-size:12px;background:rgba(255,121,198,.1);border-color:#ff79c6;color:#ff79c6">🎬 Видеоредактор</button>
+          <button class="pb" onclick="setView('imagegen')" title="Генерация изображений (SD/ComfyUI)" style="padding:9px;font-size:12px;background:rgba(255,184,108,.1);border-color:#ffb86c;color:#ffb86c">🎨 Арт / SD</button>
           <button class="pb" onclick="setView('goose')" title="Goose AI агент" style="padding:9px;font-size:12px;background:rgba(80,250,123,.1);border-color:#50fa7b;color:#50fa7b">🐦 Goose Агент</button>
           <button class="pb" onclick="openChatroom()" title="Онлайн чат-зал" style="padding:9px;font-size:12px;background:rgba(241,250,140,.1);border-color:#f1fa8c;color:#f1fa8c">🌐 Чат-зал</button>
           <button class="pb" onclick="setView('colab')" title="Google Colab / Remote VM" style="padding:9px;font-size:12px;background:rgba(255,184,108,.1);border-color:#ffb86c;color:#ffb86c">☁ Colab / Remote VM</button>
@@ -1381,6 +1409,81 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
   </div>
 </div>
 
+<!-- Image generation pane (Stable Diffusion / ComfyUI) -->
+<div id="imagegen-pane" style="display:none;flex:1;flex-direction:column;overflow:hidden;min-height:0;background:var(--bg2)">
+  <div style="padding:16px;overflow-y:auto;flex:1">
+    <h2 style="margin:0 0 4px;font-size:16px">🎨 Генерация изображений</h2>
+    <p style="margin:0 0 12px;font-size:12px;color:var(--text2)">
+      Локальная генерация через <b>Stable Diffusion</b> (AUTOMATIC1111, порт 7860) или <b>ComfyUI</b> (порт 8188).
+      Настрой URL в меню (☰ → Настройки).
+    </p>
+    <div style="display:flex;gap:16px;flex-wrap:wrap;max-width:900px">
+      <!-- Form column -->
+      <div style="flex:1;min-width:280px;display:flex;flex-direction:column;gap:10px">
+        <div>
+          <div class="pl">✏️ Промпт (что нарисовать)</div>
+          <textarea id="ig-prompt" rows="4" placeholder="A futuristic city at night, neon lights, cyberpunk style, 8k, photorealistic" style="width:100%;resize:vertical"></textarea>
+        </div>
+        <div>
+          <div class="pl">🚫 Негативный промпт (что исключить)</div>
+          <textarea id="ig-negative" rows="2" placeholder="blurry, low quality, watermark, text, ugly" style="width:100%;resize:vertical"></textarea>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <div style="flex:1;min-width:80px">
+            <div class="pl">↔ Ширина</div>
+            <select id="ig-width" style="width:100%;padding:6px;border-radius:6px;border:1px solid var(--border);background:var(--bg4);color:var(--text1)">
+              <option value="512">512</option>
+              <option value="768">768</option>
+              <option value="1024" selected>1024</option>
+              <option value="1280">1280</option>
+              <option value="1536">1536</option>
+            </select>
+          </div>
+          <div style="flex:1;min-width:80px">
+            <div class="pl">↕ Высота</div>
+            <select id="ig-height" style="width:100%;padding:6px;border-radius:6px;border:1px solid var(--border);background:var(--bg4);color:var(--text1)">
+              <option value="512">512</option>
+              <option value="768">768</option>
+              <option value="1024" selected>1024</option>
+              <option value="1280">1280</option>
+              <option value="1536">1536</option>
+            </select>
+          </div>
+          <div style="flex:1;min-width:80px">
+            <div class="pl">🔢 Шаги</div>
+            <input type="number" id="ig-steps" value="20" min="5" max="100" style="width:100%;padding:6px;border-radius:6px;border:1px solid var(--border);background:var(--bg4);color:var(--text1)"/>
+          </div>
+          <div style="flex:1;min-width:80px">
+            <div class="pl">⚖ CFG Scale</div>
+            <input type="number" id="ig-cfg" value="7" min="1" max="30" step="0.5" style="width:100%;padding:6px;border-radius:6px;border:1px solid var(--border);background:var(--bg4);color:var(--text1)"/>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="pb pb-p" onclick="imagegenGenerate()" id="ig-btn" style="flex:2">🎨 Сгенерировать</button>
+          <button class="pb pb-s" onclick="imagegenSave()" id="ig-save-btn" style="flex:1;display:none">💾 Сохранить</button>
+        </div>
+        <div id="ig-status" style="font-size:12px;color:var(--text2)"></div>
+        <!-- SD/ComfyUI status badges -->
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">
+          <span id="ig-sd-badge" style="font-size:10px;padding:2px 8px;border-radius:10px;background:var(--bg4);border:1px solid var(--border)">SD: —</span>
+          <span id="ig-comfy-badge" style="font-size:10px;padding:2px 8px;border-radius:10px;background:var(--bg4);border:1px solid var(--border)">ComfyUI: —</span>
+        </div>
+      </div>
+      <!-- Preview column -->
+      <div style="flex:1;min-width:300px;display:flex;flex-direction:column;align-items:center;gap:8px">
+        <div id="ig-preview-wrap" style="width:100%;max-width:512px;aspect-ratio:1;background:var(--bg4);border:1px solid var(--border);border-radius:10px;display:flex;align-items:center;justify-content:center;overflow:hidden">
+          <span style="color:var(--text2);font-size:13px">Изображение появится здесь</span>
+        </div>
+        <div id="ig-meta" style="font-size:10px;color:var(--text2);text-align:center"></div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:center">
+          <button class="pb pb-s" id="ig-send-chat-btn" onclick="imagegenSendToChat()" style="display:none;padding:5px 10px;font-size:11px">💬 В чат</button>
+          <button class="pb pb-s" id="ig-copy-btn" onclick="imagegenCopyPrompt()" style="display:none;padding:5px 10px;font-size:11px">📋 Копировать промпт</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
 // ── Globals ─────────────────────────────────────────────────────────────────
 var editor = null;
@@ -1453,10 +1556,11 @@ function setView(v) {
   var tdgp = document.getElementById('3dgen-pane');
   var wbp  = document.getElementById('webbuilder-pane');
   var vep  = document.getElementById('videditor-pane');
+  var igp  = document.getElementById('imagegen-pane');
   var mn = document.getElementById('main');
   var appEl = document.getElementById('app') || document.body;
   appEl.classList.remove('chat-code-mode');
-  ['both','editor','preview','chat','chat-code','vm','gltf','research','colab','goose','3dgen','webbuilder','videditor'].forEach(function(x){
+  ['both','editor','preview','chat','chat-code','vm','gltf','research','colab','goose','3dgen','webbuilder','videditor','imagegen'].forEach(function(x){
     var el = document.getElementById('tv-'+x);
     if (el) el.classList.toggle('on', x===v);
   });
@@ -1470,7 +1574,8 @@ function setView(v) {
   var is3DGen      = (v === '3dgen');
   var isWebBuilder = (v === 'webbuilder');
   var isVidEditor  = (v === 'videditor');
-  var isSpecial  = isChat || isVM || isGLTF || isResearch || isColab || isGoose || is3DGen || isWebBuilder || isVidEditor;
+  var isImageGen   = (v === 'imagegen');
+  var isSpecial  = isChat || isVM || isGLTF || isResearch || isColab || isGoose || is3DGen || isWebBuilder || isVidEditor || isImageGen;
   cp.style.display  = (isChat || isChatCode) ? 'flex' : 'none';
   vmp.style.display = isVM       ? 'flex' : 'none';
   gp.style.display  = isGLTF    ? 'flex' : 'none';
@@ -1480,6 +1585,7 @@ function setView(v) {
   if (tdgp) tdgp.style.display = is3DGen     ? 'flex' : 'none';
   if (wbp)  wbp.style.display  = isWebBuilder? 'flex' : 'none';
   if (vep)  vep.style.display  = isVidEditor ? 'flex' : 'none';
+  if (igp)  igp.style.display  = isImageGen  ? 'flex' : 'none';
   pb.style.display  = (isSpecial || isChatCode) ? 'none' : '';
   mn.style.display  = isSpecial ? 'none' : 'flex';
   if (v === 'both')     { ep.style.display='flex'; rh.style.display='block'; vp.style.display='flex'; }
@@ -1505,6 +1611,7 @@ function setView(v) {
     if (rq) setTimeout(function(){ rq.focus(); }, 50);
   }
   if (isColab) colabInit();
+  if (isImageGen) imagegenRefreshStatus();
 }
 
 // ── Resize handle ────────────────────────────────────────────────────────────
@@ -3174,6 +3281,20 @@ async function loadHealth() {
       var vvmCls  = vvmOk ? 'ok'   : (vvmCfg ? 'fail'          : '');
       set('h-vvm', vvmText, vvmCls);
     }
+    var sdData   = d.stable_diffusion || {};
+    var sdOk     = sdData.status === 'ok';
+    var sdCfg    = sdData.status !== 'not_configured';
+    if (document.getElementById('h-sd')) {
+      set('h-sd', sdOk ? '✓ OK' : (sdCfg ? '✗ Недоступен' : '— Локальная ВМ'),
+                  sdOk ? 'ok'   : (sdCfg ? 'fail' : ''));
+    }
+    var cfData   = d.comfyui || {};
+    var cfOk     = cfData.status === 'ok';
+    var cfCfg    = cfData.status !== 'not_configured';
+    if (document.getElementById('h-comfyui')) {
+      set('h-comfyui', cfOk ? '✓ OK' : (cfCfg ? '✗ Недоступен' : '— Локальная ВМ'),
+                       cfOk ? 'ok'   : (cfCfg ? 'fail' : ''));
+    }
     set('h-bot', botRun ? '✓ Работает' : (bot ? '⚠ Не запущен' : '✗ Нет токена'),
         botRun ? 'ok' : (bot ? 'warn' : 'fail'));
     var anyOk = ol || lmsOk || tgwuiOk || rvmOk || vvmOk;
@@ -3371,6 +3492,12 @@ async function loadOllamaUrl() {
     if (d.vision_vm_url && document.getElementById('vvm-url')) {
       document.getElementById('vvm-url').value = d.vision_vm_url;
     }
+    if (d.sd_url && document.getElementById('sd-url')) {
+      document.getElementById('sd-url').value = d.sd_url;
+    }
+    if (d.comfyui_url && document.getElementById('comfyui-url')) {
+      document.getElementById('comfyui-url').value = d.comfyui_url;
+    }
     // Also update bot token indicator from settings if health hasn't been polled yet
     if (typeof d.bot_token_set === 'boolean') {
       var hasToken = d.bot_token_set;
@@ -3522,6 +3649,155 @@ async function saveVisionVmUrl() {
       setTimeout(function(){ loadHealth(); loadModels(); }, 1500);
     } else { toast('⚠ ' + (d.error||'Ошибка')); }
   } catch(e) { toast('⚠ Ошибка: ' + e.message); }
+}
+async function saveSdUrl() {
+  var url = ((document.getElementById('sd-url')||{}).value || '').trim();
+  if (!url) { toast('Введите URL Stable Diffusion, например: http://127.0.0.1:7860'); return; }
+  if (!/^https?:\/\/.+/.test(url)) { toast('Неверный формат URL'); return; }
+  var statusEl = document.getElementById('sd-status');
+  if (statusEl) statusEl.textContent = '⏳ Сохраняю...';
+  try {
+    var r = await fetch('/settings', { method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ sd_url: url }) });
+    var d = await r.json();
+    if (d.ok) {
+      toast('✓ SD URL сохранён, проверяю соединение...');
+      setTimeout(function(){ loadHealth(); }, 1500);
+    } else { toast('⚠ ' + (d.error||'Ошибка')); if (statusEl) statusEl.textContent = '✗ Ошибка сохранения'; }
+  } catch(e) { toast('⚠ Ошибка: ' + e.message); }
+}
+async function saveComfyuiUrl() {
+  var url = ((document.getElementById('comfyui-url')||{}).value || '').trim();
+  if (!url) { toast('Введите URL ComfyUI, например: http://127.0.0.1:8188'); return; }
+  if (!/^https?:\/\/.+/.test(url)) { toast('Неверный формат URL'); return; }
+  var statusEl = document.getElementById('comfyui-status');
+  if (statusEl) statusEl.textContent = '⏳ Сохраняю...';
+  try {
+    var r = await fetch('/settings', { method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ comfyui_url: url }) });
+    var d = await r.json();
+    if (d.ok) {
+      toast('✓ ComfyUI URL сохранён, проверяю соединение...');
+      setTimeout(function(){ loadHealth(); }, 1500);
+    } else { toast('⚠ ' + (d.error||'Ошибка')); if (statusEl) statusEl.textContent = '✗ Ошибка сохранения'; }
+  } catch(e) { toast('⚠ Ошибка: ' + e.message); }
+}
+
+// ── Image generation (🎨 Арт pane) ──────────────────────────────────────────
+var _igLastBase64 = '';
+var _igLastPrompt = '';
+
+async function imagegenRefreshStatus() {
+  try {
+    var r = await fetch('/health');
+    var d = await r.json();
+    var sdBadge = document.getElementById('ig-sd-badge');
+    var cfBadge = document.getElementById('ig-comfy-badge');
+    var sdD = d.stable_diffusion || {};
+    var cfD = d.comfyui || {};
+    if (sdBadge) {
+      var sdOk = sdD.status === 'ok';
+      sdBadge.textContent = sdOk ? '🎨 SD: ✓ Готов' : '🎨 SD: ' + (sdD.url || '—') + ' недоступен';
+      sdBadge.style.background = sdOk ? 'rgba(80,250,123,.15)' : 'var(--bg4)';
+      sdBadge.style.borderColor = sdOk ? '#50fa7b' : 'var(--border)';
+      sdBadge.style.color = sdOk ? '#50fa7b' : 'var(--text2)';
+    }
+    if (cfBadge) {
+      var cfOk = cfD.status === 'ok';
+      cfBadge.textContent = cfOk ? '⚙ ComfyUI: ✓ Готов' : '⚙ ComfyUI: ' + (cfD.url || '—') + ' недоступен';
+      cfBadge.style.background = cfOk ? 'rgba(80,250,123,.15)' : 'var(--bg4)';
+      cfBadge.style.borderColor = cfOk ? '#50fa7b' : 'var(--border)';
+      cfBadge.style.color = cfOk ? '#50fa7b' : 'var(--text2)';
+    }
+  } catch(e) {}
+}
+
+async function imagegenGenerate() {
+  var prompt   = (document.getElementById('ig-prompt')   || {value:''}).value.trim();
+  var negative = (document.getElementById('ig-negative') || {value:''}).value.trim();
+  var width    = parseInt((document.getElementById('ig-width')  || {value:'512'}).value) || 512;
+  var height   = parseInt((document.getElementById('ig-height') || {value:'512'}).value) || 512;
+  var steps    = parseInt((document.getElementById('ig-steps')  || {value:'20'}).value)  || 20;
+  var cfg      = parseFloat((document.getElementById('ig-cfg')   || {value:'7'}).value)  || 7;
+  if (!prompt) { toast('Введи промпт — что нарисовать'); return; }
+
+  var btn    = document.getElementById('ig-btn');
+  var status = document.getElementById('ig-status');
+  var wrap   = document.getElementById('ig-preview-wrap');
+  if (btn)    { btn.disabled = true; btn.textContent = '⏳ Генерирую...'; }
+  if (status) status.textContent = '🎨 Отправляю запрос к SD / ComfyUI...';
+  _igLastBase64 = '';
+  _igLastPrompt = prompt;
+
+  try {
+    var r = await fetch('/imagegen/generate', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ prompt: prompt, negative_prompt: negative,
+        width: width, height: height, steps: steps, cfg_scale: cfg })
+    });
+    var d = await r.json();
+    if (!d.success) {
+      if (status) status.textContent = '✗ ' + (d.error || 'Ошибка генерации');
+      toast('⚠ ' + (d.error || 'Ошибка генерации').substring(0, 80));
+      return;
+    }
+    _igLastBase64 = d.image_base64 || '';
+    if (wrap) {
+      wrap.innerHTML = '<img src="data:image/png;base64,' + _igLastBase64 + '" style="width:100%;height:100%;object-fit:contain;border-radius:8px" alt="Generated image"/>';
+    }
+    var meta = document.getElementById('ig-meta');
+    if (meta) {
+      var n = d.steps || 0, r = n % 100;
+      var stepsWord = (r >= 11 && r <= 19) ? 'шагов' : (n % 10 === 1 ? 'шаг' : (n % 10 >= 2 && n % 10 <= 4 ? 'шага' : 'шагов'));
+      meta.textContent = d.backend + ' · ' + d.width + '×' + d.height + ' · ' + n + ' ' + stepsWord + ' · ' + Math.round((d.duration_ms||0)/1000) + 'с';
+    }
+    if (status) status.textContent = '✅ Готово! Бэкенд: ' + d.backend;
+    var saveBtn = document.getElementById('ig-save-btn');
+    var sendBtn = document.getElementById('ig-send-chat-btn');
+    var cpyBtn  = document.getElementById('ig-copy-btn');
+    if (saveBtn) saveBtn.style.display = '';
+    if (sendBtn) sendBtn.style.display = '';
+    if (cpyBtn)  cpyBtn.style.display  = '';
+  } catch(e) {
+    if (status) status.textContent = '✗ Ошибка: ' + e.message;
+    toast('⚠ ' + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '🎨 Сгенерировать'; }
+  }
+}
+
+function imagegenSave() {
+  if (!_igLastBase64) { toast('Сначала сгенерируй изображение'); return; }
+  var a = document.createElement('a');
+  a.href = 'data:image/png;base64,' + _igLastBase64;
+  a.download = 'generated_' + Date.now() + '.png';
+  a.click();
+}
+
+function imagegenSendToChat() {
+  if (!_igLastBase64) { toast('Сначала сгенерируй изображение'); return; }
+  var imgHtml = '<img src="data:image/png;base64,' + _igLastBase64 + '" style="max-width:300px;max-height:300px;border-radius:6px" alt="Generated"/>';
+  setView('chat');
+  setTimeout(function() {
+    var msgs = document.getElementById('chat-messages');
+    if (msgs) {
+      var div = document.createElement('div');
+      div.className = 'msg assistant';
+      div.innerHTML = '<b>🎨 Сгенерированное изображение:</b><br>' + imgHtml;
+      msgs.appendChild(div);
+      msgs.scrollTop = msgs.scrollHeight;
+    }
+  }, 300);
+}
+
+function imagegenCopyPrompt() {
+  if (!_igLastPrompt) { toast('Нет промпта для копирования'); return; }
+  navigator.clipboard.writeText(_igLastPrompt)
+    .then(function() { toast('📋 Промпт скопирован'); })
+    .catch(function() { toast('⚠ Ошибка копирования'); });
 }
 async function checkRemoteVm() {
   var statusEl = document.getElementById('rvm-status');
@@ -3955,6 +4231,8 @@ async function vmRefreshAiStatus() {
   var lmsEl     = document.getElementById('vai-lmstudio');
   var modelEl   = document.getElementById('vai-model');
   var relayEl   = document.getElementById('vai-relay');
+  var sdEl      = document.getElementById('vai-sd');
+  var comfyEl   = document.getElementById('vai-comfyui');
   if (!ollamaEl) return;
   try {
     var r = await fetch('/health');
@@ -3976,6 +4254,20 @@ async function vmRefreshAiStatus() {
     relayEl.style.color = relay.status === 'ok' ? '#50fa7b' : '#888';
     modelEl.textContent = curModel ? ('🤖 ' + curModel) : '➖ Модель не выбрана';
     modelEl.style.color = curModel ? '#f1fa8c' : '#888';
+    if (sdEl) {
+      var sd = d.stable_diffusion || {};
+      sdEl.textContent = sd.status === 'ok'
+        ? '✅ SD ' + (sd.url || '').replace('http://', '')
+        : (sd.status === 'not_configured' ? '➖ SD (нет URL)' : '⚠ SD недоступен');
+      sdEl.style.color = sd.status === 'ok' ? '#50fa7b' : '#888';
+    }
+    if (comfyEl) {
+      var cf = d.comfyui || {};
+      comfyEl.textContent = cf.status === 'ok'
+        ? '✅ ComfyUI ' + (cf.url || '').replace('http://', '')
+        : (cf.status === 'not_configured' ? '➖ ComfyUI (нет URL)' : '⚠ ComfyUI недоступен');
+      comfyEl.style.color = cf.status === 'ok' ? '#50fa7b' : '#888';
+    }
   } catch(e) {
     ollamaEl.textContent  = '⚠ Сервер недоступен';
     ollamaEl.style.color  = '#ff5555';

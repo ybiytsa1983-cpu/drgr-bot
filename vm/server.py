@@ -143,6 +143,12 @@ VISION_VM_URL = os.environ.get("VISION_VM_URL", "").rstrip("/")
 # Prefix used in model names to indicate the model lives on the Vision VM.
 _VISION_VM_PREFIX = "visionvm:"
 
+# Stable Diffusion (AUTOMATIC1111 / SD.Next) and ComfyUI base URLs.
+# These are module-level so they can be updated live via /settings.
+# Defaults read from environment; can be changed without restart through the UI.
+SD_BASE = os.environ.get("SD_API_URL", "http://127.0.0.1:7860").rstrip("/")
+COMFYUI_BASE = os.environ.get("COMFYUI_API_URL", "http://127.0.0.1:8188").rstrip("/")
+
 # Sources that produce poor screenshots (JS-heavy, login walls, etc.)
 _EXCLUDED_SCREENSHOT_SOURCES = frozenset({"reddit", "hackernews"})
 
@@ -1941,6 +1947,22 @@ def health():
         except Exception:  # pylint: disable=broad-except
             pass
 
+    # --- Stable Diffusion (AUTOMATIC1111 / SD.Next) ---
+    sd_ok = False
+    if SD_BASE:
+        try:
+            sd_ok = _sd_available(SD_BASE)
+        except Exception:  # pylint: disable=broad-except
+            pass
+
+    # --- ComfyUI ---
+    comfyui_ok = False
+    if COMFYUI_BASE:
+        try:
+            comfyui_ok = _comfyui_available(COMFYUI_BASE)
+        except Exception:  # pylint: disable=broad-except
+            pass
+
     # --- Remote VM (Google Colab / ngrok) ---
     rvm_ok = False
     if REMOTE_VM_URL:
@@ -2023,6 +2045,14 @@ def health():
             "status": "ok" if vvm_ok else ("unreachable" if VISION_VM_URL else "not_configured"),
             "url":    VISION_VM_URL,
             "models": vvm_models,
+        },
+        "stable_diffusion": {
+            "status": "ok" if sd_ok else ("unreachable" if SD_BASE else "not_configured"),
+            "url":    SD_BASE,
+        },
+        "comfyui": {
+            "status": "ok" if comfyui_ok else ("unreachable" if COMFYUI_BASE else "not_configured"),
+            "url":    COMFYUI_BASE,
         },
         "bot": {
             "token_set": bot_token_set,
@@ -2776,6 +2806,8 @@ def get_settings():
         "videditor_url": VIDEDITOR_BASE,
         "remote_vm_url": REMOTE_VM_URL,
         "vision_vm_url": VISION_VM_URL,
+        "sd_url": SD_BASE,
+        "comfyui_url": COMFYUI_BASE,
         "bot_token_set": bot_token_set,
         "ollama_relay_port": _OLLAMA_RELAY_PORT,
     })
@@ -2784,7 +2816,9 @@ def get_settings():
 @app.route("/settings", methods=["POST"])
 def save_settings():
     """Save settings (Telegram bot token, chat ID, Ollama URL, LM Studio URL, Remote VM URL) to .env."""
-    global OLLAMA_BASE, _OLLAMA_SCANNED, LM_STUDIO_BASE, TGWUI_BASE, OAF_BASE, TRIPOSR_BASE, WEBBUILDER_BASE, VIDEDITOR_BASE, REMOTE_VM_URL, VISION_VM_URL  # noqa: PLW0603
+    global OLLAMA_BASE, _OLLAMA_SCANNED, LM_STUDIO_BASE, TGWUI_BASE  # noqa: PLW0603
+    global OAF_BASE, TRIPOSR_BASE, WEBBUILDER_BASE, VIDEDITOR_BASE  # noqa: PLW0603
+    global REMOTE_VM_URL, VISION_VM_URL, SD_BASE, COMFYUI_BASE  # noqa: PLW0603
     body = request.get_json(silent=True) or {}
     bot_token      = body.get("bot_token",      "").strip()
     chat_id        = body.get("chat_id",         "").strip()
@@ -2797,9 +2831,12 @@ def save_settings():
     videditor_url  = body.get("videditor_url",    "").strip().rstrip("/")
     remote_vm_url  = body.get("remote_vm_url",   "").strip().rstrip("/")
     vision_vm_url  = body.get("vision_vm_url",   "").strip().rstrip("/")
+    sd_url         = body.get("sd_url",           "").strip().rstrip("/")
+    comfyui_url    = body.get("comfyui_url",      "").strip().rstrip("/")
 
     if not any([bot_token, chat_id, ollama_url, lm_studio_url, tgwui_url, oaf_url,
-                triposr_url, webbuilder_url, videditor_url, remote_vm_url, vision_vm_url]):
+                triposr_url, webbuilder_url, videditor_url, remote_vm_url, vision_vm_url,
+                sd_url, comfyui_url]):
         return jsonify({"ok": False, "error": "Nothing to save"})
 
     env_path = os.path.join(os.path.dirname(_DIR), ".env")
@@ -2951,6 +2988,30 @@ def save_settings():
             lines.append(f"VISION_VM_URL={vision_vm_url}\n")
         os.environ["VISION_VM_URL"] = vision_vm_url
         VISION_VM_URL = vision_vm_url
+
+    if sd_url:
+        sd_found = False
+        for i, line in enumerate(lines):
+            if line.startswith("SD_API_URL="):
+                lines[i] = f"SD_API_URL={sd_url}\n"
+                sd_found = True
+                break
+        if not sd_found:
+            lines.append(f"SD_API_URL={sd_url}\n")
+        os.environ["SD_API_URL"] = sd_url
+        SD_BASE = sd_url
+
+    if comfyui_url:
+        cfu_found = False
+        for i, line in enumerate(lines):
+            if line.startswith("COMFYUI_API_URL="):
+                lines[i] = f"COMFYUI_API_URL={comfyui_url}\n"
+                cfu_found = True
+                break
+        if not cfu_found:
+            lines.append(f"COMFYUI_API_URL={comfyui_url}\n")
+        os.environ["COMFYUI_API_URL"] = comfyui_url
+        COMFYUI_BASE = comfyui_url
 
     try:
         with open(env_path, "w", encoding="utf-8") as f:
@@ -5590,9 +5651,9 @@ def agent_describe_image():
 # Image generation via local Stable Diffusion / ComfyUI
 # ---------------------------------------------------------------------------
 
-# Ports/hosts where local image generation backends are expected.
-_SD_API_URL          = os.environ.get("SD_API_URL",          "http://127.0.0.1:7860")   # Automatic1111 / SD.Next
-_COMFYUI_API_URL     = os.environ.get("COMFYUI_API_URL",     "http://127.0.0.1:8188")   # ComfyUI
+# Note: The canonical URL globals are SD_BASE and COMFYUI_BASE defined at
+# module top-level so they can be patched live via /settings.  The aliases
+# below are kept for legacy references inside the helper functions.
 _COMFYUI_CHECKPOINT  = os.environ.get("COMFYUI_CHECKPOINT",  "v1-5-pruned-emaonly.ckpt")  # default SD 1.5 checkpoint
 
 
@@ -5714,6 +5775,7 @@ def _generate_via_comfyui(base_url: str, params: dict) -> dict:
     raise TimeoutError("ComfyUI job timed out after 5 minutes")
 
 
+@app.route("/imagegen/generate", methods=["POST"])
 @app.route("/agent/generate_image", methods=["POST"])
 def agent_generate_image():
     """Generate an image via the local Stable Diffusion or ComfyUI API.
@@ -5769,16 +5831,16 @@ def agent_generate_image():
     error   = None
 
     # ── Try Stable Diffusion first ───────────────────────────────────────────
-    if _sd_available(_SD_API_URL):
+    if _sd_available(SD_BASE):
         try:
-            result = _generate_via_sd(_SD_API_URL, params)
+            result = _generate_via_sd(SD_BASE, params)
         except Exception as exc:  # pylint: disable=broad-except
             error = f"SD error: {exc}"
 
     # ── Fall back to ComfyUI ─────────────────────────────────────────────────
-    if result is None and _comfyui_available(_COMFYUI_API_URL):
+    if result is None and _comfyui_available(COMFYUI_BASE):
         try:
-            result = _generate_via_comfyui(_COMFYUI_API_URL, params)
+            result = _generate_via_comfyui(COMFYUI_BASE, params)
         except Exception as exc:  # pylint: disable=broad-except
             error = f"ComfyUI error: {exc}"
 
