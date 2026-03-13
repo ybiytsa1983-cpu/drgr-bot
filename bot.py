@@ -3039,13 +3039,21 @@ async def handle_photo_convert(message: Message) -> None:
             img_b64   = base64.b64encode(buf.getvalue()).decode()
 
             # Build prompt: use caption as user question if provided
-            prompt_extra = f" Вопрос пользователя: {caption}" if caption else ""
+            # Sanitize caption before passing to vision model
+            safe_caption = re.sub(r'[\x00-\x08\x0b-\x1f\x7f]', '', caption)[:500] if caption else ""
+            vision_prompt = (
+                f"Вопрос пользователя: {safe_caption}"
+                if safe_caption else
+                "Опиши это фото подробно на русском языке. Укажи все детали: объекты, "
+                "текст, цвета, контекст и что происходит на изображении."
+            )
 
             async with aiohttp.ClientSession() as session:
                 async with session.post(
                     f"{VM_BASE}/agent/describe_image",
-                    json={"image_base64": img_b64, "filename": "photo.jpg"},
-                    timeout=aiohttp.ClientTimeout(total=60),
+                    json={"image_base64": img_b64, "filename": "photo.jpg",
+                          "prompt": vision_prompt},
+                    timeout=aiohttp.ClientTimeout(total=90),
                 ) as resp:
                     if resp.status == 200:
                         data = await resp.json()
@@ -3091,7 +3099,14 @@ async def handle_photo_convert(message: Message) -> None:
                                     parse_mode="MarkdownV2",
                                 )
                             return
-                        await status.edit_text(f"\u274c {err[:300] or 'Ошибка анализа фото'}")
+                        if err:
+                            await status.edit_text(f"\u274c {_esc(err[:300])}", parse_mode="MarkdownV2")
+                        else:
+                            await status.edit_text(
+                                "\u274c Vision\\-модель не смогла проанализировать изображение\\. "
+                                "Попробуйте снова или установите vision\\-модель: `ollama pull moondream`",
+                                parse_mode="MarkdownV2",
+                            )
                         return
                     await status.edit_text(f"\u274c VM: HTTP {resp.status}")
                     return

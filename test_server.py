@@ -236,6 +236,66 @@ def run_all() -> None:
     })
     ok("POST /research existing_article → 200 or 404", r.status_code in (200, 404))
 
+    # _research_build_html: verify HTML stripping pipeline does not crash
+    print("\n[_research_build_html HTML input stripping]")
+    import re as _re
+    import html as _html_mod_t
+    _html_input = (
+        "<!DOCTYPE html><html><head><title>Test</title></head><body>"
+        "<h1>Test Article</h1><p>This is a <b>test</b> paragraph.</p>"
+        "<h2>Section 1</h2><p>Some content here.</p>"
+        "</body></html>"
+    )
+    # Simulate the HTML stripping logic that now runs before _research_build_html
+    _at = _html_input.strip()
+    _at = _re.sub(r'^```[a-zA-Z]*\s*\n', '', _at)
+    _at = _re.sub(r'\n```\s*$', '', _at)
+    _at = _at.strip()
+    if _re.match(r'^\s*<!DOCTYPE\s+html|^\s*<html', _at, _re.IGNORECASE):
+        _at = _re.sub(r'<style[^>]*>.*?</\s*style[^>]*>', '', _at, flags=_re.DOTALL | _re.IGNORECASE)
+        _at = _re.sub(r'<script[^>]*>.*?</\s*script[^>]*>', '', _at, flags=_re.DOTALL | _re.IGNORECASE)
+        _at = _re.sub(r'<[^>]+>', ' ', _at)
+        _at = _html_mod_t.unescape(_at)
+        _at = _re.sub(r'\s{3,}', '\n\n', _at).strip()
+    ok("HTML stripping: no HTML tags remain in output",
+       not _re.search(r'<[a-zA-Z][^>]*>', _at))
+    ok("HTML stripping: 'Test Article' preserved in output", "Test Article" in _at)
+
+    # _research_build_html: partial HTML tags (mixed markdown + HTML) stripping
+    _partial_html_input = (
+        "My Partial Article\n\n"
+        "## 🔍 Introduction\n<p>This is a <strong>paragraph</strong> with tags.</p>\n\n"
+        "## ✅ Conclusion\n<p>End of article.</p>"
+    )
+    _pt = _partial_html_input.strip()
+    if _re.search(r'<(?:p|h[1-6]|div|ul|li|strong|em|br)\b', _pt, _re.IGNORECASE):
+        _pt = _re.sub(r'<[^>]+>', ' ', _pt)
+        _pt = _html_mod_t.unescape(_pt)
+        _pt = _re.sub(r'\s{3,}', '\n\n', _pt).strip()
+    ok("Partial HTML stripping: no block tags remain",
+       not _re.search(r'<(?:p|strong|em|div)\b', _pt, _re.IGNORECASE))
+    ok("Partial HTML stripping: text preserved", "Introduction" in _pt)
+
+    # _research_build_html: verify it produces valid HTML from Markdown
+    print("\n[_research_build_html Markdown→HTML]")
+    _md_body = (
+        "My Test Article\n\n"
+        "## 🔍 Introduction\nThis is the introduction section.\n\n"
+        "## 📌 Key Facts\nSome key facts here.\n\n"
+        "## ✅ Conclusion\nFinal thoughts."
+    )
+    try:
+        _built_html = server._research_build_html(
+            "My Test Article", _md_body, [], [], ""
+        )
+        ok("_research_build_html returns non-empty HTML", len(_built_html) > 100)
+        ok("_research_build_html contains h2 sections",
+           _re.search(r'<h2[^>]*>', _built_html) is not None)
+        ok("_research_build_html is valid HTML (has html tag)",
+           "<html" in _built_html.lower())
+    except Exception as _e:
+        ok("_research_build_html no exception", False, str(_e))
+
     # ── Android / mobile endpoints ────────────────────────────────────────────
     print("\n[Android / mobile endpoints]")
 

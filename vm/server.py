@@ -10592,6 +10592,9 @@ def web_research():
 
     sources: list = []
 
+    # Detect if query is primarily in Russian (for locale hints)
+    _is_russian_query = bool(re.search(r'[а-яёА-ЯЁ]{3,}', query))
+
     # ── 1. DuckDuckGo search ───────────────────────────────────────────────
     _DDGS = None
     try:
@@ -10605,11 +10608,13 @@ def web_research():
 
     if _DDGS is not None:
         try:
+            _ddgs_region = "ru-ru" if _is_russian_query else "wt-wt"
             def _do_ddgs() -> list:
                 try:
                     with _DDGS() as d:
-                        return list(d.text(query, max_results=max_results))
+                        return list(d.text(query, max_results=max_results, region=_ddgs_region))
                 except TypeError:
+                    # Older ddgs versions don't support `region` keyword; retry without it
                     return list(_DDGS().text(query, max_results=max_results))
 
             for r in _do_ddgs():
@@ -10624,18 +10629,20 @@ def web_research():
 
     # ── 2. Wikipedia ───────────────────────────────────────────────────────
     try:
-        wiki_url = "https://en.wikipedia.org/w/api.php"
+        # Prefer Russian Wikipedia for Russian queries, fall back to English
+        _wiki_lang = "ru" if _is_russian_query else "en"
+        wiki_url = f"https://{_wiki_lang}.wikipedia.org/w/api.php"
         wr = _http.get(wiki_url, params={
             "action": "query", "list": "search", "srsearch": query,
-            "format": "json", "srlimit": 2, "utf8": 1,
+            "format": "json", "srlimit": 3, "utf8": 1,
         }, timeout=8)
         wr.raise_for_status()
-        for ws in wr.json().get("query", {}).get("search", [])[:2]:
+        for ws in wr.json().get("query", {}).get("search", [])[:3]:
             page_title = ws.get("title", "")
             snippet = re.sub(r'<[^>]+>', '', ws.get("snippet", ""))
             sources.append({
                 "title":   page_title,
-                "url":     f"https://en.wikipedia.org/wiki/{urllib.parse.quote(page_title)}",
+                "url":     f"https://{_wiki_lang}.wikipedia.org/wiki/{urllib.parse.quote(page_title)}",
                 "snippet": snippet,
                 "source":  "wikipedia",
             })
@@ -10911,7 +10918,8 @@ def web_research():
                     f"- Только русский язык\n"
                     f"- Статья должна быть ЗАМЕТНО БОГАЧЕ исходной\n"
                     f"- Включи конкретные ссылки на источники внутри текста\n"
-                    f"- Все разделы кликабельны через якоря в оглавлении\n"
+                    f"- ТОЛЬКО Markdown разметка (## для разделов, ** для выделения) — никаких HTML тегов\n"
+                    f"- НЕ ПИШИ вступлений типа 'Конечно, вот статья' — начни СРАЗУ с заголовка\n"
                 )
             else:
                 prompt = (
@@ -10945,6 +10953,8 @@ def web_research():
                     f"- Только русский язык\n"
                     f"- Тема статьи: ТОЛЬКО '{query}'\n"
                     f"- Статья должна быть уникальной и информативной\n"
+                    f"- ТОЛЬКО Markdown разметка (## для разделов, ** для выделения) — никаких HTML тегов\n"
+                    f"- НЕ ПИШИ вступлений типа 'Конечно, вот статья' — начни СРАЗУ с заголовка\n"
                 )
             is_tgwui_research = model.startswith(_TGWUI_PREFIX)
             if is_lms_research:
@@ -11012,6 +11022,7 @@ def web_research():
                 f"## ✅ Заключение\n"
                 f"Итоговые выводы и перспективы.\n\n"
                 f"Требования: минимум 700 слов, только русский язык, ТОЛЬКО о теме '{query}', статья уникальная.\n"
+                f"ТОЛЬКО Markdown разметка — никаких HTML тегов. Начни СРАЗУ с заголовка, без вступлений.\n"
                 "Примечание: статья создана на основе знаний AI (без интернет-поиска)."
             )
             is_tgwui_research = model.startswith(_TGWUI_PREFIX)
@@ -11085,6 +11096,22 @@ def web_research():
     article_text = re.sub(r'\n```\s*$', '', article_text)
     article_text = article_text.strip()
 
+    # If the LLM returned raw HTML (starts with <!DOCTYPE or <html), extract
+    # plain text from it so _research_build_html can re-render it properly.
+    if re.match(r'^\s*<!DOCTYPE\s+html|^\s*<html', article_text, re.IGNORECASE):
+        import html as _html_mod
+        article_text = re.sub(r'<style[^>]*>.*?</\s*style[^>]*>', '', article_text, flags=re.DOTALL | re.IGNORECASE)
+        article_text = re.sub(r'<script[^>]*>.*?</\s*script[^>]*>', '', article_text, flags=re.DOTALL | re.IGNORECASE)
+        article_text = re.sub(r'<[^>]+>', ' ', article_text)
+        article_text = _html_mod.unescape(article_text)
+        article_text = re.sub(r'\s{3,}', '\n\n', article_text).strip()
+    elif re.search(r'<(?:p|h[1-6]|div|ul|li|strong|em|br)\b', article_text, re.IGNORECASE):
+        # Partial HTML tags in the body — strip them to get clean text
+        import html as _html_mod
+        article_text = re.sub(r'<[^>]+>', ' ', article_text)
+        article_text = _html_mod.unescape(article_text)
+        article_text = re.sub(r'\s{3,}', '\n\n', article_text).strip()
+
     # Strip leading lines that look like LLM preamble phrases
     # (e.g. "Конечно! Вот ваша статью:", "Here is the article:", "Sure, here's...")
     _preamble_line = re.compile(
@@ -11094,6 +11121,10 @@ def web_research():
         r'вот\s+(?:ваша\s+)?(?:статья|текст)[.:!]?\s*$|'
         r'вот\s+(?:готовая\s+)?статья[.:!]?\s*$|'
         r'пожалуйста[,!]\s+вот\s+.{0,60}:\s*$|'
+        r'как\s+(?:вы\s+)?просили.{0,80}$|'
+        r'разумеется[,!].{0,60}$|'
+        r'с\s+удовольствием.{0,60}$|'
+        r'ниже\s+(?:представлена\s+|находится\s+)?(?:статья|текст).{0,60}$|'
         r'here\s+is\s+(?:the\s+)?(?:article|text)[.:!]?\s*$|'
         r'sure[,!]\s+here(?:\'s|\s+is).{0,60}$|'
         r'below\s+is\s+(?:a\s+|an\s+|the\s+)?(?:article|text|draft).{0,60}$|'
@@ -11109,6 +11140,22 @@ def web_research():
     # Also skip leading blank lines after preamble removal
     while _art_lines and not _art_lines[0].strip():
         _art_lines.pop(0)
+    # Skip lines before the first ## heading that look like LLM commentary.
+    # A well-formed article has at most 2 lines before the first ## heading
+    # (typically the article title and possibly a subtitle/tagline).
+    # If more than _MAX_PRE_HEADING_LINES lines precede the first ## it is very
+    # likely LLM preamble chatter ("Here is your article…", "Of course! …" etc.)
+    # that survived the pattern-based stripping above — trim it aggressively.
+    _MAX_PRE_HEADING_LINES = 4
+    _first_h2 = next(
+        (i for i, ln in enumerate(_art_lines) if ln.strip().startswith("## ") or ln.strip().startswith("# ")),
+        None,
+    )
+    if _first_h2 is not None and _first_h2 > _MAX_PRE_HEADING_LINES:
+        # Keep up to 2 non-empty lines before the first heading (title + subtitle)
+        _keep_before = min(2, _first_h2)
+        _before = [ln for ln in _art_lines[:_first_h2] if ln.strip()]
+        _art_lines = _before[-_keep_before:] + _art_lines[_first_h2:]
     article_text = "\n".join(_art_lines).strip()
 
     # ── 9. Build HTML article ─────────────────────────────────────────────
