@@ -642,7 +642,7 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
     <button class="tv-btn" id="tv-3dgen" onclick="setView('3dgen')" title="3D генерация из текста/картинки (TripoSR/Hunyuan3D)" style="border-color:#bd93f9;color:#bd93f9">🧊 3D Gen</button>
     <button class="tv-btn" id="tv-webbuilder" onclick="setView('webbuilder')" title="AI-генератор сайтов (build-a-site / AI-Website-Builder)" style="border-color:#8be9fd;color:#8be9fd">🌐 Сайт</button>
     <button class="tv-btn" id="tv-videditor" onclick="setView('videditor')" title="AI видеоредактор (omniclip / twick)" style="border-color:#ff79c6;color:#ff79c6">🎬 Видео</button>
-    <button class="tv-btn" onclick="var w=window.open('/chatroom/page','_blank','width=480,height=700');if(!w||w.closed)location.href='/chatroom/page';" title="Открыть онлайн-чат пользователей в отдельном окне">🌐 Чат-зал</button>
+    <button class="tv-btn" onclick="(function(){var w=window.open('/chatroom/page','drgr_chatroom','width=520,height=750');if(w){w.focus();}else{location.href='/chatroom/page';}})()" title="Открыть онлайн-чат пользователей в отдельном окне">🌐 Чат-зал</button>
     <button class="tv-btn" onclick="copyPs('ps-update-cmd');openPanel();setTimeout(function(){var el=document.getElementById('ps-update');if(el)el.scrollIntoView({behavior:'smooth'});},300);" title="Скопировать команду обновления в буфер обмена и открыть раздел обновлений" style="border-color:#e8a020;color:#e8a020">⬆ Обновить</button>
     <span class="tb-sep"></span>
     <span id="model-badge">нет модели</span>
@@ -693,6 +693,7 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
           </optgroup>
         </select>
         <button class="ei run" onclick="runCode()" title="Запустить (F5)">▶ Запустить</button>
+        <button class="ei" id="btn-debug" onclick="toggleDebugMode()" title="Режим отладки — показывать вывод сразу после каждого запуска">🐛 Дебаг</button>
         <button class="ei" onclick="formatCode()" title="Форматировать / Красиво отформатировать код">✨ Формат</button>
         <button class="ei" onclick="previewFromEditor()" title="Обновить визор">🖥 Визор</button>
         <button class="ei" onclick="copyEditorCode()" title="Копировать весь код">📋</button>
@@ -2582,6 +2583,27 @@ async function doWebSearch() {
 }
 
 
+// ── Debug mode ────────────────────────────────────────────────────────────────
+var _debugMode = false;
+function toggleDebugMode() {
+  _debugMode = !_debugMode;
+  var btn = document.getElementById('btn-debug');
+  if (btn) {
+    btn.style.background = _debugMode ? 'rgba(255,87,34,.25)' : '';
+    btn.style.borderColor = _debugMode ? '#ff5722' : '';
+    btn.style.color = _debugMode ? '#ff5722' : '';
+    btn.title = _debugMode ? 'Режим отладки включён — вывод всегда виден' : 'Режим отладки — показывать вывод сразу после каждого запуска';
+  }
+  if (_debugMode) {
+    var bar = document.getElementById('outbar');
+    if (bar) bar.classList.add('show');
+    toast('🐛 Режим отладки включён');
+  } else {
+    toast('🐛 Режим отладки выключен');
+  }
+}
+
+
 async function runCode() {
   if (!editor) return;
   var code = editor.getValue().trim();
@@ -2595,6 +2617,9 @@ async function runCode() {
 
   var out = document.getElementById('outc');
   var bar = document.getElementById('outbar');
+
+  // In debug mode always keep output panel visible
+  if (_debugMode) bar.classList.add('show');
 
   // HTML → live preview
   if (lang === 'html') { previewFromEditor(); return; }

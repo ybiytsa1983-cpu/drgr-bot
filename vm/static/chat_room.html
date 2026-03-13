@@ -376,6 +376,150 @@ html, body {
   #emoji-picker { width: 240px; right: -40px; }
   .msg { max-width: 90%; }
 }
+
+/* ── Users button ── */
+#btn-users {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 5px 10px;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+#btn-users:hover { background: var(--bg4); }
+
+/* ── Users panel (slide-out) ── */
+#users-panel {
+  position: fixed;
+  right: 0; top: 0; bottom: 0;
+  width: 240px;
+  background: var(--bg2);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  z-index: 300;
+  transform: translateX(100%);
+  transition: transform .2s ease;
+  box-shadow: -4px 0 24px rgba(0,0,0,.4);
+}
+#users-panel.open { transform: none; }
+#users-panel-hdr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  font-weight: 700;
+  font-size: 15px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+#users-panel-hdr button {
+  background: none; border: none; color: var(--text2); font-size: 18px; cursor: pointer;
+}
+#users-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 0;
+}
+.user-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  cursor: pointer;
+  transition: background .1s;
+}
+.user-item:hover { background: var(--bg3); }
+.user-item .u-avatar {
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 15px; font-weight: 700; color: #fff;
+  flex-shrink: 0;
+}
+.user-item .u-name { font-size: 14px; font-weight: 600; }
+.user-item .u-sub { font-size: 11px; color: var(--text2); }
+.user-item .u-dm-badge {
+  margin-left: auto;
+  background: var(--accent);
+  color: #fff;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 7px;
+  display: none;
+}
+.user-item.has-unread .u-dm-badge { display: block; }
+
+/* ── DM pane ── */
+#dm-pane {
+  position: fixed;
+  inset: 0;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  z-index: 400;
+  transform: translateX(100%);
+  transition: transform .2s ease;
+}
+#dm-pane.open { transform: none; }
+#dm-hdr {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+#dm-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+#dm-messages::-webkit-scrollbar { width: 4px; }
+#dm-messages::-webkit-scrollbar-thumb { background: #444; border-radius: 2px; }
+#dm-input-area {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 10px 14px;
+  background: var(--bg2);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+#dm-inp {
+  flex: 1;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 14px;
+  resize: none;
+  outline: none;
+  min-height: 36px;
+  max-height: 120px;
+  font-family: inherit;
+}
+#dm-inp:focus { border-color: var(--accent); }
+#dm-send-btn {
+  background: var(--accent);
+  border: none;
+  color: #fff;
+  border-radius: 8px;
+  width: 36px; height: 36px;
+  font-size: 16px;
+  cursor: pointer;
+  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+}
+#dm-send-btn:hover { filter: brightness(1.15); }
 </style>
 </head>
 <body>
@@ -384,6 +528,7 @@ html, body {
   <div id="header">
     <h1>💬 DRGR Chat Room</h1>
     <span id="online-badge">● на связи</span>
+    <button id="btn-users" onclick="toggleUsersPanel()" title="Показать участников чата / личные сообщения">👥 Пользователи</button>
     <div id="user-info" onclick="openSettings()" title="Изменить профиль">
       <div id="header-avatar">?</div>
       <span id="header-nick">Войти</span>
@@ -411,6 +556,33 @@ html, body {
   <div id="status-bar">
     <span class="dot ok" id="conn-dot"></span>
     <span id="conn-label">Подключение…</span>
+  </div>
+</div>
+
+<!-- Users panel (sidebar) -->
+<div id="users-panel">
+  <div id="users-panel-hdr">
+    <span>👥 Участники</span>
+    <button onclick="toggleUsersPanel()">✕</button>
+  </div>
+  <div id="users-list"></div>
+</div>
+
+<!-- DM pane -->
+<div id="dm-pane">
+  <div id="dm-hdr">
+    <button onclick="closeDm()" style="background:none;border:none;color:var(--text);font-size:18px;cursor:pointer">←</button>
+    <div id="dm-hdr-avatar" style="width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:#fff;flex-shrink:0">?</div>
+    <span id="dm-hdr-nick" style="font-size:15px;font-weight:700"></span>
+    <span style="margin-left:auto;font-size:11px;color:var(--text2)">Личный чат</span>
+  </div>
+  <div id="dm-messages"></div>
+  <div id="dm-input-area">
+    <textarea id="dm-inp" rows="1" maxlength="2000"
+      placeholder="Личное сообщение…"
+      onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendDm();}"
+      oninput="autoResize(this)"></textarea>
+    <button id="dm-send-btn" onclick="sendDm()">➤</button>
   </div>
 </div>
 
@@ -573,6 +745,8 @@ function saveProfile() {
   _updateHeaderUI();
   closeModal();
   addSys('Добро пожаловать, ' + _nick + '! 👋');
+  connectDmSSE();
+  refreshUsers();
 }
 
 // ── Emoji ────────────────────────────────────────────────────────────────────
@@ -583,7 +757,7 @@ var _EMOJIS = [
   '😕','😟','😮','😲','😳','🥺','😢','😭','😱','😣','😩','😫','🥱','😤',
   '😡','😠','🤬','😈','👿','💀','☠️','🤖','👻','👽','👾',
   '👋','🤚','👌','✌️','🤞','👍','👎','✊','👏','🙌','🙏','💪',
-  '💻','🖥️','📱','��','⌨️','🖱️','💾','📷','📸','📹','📡','🔋','🔌',
+  '💻','🖥️','📱','📟','⌨️','🖱️','💾','📷','📸','📹','📡','🔋','🔌',
   '💡','🔦','🔍','🔎','🔬','🔭','🧪','⚗️','🔩','🔧','🔨','🛠️','🔑','🗝️',
   '🔐','🔒','🔓','🧲','💎','💰','📦','🗂️','📁','📂','📝','📋','📌',
   '🌍','🌐','🌟','⭐','✨','🔥','💧','🌊','🌿','🌱','🌲','🌈','❄️','⛄',
@@ -783,7 +957,177 @@ function sendMsg() {
   document.getElementById('modal-nick').addEventListener('keydown', function(ev) {
     if (ev.key === 'Enter') saveProfile();
   });
+
+  // Start DM SSE if registered
+  if (_registered && _nick) {
+    connectDmSSE();
+    refreshUsers();
+    setInterval(refreshUsers, 30000);
+  }
 })();
+
+// ── Users panel ───────────────────────────────────────────────────────────────
+var _usersPanelOpen = false;
+function toggleUsersPanel() {
+  var panel = document.getElementById('users-panel');
+  _usersPanelOpen = !_usersPanelOpen;
+  if (_usersPanelOpen) {
+    panel.classList.add('open');
+    refreshUsers();
+  } else {
+    panel.classList.remove('open');
+  }
+}
+
+function refreshUsers() {
+  fetch(BASE + '/chatroom/users')
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      var list = document.getElementById('users-list');
+      if (!list) return;
+      list.innerHTML = '';
+      var online = d.users || [];
+      // Update online badge
+      var badge = document.getElementById('online-badge');
+      if (badge) badge.textContent = '● ' + online.length + ' онлайн';
+      online.forEach(function(u) {
+        if (u.nick === _nick) return; // don't show self
+        var div = document.createElement('div');
+        div.className = 'user-item' + (_dmUnread[u.nick] ? ' has-unread' : '');
+        div.innerHTML =
+          '<div class="u-avatar" style="background:' + _esc(u.color || '#888') + '">' +
+            _esc(avatarInitial(u.nick)) + '</div>' +
+          '<div><div class="u-name">' + _esc(u.nick) + '</div>' +
+          '<div class="u-sub">нажмите для личного чата</div></div>' +
+          '<span class="u-dm-badge">' + (_dmUnread[u.nick] || '') + '</span>';
+        div.addEventListener('click', function() { openDm(u.nick, u.color); });
+        list.appendChild(div);
+      });
+      if (!online.filter(function(u){return u.nick!==_nick;}).length) {
+        list.innerHTML = '<div style="padding:16px;color:var(--text2);font-size:13px;text-align:center">Нет других пользователей онлайн</div>';
+      }
+    })
+    .catch(function() {});
+}
+
+// ── DM logic ──────────────────────────────────────────────────────────────────
+var _dmTarget = null;
+var _dmColor = '#888';
+var _dmEs = null;
+var _dmUnread = {};  // nick → unread count
+
+function openDm(nick, color) {
+  _dmTarget = nick;
+  _dmColor = color || _nickColor(nick);
+  // Update DM header
+  var hdrAvatar = document.getElementById('dm-hdr-avatar');
+  var hdrNick   = document.getElementById('dm-hdr-nick');
+  if (hdrAvatar) { hdrAvatar.style.background = _dmColor; hdrAvatar.textContent = avatarInitial(nick); }
+  if (hdrNick)   hdrNick.textContent = nick;
+
+  // Clear unread
+  delete _dmUnread[nick];
+
+  // Load DM history
+  var msgs = document.getElementById('dm-messages');
+  if (msgs) msgs.innerHTML = '';
+  fetch(BASE + '/chatroom/dm/history?from=' + encodeURIComponent(_nick) + '&to=' + encodeURIComponent(nick))
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      (d.messages || []).forEach(function(m) { addDmMsg(m); });
+    })
+    .catch(function() {});
+
+  // Show DM pane
+  document.getElementById('dm-pane').classList.add('open');
+  if (_usersPanelOpen) toggleUsersPanel();
+  setTimeout(function() {
+    var inp = document.getElementById('dm-inp');
+    if (inp) inp.focus();
+    _dmScrollBottom();
+  }, 100);
+}
+
+function closeDm() {
+  document.getElementById('dm-pane').classList.remove('open');
+  _dmTarget = null;
+}
+
+function addDmMsg(m) {
+  var container = document.getElementById('dm-messages');
+  if (!container) return;
+  var isMe = (m.from === _nick);
+  var nick = isMe ? _nick : m.from;
+  var color = m.color || _nickColor(nick);
+  var div = document.createElement('div');
+  div.className = 'msg ' + (isMe ? 'msg-me' : 'msg-other');
+  div.innerHTML =
+    '<div class="msg-avatar-wrap">' +
+      '<div class="msg-avatar" style="background:' + _esc(color) + '">' + _esc(avatarInitial(nick)) + '</div>' +
+    '</div>' +
+    '<div class="msg-content">' +
+      '<div class="msg-nick">' + _esc(isMe ? 'Вы' : m.from) + '</div>' +
+      '<div class="msg-bubble">' + _esc(m.text) + '</div>' +
+      '<div class="msg-ts">' + _esc(m.ts || '') + '</div>' +
+    '</div>';
+  container.appendChild(div);
+  _dmScrollBottom();
+}
+
+function _dmScrollBottom() {
+  var c = document.getElementById('dm-messages');
+  if (c) c.scrollTop = c.scrollHeight;
+}
+
+function sendDm() {
+  if (!_registered) { alert('Войдите в чат, чтобы отправлять личные сообщения'); return; }
+  if (!_dmTarget) return;
+  var inp = document.getElementById('dm-inp');
+  var text = inp.value.trim();
+  if (!text) return;
+  var btn = document.getElementById('dm-send-btn');
+  btn.disabled = true;
+  fetch(BASE + '/chatroom/dm/send', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({from: _nick, to: _dmTarget, text: text, color: _color}),
+  })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.ok) {
+        inp.value = '';
+        autoResize(inp);
+        inp.focus();
+      }
+    })
+    .catch(function() {})
+    .finally(function() { btn.disabled = false; });
+}
+
+function connectDmSSE() {
+  if (!_nick) return;
+  if (_dmEs) { try { _dmEs.close(); } catch(e) {} }
+  _dmEs = new EventSource(BASE + '/chatroom/dm/events?nick=' + encodeURIComponent(_nick));
+  _dmEs.onmessage = function(ev) {
+    var data;
+    try { data = JSON.parse(ev.data); } catch(e) { return; }
+    if (!data || data.type === 'ping' || data.type === 'connected') return;
+    if (data.type !== 'dm') return;
+    var partner = (data.from === _nick) ? data.to : data.from;
+    // If the DM pane is open for this partner, show immediately
+    if (_dmTarget === partner) {
+      addDmMsg(data);
+    } else {
+      // Increment unread
+      _dmUnread[data.from] = (_dmUnread[data.from] || 0) + 1;
+      // Refresh users list if open
+      if (_usersPanelOpen) refreshUsers();
+    }
+  };
+  _dmEs.onerror = function() {
+    setTimeout(function() { connectDmSSE(); }, 5000);
+  };
+}
 </script>
 </body>
 </html>

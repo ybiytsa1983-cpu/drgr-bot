@@ -273,8 +273,12 @@ def _autodiscover_ollama() -> None:
             pass
         # 2. Fall back: scan 127.0.0.1 first (avoids IPv6 issues on Windows),
         #    then localhost, on ports 11434-11444.
+        #    Skip _OLLAMA_RELAY_PORT to avoid mistaking our own CORS relay for
+        #    an Ollama instance (which would cause infinite proxy loops).
         for host in ("127.0.0.1", "localhost"):
             for port in range(11434, 11445):
+                if port == _OLLAMA_RELAY_PORT:
+                    continue  # never treat our own CORS relay as Ollama
                 url = f"http://{host}:{port}"
                 try:
                     r = _http.get(f"{url}/api/tags", timeout=1)
@@ -4950,6 +4954,147 @@ def chatroom_events():
 
 
 # ---------------------------------------------------------------------------
+# Chatroom — online users list
+# ---------------------------------------------------------------------------
+@app.route("/chatroom/users", methods=["GET"])
+def chatroom_users_list():
+    """Return list of currently registered chat users."""
+    with _chatroom_lock:
+        users = [
+            {"nick": k, "color": v.get("color", "#888")}
+            for k, v in _chatroom_users.items()
+        ]
+    return jsonify({"users": users})
+
+
+# ---------------------------------------------------------------------------
+# Chatroom — private DM (direct messages)
+# ---------------------------------------------------------------------------
+_chatroom_dm_history: dict = {}   # key: frozenset({nick_a, nick_b}) → list of msgs
+_chatroom_dm_subs: dict = {}      # key: nick → list of queue.Queue
+_chatroom_dm_counter = 0
+_chatroom_dm_lock = threading.Lock()
+_CHATROOM_DM_HISTORY_MAX = 200
+
+
+def _chatroom_dm_key(a: str, b: str):
+    return frozenset({a, b})
+
+
+def _chatroom_dm_notify(to_nick: str, msg: dict) -> None:
+    """Push a DM notification to subscriber queues of the recipient."""
+    with _chatroom_dm_lock:
+        for q in _chatroom_dm_subs.get(to_nick, []):
+            try:
+                q.put_nowait(msg)
+            except queue.Full:
+                pass
+
+
+@app.route("/chatroom/dm/send", methods=["POST"])
+def chatroom_dm_send():
+    """Send a private DM from one user to another.
+
+    Body: {"from": "alice", "to": "bob", "text": "...", "color": "#rrggbb"}
+    Returns: {"ok": true, "id": N}
+    """
+    global _chatroom_dm_counter
+    body = request.get_json(silent=True) or {}
+    from_nick = (body.get("from") or "").strip()[:_CHATROOM_MAX_NICK_LEN]
+    to_nick   = (body.get("to") or "").strip()[:_CHATROOM_MAX_NICK_LEN]
+    text      = (body.get("text") or "").strip()[:_CHATROOM_MAX_MSG_LEN]
+    if not from_nick or not to_nick or not text:
+        return jsonify({"ok": False, "error": "from/to/text required"}), 400
+
+    with _chatroom_lock:
+        user_info = _chatroom_users.get(from_nick, {})
+    color = user_info.get("color") or (body.get("color") or "").strip().lower()
+    if color not in _CHATROOM_VALID_COLORS:
+        h = int(hashlib.md5(from_nick.encode()).hexdigest(), 16)
+        color = sorted(_CHATROOM_VALID_COLORS)[h % len(_CHATROOM_VALID_COLORS)]
+
+    with _chatroom_dm_lock:
+        _chatroom_dm_counter += 1
+        msg_id = _chatroom_dm_counter
+        msg = {
+            "id": msg_id,
+            "type": "dm",
+            "from": from_nick,
+            "to": to_nick,
+            "color": color,
+            "text": text,
+            "ts": datetime.now(timezone.utc).strftime("%H:%M"),
+        }
+        key = _chatroom_dm_key(from_nick, to_nick)
+        if key not in _chatroom_dm_history:
+            _chatroom_dm_history[key] = []
+        _chatroom_dm_history[key].append(msg)
+        if len(_chatroom_dm_history[key]) > _CHATROOM_DM_HISTORY_MAX:
+            _chatroom_dm_history[key].pop(0)
+
+    # Notify both parties
+    _chatroom_dm_notify(to_nick, msg)
+    _chatroom_dm_notify(from_nick, msg)
+    return jsonify({"ok": True, "id": msg_id})
+
+
+@app.route("/chatroom/dm/history", methods=["GET"])
+def chatroom_dm_history_get():
+    """Return DM history between two users.
+
+    Query params: ?from=alice&to=bob
+    """
+    from_nick = (request.args.get("from") or "").strip()
+    to_nick   = (request.args.get("to") or "").strip()
+    if not from_nick or not to_nick:
+        return jsonify({"messages": []})
+    key = _chatroom_dm_key(from_nick, to_nick)
+    with _chatroom_dm_lock:
+        msgs = list(_chatroom_dm_history.get(key, []))
+    return jsonify({"messages": msgs})
+
+
+@app.route("/chatroom/dm/events")
+def chatroom_dm_events():
+    """SSE stream delivering incoming DMs for a specific user.
+
+    Query param: ?nick=alice
+    """
+    nick = (request.args.get("nick") or "").strip()
+    if not nick:
+        return jsonify({"error": "nick required"}), 400
+
+    q: queue.Queue = queue.Queue(maxsize=_CHATROOM_QUEUE_MAXSIZE)
+    with _chatroom_dm_lock:
+        _chatroom_dm_subs.setdefault(nick, []).append(q)
+
+    def _gen():
+        yield "data: {\"type\":\"connected\"}\n\n"
+        try:
+            while True:
+                try:
+                    msg = q.get(timeout=_CHATROOM_HEARTBEAT_SEC)
+                    yield f"data: {json.dumps(msg)}\n\n"
+                except queue.Empty:
+                    yield "data: {\"type\":\"ping\"}\n\n"
+        except GeneratorExit:
+            pass
+        finally:
+            with _chatroom_dm_lock:
+                subs = _chatroom_dm_subs.get(nick, [])
+                try:
+                    subs.remove(q)
+                except ValueError:
+                    pass
+
+    return Response(
+        stream_with_context(_gen()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+# ---------------------------------------------------------------------------
 # TG → VM chat: Telegram messages forwarded to the VM AI chat panel
 # ---------------------------------------------------------------------------
 _TG_CHAT_MAX = 200          # keep last N TG messages in memory
@@ -5059,13 +5204,63 @@ def patch_stream():
         f"ЗАПРОС НА ИЗМЕНЕНИЕ: {prompt}"
     )
 
+    _to = int(os.environ.get("OLLAMA_TIMEOUT", 300))
+    _real_model = model
+
     def _stream():
         try:
+            # Route lmstudio: / tgwui: models through their OpenAI-compatible APIs
+            if _real_model.startswith(_LM_STUDIO_PREFIX) and LM_STUDIO_BASE:
+                _m = _real_model[len(_LM_STUDIO_PREFIX):]
+                _base = LM_STUDIO_BASE
+                _use_chat = True
+            elif _real_model.startswith(_TGWUI_PREFIX) and TGWUI_BASE:
+                _m = _real_model[len(_TGWUI_PREFIX):]
+                _base = TGWUI_BASE
+                _use_chat = True
+            else:
+                _m = _real_model
+                _base = None
+                _use_chat = False
+
+            if _use_chat and _base:
+                resp = _http.post(
+                    f"{_base}/v1/chat/completions",
+                    json={
+                        "model": _m,
+                        "messages": [{"role": "user", "content": full_prompt}],
+                        "stream": True,
+                    },
+                    stream=True,
+                    timeout=_to,
+                )
+                resp.raise_for_status()
+                for raw_line in resp.iter_lines():
+                    if not raw_line:
+                        continue
+                    line = raw_line.decode("utf-8") if isinstance(raw_line, bytes) else raw_line
+                    if line.startswith("data:"):
+                        line = line[5:].strip()
+                    if line in ("", "[DONE]"):
+                        continue
+                    try:
+                        chunk = json.loads(line)
+                    except ValueError:
+                        continue
+                    delta = (chunk.get("choices") or [{}])[0].get("delta", {})
+                    token = delta.get("content", "")
+                    if token:
+                        yield f"data: {json.dumps({'token': token})}\n\n"
+                _record_generation("patch", model, full_prompt)
+                yield "data: [DONE]\n\n"
+                return
+
+            # Default: Ollama /api/generate
             resp = _http.post(
                 f"{OLLAMA_BASE}/api/generate",
-                json={"model": model, "prompt": full_prompt, "stream": True},
+                json={"model": _m, "prompt": full_prompt, "stream": True},
                 stream=True,
-                timeout=int(os.environ.get("OLLAMA_TIMEOUT", 300)),
+                timeout=_to,
             )
             if resp.status_code == 500:
                 err_body = ""
@@ -5073,7 +5268,7 @@ def patch_stream():
                     err_body = resp.json().get("error", resp.text[:200])
                 except Exception:  # pylint: disable=broad-except
                     err_body = resp.text[:200]
-                _err_msg = f'Ollama ошибка 500: {err_body}. Проверьте, что модель "{model}" загружена (ollama pull {model}).'
+                _err_msg = f'Ollama ошибка 500: {err_body}. Проверьте, что модель "{_m}" загружена (ollama pull {_m}).'
                 yield f"data: {json.dumps({'error': _err_msg})}\n\n"
                 return
             resp.raise_for_status()
@@ -5088,14 +5283,14 @@ def patch_stream():
                 if token:
                     yield f"data: {json.dumps({'token': token})}\n\n"
                 if chunk.get("done"):
-                    _record_generation("patch", model, prompt)
+                    _record_generation("patch", model, full_prompt)
                     yield "data: [DONE]\n\n"
                     return
         except _http.exceptions.Timeout:
             _oto = int(os.environ.get("OLLAMA_TIMEOUT", 120))
-            yield f'data: {{"error":"Ollama не ответил за {_oto} с — модель слишком медленная. Попробуйте увеличить OLLAMA_TIMEOUT или выбрать меньшую модель."}}\n\n'
+            yield f'data: {{"error":"Таймаут {_oto} с — модель слишком медленная. Попробуйте увеличить OLLAMA_TIMEOUT или выбрать меньшую модель."}}\n\n'
         except _http.exceptions.ConnectionError:
-            yield 'data: {"error":"Нет соединения с Ollama — запустите \'ollama serve\'"}\n\n'
+            yield 'data: {"error":"Нет соединения с ИИ-сервером — запустите Ollama/LM Studio"}\n\n'
         except Exception as exc:  # pylint: disable=broad-except
             yield f"data: {json.dumps({'error': str(exc)})}\n\n"
 
