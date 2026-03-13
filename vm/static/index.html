@@ -914,6 +914,20 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
         </div>
       </div>
 
+      <!-- ── LM Studio quick connect + Diagnostics ── -->
+      <div class="vm-card" style="padding:10px 14px">
+        <h3>📋 Диагностика и подключение ВМ</h3>
+        <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+          <button class="pb pb-s" style="flex:1;padding:7px;min-width:150px" onclick="vmConnectLmStudioLan()">🔗 Подключить LM Studio LAN (172.22.208.1)</button>
+          <button class="pb pb-m" style="flex:1;padding:7px;min-width:150px" onclick="vmShowReport()">📊 Полный отчёт системы</button>
+        </div>
+        <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
+          <button class="pb pb-p" style="flex:1;padding:7px;min-width:150px" onclick="vmTestModel()">🧪 Тест активной модели</button>
+          <button class="pb" style="flex:1;padding:7px;min-width:150px;background:rgba(139,233,253,.1);border-color:#8be9fd;color:#8be9fd" onclick="vmAutoStartColab()">☁ Авто-запуск Colab VM</button>
+        </div>
+        <div id="vm-report-area" style="margin-top:10px;display:none;font-size:11px;line-height:1.7;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:12px;max-height:400px;overflow-y:auto;white-space:pre-wrap"></div>
+      </div>
+
       <!-- ── drgr-visor quick actions ── -->
       <div class="vm-card" style="padding:10px 14px">
         <h3>⚡ Переученная ВМ — drgr-visor</h3>
@@ -4295,9 +4309,10 @@ async function vmDetectLmStudio() {
   var btn = document.getElementById('vm-btn-detect-lms');
   var res = document.getElementById('vm-lms-detect-result');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Ищу...'; }
-  if (res) res.textContent = '🔍 Сканирую порты LM Studio...';
+  if (res) res.textContent = '🔍 Сканирую порты LM Studio (локальный + LAN 172.22.208.1)...';
   try {
-    var r = await fetch('/lmstudio/detect');
+    // Also hint the common LAN bridge address for WSL/VM setups
+    var r = await fetch('/lmstudio/detect?hint=172.22.208.1');
     var d = await r.json();
     if (d.url) {
       if (res) res.innerHTML = '✅ Найден LM Studio: <b>' + d.url + '</b> — модели: ' + (d.models || []).join(', ') + '<br>'
@@ -4320,6 +4335,150 @@ async function vmSaveLmsUrl(url) {
     if (d.ok) { toast('✅ LM Studio URL сохранён: ' + url); vmRefreshAiStatus(); loadModels(); }
     else toast('⚠ ' + (d.error || 'Ошибка сохранения'));
   } catch(e) { toast('⚠ ' + e.message); }
+}
+
+// Quick-connect to LM Studio on the default LAN VM address 172.22.208.1:1234
+async function vmConnectLmStudioLan() {
+  var url = 'http://172.22.208.1:1234';
+  toast('🔗 Проверяю LM Studio на ' + url + '…');
+  try {
+    var r = await fetch('/lmstudio/detect?hint=172.22.208.1:1234');
+    var d = await r.json();
+    if (d.url) {
+      await vmSaveLmsUrl(d.url);
+      var area = document.getElementById('vm-report-area');
+      if (area) {
+        area.style.display = 'block';
+        area.textContent = '✅ LM Studio найден: ' + d.url + '\nМодели: ' + (d.models || []).join(', ');
+      }
+    } else {
+      toast('⚠ LM Studio не найден на 172.22.208.1. Проверь, запущен ли сервер.');
+    }
+  } catch(e) { toast('⚠ ' + e.message); }
+}
+
+// Fetch /vm/report and display it nicely in the diagnostics area
+async function vmShowReport() {
+  var area = document.getElementById('vm-report-area');
+  if (!area) return;
+  area.style.display = 'block';
+  area.textContent = '⏳ Получаю отчёт системы…';
+  try {
+    var r = await fetch('/vm/report');
+    var d = await r.json();
+    var lines = [];
+    lines.push('═══════════════════════════════════════════════════════');
+    lines.push('  📊 ПОЛНЫЙ ОТЧЁТ СИСТЕМЫ DRGR VM');
+    lines.push('═══════════════════════════════════════════════════════');
+    lines.push('');
+    lines.push('🛠 ГЕНЕРАТОРЫ (' + d.generators.length + '):');
+    (d.generators || []).forEach(function(g) {
+      lines.push('  ✅ ' + g.name + '  →  ' + g.endpoint);
+    });
+    lines.push('');
+    lines.push('📝 РЕДАКТОРЫ (' + d.editors.length + '):');
+    (d.editors || []).forEach(function(e) {
+      lines.push('  ✅ ' + e.name + '  [' + e.note + ']');
+    });
+    lines.push('');
+    lines.push('🔌 LLM-БЭКЕНДЫ:');
+    (d.backends || []).forEach(function(b) {
+      var icon = b.status === 'ok' ? '✅' : b.status === 'not_configured' ? '⚪' : '❌';
+      var models = b.models && b.models.length ? ' — ' + b.models.slice(0,3).join(', ') : '';
+      lines.push('  ' + icon + ' ' + b.name + (b.url ? ' (' + b.url + ')' : ' (не настроен)') + models);
+    });
+    lines.push('');
+    var s = d.summary || {};
+    lines.push('📈 ИТОГО: ' + s.total_generators + ' генераторов, ' + s.total_editors + ' редакторов, ' + s.backends_ok + '/' + s.backends_total + ' LLM-бэкендов активны');
+    if (d.test && d.test.model) {
+      lines.push('');
+      lines.push('🧪 ТЕСТ ГЕНЕРАЦИИ КОДА (модель: ' + d.test.model + '):');
+      if (d.test.ok) {
+        lines.push('  ✅ Успех за ' + d.test.elapsed_s + 'с');
+        lines.push('  Ответ: ' + (d.test.output || '').replace(/\n/g, '\n  '));
+      } else {
+        lines.push('  ❌ Ошибка: ' + (d.test.error || 'неизвестно'));
+      }
+    }
+    lines.push('');
+    lines.push('═══════════════════════════════════════════════════════');
+    area.textContent = lines.join('\n');
+  } catch(e) {
+    area.textContent = '⚠ Ошибка получения отчёта: ' + e.message;
+  }
+}
+
+// Test current active model with a quick code generation task
+async function vmTestModel() {
+  var area = document.getElementById('vm-report-area');
+  if (!area) return;
+  area.style.display = 'block';
+  area.textContent = '⏳ Определяю активную модель…';
+  try {
+    // Get current model from selector
+    var sel = document.getElementById('model-select');
+    var model = sel ? sel.value : '';
+    if (!model) {
+      var h = await fetch('/health');
+      var hd = await h.json();
+      // Try first available LM Studio model
+      if (hd.lm_studio && hd.lm_studio.status === 'ok') {
+        var mr = await fetch('/lmstudio/models');
+        var md = await mr.json();
+        if (md.models && md.models.length) model = 'lmstudio:' + md.models[0];
+      }
+    }
+    if (!model) {
+      area.textContent = '⚠ Нет активной модели. Подключи LM Studio или Ollama.';
+      return;
+    }
+    area.textContent = '⏳ Тестирую модель ' + model + '…';
+    var r = await fetch('/vm/report?model=' + encodeURIComponent(model));
+    var d = await r.json();
+    var t = d.test || {};
+    if (t.ok) {
+      area.textContent = '✅ ТЕСТ МОДЕЛИ: ' + model + '\nВремя: ' + t.elapsed_s + 'с\n\nОтвет модели:\n' + (t.output || '');
+    } else {
+      area.textContent = '❌ ТЕСТ ПРОВАЛЕН\nМодель: ' + model + '\nОшибка: ' + (t.error || 'неизвестно');
+    }
+  } catch(e) {
+    area.textContent = '⚠ Ошибка теста: ' + e.message;
+  }
+}
+
+// Auto-start Colab VM from URL parameter or prompt user
+async function vmAutoStartColab() {
+  var area = document.getElementById('vm-report-area');
+  // Check URL param ?colab_url=
+  var params = new URLSearchParams(window.location.search);
+  var colabUrl = params.get('colab_url') || '';
+  if (!colabUrl) {
+    colabUrl = prompt('Введите URL Colab VM (ngrok/cloudflare):', 'https://xxxx.ngrok-free.app');
+    if (!colabUrl) return;
+  }
+  if (area) { area.style.display = 'block'; area.textContent = '⏳ Подключаю Colab VM: ' + colabUrl + '…'; }
+  try {
+    var r = await fetch('/colab/autostart', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({url: colabUrl})
+    });
+    var d = await r.json();
+    if (d.ok) {
+      toast('✅ Colab VM настроен: ' + colabUrl);
+      if (area) area.textContent = '✅ Colab VM подключён: ' + colabUrl + '\nСтатус: ' + (d.connected ? 'онлайн' : 'офлайн (URL сохранён)');
+      // Update colab URL input if visible
+      var ci = document.getElementById('colab-url-input');
+      if (ci) ci.value = colabUrl;
+      setTimeout(function(){ setView('colab'); }, 1500);
+    } else {
+      toast('⚠ ' + (d.error || 'Ошибка'));
+      if (area) area.textContent = '❌ Ошибка: ' + (d.error || 'Неизвестно');
+    }
+  } catch(e) {
+    toast('⚠ ' + e.message);
+    if (area) area.textContent = '⚠ Ошибка: ' + e.message;
+  }
 }
 
 // VM pane code editor interactions
@@ -6161,7 +6320,31 @@ window.addEventListener('load', function(){
   loadModels();
   loadSystemPrompt();
   loadOllamaUrl();
-  setView('both');
+
+  // Handle URL parameters for deep-linking and auto-start
+  var _params = new URLSearchParams(window.location.search);
+  var _viewParam = _params.get('view') || '';
+  var _colabUrlParam = _params.get('colab_url') || '';
+
+  if (_colabUrlParam) {
+    // Auto-configure Colab VM URL from URL param (used by batch file / startup script)
+    fetch('/colab/autostart', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({url: _colabUrlParam})
+    }).then(function(r){ return r.json(); }).then(function(d){
+      if (d.ok) {
+        var ci = document.getElementById('colab-url-input');
+        if (ci) ci.value = _colabUrlParam;
+        toast('✅ Colab VM подключён автоматически: ' + _colabUrlParam);
+      }
+    }).catch(function(){});
+    setView('colab');
+  } else if (_viewParam) {
+    setView(_viewParam);
+  } else {
+    setView('both');
+  }
 
   // Register editor drag-drop handlers in CAPTURE phase so they fire before
   // Monaco Editor can intercept (and potentially stopPropagation on) file drags.

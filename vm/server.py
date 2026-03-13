@@ -3192,8 +3192,8 @@ def lmstudio_detect():
             # No port in hint — scan common LM Studio ports on the hint host
             for port in (1234, 1235, 11434, 8080, 8000):
                 candidates.append(f"http://{parsed_hint.hostname}:{port}")
-    # Common local addresses
-    for host in ("127.0.0.1", "localhost"):
+    # Common local addresses + default LAN VM host (e.g. Windows-host WSL bridge 172.22.208.1)
+    for host in ("127.0.0.1", "localhost", "172.22.208.1"):
         for port in (1234, 1235, 11434, 8080, 8000):
             candidates.append(f"http://{host}:{port}")
     seen: set = set()
@@ -3219,6 +3219,229 @@ def lmstudio_detect():
         except Exception:  # pylint: disable=broad-except
             continue
     return jsonify({"url": None, "models": []})
+
+
+# ---------------------------------------------------------------------------
+# VM diagnostic report — lists all generators/editors and tests LLM backends
+# ---------------------------------------------------------------------------
+
+@app.route("/vm/report", methods=["GET"])
+def vm_report():
+    """Return a diagnostic report listing all generators, editors and LLM backend statuses.
+
+    Optional query params:
+      ?model=<model_id>  — if provided, fires a quick test generation request
+    """
+    import time as _time
+
+    generators = [
+        {"id": "code",       "name": "💻 Генератор кода",          "endpoint": "/generate/auto/stream",    "method": "POST"},
+        {"id": "patch",      "name": "✏ Патчер кода",              "endpoint": "/patch/stream",             "method": "POST"},
+        {"id": "project",    "name": "📦 Генератор проектов",       "endpoint": "/project/generate",         "method": "POST"},
+        {"id": "extension",  "name": "🧩 Генератор расширений",     "endpoint": "/extension/generate",       "method": "POST"},
+        {"id": "imagegen",   "name": "🎨 Генератор изображений",    "endpoint": "/imagegen/generate",        "method": "POST"},
+        {"id": "triposr",    "name": "🧊 Генератор 3D-моделей",     "endpoint": "/triposr/generate",         "method": "POST"},
+        {"id": "webbuilder", "name": "🌐 Генератор сайтов",         "endpoint": "/webbuilder/generate",      "method": "POST"},
+        {"id": "videditor",  "name": "🎬 Генератор видеопроектов",  "endpoint": "/videditor/project",        "method": "POST"},
+        {"id": "research",   "name": "🔬 Исследователь (Research)", "endpoint": "/research",                 "method": "POST"},
+    ]
+
+    editors = [
+        {"id": "monaco",       "name": "📝 Monaco (редактор кода)",   "status": "built-in",   "note": "Встроен в VM"},
+        {"id": "gltf",         "name": "🧊 GLTF 3D-редактор",         "status": "built-in",   "note": "JSON + 3D preview"},
+        {"id": "webbuilder",   "name": "🌐 Редактор сайтов",          "status": "built-in",   "note": "WebBuilder pane"},
+        {"id": "videditor",    "name": "🎬 Видеоредактор (EDL)",       "status": "built-in",   "note": "VidEditor pane"},
+        {"id": "imagegen",     "name": "🎨 Арт-студия",               "status": "built-in",   "note": "SD/ComfyUI pane"},
+    ]
+
+    # --- Check LLM backends ---
+    backends: list = []
+
+    # Ollama
+    ollama_status = "not_configured"
+    ollama_models: list = []
+    if OLLAMA_BASE:
+        try:
+            r = _http.get(f"{OLLAMA_BASE}/api/tags", timeout=3)
+            if r.status_code == 200:
+                ollama_models = [m["name"] for m in r.json().get("models", [])]
+                ollama_status = "ok"
+            else:
+                ollama_status = "unreachable"
+        except Exception:
+            ollama_status = "unreachable"
+    backends.append({"id": "ollama", "name": "🦙 Ollama", "url": OLLAMA_BASE, "status": ollama_status, "models": ollama_models})
+
+    # LM Studio
+    lms_status = "not_configured"
+    lms_models: list = []
+    if LM_STUDIO_BASE:
+        try:
+            r = _http.get(f"{LM_STUDIO_BASE}/v1/models", timeout=3)
+            if r.status_code == 200:
+                lms_models = [m["id"] for m in r.json().get("data", [])]
+                lms_status = "ok"
+            else:
+                lms_status = "unreachable"
+        except Exception:
+            lms_status = "unreachable"
+    backends.append({"id": "lmstudio", "name": "🎬 LM Studio", "url": LM_STUDIO_BASE, "status": lms_status, "models": lms_models})
+
+    # TGWUI
+    tgwui_status = "not_configured"
+    tgwui_models: list = []
+    if TGWUI_BASE:
+        try:
+            r = _http.get(f"{TGWUI_BASE}/v1/models", timeout=3)
+            if r.status_code == 200:
+                tgwui_models = [m["id"] for m in r.json().get("data", [])]
+                tgwui_status = "ok"
+            else:
+                tgwui_status = "unreachable"
+        except Exception:
+            tgwui_status = "unreachable"
+    backends.append({"id": "tgwui", "name": "⚙ TGWUI", "url": TGWUI_BASE, "status": tgwui_status, "models": tgwui_models})
+
+    # Vision VM
+    vvm_status = "not_configured"
+    if VISION_VM_URL:
+        try:
+            r = _http.get(f"{VISION_VM_URL}/health", timeout=3)
+            vvm_status = "ok" if r.status_code == 200 else "unreachable"
+        except Exception:
+            vvm_status = "unreachable"
+    backends.append({"id": "visionvm", "name": "👁 Vision VM", "url": VISION_VM_URL, "status": vvm_status, "models": []})
+
+    # Remote VM (Colab / ngrok)
+    remote_status = "not_configured"
+    if REMOTE_VM_URL:
+        try:
+            r = _http.get(f"{REMOTE_VM_URL}/health", timeout=4)
+            remote_status = "ok" if r.status_code == 200 else "unreachable"
+        except Exception:
+            remote_status = "unreachable"
+    backends.append({"id": "remotevm", "name": "☁ Remote VM (Colab)", "url": REMOTE_VM_URL, "status": remote_status, "models": []})
+
+    # --- Optional quick test code generation ---
+    test_model = request.args.get("model", "").strip()
+    test_result: dict = {}
+    if test_model:
+        test_prompt = (
+            "Напиши на Python функцию `fibonacci(n)` которая возвращает список из первых n "
+            "чисел Фибоначчи. Только код, без объяснений."
+        )
+        t0 = _time.time()
+        try:
+            if test_model.startswith("lmstudio:") and LM_STUDIO_BASE:
+                real_model = test_model[len("lmstudio:"):]
+                payload = {
+                    "model": real_model,
+                    "messages": [{"role": "user", "content": test_prompt}],
+                    "max_tokens": 512, "temperature": 0.2, "stream": False,
+                }
+                r = _http.post(f"{LM_STUDIO_BASE}/v1/chat/completions", json=payload, timeout=30)
+                if r.status_code == 200:
+                    content = r.json()["choices"][0]["message"]["content"]
+                    test_result = {"ok": True, "model": test_model, "elapsed_s": round(_time.time() - t0, 2), "output": content[:1000]}
+                else:
+                    test_result = {"ok": False, "model": test_model, "error": f"HTTP {r.status_code}"}
+            elif test_model.startswith("tgwui:") and TGWUI_BASE:
+                real_model = test_model[len("tgwui:"):]
+                payload = {
+                    "model": real_model,
+                    "messages": [{"role": "user", "content": test_prompt}],
+                    "max_tokens": 512, "temperature": 0.2, "stream": False,
+                }
+                r = _http.post(f"{TGWUI_BASE}/v1/chat/completions", json=payload, timeout=30)
+                if r.status_code == 200:
+                    content = r.json()["choices"][0]["message"]["content"]
+                    test_result = {"ok": True, "model": test_model, "elapsed_s": round(_time.time() - t0, 2), "output": content[:1000]}
+                else:
+                    test_result = {"ok": False, "model": test_model, "error": f"HTTP {r.status_code}"}
+            elif OLLAMA_BASE:
+                payload = {
+                    "model": test_model,
+                    "messages": [{"role": "user", "content": test_prompt}],
+                    "stream": False,
+                }
+                r = _http.post(f"{OLLAMA_BASE}/api/chat", json=payload, timeout=30)
+                if r.status_code == 200:
+                    content = r.json().get("message", {}).get("content", "")
+                    test_result = {"ok": True, "model": test_model, "elapsed_s": round(_time.time() - t0, 2), "output": content[:1000]}
+                else:
+                    test_result = {"ok": False, "model": test_model, "error": f"HTTP {r.status_code}"}
+            else:
+                test_result = {"ok": False, "model": test_model, "error": "No matching backend configured"}
+        except Exception as exc:  # pylint: disable=broad-except
+            test_result = {"ok": False, "model": test_model, "error": str(exc), "elapsed_s": round(_time.time() - t0, 2)}
+
+    return jsonify({
+        "generators": generators,
+        "editors": editors,
+        "backends": backends,
+        "test": test_result,
+        "summary": {
+            "total_generators": len(generators),
+            "total_editors": len(editors),
+            "backends_ok": sum(1 for b in backends if b["status"] == "ok"),
+            "backends_total": len(backends),
+        },
+    })
+
+
+# ---------------------------------------------------------------------------
+# Colab VM auto-start — receives URL from batch file / URL param
+# ---------------------------------------------------------------------------
+
+@app.route("/colab/autostart", methods=["POST"])
+def colab_autostart():
+    """Auto-configure the Remote VM URL (called from a batch file or startup script).
+
+    Expects JSON: {"url": "https://xxxx.ngrok-free.app"}
+    Saves the URL to .env and returns the VM UI URL with ?view=colab.
+    """
+    global REMOTE_VM_URL  # noqa: PLW0603
+    body = request.get_json(silent=True) or {}
+    url = body.get("url", "").strip().rstrip("/")
+    if not url:
+        return jsonify({"ok": False, "error": "url is required"}), 400
+    if not url.startswith(("http://", "https://")):
+        return jsonify({"ok": False, "error": "url must start with http:// or https://"}), 400
+
+    # Persist to .env
+    env_path = os.path.join(os.path.dirname(__file__), "..", ".env")
+    try:
+        lines: list = []
+        if os.path.exists(env_path):
+            with open(env_path, encoding="utf-8") as f:
+                lines = f.readlines()
+        found = False
+        for i, line in enumerate(lines):
+            if line.startswith("REMOTE_VM_URL="):
+                lines[i] = f"REMOTE_VM_URL={url}\n"
+                found = True
+                break
+        if not found:
+            lines.append(f"REMOTE_VM_URL={url}\n")
+        with open(env_path, "w", encoding="utf-8") as f:
+            f.writelines(lines)
+    except Exception:  # pylint: disable=broad-except
+        pass
+
+    os.environ["REMOTE_VM_URL"] = url
+    REMOTE_VM_URL = url
+
+    # Test connectivity
+    try:
+        r = _http.get(f"{url}/health", timeout=5)
+        connected = r.status_code == 200
+    except Exception:  # pylint: disable=broad-except
+        connected = False
+
+    vm_port = int(os.environ.get("VM_PORT", 8080))
+    ui_url = f"http://localhost:{vm_port}/?view=colab"
+    return jsonify({"ok": True, "url": url, "connected": connected, "ui_url": ui_url})
+
 
 @app.route("/tgwui/models", methods=["GET"])
 def tgwui_models():
