@@ -413,6 +413,9 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
         <div class="hr"><span class="hk">LM Studio</span><span id="h-lms" class="hv">—</span></div>
         <div class="hr"><span class="hk">🧠 TGWUI</span><span id="h-tgwui" class="hv">—</span></div>
         <div class="hr"><span class="hk">🤝 OAF</span><span id="h-oaf" class="hv">—</span></div>
+        <div class="hr"><span class="hk">🧊 3D</span><span id="h-triposr" class="hv">—</span></div>
+        <div class="hr"><span class="hk">🌐 WebBuild</span><span id="h-webbuilder" class="hv">—</span></div>
+        <div class="hr"><span class="hk">🎬 VidEdit</span><span id="h-videditor" class="hv">—</span></div>
         <div class="hr"><span class="hk">🌐 Remote VM</span><span id="h-rvm" class="hv">—</span></div>
         <div class="hr"><span class="hk">👁 Vision VM</span><span id="h-vvm" class="hv">—</span></div>
         <div class="hr"><span class="hk">📱 TG Bot</span><span id="h-bot" class="hv">—</span></div>
@@ -460,6 +463,42 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
       </div>
       <div id="oaf-status" style="font-size:10px;margin-top:2px"></div>
       <div style="font-size:10px;color:var(--text2)">URL <a href="https://github.com/oscarvalenzuelab/open_agentic_framework" target="_blank">Open Agentic Framework</a> (оркестратор агентов). Запуск: <code>docker-compose up -d</code></div>
+    </div>
+
+    <!-- 3D generation service URL (TripoSR / Hunyuan3D) -->
+    <div>
+      <div class="pl">🧊 3D Generation Service URL (TripoSR / Hunyuan3D)</div>
+      <input type="text" id="triposr-url" placeholder="http://127.0.0.1:7860" autocomplete="off"/>
+      <div class="pr" style="margin-top:4px">
+        <button class="pb pb-p" style="flex:1" onclick="saveTriposrUrl()">💾 Сохранить 3D URL</button>
+        <button class="pb pb-m" style="flex:1" onclick="checkTriposrStatus()" title="Проверить соединение">🔗 Проверить</button>
+      </div>
+      <div id="triposr-status" style="font-size:10px;margin-top:2px"></div>
+      <div style="font-size:10px;color:var(--text2)">Локальный 3D-генератор: <a href="https://github.com/VAST-AI-Research/TripoSR" target="_blank">TripoSR</a>, <a href="https://github.com/Tencent-Hunyuan/Hunyuan3D-2" target="_blank">Hunyuan3D-2</a> или <a href="https://github.com/NVIDIA-AI-Blueprints/3d-object-generation" target="_blank">NVIDIA 3D</a>. Сервис должен принимать <code>POST /generate</code>.</div>
+    </div>
+
+    <!-- AI Website Builder URL -->
+    <div>
+      <div class="pl">🌐 AI Website Builder URL</div>
+      <input type="text" id="webbuilder-url" placeholder="http://127.0.0.1:3001" autocomplete="off"/>
+      <div class="pr" style="margin-top:4px">
+        <button class="pb pb-p" style="flex:1" onclick="saveWebbuilderUrl()">💾 Сохранить WebBuilder URL</button>
+        <button class="pb pb-m" style="flex:1" onclick="checkWebbuilderStatus()" title="Проверить соединение">🔗 Проверить</button>
+      </div>
+      <div id="webbuilder-status" style="font-size:10px;margin-top:2px"></div>
+      <div style="font-size:10px;color:var(--text2)">AI-генератор сайтов: <a href="https://github.com/i-dream-of-ai/build-a-site" target="_blank">build-a-site</a> или <a href="https://github.com/Ratna-Babu/Ai-Website-Builder" target="_blank">AI-Website-Builder</a>. Без URL — сайт генерирует локальная ВМ.</div>
+    </div>
+
+    <!-- Video Editor Service URL -->
+    <div>
+      <div class="pl">🎬 Video Editor Service URL (omniclip / twick)</div>
+      <input type="text" id="videditor-url" placeholder="http://127.0.0.1:4000" autocomplete="off"/>
+      <div class="pr" style="margin-top:4px">
+        <button class="pb pb-p" style="flex:1" onclick="saveVideditorUrl()">💾 Сохранить VidEditor URL</button>
+        <button class="pb pb-m" style="flex:1" onclick="checkVideditorStatus()" title="Проверить соединение">🔗 Проверить</button>
+      </div>
+      <div id="videditor-status" style="font-size:10px;margin-top:2px"></div>
+      <div style="font-size:10px;color:var(--text2)">Видеоредактор-бэкенд: <a href="https://github.com/omni-media/omniclip" target="_blank">omniclip</a> или <a href="https://github.com/ncounterspecialist/twick" target="_blank">twick</a>. Без URL — ВМ генерирует EDL-сценарий.</div>
     </div>
 
     <!-- Remote VM URL (Google Colab / ngrok) -->
@@ -600,6 +639,9 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
     <button class="tv-btn" id="tv-gltf" onclick="setView('gltf')">🧊 GLTF</button>
     <button class="tv-btn" id="tv-colab" onclick="setView('colab')">🌐 Colab VM</button>
     <button class="tv-btn" id="tv-goose" onclick="setView('goose')" title="Goose AI coding agent — авто-правки кода в папке проекта" style="border-color:#50fa7b;color:#50fa7b">🪿 Goose</button>
+    <button class="tv-btn" id="tv-3dgen" onclick="setView('3dgen')" title="3D генерация из текста/картинки (TripoSR/Hunyuan3D)" style="border-color:#bd93f9;color:#bd93f9">🧊 3D Gen</button>
+    <button class="tv-btn" id="tv-webbuilder" onclick="setView('webbuilder')" title="AI-генератор сайтов (build-a-site / AI-Website-Builder)" style="border-color:#8be9fd;color:#8be9fd">🌐 Сайт</button>
+    <button class="tv-btn" id="tv-videditor" onclick="setView('videditor')" title="AI видеоредактор (omniclip / twick)" style="border-color:#ff79c6;color:#ff79c6">🎬 Видео</button>
     <button class="tv-btn" onclick="var w=window.open('/chatroom/page','_blank','width=480,height=700');if(!w||w.closed)location.href='/chatroom/page';" title="Открыть онлайн-чат пользователей в отдельном окне">🌐 Чат-зал</button>
     <button class="tv-btn" onclick="copyPs('ps-update-cmd');openPanel();setTimeout(function(){var el=document.getElementById('ps-update');if(el)el.scrollIntoView({behavior:'smooth'});},300);" title="Скопировать команду обновления в буфер обмена и открыть раздел обновлений" style="border-color:#e8a020;color:#e8a020">⬆ Обновить</button>
     <span class="tb-sep"></span>
@@ -1194,6 +1236,136 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
   </div>
 </div>
 
+<!-- ── 3D Generation pane (TripoSR / Hunyuan3D / NVIDIA 3D) ─────────────── -->
+<div id="3dgen-pane" style="display:none;flex:1;flex-direction:column;overflow:hidden;min-height:0;background:var(--bg2)">
+  <div style="padding:16px;overflow-y:auto;flex:1">
+    <h2 style="margin:0 0 4px;font-size:16px">🧊 3D Генерация</h2>
+    <p style="margin:0 0 10px;font-size:12px;color:var(--text2)">Генерация 3D-модели из текста или изображения через локальный сервис.
+      <a href="https://github.com/VAST-AI-Research/TripoSR" target="_blank" style="color:var(--accent)">TripoSR</a> /
+      <a href="https://github.com/Tencent-Hunyuan/Hunyuan3D-2" target="_blank" style="color:var(--accent)">Hunyuan3D-2</a> /
+      <a href="https://github.com/NVIDIA-AI-Blueprints/3d-object-generation" target="_blank" style="color:var(--accent)">NVIDIA 3D</a>.
+      Укажите URL сервиса в настройках (☰) → 3D Generation Service URL.</p>
+    <div style="display:flex;flex-direction:column;gap:10px;max-width:700px">
+      <div>
+        <div class="pl">📝 Текстовый промпт</div>
+        <textarea id="tdgen-prompt" rows="3" placeholder="Белый медведь в снегу, низкополигональный стиль" style="width:100%;resize:vertical"></textarea>
+      </div>
+      <div>
+        <div class="pl">🖼 Изображение (опционально, base64 PNG/JPEG)</div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <input type="file" id="tdgen-img-input" accept="image/*" onchange="tdgenLoadImage()" style="flex:1"/>
+          <button class="pb pb-m" onclick="document.getElementById('tdgen-img-input').value='';document.getElementById('tdgen-img-preview').style.display='none';window._tdgenImageB64=null" title="Очистить">✖</button>
+        </div>
+        <img id="tdgen-img-preview" style="display:none;max-height:120px;margin-top:6px;border-radius:6px;border:1px solid var(--border)"/>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <div style="flex:1;min-width:120px">
+          <div class="pl">📦 Формат</div>
+          <select id="tdgen-format" style="width:100%;padding:6px;border-radius:6px;border:1px solid var(--border);background:var(--bg4);color:var(--text1)">
+            <option value="glb">GLB (рекомендуется)</option>
+            <option value="obj">OBJ</option>
+            <option value="stl">STL</option>
+          </select>
+        </div>
+        <div style="flex:1;min-width:120px">
+          <div class="pl">🔢 Steps</div>
+          <input type="number" id="tdgen-steps" value="50" min="10" max="200" style="width:100%;padding:6px;border-radius:6px;border:1px solid var(--border);background:var(--bg4);color:var(--text1)"/>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="pb pb-p" onclick="tdgenGenerate()" id="tdgen-btn" style="flex:2">🧊 Сгенерировать 3D модель</button>
+      </div>
+      <div id="tdgen-status" style="font-size:12px;color:var(--text2)"></div>
+      <div id="tdgen-result" style="display:none">
+        <div class="pl">📥 Результат</div>
+        <div id="tdgen-result-info" style="font-size:12px;color:var(--text2);margin-bottom:6px"></div>
+        <div style="display:flex;gap:8px">
+          <a id="tdgen-download-link" href="#" download="model.glb" class="pb pb-s" style="display:none;text-decoration:none">⬇ Скачать модель</a>
+          <button class="pb pb-m" onclick="tdgenOpenInGltf()" id="tdgen-open-gltf-btn" style="display:none">🧊 Открыть в GLTF Viewer</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── AI Website Builder pane ───────────────────────────────────────────── -->
+<div id="webbuilder-pane" style="display:none;flex:1;flex-direction:column;overflow:hidden;min-height:0;background:var(--bg2)">
+  <div style="padding:16px;overflow-y:auto;flex:1">
+    <h2 style="margin:0 0 4px;font-size:16px">🌐 AI Генератор Сайтов</h2>
+    <p style="margin:0 0 10px;font-size:12px;color:var(--text2)">Генерирует полноценный HTML-сайт из текстового описания.
+      <a href="https://github.com/i-dream-of-ai/build-a-site" target="_blank" style="color:var(--accent)">build-a-site</a> /
+      <a href="https://github.com/Ratna-Babu/Ai-Website-Builder" target="_blank" style="color:var(--accent)">AI-Website-Builder</a>.
+      Без внешнего сервиса (☰ → WebBuilder URL) — HTML генерируется локальной ВМ.</p>
+    <div style="display:flex;flex-direction:column;gap:10px;max-width:700px">
+      <div>
+        <div class="pl">📝 Описание сайта</div>
+        <textarea id="wb-prompt" rows="5" placeholder="Лендинг для агентства по продаже недвижимости. Яркий дизайн, блок с преимуществами, форма контакта, footer." style="width:100%;resize:vertical"></textarea>
+      </div>
+      <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
+        <div style="flex:1;min-width:140px">
+          <div class="pl">🎨 Стиль CSS</div>
+          <select id="wb-style" style="width:100%;padding:6px;border-radius:6px;border:1px solid var(--border);background:var(--bg4);color:var(--text1)">
+            <option value="tailwind">Tailwind CSS</option>
+            <option value="bootstrap">Bootstrap 5</option>
+            <option value="plain">Plain CSS</option>
+          </select>
+        </div>
+        <div style="flex:2;min-width:160px">
+          <div class="pl">🤖 Модель (опционально)</div>
+          <input type="text" id="wb-model" placeholder="Авто (из списка моделей)" style="width:100%;padding:6px;border-radius:6px;border:1px solid var(--border);background:var(--bg4);color:var(--text1)"/>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="pb pb-p" onclick="wbGenerate()" id="wb-btn" style="flex:2">🌐 Сгенерировать сайт</button>
+        <button class="pb pb-s" onclick="wbOpenInEditor()" id="wb-open-btn" style="flex:1;display:none">📝 Открыть в редакторе</button>
+      </div>
+      <div id="wb-status" style="font-size:12px;color:var(--text2)"></div>
+      <iframe id="wb-preview" style="display:none;width:100%;height:500px;border:1px solid var(--border);border-radius:8px;background:#fff" sandbox="allow-scripts"></iframe>
+    </div>
+  </div>
+</div>
+
+<!-- ── Video Editor pane (omniclip / twick) ──────────────────────────────── -->
+<div id="videditor-pane" style="display:none;flex:1;flex-direction:column;overflow:hidden;min-height:0;background:var(--bg2)">
+  <div style="padding:16px;overflow-y:auto;flex:1">
+    <h2 style="margin:0 0 4px;font-size:16px">🎬 AI Видеоредактор</h2>
+    <p style="margin:0 0 10px;font-size:12px;color:var(--text2)">Генерирует JSON-сценарий (EDL) для монтажа видео.
+      <a href="https://github.com/omni-media/omniclip" target="_blank" style="color:var(--accent)">omniclip</a> /
+      <a href="https://github.com/ncounterspecialist/twick" target="_blank" style="color:var(--accent)">twick</a>.
+      Без внешнего сервиса (☰ → VidEditor URL) — EDL генерирует локальная ВМ.</p>
+    <div style="display:flex;flex-direction:column;gap:10px;max-width:700px">
+      <div>
+        <div class="pl">📝 Описание видеоролика</div>
+        <textarea id="ve-description" rows="4" placeholder="Короткий промо-ролик 60 секунд про продукт. Вступление 5 сек, 3 блока по 15 сек, заключение 10 сек. Бодрая музыка, субтитры." style="width:100%;resize:vertical"></textarea>
+      </div>
+      <div>
+        <div class="pl">📁 Список видеофайлов (по одному на строку)</div>
+        <textarea id="ve-files" rows="3" placeholder="intro.mp4&#10;scene1.mp4&#10;scene2.mp4&#10;outro.mp4" style="width:100%;resize:vertical;font-family:monospace;font-size:12px"></textarea>
+      </div>
+      <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
+        <div style="flex:1;min-width:120px">
+          <div class="pl">📦 Формат вывода</div>
+          <select id="ve-format" style="width:100%;padding:6px;border-radius:6px;border:1px solid var(--border);background:var(--bg4);color:var(--text1)">
+            <option value="mp4">MP4</option>
+            <option value="webm">WebM</option>
+            <option value="json">JSON (только EDL)</option>
+          </select>
+        </div>
+        <div style="flex:2;min-width:160px">
+          <div class="pl">🤖 Модель (опционально)</div>
+          <input type="text" id="ve-model" placeholder="Авто" style="width:100%;padding:6px;border-radius:6px;border:1px solid var(--border);background:var(--bg4);color:var(--text1)"/>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="pb pb-p" onclick="veGenerate()" id="ve-btn" style="flex:2">🎬 Сгенерировать EDL / запустить монтаж</button>
+        <button class="pb pb-s" onclick="veOpenInEditor()" id="ve-open-btn" style="flex:1;display:none">📝 Открыть EDL в редакторе</button>
+      </div>
+      <div id="ve-status" style="font-size:12px;color:var(--text2)"></div>
+      <pre id="ve-result" style="display:none;background:var(--bg4);border:1px solid var(--border);border-radius:8px;padding:12px;font-size:12px;overflow:auto;max-height:400px"></pre>
+    </div>
+  </div>
+</div>
+
 <script>
 // ── Globals ─────────────────────────────────────────────────────────────────
 var editor = null;
@@ -1263,27 +1435,36 @@ function setView(v) {
   var rp = document.getElementById('research-pane');
   var clp= document.getElementById('colab-pane');
   var gsp= document.getElementById('goose-pane');
+  var tdgp = document.getElementById('3dgen-pane');
+  var wbp  = document.getElementById('webbuilder-pane');
+  var vep  = document.getElementById('videditor-pane');
   var mn = document.getElementById('main');
   var appEl = document.getElementById('app') || document.body;
   appEl.classList.remove('chat-code-mode');
-  ['both','editor','preview','chat','chat-code','vm','gltf','research','colab','goose'].forEach(function(x){
+  ['both','editor','preview','chat','chat-code','vm','gltf','research','colab','goose','3dgen','webbuilder','videditor'].forEach(function(x){
     var el = document.getElementById('tv-'+x);
     if (el) el.classList.toggle('on', x===v);
   });
-  var isChat     = (v === 'chat');
-  var isChatCode = (v === 'chat-code');
-  var isVM       = (v === 'vm');
-  var isGLTF     = (v === 'gltf');
-  var isResearch = (v === 'research');
-  var isColab    = (v === 'colab');
-  var isGoose    = (v === 'goose');
-  var isSpecial  = isChat || isVM || isGLTF || isResearch || isColab || isGoose;
+  var isChat       = (v === 'chat');
+  var isChatCode   = (v === 'chat-code');
+  var isVM         = (v === 'vm');
+  var isGLTF       = (v === 'gltf');
+  var isResearch   = (v === 'research');
+  var isColab      = (v === 'colab');
+  var isGoose      = (v === 'goose');
+  var is3DGen      = (v === '3dgen');
+  var isWebBuilder = (v === 'webbuilder');
+  var isVidEditor  = (v === 'videditor');
+  var isSpecial  = isChat || isVM || isGLTF || isResearch || isColab || isGoose || is3DGen || isWebBuilder || isVidEditor;
   cp.style.display  = (isChat || isChatCode) ? 'flex' : 'none';
   vmp.style.display = isVM       ? 'flex' : 'none';
   gp.style.display  = isGLTF    ? 'flex' : 'none';
   rp.style.display  = isResearch ? 'flex' : 'none';
-  if (clp) clp.style.display = isColab ? 'flex' : 'none';
-  if (gsp) gsp.style.display = isGoose ? 'flex' : 'none';
+  if (clp) clp.style.display  = isColab      ? 'flex' : 'none';
+  if (gsp) gsp.style.display  = isGoose      ? 'flex' : 'none';
+  if (tdgp) tdgp.style.display = is3DGen     ? 'flex' : 'none';
+  if (wbp)  wbp.style.display  = isWebBuilder? 'flex' : 'none';
+  if (vep)  vep.style.display  = isVidEditor ? 'flex' : 'none';
   pb.style.display  = (isSpecial || isChatCode) ? 'none' : '';
   mn.style.display  = isSpecial ? 'none' : 'flex';
   if (v === 'both')     { ep.style.display='flex'; rh.style.display='block'; vp.style.display='flex'; }
@@ -2899,6 +3080,27 @@ async function loadHealth() {
       var oafCls  = oafOk ? 'ok'   : (oafCfg ? 'fail'          : '');
       set('h-oaf', oafText, oafCls);
     }
+    var triposrData = d.triposr || {};
+    var triposrOk  = triposrData.status === 'ok';
+    var triposrCfg = triposrData.status !== 'not_configured';
+    if (document.getElementById('h-triposr')) {
+      set('h-triposr', triposrOk ? '✓ OK' : (triposrCfg ? '✗ Недоступен' : '— Не настроен'),
+                       triposrOk ? 'ok'   : (triposrCfg ? 'fail' : ''));
+    }
+    var wbData = d.webbuilder || {};
+    var wbOk  = wbData.status === 'ok';
+    var wbCfg = wbData.status !== 'not_configured';
+    if (document.getElementById('h-webbuilder')) {
+      set('h-webbuilder', wbOk ? '✓ OK' : (wbCfg ? '✗ Недоступен' : '— Локальная ВМ'),
+                          wbOk ? 'ok'   : (wbCfg ? 'fail' : ''));
+    }
+    var veData = d.videditor || {};
+    var veOk  = veData.status === 'ok';
+    var veCfg = veData.status !== 'not_configured';
+    if (document.getElementById('h-videditor')) {
+      set('h-videditor', veOk ? '✓ OK' : (veCfg ? '✗ Недоступен' : '— Локальная ВМ'),
+                         veOk ? 'ok'   : (veCfg ? 'fail' : ''));
+    }
     if (document.getElementById('h-rvm')) {
       var rvmText = rvmOk ? '✓ OK' : (rvmCfg ? '✗ Недоступен' : '— Не настроен');
       var rvmCls  = rvmOk ? 'ok'   : (rvmCfg ? 'fail'          : '');
@@ -3090,6 +3292,15 @@ async function loadOllamaUrl() {
     }
     if (d.oaf_url && document.getElementById('oaf-url')) {
       document.getElementById('oaf-url').value = d.oaf_url;
+    }
+    if (d.triposr_url && document.getElementById('triposr-url')) {
+      document.getElementById('triposr-url').value = d.triposr_url;
+    }
+    if (d.webbuilder_url && document.getElementById('webbuilder-url')) {
+      document.getElementById('webbuilder-url').value = d.webbuilder_url;
+    }
+    if (d.videditor_url && document.getElementById('videditor-url')) {
+      document.getElementById('videditor-url').value = d.videditor_url;
     }
     if (d.remote_vm_url && document.getElementById('rvm-url')) {
       document.getElementById('rvm-url').value = d.remote_vm_url;
@@ -5539,6 +5750,263 @@ async function oafSendTask() {
     }
   } catch(e) {
     if (resultEl) resultEl.textContent = '⚠ Ошибка: ' + e.message;
+  }
+}
+
+// ── Settings: save/check TripoSR, WebBuilder, VidEditor URLs ─────────────
+async function saveTriposrUrl() {
+  var url = ((document.getElementById('triposr-url')||{}).value || '').trim();
+  if (!url) { toast('Введите URL 3D-сервиса'); return; }
+  var st = document.getElementById('triposr-status');
+  if (st) st.textContent = '🔄 Сохранение...';
+  try {
+    var r = await fetch('/settings', { method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ triposr_url: url }) });
+    var d = await r.json();
+    if (st) st.textContent = d.ok ? '✅ Сохранено' : ('⚠ ' + (d.error || 'Ошибка'));
+  } catch(e) { if (st) st.textContent = '⚠ ' + e.message; }
+}
+async function checkTriposrStatus() {
+  var st = document.getElementById('triposr-status');
+  if (st) st.textContent = '🔄 Проверка...';
+  try {
+    var r = await fetch('/health');
+    var d = await r.json();
+    var ts = d.triposr || {};
+    if (st) st.textContent = ts.status === 'ok' ? '✅ Онлайн' :
+      (ts.status === 'not_configured' ? '➖ Не настроен' : '⚠ Недоступен: ' + (ts.url || ''));
+  } catch(e) { if (st) st.textContent = '⚠ ' + e.message; }
+}
+async function saveWebbuilderUrl() {
+  var url = ((document.getElementById('webbuilder-url')||{}).value || '').trim();
+  if (!url) { toast('Введите URL WebBuilder'); return; }
+  var st = document.getElementById('webbuilder-status');
+  if (st) st.textContent = '🔄 Сохранение...';
+  try {
+    var r = await fetch('/settings', { method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ webbuilder_url: url }) });
+    var d = await r.json();
+    if (st) st.textContent = d.ok ? '✅ Сохранено' : ('⚠ ' + (d.error || 'Ошибка'));
+  } catch(e) { if (st) st.textContent = '⚠ ' + e.message; }
+}
+async function checkWebbuilderStatus() {
+  var st = document.getElementById('webbuilder-status');
+  if (st) st.textContent = '🔄 Проверка...';
+  try {
+    var r = await fetch('/health');
+    var d = await r.json();
+    var ws = d.webbuilder || {};
+    if (st) st.textContent = ws.status === 'ok' ? '✅ Онлайн' :
+      (ws.status === 'not_configured' ? '➖ Не настроен (используется локальная ВМ)' : '⚠ Недоступен');
+  } catch(e) { if (st) st.textContent = '⚠ ' + e.message; }
+}
+async function saveVideditorUrl() {
+  var url = ((document.getElementById('videditor-url')||{}).value || '').trim();
+  if (!url) { toast('Введите URL VidEditor'); return; }
+  var st = document.getElementById('videditor-status');
+  if (st) st.textContent = '🔄 Сохранение...';
+  try {
+    var r = await fetch('/settings', { method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ videditor_url: url }) });
+    var d = await r.json();
+    if (st) st.textContent = d.ok ? '✅ Сохранено' : ('⚠ ' + (d.error || 'Ошибка'));
+  } catch(e) { if (st) st.textContent = '⚠ ' + e.message; }
+}
+async function checkVideditorStatus() {
+  var st = document.getElementById('videditor-status');
+  if (st) st.textContent = '🔄 Проверка...';
+  try {
+    var r = await fetch('/health');
+    var d = await r.json();
+    var vs = d.videditor || {};
+    if (st) st.textContent = vs.status === 'ok' ? '✅ Онлайн' :
+      (vs.status === 'not_configured' ? '➖ Не настроен (используется локальная ВМ)' : '⚠ Недоступен');
+  } catch(e) { if (st) st.textContent = '⚠ ' + e.message; }
+}
+
+// ── 3D Generation pane functions ─────────────────────────────────────────
+window._tdgenImageB64 = null;
+function tdgenLoadImage() {
+  var inp = document.getElementById('tdgen-img-input');
+  if (!inp || !inp.files || !inp.files[0]) return;
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    window._tdgenImageB64 = e.target.result.split(',')[1]; // base64 part only
+    var prev = document.getElementById('tdgen-img-preview');
+    if (prev) { prev.src = e.target.result; prev.style.display = 'block'; }
+  };
+  reader.readAsDataURL(inp.files[0]);
+}
+async function tdgenGenerate() {
+  var prompt = ((document.getElementById('tdgen-prompt')||{}).value || '').trim();
+  var format = ((document.getElementById('tdgen-format')||{}).value || 'glb');
+  var steps  = parseInt(((document.getElementById('tdgen-steps')||{}).value || '50'), 10);
+  if (!prompt && !window._tdgenImageB64) { toast('Введите промпт или загрузите изображение'); return; }
+  var statusEl  = document.getElementById('tdgen-status');
+  var resultEl  = document.getElementById('tdgen-result');
+  var btn = document.getElementById('tdgen-btn');
+  if (statusEl) statusEl.textContent = '🔄 Генерация 3D модели...';
+  if (resultEl) resultEl.style.display = 'none';
+  if (btn) btn.disabled = true;
+  try {
+    var payload = { format: format, steps: steps };
+    if (prompt) payload.prompt = prompt;
+    if (window._tdgenImageB64) payload.image_base64 = window._tdgenImageB64;
+    var r = await fetch('/triposr/generate', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload)
+    });
+    var d = await r.json();
+    if (d.ok && d.data) {
+      var data = d.data;
+      if (statusEl) statusEl.textContent = '✅ 3D модель сгенерирована!';
+      if (resultEl) {
+        resultEl.style.display = 'block';
+        var infoEl = document.getElementById('tdgen-result-info');
+        var dlLink = document.getElementById('tdgen-download-link');
+        var gltfBtn = document.getElementById('tdgen-open-gltf-btn');
+        if (infoEl) infoEl.textContent = 'Формат: ' + (data.format || format) + (data.model_url ? ' | URL: ' + data.model_url : '');
+        if (dlLink) {
+          if (data.model_url) {
+            dlLink.href = data.model_url;
+            dlLink.download = 'model.' + (data.format || format);
+            dlLink.style.display = '';
+          } else if (data.model_b64) {
+            var mime = format === 'obj' ? 'model/obj' : (format === 'stl' ? 'model/stl' : 'model/gltf-binary');
+            dlLink.href = 'data:' + mime + ';base64,' + data.model_b64;
+            dlLink.download = 'model.' + format;
+            dlLink.style.display = '';
+          }
+        }
+        if (gltfBtn && (format === 'glb' || format === 'gltf')) {
+          window._tdgenModelUrl = data.model_url || (data.model_b64 ? ('data:model/gltf-binary;base64,' + data.model_b64) : null);
+          gltfBtn.style.display = window._tdgenModelUrl ? '' : 'none';
+        }
+      }
+    } else {
+      if (statusEl) statusEl.textContent = '⚠ ' + (d.error || 'Ошибка генерации');
+    }
+  } catch(e) {
+    if (statusEl) statusEl.textContent = '⚠ ' + e.message;
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+function tdgenOpenInGltf() {
+  if (!window._tdgenModelUrl) return;
+  // Switch to GLTF viewer and pass the model URL
+  setView('gltf');
+  // Try to load the model in the existing GLTF viewer if gltfShowInPreview exists
+  if (typeof gltfShowInPreview === 'function') {
+    setTimeout(function(){ gltfShowInPreview(window._tdgenModelUrl); }, 200);
+  }
+}
+
+// ── Website Builder pane functions ───────────────────────────────────────
+var _wbLastHtml = '';
+async function wbGenerate() {
+  var prompt = ((document.getElementById('wb-prompt')||{}).value || '').trim();
+  var style  = ((document.getElementById('wb-style')||{}).value  || 'tailwind');
+  var model  = ((document.getElementById('wb-model')||{}).value  || '').trim();
+  if (!prompt) { toast('Введите описание сайта'); return; }
+  var statusEl  = document.getElementById('wb-status');
+  var previewEl = document.getElementById('wb-preview');
+  var openBtn   = document.getElementById('wb-open-btn');
+  var btn = document.getElementById('wb-btn');
+  if (statusEl) statusEl.textContent = '🔄 Генерация сайта...';
+  if (previewEl) previewEl.style.display = 'none';
+  if (openBtn) openBtn.style.display = 'none';
+  if (btn) btn.disabled = true;
+  try {
+    var payload = { prompt: prompt, style: style };
+    if (model) payload.model = model;
+    var r = await fetch('/webbuilder/generate', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload)
+    });
+    var d = await r.json();
+    if (d.ok && d.data) {
+      var html = d.data.html || (typeof d.data === 'string' ? d.data : JSON.stringify(d.data, null, 2));
+      _wbLastHtml = html;
+      if (statusEl) statusEl.textContent = '✅ Сайт сгенерирован! (' + html.length + ' символов)';
+      if (previewEl) {
+        previewEl.srcdoc = html;
+        previewEl.style.display = 'block';
+      }
+      if (openBtn) openBtn.style.display = '';
+    } else {
+      if (statusEl) statusEl.textContent = '⚠ ' + (d.error || 'Ошибка генерации');
+    }
+  } catch(e) {
+    if (statusEl) statusEl.textContent = '⚠ ' + e.message;
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+function wbOpenInEditor() {
+  if (!_wbLastHtml) return;
+  if (editor) {
+    editor.setValue(_wbLastHtml);
+    setView('both');
+    if (typeof monaco !== 'undefined') {
+      var m = monaco.editor.getModels()[0];
+      if (m) monaco.editor.setModelLanguage(m, 'html');
+    }
+  }
+}
+
+// ── Video Editor pane functions ───────────────────────────────────────────
+var _veLastEdl = '';
+async function veGenerate() {
+  var description = ((document.getElementById('ve-description')||{}).value || '').trim();
+  var filesRaw    = ((document.getElementById('ve-files')||{}).value      || '').trim();
+  var format      = ((document.getElementById('ve-format')||{}).value     || 'mp4');
+  var model       = ((document.getElementById('ve-model')||{}).value      || '').trim();
+  if (!description) { toast('Введите описание видеоролика'); return; }
+  var statusEl = document.getElementById('ve-status');
+  var resultEl = document.getElementById('ve-result');
+  var openBtn  = document.getElementById('ve-open-btn');
+  var btn = document.getElementById('ve-btn');
+  if (statusEl) statusEl.textContent = '🔄 Генерация EDL сценария...';
+  if (resultEl) resultEl.style.display = 'none';
+  if (openBtn) openBtn.style.display = 'none';
+  if (btn) btn.disabled = true;
+  var files = filesRaw ? filesRaw.split('\n').map(function(s){ return s.trim(); }).filter(Boolean) : [];
+  try {
+    var payload = { description: description, files: files, format: format };
+    if (model) payload.model = model;
+    var r = await fetch('/videditor/project', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload)
+    });
+    var d = await r.json();
+    if (d.ok && d.data) {
+      var edl = d.data.edl || (typeof d.data === 'string' ? d.data : JSON.stringify(d.data, null, 2));
+      _veLastEdl = edl;
+      if (statusEl) statusEl.textContent = '✅ EDL сценарий сгенерирован!';
+      if (resultEl) { resultEl.textContent = edl; resultEl.style.display = 'block'; }
+      if (openBtn) openBtn.style.display = '';
+    } else {
+      if (statusEl) statusEl.textContent = '⚠ ' + (d.error || 'Ошибка генерации EDL');
+    }
+  } catch(e) {
+    if (statusEl) statusEl.textContent = '⚠ ' + e.message;
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+function veOpenInEditor() {
+  if (!_veLastEdl) return;
+  if (editor) {
+    editor.setValue(_veLastEdl);
+    setView('both');
+    if (typeof monaco !== 'undefined') {
+      var m = monaco.editor.getModels()[0];
+      if (m) monaco.editor.setModelLanguage(m, 'json');
+    }
   }
 }
 </script>

@@ -115,6 +115,22 @@ _TGWUI_PREFIX = "tgwui:"
 # Override via OAF_URL env var or the settings panel.
 OAF_BASE = os.environ.get("OAF_URL", "").rstrip("/")
 
+# TripoSR / Hunyuan3D / local 3D generation service base URL.
+# The service should expose POST /generate accepting {"prompt": "...", "image_base64": "..."}
+# and returning {"ok": True, "model_url": "<url or base64>"}.
+# Override via TRIPOSR_URL env var or the settings panel.
+TRIPOSR_BASE = os.environ.get("TRIPOSR_URL", "").rstrip("/")
+
+# AI website builder service base URL (build-a-site / AI-Website-Builder style).
+# Should expose POST /generate accepting {"prompt": "..."} and returning {"ok": True, "html": "..."}.
+# Override via WEBBUILDER_URL env var or the settings panel.
+WEBBUILDER_BASE = os.environ.get("WEBBUILDER_URL", "").rstrip("/")
+
+# Video editor project service base URL (omniclip / twick style).
+# Should expose POST /project accepting {"script": "...", "files": [...]} and returning {"ok": True, ...}.
+# Override via VIDEDITOR_URL env var or the settings panel.
+VIDEDITOR_BASE = os.environ.get("VIDEDITOR_URL", "").rstrip("/")
+
 # Remote VM URL — URL of an externally hosted VM (e.g. Google Colab via ngrok).
 # When set, the /remote/proxy endpoint forwards requests there.
 REMOTE_VM_URL = os.environ.get("REMOTE_VM_URL", "").rstrip("/")
@@ -1876,6 +1892,33 @@ def health():
         except Exception:  # pylint: disable=broad-except
             pass
 
+    # --- TripoSR / local 3D generation service ---
+    triposr_ok = False
+    if TRIPOSR_BASE:
+        try:
+            triposr_resp = _http.get(f"{TRIPOSR_BASE}/health", timeout=3)
+            triposr_ok = triposr_resp.status_code < 400
+        except Exception:  # pylint: disable=broad-except
+            pass
+
+    # --- AI website builder service ---
+    webbuilder_ok = False
+    if WEBBUILDER_BASE:
+        try:
+            wb_resp = _http.get(f"{WEBBUILDER_BASE}/health", timeout=3)
+            webbuilder_ok = wb_resp.status_code < 400
+        except Exception:  # pylint: disable=broad-except
+            pass
+
+    # --- Video editor backend service ---
+    videditor_ok = False
+    if VIDEDITOR_BASE:
+        try:
+            ve_resp = _http.get(f"{VIDEDITOR_BASE}/health", timeout=3)
+            videditor_ok = ve_resp.status_code < 400
+        except Exception:  # pylint: disable=broad-except
+            pass
+
     # --- Remote VM (Google Colab / ngrok) ---
     rvm_ok = False
     if REMOTE_VM_URL:
@@ -1937,6 +1980,18 @@ def health():
         "oaf": {
             "status": "ok" if oaf_ok else ("unreachable" if OAF_BASE else "not_configured"),
             "url":    OAF_BASE,
+        },
+        "triposr": {
+            "status": "ok" if triposr_ok else ("unreachable" if TRIPOSR_BASE else "not_configured"),
+            "url":    TRIPOSR_BASE,
+        },
+        "webbuilder": {
+            "status": "ok" if webbuilder_ok else ("unreachable" if WEBBUILDER_BASE else "not_configured"),
+            "url":    WEBBUILDER_BASE,
+        },
+        "videditor": {
+            "status": "ok" if videditor_ok else ("unreachable" if VIDEDITOR_BASE else "not_configured"),
+            "url":    VIDEDITOR_BASE,
         },
         "remote_vm": {
             "status": "ok" if rvm_ok else ("unreachable" if REMOTE_VM_URL else "not_configured"),
@@ -2694,6 +2749,9 @@ def get_settings():
         "lm_studio_url": LM_STUDIO_BASE,
         "tgwui_url": TGWUI_BASE,
         "oaf_url": OAF_BASE,
+        "triposr_url": TRIPOSR_BASE,
+        "webbuilder_url": WEBBUILDER_BASE,
+        "videditor_url": VIDEDITOR_BASE,
         "remote_vm_url": REMOTE_VM_URL,
         "vision_vm_url": VISION_VM_URL,
         "bot_token_set": bot_token_set,
@@ -2704,7 +2762,7 @@ def get_settings():
 @app.route("/settings", methods=["POST"])
 def save_settings():
     """Save settings (Telegram bot token, chat ID, Ollama URL, LM Studio URL, Remote VM URL) to .env."""
-    global OLLAMA_BASE, _OLLAMA_SCANNED, LM_STUDIO_BASE, TGWUI_BASE, OAF_BASE, REMOTE_VM_URL, VISION_VM_URL  # noqa: PLW0603
+    global OLLAMA_BASE, _OLLAMA_SCANNED, LM_STUDIO_BASE, TGWUI_BASE, OAF_BASE, TRIPOSR_BASE, WEBBUILDER_BASE, VIDEDITOR_BASE, REMOTE_VM_URL, VISION_VM_URL  # noqa: PLW0603
     body = request.get_json(silent=True) or {}
     bot_token      = body.get("bot_token",      "").strip()
     chat_id        = body.get("chat_id",         "").strip()
@@ -2712,10 +2770,14 @@ def save_settings():
     lm_studio_url  = body.get("lm_studio_url",   "").strip().rstrip("/")
     tgwui_url      = body.get("tgwui_url",        "").strip().rstrip("/")
     oaf_url        = body.get("oaf_url",          "").strip().rstrip("/")
+    triposr_url    = body.get("triposr_url",      "").strip().rstrip("/")
+    webbuilder_url = body.get("webbuilder_url",   "").strip().rstrip("/")
+    videditor_url  = body.get("videditor_url",    "").strip().rstrip("/")
     remote_vm_url  = body.get("remote_vm_url",   "").strip().rstrip("/")
     vision_vm_url  = body.get("vision_vm_url",   "").strip().rstrip("/")
 
-    if not any([bot_token, chat_id, ollama_url, lm_studio_url, tgwui_url, oaf_url, remote_vm_url, vision_vm_url]):
+    if not any([bot_token, chat_id, ollama_url, lm_studio_url, tgwui_url, oaf_url,
+                triposr_url, webbuilder_url, videditor_url, remote_vm_url, vision_vm_url]):
         return jsonify({"ok": False, "error": "Nothing to save"})
 
     env_path = os.path.join(os.path.dirname(_DIR), ".env")
@@ -2805,6 +2867,42 @@ def save_settings():
             lines.append(f"OAF_URL={oaf_url}\n")
         os.environ["OAF_URL"] = oaf_url
         OAF_BASE = oaf_url
+
+    if triposr_url:
+        triposr_found = False
+        for i, line in enumerate(lines):
+            if line.startswith("TRIPOSR_URL="):
+                lines[i] = f"TRIPOSR_URL={triposr_url}\n"
+                triposr_found = True
+                break
+        if not triposr_found:
+            lines.append(f"TRIPOSR_URL={triposr_url}\n")
+        os.environ["TRIPOSR_URL"] = triposr_url
+        TRIPOSR_BASE = triposr_url
+
+    if webbuilder_url:
+        wb_found = False
+        for i, line in enumerate(lines):
+            if line.startswith("WEBBUILDER_URL="):
+                lines[i] = f"WEBBUILDER_URL={webbuilder_url}\n"
+                wb_found = True
+                break
+        if not wb_found:
+            lines.append(f"WEBBUILDER_URL={webbuilder_url}\n")
+        os.environ["WEBBUILDER_URL"] = webbuilder_url
+        WEBBUILDER_BASE = webbuilder_url
+
+    if videditor_url:
+        ve_found = False
+        for i, line in enumerate(lines):
+            if line.startswith("VIDEDITOR_URL="):
+                lines[i] = f"VIDEDITOR_URL={videditor_url}\n"
+                ve_found = True
+                break
+        if not ve_found:
+            lines.append(f"VIDEDITOR_URL={videditor_url}\n")
+        os.environ["VIDEDITOR_URL"] = videditor_url
+        VIDEDITOR_BASE = videditor_url
 
     if remote_vm_url:
         # Update or append REMOTE_VM_URL line
@@ -3262,6 +3360,254 @@ def oaf_status():
         return jsonify({"ok": resp.status_code < 400, "url": OAF_BASE, "status_code": resp.status_code})
     except Exception as exc:  # pylint: disable=broad-except
         return jsonify({"ok": False, "url": OAF_BASE, "error": str(exc)})
+
+
+# ---------------------------------------------------------------------------
+# 3D model generation service (TripoSR / Hunyuan3D / NVIDIA 3d-object-generation)
+# ---------------------------------------------------------------------------
+
+@app.route("/triposr/generate", methods=["POST"])
+def triposr_generate():
+    """Generate a 3D model from a text prompt or image.
+
+    Body: {"prompt": "...", "image_base64": "<optional base64 PNG/JPEG>",
+           "format": "glb|obj|stl", "steps": 50}
+    Forwards the request to the local TripoSR-compatible HTTP service (TRIPOSR_URL).
+    The service returns {"ok": True, "model_url": "...", "format": "glb"} or
+    {"ok": True, "model_b64": "<base64 encoded 3D file>"}.
+
+    Local service setup options:
+    - TripoSR: https://github.com/VAST-AI-Research/TripoSR (with a thin Flask wrapper)
+    - Hunyuan3D-2: https://github.com/Tencent-Hunyuan/Hunyuan3D-2
+    - NVIDIA 3D Blueprint: https://github.com/NVIDIA-AI-Blueprints/3d-object-generation
+    """
+    if not TRIPOSR_BASE:
+        return jsonify({"ok": False, "error": "3D generation service URL не настроен — укажите TripoSR URL в настройках (☰)"})
+    body = request.get_json(silent=True) or {}
+    if not body.get("prompt") and not body.get("image_base64"):
+        return jsonify({"ok": False, "error": "Необходим prompt или image_base64"})
+    try:
+        timeout = int(os.environ.get("OLLAMA_TIMEOUT", 300))
+        resp = _http.post(
+            f"{TRIPOSR_BASE}/generate",
+            json=body,
+            timeout=timeout,
+        )
+        resp.raise_for_status()
+        return jsonify({"ok": True, "data": resp.json()})
+    except _http.exceptions.ConnectionError:
+        return jsonify({"ok": False, "error": f"Нет соединения с 3D-сервисом по адресу {TRIPOSR_BASE}"})
+    except _http.exceptions.Timeout:
+        return jsonify({"ok": False, "error": "Таймаут 3D-генерации — модель ещё загружается или слишком сложный запрос"})
+    except Exception as exc:  # pylint: disable=broad-except
+        return jsonify({"ok": False, "error": str(exc)})
+
+
+# ---------------------------------------------------------------------------
+# AI website builder (build-a-site / AI-Website-Builder style)
+# ---------------------------------------------------------------------------
+
+@app.route("/webbuilder/generate", methods=["POST"])
+def webbuilder_generate():
+    """Build a website from a text prompt via a local AI website builder service.
+
+    Body: {"prompt": "...", "style": "tailwind|bootstrap|plain",
+           "pages": ["index", "about"], "model": "<optional override>"}
+    Alternatively, if no WEBBUILDER_URL is set, generates HTML directly
+    using the local Ollama/LM Studio model specified in "model".
+
+    Local service setup options:
+    - build-a-site: https://github.com/i-dream-of-ai/build-a-site
+    - AI-Website-Builder: https://github.com/Ratna-Babu/Ai-Website-Builder
+    """
+    body = request.get_json(silent=True) or {}
+    prompt = body.get("prompt", "").strip()
+    if not prompt:
+        return jsonify({"ok": False, "error": "prompt обязателен"})
+
+    # If external website builder service is configured, forward to it.
+    if WEBBUILDER_BASE:
+        try:
+            timeout = int(os.environ.get("OLLAMA_TIMEOUT", 300))
+            resp = _http.post(
+                f"{WEBBUILDER_BASE}/generate",
+                json=body,
+                timeout=timeout,
+            )
+            resp.raise_for_status()
+            return jsonify({"ok": True, "data": resp.json()})
+        except _http.exceptions.ConnectionError:
+            return jsonify({"ok": False, "error": f"Нет соединения с WebBuilder по адресу {WEBBUILDER_BASE}"})
+        except _http.exceptions.Timeout:
+            return jsonify({"ok": False, "error": "Таймаут — WebBuilder не отвечает"})
+        except Exception as exc:  # pylint: disable=broad-except
+            return jsonify({"ok": False, "error": str(exc)})
+
+    # Fallback: generate HTML directly using local Ollama / LM Studio / TGWUI.
+    model = body.get("model", "").strip()
+    style = body.get("style", "tailwind").strip()
+    system_prompt = (
+        "You are an expert HTML/CSS/JS developer. "
+        "Generate a complete, standalone, production-ready single-page website. "
+        f"Use {style} for styling. "
+        "Output only valid HTML — no explanations, no markdown fences."
+    )
+    user_prompt = f"Create a website for: {prompt}"
+    try:
+        if model.startswith("lmstudio:") and LM_STUDIO_BASE:
+            real_model = model[len("lmstudio:"):]
+            r = _http.post(
+                f"{LM_STUDIO_BASE}/v1/chat/completions",
+                json={"model": real_model, "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user",   "content": user_prompt},
+                ], "stream": False},
+                timeout=int(os.environ.get("OLLAMA_TIMEOUT", 300)),
+            )
+            r.raise_for_status()
+            html = r.json()["choices"][0]["message"]["content"]
+        elif model.startswith("tgwui:") and TGWUI_BASE:
+            real_model = model[len("tgwui:"):]
+            r = _http.post(
+                f"{TGWUI_BASE}/v1/chat/completions",
+                json={"model": real_model, "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user",   "content": user_prompt},
+                ], "stream": False},
+                timeout=int(os.environ.get("OLLAMA_TIMEOUT", 300)),
+            )
+            r.raise_for_status()
+            html = r.json()["choices"][0]["message"]["content"]
+        else:
+            # Default: Ollama — auto-pick first available model if none specified
+            if not model:
+                try:
+                    _mr = _http.get(f"{OLLAMA_BASE}/api/tags", timeout=5)
+                    _mr.raise_for_status()
+                    _ml = _mr.json().get("models", [])
+                    if _ml:
+                        model = _ml[0].get("name", "")
+                except Exception:
+                    pass
+            r = _http.post(
+                f"{OLLAMA_BASE}/api/chat",
+                json={"model": model, "stream": False, "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user",   "content": user_prompt},
+                ]},
+                timeout=int(os.environ.get("OLLAMA_TIMEOUT", 300)),
+            )
+            r.raise_for_status()
+            html = r.json().get("message", {}).get("content", "")
+        return jsonify({"ok": True, "data": {"html": html}})
+    except _http.exceptions.Timeout:
+        return jsonify({"ok": False, "error": "Таймаут — модель не отвечает"})
+    except Exception as exc:  # pylint: disable=broad-except
+        return jsonify({"ok": False, "error": str(exc)})
+
+
+# ---------------------------------------------------------------------------
+# Video editor backend (omniclip / twick style)
+# ---------------------------------------------------------------------------
+
+@app.route("/videditor/project", methods=["POST"])
+def videditor_project():
+    """Send a video editing script/EDL to the video editor backend.
+
+    Body: {"script": "...", "files": ["path1", "path2"], "format": "mp4",
+           "model": "<optional LLM model to first generate the EDL script>"}
+    If VIDEDITOR_URL is set, forwards the assembled EDL to the backend.
+    Otherwise generates an EDL/JSON script using the local LLM.
+
+    Local service setup options:
+    - omniclip: https://github.com/omni-media/omniclip (add thin HTTP API layer)
+    - twick: https://github.com/ncounterspecialist/twick
+    """
+    body = request.get_json(silent=True) or {}
+    description = body.get("description", body.get("script", "")).strip()
+    if not description:
+        return jsonify({"ok": False, "error": "description или script обязателен"})
+
+    # If external video editor service is configured, forward to it.
+    if VIDEDITOR_BASE:
+        try:
+            timeout = int(os.environ.get("OLLAMA_TIMEOUT", 300))
+            resp = _http.post(
+                f"{VIDEDITOR_BASE}/project",
+                json=body,
+                timeout=timeout,
+            )
+            resp.raise_for_status()
+            return jsonify({"ok": True, "data": resp.json()})
+        except _http.exceptions.ConnectionError:
+            return jsonify({"ok": False, "error": f"Нет соединения с видеоредактором по адресу {VIDEDITOR_BASE}"})
+        except _http.exceptions.Timeout:
+            return jsonify({"ok": False, "error": "Таймаут — видеоредактор не отвечает"})
+        except Exception as exc:  # pylint: disable=broad-except
+            return jsonify({"ok": False, "error": str(exc)})
+
+    # Fallback: use local LLM to generate an EDL/JSON editing script.
+    model = body.get("model", "").strip()
+    files = body.get("files", [])
+    system_prompt = (
+        "You are an expert video editor. "
+        "Generate a JSON editing script (EDL) describing the video project. "
+        "The JSON must have: {\"clips\": [{\"file\": str, \"start\": float, \"end\": float, \"text_overlay\": str}], "
+        "\"transitions\": [{\"type\": str, \"at\": float}], \"audio\": {\"music\": str, \"volume\": float}}. "
+        "Output only valid JSON — no explanations, no markdown fences."
+    )
+    file_list = ", ".join(files) if files else "(no files specified)"
+    user_prompt = f"Create a video editing script for: {description}\nAvailable files: {file_list}"
+    try:
+        if model.startswith("lmstudio:") and LM_STUDIO_BASE:
+            real_model = model[len("lmstudio:"):]
+            r = _http.post(
+                f"{LM_STUDIO_BASE}/v1/chat/completions",
+                json={"model": real_model, "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user",   "content": user_prompt},
+                ], "stream": False},
+                timeout=int(os.environ.get("OLLAMA_TIMEOUT", 300)),
+            )
+            r.raise_for_status()
+            edl = r.json()["choices"][0]["message"]["content"]
+        elif model.startswith("tgwui:") and TGWUI_BASE:
+            real_model = model[len("tgwui:"):]
+            r = _http.post(
+                f"{TGWUI_BASE}/v1/chat/completions",
+                json={"model": real_model, "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user",   "content": user_prompt},
+                ], "stream": False},
+                timeout=int(os.environ.get("OLLAMA_TIMEOUT", 300)),
+            )
+            r.raise_for_status()
+            edl = r.json()["choices"][0]["message"]["content"]
+        else:
+            if not model:
+                try:
+                    _mr = _http.get(f"{OLLAMA_BASE}/api/tags", timeout=5)
+                    _mr.raise_for_status()
+                    _ml = _mr.json().get("models", [])
+                    if _ml:
+                        model = _ml[0].get("name", "")
+                except Exception:
+                    pass
+            r = _http.post(
+                f"{OLLAMA_BASE}/api/chat",
+                json={"model": model, "stream": False, "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user",   "content": user_prompt},
+                ]},
+                timeout=int(os.environ.get("OLLAMA_TIMEOUT", 300)),
+            )
+            r.raise_for_status()
+            edl = r.json().get("message", {}).get("content", "")
+        return jsonify({"ok": True, "data": {"edl": edl}})
+    except _http.exceptions.Timeout:
+        return jsonify({"ok": False, "error": "Таймаут — модель не отвечает"})
+    except Exception as exc:  # pylint: disable=broad-except
+        return jsonify({"ok": False, "error": str(exc)})
 
 
 @app.route("/ollama/ask", methods=["POST"])
