@@ -3679,7 +3679,7 @@ def goose_run():
 
     goose_bin = shutil.which("goose") or shutil.which("goose.exe")
     if not goose_bin:
-        return jsonify({"ok": False, "error": "goose CLI not found in PATH. Install: curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh | bash"})
+        return jsonify({"ok": False, "error_code": "GOOSE_NOT_FOUND", "error": "goose CLI not found in PATH. Install: curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh | bash"})
 
     # Validate project_dir: must be an existing absolute path to prevent traversal.
     # If not provided or invalid, fall back to the server's working directory.
@@ -3705,6 +3705,29 @@ def goose_run():
         return jsonify({"ok": False, "error": f"goose timeout after {timeout_s}s"})
     except Exception as exc:  # pylint: disable=broad-except
         return jsonify({"ok": False, "error": str(exc)})
+
+
+@app.route("/goose/check", methods=["GET"])
+def goose_check():
+    """Return whether the goose CLI is installed and reachable in PATH.
+
+    Returns: {"installed": true/false, "path": "...", "version": "..."}
+    """
+    import shutil
+    goose_bin = shutil.which("goose") or shutil.which("goose.exe")
+    if not goose_bin:
+        return jsonify({"installed": False, "path": None, "version": None})
+    version = ""
+    try:
+        result = subprocess.run(  # noqa: S603
+            [goose_bin, "--version"],
+            capture_output=True, text=True, timeout=5,
+        )
+        output = (result.stdout or result.stderr or "").strip()
+        version = output.splitlines()[0] if output else ""
+    except (subprocess.SubprocessError, OSError):
+        version = ""
+    return jsonify({"installed": True, "path": goose_bin, "version": version})
 
 
 # ---------------------------------------------------------------------------

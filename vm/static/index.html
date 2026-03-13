@@ -1351,25 +1351,26 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
 <!-- ── Goose AI coding agent pane ─────────────────────────────────────── -->
 <div id="goose-pane" style="display:none;flex:1;flex-direction:column;overflow:hidden;min-height:0;background:var(--bg2)">
   <div style="padding:14px 18px 10px;border-bottom:1px solid var(--border);flex-shrink:0">
-    <h2 style="margin:0 0 4px;font-size:16px">🪿 Goose — AI Coding Agent</h2>
-    <p style="margin:0;font-size:12px;color:var(--text2)">Goose автономно читает, редактирует и тестирует файлы проекта.
+    <h2 style="margin:0 0 4px;font-size:16px">🪿 Goose / 🤖 ИИ-анализ кода</h2>
+    <p style="margin:0;font-size:12px;color:var(--text2)">Анализ и улучшение кода из редактора. Если Goose не установлен — автоматически используется локальный ИИ.
       <a href="https://github.com/block/goose" target="_blank" style="color:var(--accent)">block/goose</a> —
       установка: <code>curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh | bash</code></p>
   </div>
   <div style="padding:14px 18px;flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:12px">
     <div>
-      <div class="pl">📁 Директория проекта</div>
+      <div class="pl">📁 Директория проекта <span style="font-weight:400;color:var(--text2)">(только для Goose)</span></div>
       <input type="text" id="goose-dir" placeholder="C:\Users\...\my-project или /home/user/project" autocomplete="off" style="width:100%"/>
-      <div style="font-size:11px;color:var(--text2);margin-top:3px">Оставьте пустым — goose запустится в текущей директории сервера</div>
+      <div style="font-size:11px;color:var(--text2);margin-top:3px">Оставьте пустым — Goose запустится в текущей директории; для анализа кода редактора директория не нужна</div>
     </div>
     <div>
-      <div class="pl" style="display:flex;align-items:center;gap:8px">📝 Инструкция для Goose
+      <div class="pl" style="display:flex;align-items:center;gap:8px">📝 Инструкция / задача
         <button class="pb pb-s" onclick="sendEditorToGoose()" style="font-size:11px;padding:3px 8px;margin-left:auto" title="Загрузить код из редактора и сформировать инструкцию для анализа">📋 Из редактора</button>
       </div>
       <textarea id="goose-instruction" rows="5" placeholder="Добавь авторизацию через JWT. Обнови модуль auth.py, создай middleware, обнови тесты." style="width:100%;resize:vertical"></textarea>
     </div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap">
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
       <button class="pb pb-p" onclick="gooseRun()" id="goose-btn">▶ Запустить Goose</button>
+      <button class="pb" onclick="_llmAnalyzeFallback((document.getElementById('goose-instruction')||{}).value||'')" id="goose-llm-btn" title="Анализировать и улучшить код через локальный ИИ (без Goose)" style="background:rgba(80,250,123,.15);border-color:#50fa7b;color:#50fa7b">🤖 Улучшить (ИИ)</button>
       <select id="goose-timeout" style="padding:6px;border-radius:6px;border:1px solid var(--border);background:var(--bg4);color:var(--text1);font-size:12px">
         <option value="60">60 сек</option>
         <option value="120" selected>2 мин</option>
@@ -6599,7 +6600,7 @@ function sendEditorToGoose() {
       + '```\n' + preview + '\n```';
   }
   setView('goose');
-  toast('📋 Код отправлен в Goose — введите директорию проекта и нажмите «Запустить»');
+  toast('📋 Код загружен — нажмите 🤖 Улучшить (ИИ) или ▶ Запустить Goose');
 }
 
 async function gooseRun() {
@@ -6621,6 +6622,13 @@ async function gooseRun() {
       body: JSON.stringify({ instruction: instruction, project_dir: dir, timeout: timeout })
     });
     var d = await r.json();
+    // ── Fallback to local LLM when Goose CLI is not installed ──────────────
+    if (!d.ok && (d.error_code === 'GOOSE_NOT_FOUND' || (d.error && d.error.indexOf('not found in PATH') !== -1))) {
+      if (statusEl) statusEl.textContent = '⚠ Goose не установлен → переключаюсь на локальный ИИ...';
+      toast('🤖 Goose не установлен — использую локальный ИИ для анализа');
+      await _llmAnalyzeFallback(instruction);
+      return;
+    }
     if (statusEl) statusEl.textContent = d.ok ? '✅ Goose завершил работу (код: ' + (d.return_code||0) + ')' : '⚠ Ошибка: ' + (d.error||'неизвестная ошибка');
     if (outputEl && d.output) {
       outputEl.style.display = 'block';
@@ -6631,6 +6639,103 @@ async function gooseRun() {
     else      toast('⚠ Goose: ' + (d.error||'ошибка'));
   } catch(e) {
     if (statusEl) statusEl.textContent = '⚠ Ошибка запроса: ' + e.message;
+    toast('⚠ ' + e.message);
+  }
+  if (btn) { btn.disabled = false; btn.textContent = '▶ Запустить Goose'; }
+}
+
+// ── LLM fallback: analyze & improve code via /patch/stream (used when Goose CLI is absent) ──
+async function _llmAnalyzeFallback(instruction) {
+  var btn      = document.getElementById('goose-btn');
+  var statusEl = document.getElementById('goose-status');
+  var outputEl = document.getElementById('goose-output');
+
+  if (!curModel) {
+    if (statusEl) statusEl.textContent = '⚠ Выберите модель ИИ в настройках (☰) и попробуйте ещё раз';
+    if (btn) { btn.disabled = false; btn.textContent = '▶ Запустить Goose'; }
+    toast('⚠ Модель не выбрана — откройте настройки ☰');
+    return;
+  }
+
+  // Extract code block inserted by sendEditorToGoose (first ``` ... ``` block)
+  var codeMatch = instruction.match(/```[\w]*\n?([\s\S]*?)\n?```/);
+  var code = codeMatch ? codeMatch[1].trim() : (editor ? editor.getValue().trim() : '');
+  if (!code) {
+    if (statusEl) statusEl.textContent = '⚠ Нет кода для анализа — нажмите «📋 Из редактора» чтобы загрузить код, затем попробуйте снова';
+    if (btn) { btn.disabled = false; btn.textContent = '▶ Запустить Goose'; }
+    return;
+  }
+
+  // Extract the text part (without the code block) as the prompt
+  var analyzePrompt = instruction.replace(/```[\s\S]*?```/g, '').trim();
+  if (!analyzePrompt) {
+    analyzePrompt = 'Проанализируй этот код, исправь все ошибки и сделай его полностью рабочим. '
+      + 'Убедись что нет placeholder-ов, TODO, заглушек или demo-режима. '
+      + 'Все функции должны быть реализованы полностью. Код должен запускаться без ошибок.';
+  }
+
+  if (statusEl) statusEl.textContent = '🤖 Локальный ИИ анализирует и улучшает код...';
+  if (outputEl) {
+    outputEl.style.display = 'block';
+    outputEl.textContent = '⏳ ИИ работает…\n\n(Goose не установлен — используется локальная языковая модель)';
+  }
+
+  var accumulated = '';
+  try {
+    var resp = await fetch('/patch/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt: analyzePrompt, code: code, model: curModel })
+    });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+
+    var reader = resp.body.getReader();
+    var dec    = new TextDecoder();
+    var buf    = '';
+    var done   = false;
+
+    while (!done) {
+      var chunk = await reader.read();
+      if (chunk.done) break;
+      buf += dec.decode(chunk.value, { stream: true });
+      var lines = buf.split('\n'); buf = lines.pop();
+      for (var i = 0; i < lines.length; i++) {
+        var line = lines[i];
+        if (!line.startsWith('data: ')) continue;
+        var payload = line.slice(6).trim();
+        if (payload === '[DONE]') { done = true; break; }
+        try {
+          var obj = JSON.parse(payload);
+          if (obj.error) throw new Error(obj.error);
+          if (obj.token) accumulated += obj.token;
+        } catch(err) { if (err.message && err.message.indexOf('JSON') === -1) throw err; }
+      }
+    }
+
+    if (accumulated) {
+      var improvedCode = extractCode(accumulated);
+      if (improvedCode && editor) {
+        _manualLang = '';
+        editor.setValue(improvedCode);
+        var lang = detectLang(improvedCode);
+        setLangBadge(lang);
+        var sel = document.getElementById('lang-select');
+        if (sel) sel.value = '';
+        if (lang === 'html') showPreview(improvedCode);
+        else if (lang === 'markdown' && typeof renderMarkdownPreview === 'function') showPreview(renderMarkdownPreview(improvedCode));
+        else showPreview(wrapForVisor(improvedCode, lang));
+        if (statusEl) statusEl.textContent = '✅ ИИ улучшил код — результат в редакторе!';
+        if (outputEl) outputEl.textContent = '✅ Код проанализирован и улучшен локальным ИИ.\nРезультат — в редакторе кода.\n\nНажмите ▶ Запустить для проверки.';
+        toast('✅ ИИ улучшил код — проверь редактор!');
+        autoSaveProject(improvedCode, lang, 'Анализ ИИ [Goose fallback]');
+        setView('both');
+      } else {
+        if (statusEl) statusEl.textContent = '⚠ ИИ не вернул код — попробуйте ещё раз';
+      }
+    }
+  } catch(e) {
+    if (statusEl) statusEl.textContent = '⚠ Ошибка ИИ-анализа: ' + e.message;
+    if (outputEl) outputEl.textContent = '⚠ Ошибка: ' + e.message;
     toast('⚠ ' + e.message);
   }
   if (btn) { btn.disabled = false; btn.textContent = '▶ Запустить Goose'; }
