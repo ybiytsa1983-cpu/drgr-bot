@@ -444,11 +444,15 @@ async def chat_via_vm(user_id: int, text: str, message: Message) -> bool:
         "• /generate <описание> — сгенерировать HTML-страницу\n"
         "• /convert — конвертер файлов\n"
         "• Пришли URL в чат → бот автоматически сделает скриншот + AI анализ\n"
-        "• Пришли файл .py/.js/.sh → VM выполнит и вернёт результат\n\n"
+        "• Пришли файл .py/.js/.sh → VM выполнит и вернёт результат\n"
+        "• Пришли ФОТО → бот опишет содержимое vision-моделью\n"
+        "• Пришли ВИДЕО → бот извлечёт кадр и опишет содержимое vision-моделью\n"
+        "• Ответь на фото/видео текстом — бот проанализирует медиа с учётом вопроса\n\n"
         "ВАЖНО: Ты НЕ можешь самостоятельно открыть браузер или сделать поиск прямо сейчас. "
         "Когда пользователь просит найти что-то в интернете — скажи ему использовать "
         "/research или /agent. Когда просит открыть URL — скажи прислать URL в чат или "
-        "использовать /visor. Не выдумывай информацию из интернета — ты не подключён к нему.\n"
+        "использовать /visor. Когда просит описать фото/видео — скажи прислать фото/видео "
+        "прямо в чат (не ссылку). Не выдумывай информацию из интернета — ты не подключён к нему.\n"
     )
 
     full_response = ""
@@ -3154,6 +3158,167 @@ async def handle_photo_convert(message: Message) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Video handler — analyze video via VM /agent/describe_image (thumbnail frame)
+# ---------------------------------------------------------------------------
+
+async def _analyze_video_bytes(video_bytes: bytes, caption: str, message: Message,
+                                status_msg: Message) -> bool:
+    """Try to extract a frame from video bytes and describe it via vision model.
+
+    Returns True when a description was sent, False otherwise.
+    """
+    # Try to extract a frame using ffmpeg (if available)
+    frame_b64 = ""
+    try:
+        import subprocess
+        import tempfile as _tf
+        with _tf.NamedTemporaryFile(suffix=".mp4", delete=False) as vf:
+            vf.write(video_bytes)
+            vpath = vf.name
+        frame_path = vpath + "_frame.jpg"
+        result = subprocess.run(
+            ["ffmpeg", "-y", "-i", vpath, "-vframes", "1", "-q:v", "2", frame_path],
+            capture_output=True, timeout=15,
+        )
+        if result.returncode == 0 and os.path.exists(frame_path):
+            with open(frame_path, "rb") as ff:
+                frame_b64 = base64.b64encode(ff.read()).decode()
+        try:
+            os.unlink(vpath)
+            if os.path.exists(frame_path):
+                os.unlink(frame_path)
+        except OSError:
+            pass
+    except (FileNotFoundError, Exception):
+        pass
+
+    if not frame_b64:
+        return False
+
+    # Sanitize user input: strip control characters and limit length
+    safe_caption = re.sub(r'[\x00-\x08\x0b-\x1f\x7f]', '', caption)[:500] if caption else ""
+    prompt_extra = f" Вопрос пользователя: {safe_caption}" if safe_caption else ""
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{VM_BASE}/agent/describe_image",
+                json={
+                    "image_base64": frame_b64,
+                    "filename": "video_frame.jpg",
+                    "prompt": f"Опиши это видео (кадр из видео).{prompt_extra}",
+                },
+                timeout=aiohttp.ClientTimeout(total=90),
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    description = data.get("description", "").strip()
+                    if description:
+                        model_used = data.get("model", "")
+                        await status_msg.delete()
+                        reply = f"\U0001f3a5 {description}"
+                        for chunk in _split_text(reply, 4000):
+                            await message.answer(chunk)
+                        if model_used:
+                            await message.answer(
+                                f"_Модель: {_esc(model_used)}_",
+                                parse_mode="MarkdownV2",
+                            )
+                        return True
+    except Exception as exc:
+        logger.debug("video_frame_analyze: %s", exc)
+    return False
+
+
+@router.message(F.video)
+async def handle_video(message: Message) -> None:
+    """Analyze video with AI vision model (extracts a frame) or describe file info."""
+    caption = (message.caption or "").strip()
+    _push_tg_message_to_vm(
+        from_name=(message.from_user.full_name if message.from_user else "TG"),
+        text=caption or "(видео без подписи)",
+        chat_title=getattr(message.chat, "title", "") or "",
+    )
+    video = message.video
+    if not video:
+        return
+    status = await message.answer("\U0001f3a5 Анализирую видео\u2026")
+    try:
+        file_info = await bot.get_file(video.file_id)
+        buf = io.BytesIO()
+        await bot.download_file(file_info.file_path, buf)
+        video_bytes = buf.getvalue()
+
+        # Try frame extraction + vision analysis
+        if await _analyze_video_bytes(video_bytes, caption, message, status):
+            return
+
+        # Fallback: show video metadata
+        dur = video.duration or 0
+        w   = video.width or 0
+        h   = video.height or 0
+        sz  = (video.file_size or 0) // 1024
+        mime = video.mime_type or "video"
+        fn  = video.file_name or "video"
+        info = (
+            f"\U0001f3a5 *Видео получено*\n\n"
+            f"Файл: `{_esc(fn)}`\n"
+            f"Размер: {sz} КБ\n"
+            f"Разрешение: {w}×{h}\n"
+            f"Длительность: {dur} сек\n"
+            f"Формат: `{_esc(mime)}`\n\n"
+            f"_Для покадрового анализа видео установите `ffmpeg` на VM\\._"
+        )
+        if caption:
+            info += f"\n\nПодпись: {_esc(caption)}"
+        await status.delete()
+        await message.answer(info, parse_mode="MarkdownV2")
+    except Exception as exc:
+        logger.error("handle_video: %s", exc)
+        await status.edit_text(
+            "\u274c Ошибка обработки видео\\. Убедитесь, что VM запущена \\(/vm\\)\\.",
+            parse_mode="MarkdownV2",
+        )
+
+
+@router.message(F.video_note)
+async def handle_video_note(message: Message) -> None:
+    """Analyze round video note (Telegram video message) with AI vision model."""
+    _push_tg_message_to_vm(
+        from_name=(message.from_user.full_name if message.from_user else "TG"),
+        text="(видео-сообщение)",
+        chat_title=getattr(message.chat, "title", "") or "",
+    )
+    vnote = message.video_note
+    if not vnote:
+        return
+    status = await message.answer("\U0001f3a5 Анализирую видео-сообщение\u2026")
+    try:
+        file_info = await bot.get_file(vnote.file_id)
+        buf = io.BytesIO()
+        await bot.download_file(file_info.file_path, buf)
+        video_bytes = buf.getvalue()
+
+        if await _analyze_video_bytes(video_bytes, "", message, status):
+            return
+
+        dur = vnote.duration or 0
+        sz  = (vnote.file_size or 0) // 1024
+        info = (
+            f"\U0001f3a5 *Видео\\-сообщение получено*\n\n"
+            f"Длительность: {dur} сек, Размер: {sz} КБ\n\n"
+            f"_Для покадрового анализа установите `ffmpeg` на VM\\._"
+        )
+        await status.delete()
+        await message.answer(info, parse_mode="MarkdownV2")
+    except Exception as exc:
+        logger.error("handle_video_note: %s", exc)
+        await status.edit_text(
+            "\u274c Ошибка обработки видео\\. Убедитесь, что VM запущена \\(/vm\\)\\.",
+            parse_mode="MarkdownV2",
+        )
+
+
+# ---------------------------------------------------------------------------
 # Document handler — convert text file via VM /convert/text
 # Supported: JSON→CSV, CSV→JSON, HTML→text, Markdown→HTML
 # ---------------------------------------------------------------------------
@@ -3517,6 +3682,67 @@ async def handle_text(message: Message) -> None:
         text=query,
         chat_title=getattr(message.chat, "title", "") or "",
     )
+
+    # Smart routing: if user replied to a photo/video message, analyze that media
+    reply = message.reply_to_message
+    if reply is not None:
+        replied_photo = reply.photo
+        replied_video = reply.video
+        replied_doc   = reply.document
+        if replied_photo:
+            # User asked something about a photo they replied to
+            status = await message.answer("\U0001f50d Анализирую фото\u2026")
+            try:
+                photo = replied_photo[-1]
+                file_info = await bot.get_file(photo.file_id)
+                buf = io.BytesIO()
+                await bot.download_file(file_info.file_path, buf)
+                img_b64 = base64.b64encode(buf.getvalue()).decode()
+                # Sanitize user input before passing to vision model
+                safe_query = re.sub(r'[\x00-\x08\x0b-\x1f\x7f]', '', query)[:500]
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(
+                        f"{VM_BASE}/agent/describe_image",
+                        json={"image_base64": img_b64, "filename": "photo.jpg",
+                              "prompt": safe_query},
+                        timeout=aiohttp.ClientTimeout(total=90),
+                    ) as resp:
+                        if resp.status == 200:
+                            data = await resp.json()
+                            description = data.get("description", "").strip()
+                            if description:
+                                model_used = data.get("model", "")
+                                await status.delete()
+                                for chunk in _split_text(f"\U0001f5bc {description}", 4000):
+                                    await message.answer(chunk)
+                                if model_used:
+                                    await message.answer(
+                                        f"_Модель: {_esc(model_used)}_",
+                                        parse_mode="MarkdownV2",
+                                    )
+                                return
+            except Exception as exc:
+                logger.error("reply_photo_analyze: %s", exc)
+            try:
+                await status.edit_text("\u274c Не удалось проанализировать фото\\. Попробуйте ещё раз\\.", parse_mode="MarkdownV2")
+            except Exception:
+                pass
+            return
+        if replied_video:
+            status = await message.answer("\U0001f3a5 Анализирую видео\u2026")
+            try:
+                file_info = await bot.get_file(replied_video.file_id)
+                buf = io.BytesIO()
+                await bot.download_file(file_info.file_path, buf)
+                if await _analyze_video_bytes(buf.getvalue(), query, message, status):
+                    return
+            except Exception as exc:
+                logger.error("reply_video_analyze: %s", exc)
+            try:
+                await status.edit_text("\u274c Не удалось проанализировать видео\\.", parse_mode="MarkdownV2")
+            except Exception:
+                pass
+            return
 
     # Smart routing: if message contains a URL, treat it as a ВИЗОР/browse request
     url_match = _URL_IN_TEXT_RE.search(query)

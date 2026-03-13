@@ -6535,6 +6535,9 @@ def agent_describe_image():
     image_path     = body.get("image_path", "").strip()
     image_base64   = body.get("image_base64", "").strip()
     filename       = body.get("filename", "image")
+    # Sanitize custom prompt: strip control characters and limit length
+    _raw_prompt    = body.get("prompt", "").strip()
+    custom_prompt  = re.sub(r'[\x00-\x08\x0b-\x1f\x7f]', ' ', _raw_prompt)[:1000] if _raw_prompt else ""
 
     # Resolve image data — accept either a file path OR inline base64
     if image_base64:
@@ -6571,7 +6574,7 @@ def agent_describe_image():
             "pulling": "moondream:latest",
         })
 
-    _prompt_describe = (
+    _prompt_describe = custom_prompt if custom_prompt else (
         "Describe this image in detail in Russian. "
         "Include all visible text, objects, layout, and context. "
         "Be specific and informative."
@@ -8574,9 +8577,15 @@ def _best_vision_model() -> str:
     When VISION_VM_URL is configured and online, all vision requests are routed
     to the dedicated vision instance, effectively bypassing the primary Ollama.
     """
-    preferred = ["drgr-visor", "gpt-oss:latest", "qwen3-vl:8b", "qwen3-vl:235b-cloud", "llava", "llava:13b"]
+    # Only genuine vision/multimodal models belong here (text-only models excluded)
+    preferred = ["qwen3-vl:8b", "qwen3-vl:235b-cloud", "llava", "llava:13b", "llava:7b",
+                 "llava:34b", "bakllava", "minicpm-v:latest", "minicpm-v", "moondream",
+                 "moondream:latest", "moondream:1.8b", "glm-4v", "cogvlm"]
     # Lightweight fallback models (fast, ~1 GB, suitable when no heavy vision model)
     _light_vision = ["moondream:latest", "moondream:1.8b", "moondream", "minicpm-v:latest", "minicpm-v"]
+    # Vision capability name patterns
+    _vision_patterns = ("vl", "vision", "llava", "bakllava", "moondream", "minicpm-v", "glm-4v", "cogvlm")
+
     # 1. Dedicated Vision VM (another Ollama instance) — highest priority
     if VISION_VM_URL:
         try:
@@ -8586,8 +8595,10 @@ def _best_vision_model() -> str:
                 for p in preferred:
                     if p in available:
                         return f"{_VISION_VM_PREFIX}{p}"
-                if available:
-                    return f"{_VISION_VM_PREFIX}{next(iter(available))}"
+                # Only return a model from Vision VM if it looks like a vision model
+                for m_name in available:
+                    if any(pat in m_name.lower() for pat in _vision_patterns):
+                        return f"{_VISION_VM_PREFIX}{m_name}"
         except Exception:  # pylint: disable=broad-except
             pass
     # 2. Primary Ollama instance
@@ -8609,20 +8620,19 @@ def _best_vision_model() -> str:
                     return m_name
     except Exception:
         pass
-    # 3. Fallback: try LM Studio — prefer models with known vision capability patterns
+    # 3. Fallback: try LM Studio — only models with known vision capability patterns
     if LM_STUDIO_BASE:
         try:
             r = _http.get(f"{LM_STUDIO_BASE}/v1/models", timeout=10)
             if r.status_code == 200:
                 lms_models = r.json().get("data", [])
                 if lms_models:
-                    # Prefer models whose name matches a known vision pattern
+                    # Only return models whose name matches a known vision pattern
                     for lm in lms_models:
                         mid = (lm.get("id") or "").lower()
                         if any(pat in mid for pat in _LM_STUDIO_VISION_PATTERNS):
                             return f"{_LM_STUDIO_PREFIX}{lm['id']}"
-                    # Fall back to first available LM Studio model
-                    return f"{_LM_STUDIO_PREFIX}{lms_models[0]['id']}"
+                    # Do NOT fall back to first model — it may not support vision
         except Exception:
             pass
     # 4. Lightweight auto-fallback: try to pull moondream (fast ~1 GB model)
