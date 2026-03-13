@@ -3896,6 +3896,11 @@ async function checkTgwuiStatus() {
   if (statusEl) statusEl.textContent = '🔄 Проверяю...';
   try {
     var r = await fetch('/tgwui/models');
+    var ct = r.headers.get('content-type') || '';
+    if (!ct.includes('application/json')) {
+      if (statusEl) statusEl.textContent = '⚠ Недоступно (код ' + r.status + ')';
+      return;
+    }
     var d = await r.json();
     if (statusEl) {
       if (d.available) {
@@ -3905,7 +3910,7 @@ async function checkTgwuiStatus() {
       }
     }
   } catch(e) {
-    if (statusEl) statusEl.textContent = '⚠ Ошибка: ' + e.message;
+    if (statusEl) statusEl.textContent = '⚠ Ошибка соединения: ' + e.message;
   }
 }
 async function saveOafUrl() {

@@ -236,6 +236,71 @@ def run_all() -> None:
     })
     ok("POST /research existing_article → 200 or 404", r.status_code in (200, 404))
 
+    # ── Android / mobile endpoints ────────────────────────────────────────────
+    print("\n[Android / mobile endpoints]")
+
+    # GET /android/apk/list — should always return JSON
+    r = client.get("/android/apk/list")
+    d = r.get_json() or {}
+    ok("GET /android/apk/list → 200",         r.status_code == 200)
+    ok("GET /android/apk/list → has 'apks'",  "apks" in d)
+    ok("GET /android/apk/list → apks is list", isinstance(d.get("apks"), list))
+
+    # GET /android/emulator/status — should return JSON even without ADB installed
+    r = client.get("/android/emulator/status")
+    d = r.get_json() or {}
+    ok("GET /android/emulator/status → 200",               r.status_code == 200)
+    ok("GET /android/emulator/status → has adb_available", "adb_available" in d)
+    ok("GET /android/emulator/status → has devices",       "devices" in d)
+
+    # POST /android/generate — missing prompt → 400
+    r = client.post("/android/generate", json={})
+    ok("POST /android/generate no prompt → 400", r.status_code == 400)
+
+    # POST /android/generate — missing model → 400
+    r = client.post("/android/generate", json={"prompt": "Hello app"})
+    ok("POST /android/generate no model → 400", r.status_code == 400)
+
+    # POST /android/generate — Ollama offline → 503 / 500 / 504
+    r = client.post("/android/generate", json={"prompt": "Hello world app", "model": "llama2"})
+    ok("POST /android/generate offline → error status",
+       r.status_code in (500, 503, 504))
+
+    # POST /android/apk/upload — no file → 400
+    r = client.post("/android/apk/upload", data={})
+    ok("POST /android/apk/upload no file → 400", r.status_code == 400)
+
+    # POST /android/apk/upload — upload a fake APK
+    import io
+    fake_apk = io.BytesIO(b"PK\x03\x04fake apk bytes")
+    r = client.post("/android/apk/upload",
+                    data={"file": (fake_apk, "test_app.apk")},
+                    content_type="multipart/form-data")
+    d = r.get_json() or {}
+    ok("POST /android/apk/upload → 200",        r.status_code == 200)
+    ok("POST /android/apk/upload → has url",    "url" in d)
+    ok("POST /android/apk/upload → url ends .apk",
+       d.get("url", "").endswith(".apk"))
+
+    # GET /android/apk/<name> — serve uploaded APK
+    apk_name = d.get("name", "test_app.apk")
+    r = client.get(f"/android/apk/{apk_name}")
+    ok("GET /android/apk/<name> → 200", r.status_code == 200)
+
+    # GET /android/apk/list — should now contain the uploaded file
+    r = client.get("/android/apk/list")
+    d = r.get_json() or {}
+    ok("GET /android/apk/list after upload → not empty",
+       len(d.get("apks", [])) > 0)
+
+    # POST /android/apk/send — no token configured → 503
+    r = client.post("/android/apk/send", json={"name": apk_name})
+    ok("POST /android/apk/send no token → 503", r.status_code == 503)
+
+    # POST /android/apk/send — unknown APK → 400 (name required)
+    r = client.post("/android/apk/send", json={})
+    ok("POST /android/apk/send no name → 400", r.status_code == 400)
+
 
 # ── main ─────────────────────────────────────────────────────────────────────
 
