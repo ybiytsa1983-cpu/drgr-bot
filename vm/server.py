@@ -3112,16 +3112,20 @@ def lmstudio_detect():
     (useful for LAN addresses like 172.22.208.1).
     Returns {"url": "<base_url>", "models": [...]} or {"url": null}.
     """
+    from urllib.parse import urlparse as _urlparse_detect
     hint = request.args.get("hint", "").strip().rstrip("/")
     candidates = []
     if hint:
-        for port in (1234, 1235, 11434, 8080, 8000):
-            base = hint if hint.startswith("http") else f"http://{hint}"
-            # If hint already includes port, use as-is first
-            if ":" in hint.split("//")[-1]:
-                candidates.append(base)
-                break
-            candidates.append(f"{base}:{port}")
+        # Normalise: add scheme if missing so urlparse works correctly
+        hint_url = hint if hint.startswith(("http://", "https://")) else f"http://{hint}"
+        parsed_hint = _urlparse_detect(hint_url)
+        if parsed_hint.port:
+            # Hint already contains a port — probe exactly that URL
+            candidates.append(hint_url)
+        else:
+            # No port in hint — scan common LM Studio ports on the hint host
+            for port in (1234, 1235, 11434, 8080, 8000):
+                candidates.append(f"http://{parsed_hint.hostname}:{port}")
     # Common local addresses
     for host in ("127.0.0.1", "localhost"):
         for port in (1234, 1235, 11434, 8080, 8000):
@@ -3149,7 +3153,6 @@ def lmstudio_detect():
         except Exception:  # pylint: disable=broad-except
             continue
     return jsonify({"url": None, "models": []})
-
 
 @app.route("/tgwui/models", methods=["GET"])
 def tgwui_models():

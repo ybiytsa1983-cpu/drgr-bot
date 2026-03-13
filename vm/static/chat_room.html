@@ -805,7 +805,7 @@ function filterEmojis(q) {
   var btns = grid.querySelectorAll('.ep-btn');
   var lower = q.toLowerCase();
   btns.forEach(function(b) {
-    b.style.display = (!lower || b.textContent.includes(q)) ? '' : 'none';
+    b.style.display = (!lower || b.textContent.toLowerCase().includes(lower)) ? '' : 'none';
   });
 }
 function toggleEmojiPicker() {
