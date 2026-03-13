@@ -7054,6 +7054,7 @@ async function gooseRun() {
 }
 
 // ── LLM fallback: analyze & improve code via /patch/stream (used when Goose CLI is absent) ──
+// When no code is present in editor or instruction, falls back to /generate/auto/stream.
 async function _llmAnalyzeFallback(instruction) {
   var btn      = document.getElementById('goose-btn');
   var statusEl = document.getElementById('goose-status');
@@ -7069,8 +7070,73 @@ async function _llmAnalyzeFallback(instruction) {
   // Extract code block inserted by sendEditorToGoose (first ``` ... ``` block)
   var codeMatch = instruction.match(/```[\w]*\n?([\s\S]*?)\n?```/);
   var code = codeMatch ? codeMatch[1].trim() : (editor ? editor.getValue().trim() : '');
+
+  // When no code block found (user typed a general task), use generate endpoint
   if (!code) {
-    if (statusEl) statusEl.textContent = '⚠ Нет кода для анализа — нажмите «📋 Из редактора» чтобы загрузить код, затем попробуйте снова';
+    if (statusEl) statusEl.textContent = '🤖 Локальный ИИ выполняет задачу...';
+    if (outputEl) {
+      outputEl.style.display = 'block';
+      outputEl.textContent = '⏳ ИИ работает…\n\n(Goose не установлен — используется локальная языковая модель)';
+    }
+    var genAccumulated = '';
+    try {
+      var genResp = await fetch('/generate/auto/stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: instruction, model: curModel })
+      });
+      if (!genResp.ok) throw new Error('HTTP ' + genResp.status);
+      var genReader = genResp.body.getReader();
+      var genDec = new TextDecoder();
+      var genBuf = '', genDone = false;
+      while (!genDone) {
+        var genChunk = await genReader.read();
+        if (genChunk.done) break;
+        genBuf += genDec.decode(genChunk.value, { stream: true });
+        var genLines = genBuf.split('\n'); genBuf = genLines.pop();
+        for (var gi = 0; gi < genLines.length; gi++) {
+          var gl = genLines[gi];
+          if (!gl.startsWith('data: ')) continue;
+          var gp = gl.slice(6).trim();
+          if (gp === '[DONE]') { genDone = true; break; }
+          try {
+            var go = JSON.parse(gp);
+            if (go.error) throw new Error(go.error);
+            if (go.token) { genAccumulated += go.token; if (outputEl) outputEl.textContent = genAccumulated; }
+          } catch(ge) {
+            // Ignore JSON parse errors (some lines may not be valid JSON);
+            // rethrow actual errors like server-reported error messages.
+            if (!(ge instanceof SyntaxError)) throw ge;
+          }
+        }
+      }
+      if (genAccumulated) {
+        var genCode = extractCode(genAccumulated);
+        if (genCode && genCode !== genAccumulated && editor) {
+          // Looks like actual code — put in editor
+          _manualLang = '';
+          editor.setValue(genCode);
+          var genLang = detectLang(genCode);
+          setLangBadge(genLang);
+          var sel = document.getElementById('lang-select');
+          if (sel) sel.value = '';
+          if (genLang === 'html') showPreview(genCode);
+          else showPreview(wrapForVisor(genCode, genLang));
+          if (statusEl) statusEl.textContent = '✅ ИИ сгенерировал результат — в редакторе!';
+          if (outputEl) outputEl.textContent = genAccumulated;
+          autoSaveProject(genCode, genLang, 'Задача ИИ [Goose fallback]: ' + instruction.slice(0, 80));
+          setView('both');
+        } else {
+          if (statusEl) statusEl.textContent = '✅ ИИ выполнил задачу';
+          if (outputEl) outputEl.textContent = genAccumulated;
+        }
+        toast('✅ Задача выполнена локальным ИИ');
+      }
+    } catch(ge) {
+      if (statusEl) statusEl.textContent = '⚠ Ошибка: ' + ge.message;
+      if (outputEl) outputEl.textContent = '⚠ ' + ge.message;
+      toast('⚠ ' + ge.message);
+    }
     if (btn) { btn.disabled = false; btn.textContent = '▶ Запустить Goose'; }
     return;
   }
@@ -7117,7 +7183,10 @@ async function _llmAnalyzeFallback(instruction) {
           var obj = JSON.parse(payload);
           if (obj.error) throw new Error(obj.error);
           if (obj.token) accumulated += obj.token;
-        } catch(err) { if (err.message && err.message.indexOf('JSON') === -1) throw err; }
+        } catch(err) {
+            // Ignore JSON parse errors; rethrow server-reported error messages.
+            if (!(err instanceof SyntaxError)) throw err;
+          }
       }
     }
 
@@ -7332,7 +7401,7 @@ var _wbLastHtml = '';
 async function wbGenerate() {
   var prompt = ((document.getElementById('wb-prompt')||{}).value || '').trim();
   var style  = ((document.getElementById('wb-style')||{}).value  || 'tailwind');
-  var model  = ((document.getElementById('wb-model')||{}).value  || '').trim();
+  var model  = ((document.getElementById('wb-model')||{}).value  || curModel || '').trim();
   if (!prompt) { toast('Введите описание сайта'); return; }
   var statusEl  = document.getElementById('wb-status');
   var previewEl = document.getElementById('wb-preview');
@@ -7387,7 +7456,7 @@ async function veGenerate() {
   var description = ((document.getElementById('ve-description')||{}).value || '').trim();
   var filesRaw    = ((document.getElementById('ve-files')||{}).value      || '').trim();
   var format      = ((document.getElementById('ve-format')||{}).value     || 'mp4');
-  var model       = ((document.getElementById('ve-model')||{}).value      || '').trim();
+  var model       = ((document.getElementById('ve-model')||{}).value      || curModel || '').trim();
   if (!description) { toast('Введите описание видеоролика'); return; }
   var statusEl = document.getElementById('ve-status');
   var resultEl = document.getElementById('ve-result');

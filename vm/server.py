@@ -6332,6 +6332,10 @@ def patch_stream():
                 _base = TGWUI_BASE
                 _use_chat = True
                 _timeout = _LMS_TIMEOUT
+            elif _real_model.startswith(_TGWUI_PREFIX):
+                # tgwui: prefix but no base URL configured
+                yield 'data: {"error":"text-generation-webui URL не настроен — укажите URL в настройках (☰)"}\n\n'
+                return
             else:
                 _m = _real_model
                 _base = None
@@ -8732,6 +8736,8 @@ def generate_auto_complete():
             r.raise_for_status()
             return r.json().get("choices", [{}])[0].get("message", {}).get("content", "")
         if _is_tgwui_ac:
+            if not TGWUI_BASE:
+                raise ValueError("text-generation-webui URL не настроен — укажите URL в настройках (☰)")
             r = _http.post(
                 f"{TGWUI_BASE}/v1/chat/completions",
                 json={"model": _real_model_ac,
