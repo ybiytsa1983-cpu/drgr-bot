@@ -127,8 +127,23 @@ Set-Location $FOUND
 
 Write-Host '  [Update] Pulling latest fixes...' -ForegroundColor Cyan
 if (Test-Path (Join-Path $FOUND '.git')) {
-    try { $null = & git pull --ff-only --quiet 2>&1; Write-Host '  [OK] Update done.' -ForegroundColor Green }
-    catch { Write-Host '  [OK] Update skipped (no network).' -ForegroundColor Yellow }
+    try {
+        $branch = (& git -C $FOUND rev-parse --abbrev-ref HEAD 2>&1).Trim()
+        if (-not $branch -or $branch -eq 'HEAD') { $branch = 'main' }
+        # Stash any local modifications so they don't block the pull
+        $stashOut = (& git -C $FOUND stash --quiet 2>&1)
+        $stashed  = $stashOut -notmatch 'No local changes'
+        $null = & git -C $FOUND pull origin $branch --quiet 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            # Fallback: hard-reset to remote HEAD (always gets latest)
+            Write-Host '  [!] Pull falied — resetting to remote HEAD.' -ForegroundColor Yellow
+            $null = & git -C $FOUND fetch origin --quiet 2>&1
+            $null = & git -C $FOUND reset --hard "origin/$branch" --quiet 2>&1
+        }
+        # Restore stashed local changes (if any) after pull
+        if ($stashed) { $null = & git -C $FOUND stash pop --quiet 2>&1 }
+        Write-Host '  [OK] Update done.' -ForegroundColor Green
+    } catch { Write-Host '  [OK] Update skipped (no network).' -ForegroundColor Yellow }
 } else {
     Write-Host '  [OK] Not a git repo, skipping.' -ForegroundColor Yellow
 }

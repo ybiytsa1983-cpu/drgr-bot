@@ -18,3 +18,6 @@ vm/projects/*
 nohup.out
 # VM runtime state — updated by the server on every run
 vm/instructions.json
+# Auto-generated SSL certificate (created by vm.ps1 on first run)
+ssl_cert.pem
+ssl_key.pem

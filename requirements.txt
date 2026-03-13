@@ -16,5 +16,7 @@ playwright>=1.44.0
 pillow>=10.0.0
 # Flask VM server
 flask>=2.3.0
+# HTTPS self-signed cert generation (used by vm.ps1 for LAN access)
+pyopenssl>=23.0.0
 # BeautifulSoup for HTML parsing (used by scraper challenge)
 beautifulsoup4>=4.12.0

@@ -32,7 +32,22 @@ $scriptRoot = if ($PSScriptRoot) {
 Set-Location $scriptRoot
 
 # -- Auto-update from remote (silent, best-effort) ----------------------------
-try { git pull --ff-only --quiet 2>$null } catch { }
+try {
+    $branch = (& git rev-parse --abbrev-ref HEAD 2>$null).Trim()
+    if (-not $branch -or $branch -eq 'HEAD') { $branch = 'main' }
+    # Stash local modifications so they never block the pull
+    $stashOut = (& git stash --quiet 2>$null)
+    $stashed  = $stashOut -notmatch 'No local changes'
+    $null = & git pull origin $branch --quiet 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        # Fallback: hard-reset to remote HEAD — warn before overwriting
+        Write-Host "  [!] git pull failed — resetting to remote origin/$branch." -ForegroundColor Yellow
+        $null = & git fetch origin --quiet 2>$null
+        $null = & git reset --hard "origin/$branch" --quiet 2>$null
+    }
+    # Restore stashed changes (if any)
+    if ($stashed) { $null = & git stash pop --quiet 2>$null }
+} catch { }
 
 # -- Normalize .bat files to CRLF (cmd.exe requires CRLF; git may checkout as LF
 #    on machines that cloned before the .gitattributes eol=crlf rule was active) -
@@ -107,6 +122,28 @@ try {
                 }
                 if ($detected) { break }
             }
+        }
+    }
+} catch { }
+
+# -- Start LM Studio early if installed ----------------------------------------
+try {
+    $lmsExe = $null
+    foreach ($c in @(
+        "$env:LOCALAPPDATA\Programs\LM Studio\LM Studio.exe",
+        "$env:USERPROFILE\AppData\Local\Programs\LM Studio\LM Studio.exe",
+        "C:\Program Files\LM Studio\LM Studio.exe",
+        "C:\Program Files (x86)\LM Studio\LM Studio.exe"
+    )) { if (Test-Path $c) { $lmsExe = $c; break } }
+    if ($lmsExe) {
+        $lmsUp = $false
+        try {
+            $lr = Invoke-WebRequest -Uri "http://localhost:1234/v1/models" `
+                    -UseBasicParsing -TimeoutSec 1 -ErrorAction SilentlyContinue
+            if ($lr -and $lr.StatusCode -eq 200) { $lmsUp = $true }
+        } catch { }
+        if (-not $lmsUp) {
+            Start-Process -FilePath $lmsExe -WindowStyle Minimized -ErrorAction SilentlyContinue
         }
     }
 } catch { }
@@ -262,3 +299,37 @@ Start-Process -FilePath "powershell.exe" `
     -WindowStyle Normal
 Write-Host "  [OK] Code VM запускается - браузер откроется через несколько секунд." -ForegroundColor Green
 Write-Host ""
+
+# -- Auto-open Chrome with AI-Vision-Ultra extension (if present) --------------
+try {
+    $extPath = $env:DRGR_CHROME_EXT
+    if (-not $extPath) {
+        $desktop = [Environment]::GetFolderPath('Desktop')
+        foreach ($d in @(
+            (Join-Path $desktop 'AI-Vision-Ultra-Google-v11_ext'),
+            (Join-Path $desktop 'AI-Vision-Ultra-Google-v11'),
+            (Join-Path $desktop 'AI-Vision-Ultra-Google')
+        )) {
+            if (Test-Path (Join-Path $d 'manifest.json')) { $extPath = $d; break }
+        }
+    }
+    if ($extPath -and (Test-Path (Join-Path $extPath 'manifest.json'))) {
+        $chromeExe = $null
+        foreach ($c in @(
+            "$env:PROGRAMFILES\Google\Chrome\Application\chrome.exe",
+            "${env:PROGRAMFILES(X86)}\Google\Chrome\Application\chrome.exe",
+            "$env:LOCALAPPDATA\Google\Chrome\Application\chrome.exe"
+        )) { if (Test-Path $c) { $chromeExe = $c; break } }
+        if ($chromeExe) {
+            Start-Sleep -Seconds 3   # wait for VM server to start
+            # Detect HTTPS mode: cert files present → use https
+            $certExists = (Test-Path (Join-Path $scriptRoot 'ssl_cert.pem')) -and (Test-Path (Join-Path $scriptRoot 'ssl_key.pem'))
+            $vmScheme   = if ($certExists) { 'https' } else { 'http' }
+            $vmPort     = if ($env:VM_PORT) { $env:VM_PORT } else { '5000' }
+            Start-Process -FilePath $chromeExe `
+                -ArgumentList "--load-extension=`"$extPath`"", "--no-first-run", "${vmScheme}://localhost:${vmPort}" `
+                -ErrorAction SilentlyContinue
+            Write-Host "  [OK] Chrome запущен с расширением AI-Vision-Ultra." -ForegroundColor Green
+        }
+    }
+} catch { }

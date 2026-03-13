@@ -71,7 +71,11 @@ if (-not $python) {
 $listening = netstat -an 2>$null | Select-String ":$Port.*LISTEN"
 if ($listening) {
     Write-Host "[Code VM] Server already running on port $Port." -ForegroundColor Green
-    Start-Process "http://localhost:$Port"
+    # Prefer https if cert exists
+    $certCheck = Join-Path $repoDir "ssl_cert.pem"
+    $keyCheck  = Join-Path $repoDir "ssl_key.pem"
+    $openScheme = if ((Test-Path $certCheck) -and (Test-Path $keyCheck)) { "https" } else { "http" }
+    Start-Process "${openScheme}://localhost:$Port"
     exit 0
 }
 
@@ -199,6 +203,45 @@ if ($userHostOk) {
     }
 }
 
+# -- Generate self-signed SSL certificate for HTTPS (LAN access fix) ----------
+$certFile = Join-Path $repoDir "ssl_cert.pem"
+$keyFile  = Join-Path $repoDir "ssl_key.pem"
+$useHttps = $false
+if (-not (Test-Path $certFile) -or -not (Test-Path $keyFile)) {
+    try {
+        $genResult = & $python -c @"
+import sys, os
+os.chdir(r'$($repoDir.Replace("\","\\"))')
+try:
+    from OpenSSL import crypto
+    key = crypto.PKey()
+    key.generate_key(crypto.TYPE_RSA, 2048)
+    cert = crypto.X509()
+    cert.get_subject().CN = 'Code VM'
+    cert.set_serial_number(1)
+    cert.gmtime_adj_notBefore(0)
+    cert.gmtime_adj_notAfter(365*24*60*60*10)  # 10 years
+    cert.set_issuer(cert.get_subject())
+    cert.set_pubkey(key)
+    cert.sign(key, 'sha256')
+    open('ssl_cert.pem','wb').write(crypto.dump_certificate(crypto.FILETYPE_PEM, cert))
+    open('ssl_key.pem','wb').write(crypto.dump_privatekey(crypto.FILETYPE_PEM, key))
+    print('OK')
+except Exception as e:
+    print('SKIP:'+str(e))
+"@ 2>&1
+        if ($genResult -and $genResult.ToString().StartsWith('OK')) {
+            Write-Host "[Code VM] SSL certificate generated for HTTPS." -ForegroundColor Green
+        }
+    } catch { }
+}
+if ((Test-Path $certFile) -and (Test-Path $keyFile)) {
+    $env:VM_SSL_CERT = $certFile
+    $env:VM_SSL_KEY  = $keyFile
+    $useHttps = $true
+    Write-Host "[Code VM] HTTPS mode enabled (self-signed cert)." -ForegroundColor Cyan
+}
+
 # -- Start Flask server and capture output for diagnostics --------------------
 Write-Host "[Code VM] Starting server on port $Port ..." -ForegroundColor Cyan
 $env:VM_PORT = "$Port"
@@ -217,13 +260,18 @@ Start-Process -FilePath $python `
 # -- Wait until server responds (up to 20 s) -----------------------------------
 Write-Host "[Code VM] Waiting for server to be ready..." -ForegroundColor Cyan
 $ready = $false
+$pingScheme = if ($useHttps) { "https" } else { "http" }
 for ($i = 0; $i -lt 20; $i++) {
     Start-Sleep -Seconds 1
     try {
         # Use /ping (instant, no Ollama query) so the check never races against
         # the 3-second Ollama timeout inside /health.
         # Use 127.0.0.1 (not localhost) to avoid IPv6 resolution on Windows.
-        $null = Invoke-WebRequest -Uri "http://127.0.0.1:$Port/ping" -UseBasicParsing -TimeoutSec 10
+        # Disable certificate validation for self-signed cert probe.
+        if ($useHttps) {
+            [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
+        }
+        $null = Invoke-WebRequest -Uri "${pingScheme}://127.0.0.1:$Port/ping" -UseBasicParsing -TimeoutSec 10
         $ready = $true
         break
     } catch [System.Net.WebException] {
@@ -275,36 +323,54 @@ finally:
 } catch { }
 if (-not $localIP) { $localIP = $null }
 
-# -- Add Windows Firewall rule (silent, best-effort) --------------------------
+# -- Add Windows Firewall rule (try elevated first, then silent best-effort) --
+$fwRuleName = "Code VM (port $Port)"
+$fwCreated  = $false
 try {
-    $existing = Get-NetFirewallRule -DisplayName "Code VM (port $Port)" -ErrorAction SilentlyContinue
+    $existing = Get-NetFirewallRule -DisplayName $fwRuleName -ErrorAction SilentlyContinue
     if (-not $existing) {
-        New-NetFirewallRule -DisplayName "Code VM (port $Port)" `
+        New-NetFirewallRule -DisplayName $fwRuleName `
             -Direction Inbound -Protocol TCP -LocalPort $Port `
             -Action Allow -Profile Any -ErrorAction SilentlyContinue | Out-Null
-    }
+        $fwCreated = $null -ne (Get-NetFirewallRule -DisplayName $fwRuleName -ErrorAction SilentlyContinue)
+    } else { $fwCreated = $true }
 } catch { }
+if (-not $fwCreated -and $localIP) {
+    # Fallback: try via netsh (sometimes works without elevation)
+    try {
+        $null = & netsh advfirewall firewall add rule name="$fwRuleName" `
+            dir=in action=allow protocol=TCP localport=$Port 2>&1
+        $fwCreated = $true
+    } catch { }
+}
+if (-not $fwCreated) {
+    Write-Host "[Code VM] Firewall: could not add rule automatically. Run as Admin or add manually:" -ForegroundColor Yellow
+    Write-Host "  netsh advfirewall firewall add rule name=`"$fwRuleName`" dir=in action=allow protocol=TCP localport=$Port" -ForegroundColor Cyan
+}
 
 # -- Check LAN reachability (best-effort) --------------------------------------
+$scheme = if ($useHttps) { "https" } else { "http" }
 $lanReachable = $false
 if ($localIP) {
     try {
-        $r = Invoke-WebRequest -Uri "http://${localIP}:${Port}/ping" `
+        if ($useHttps) { [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true } }
+        $r = Invoke-WebRequest -Uri "${scheme}://${localIP}:${Port}/ping" `
                 -UseBasicParsing -TimeoutSec 3 -ErrorAction SilentlyContinue
         if ($r -and $r.StatusCode -eq 200) { $lanReachable = $true }
     } catch [System.Net.WebException] {
         if ($_.Exception.Response -ne $null) { $lanReachable = $true }
     } catch { }
     if ($lanReachable) {
-        Write-Host "[Code VM] LAN check OK: http://${localIP}:${Port}/" -ForegroundColor Green
+        Write-Host "[Code VM] LAN check OK: ${scheme}://${localIP}:${Port}/" -ForegroundColor Green
     } else {
-        Write-Host "[Code VM] LAN check: server not reachable on http://${localIP}:${Port}/ — check firewall." -ForegroundColor Yellow
+        Write-Host "[Code VM] LAN check: server not reachable on ${scheme}://${localIP}:${Port}/ — check firewall." -ForegroundColor Yellow
     }
 }
 
 # -- Open browser --------------------------------------------------------------
+$browserUrl = "${scheme}://localhost:$Port"
 Write-Host "[Code VM] Opening browser..." -ForegroundColor Cyan
-Start-Process "http://localhost:$Port"
+Start-Process $browserUrl
 
 $sep = "  +----------------------------------------------------+"
 Write-Host ""
@@ -312,16 +378,19 @@ Write-Host $sep -ForegroundColor Green
 Write-Host ("  |  {0,-50}|" -f "Code VM is running!") -ForegroundColor Green
 Write-Host ("  |{0}|" -f ("-" * 52)) -ForegroundColor DarkGreen
 Write-Host ("  |  {0,-50}|" -f "This device:") -ForegroundColor Cyan
-Write-Host ("  |    {0,-48}|" -f "http://localhost:$Port/") -ForegroundColor Cyan
+Write-Host ("  |    {0,-48}|" -f "${scheme}://localhost:$Port/") -ForegroundColor Cyan
 Write-Host ("  |{0}|" -f ("-" * 52)) -ForegroundColor DarkGreen
 if ($localIP) {
     $lanStatus = if ($lanReachable) { "[OK]" } else { "[недоступен — брандмауэр?]" }
     $lanColor  = if ($lanReachable) { "Green" } else { "Yellow" }
     Write-Host ("  |  {0,-50}|" -f "Other devices on the same network:") -ForegroundColor Yellow
-    Write-Host ("  |    {0,-48}|" -f "http://${localIP}:${Port}/  $lanStatus") -ForegroundColor $lanColor
+    Write-Host ("  |    {0,-48}|" -f "${scheme}://${localIP}:${Port}/  $lanStatus") -ForegroundColor $lanColor
+    if ($useHttps) {
+        Write-Host ("  |  {0,-50}|" -f "HTTPS: откройте URL, нажмите Дополнительно → Перейти") -ForegroundColor DarkGray
+    }
 } else {
     Write-Host ("  |  {0,-50}|" -f "Other devices: run 'ipconfig' to find your IP,") -ForegroundColor Yellow
-    Write-Host ("  |  {0,-50}|" -f "then open http://YOUR_IP:$Port/") -ForegroundColor Yellow
+    Write-Host ("  |  {0,-50}|" -f "then open ${scheme}://YOUR_IP:$Port/") -ForegroundColor Yellow
 }
 Write-Host ("  |{0}|" -f ("-" * 52)) -ForegroundColor DarkGreen
 if ($ollamaRunning) {
