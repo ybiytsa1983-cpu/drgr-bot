@@ -2843,12 +2843,29 @@ async function doWebSearch() {
 // ── Chat room window ─────────────────────────────────────────────────────────
 var _chatroomWin = null;
 function openChatroom() {
-  // Re-use existing window if still open
+  // Re-use existing window if still open (reference survived page navigation)
   if (_chatroomWin && !_chatroomWin.closed) {
     _chatroomWin.focus();
     return;
   }
-  var w = window.open('/chatroom/page', 'drgr_chatroom', 'width=540,height=800,resizable=yes');
+  // Probe for an already-open window by name without navigating it
+  // window.open('', name) focuses the existing named window if it exists
+  var probe = window.open('', 'drgr_chatroom');
+  if (probe) {
+    var onChatroom = false;
+    try { onChatroom = probe.location.pathname.indexOf('/chatroom') !== -1; } catch(e) {
+      // SecurityError: cross-origin window — treat as no existing chatroom window
+    }
+    if (onChatroom) {
+      // Window was already open – just focus it, do NOT reopen
+      _chatroomWin = probe;
+      probe.focus();
+      return;
+    }
+    // A blank window was created by the probe; close it and open properly
+    probe.close();
+  }
+  var w = window.open('/chatroom/page', 'drgr_chatroom', 'width=600,height=860,resizable=yes');
   if (w) { _chatroomWin = w; w.focus(); }
   else { location.href = '/chatroom/page'; }
 }

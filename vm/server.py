@@ -5699,6 +5699,267 @@ def chatroom_pins_get():
 
 
 # ---------------------------------------------------------------------------
+# Chatroom extra: typing indicators, search, polls, image upload, bookmarks
+# ---------------------------------------------------------------------------
+
+# ── Typing indicator ─────────────────────────────────────────────────────────
+@app.route("/chatroom/typing", methods=["POST"])
+def chatroom_typing():
+    """Broadcast a typing indicator to all SSE subscribers.
+
+    Body: {"nick": "...", "typing": true|false}
+    """
+    body = request.get_json(silent=True) or {}
+    nick = (body.get("nick") or "").strip()[:32]
+    typing = bool(body.get("typing", True))
+    if not nick:
+        return jsonify({"ok": False, "error": "nick required"}), 400
+    _chatroom_broadcast({"type": "typing", "nick": nick, "typing": typing})
+    return jsonify({"ok": True})
+
+
+# ── Message search ────────────────────────────────────────────────────────────
+@app.route("/chatroom/search", methods=["GET"])
+def chatroom_search():
+    """Search messages by keyword (case-insensitive).
+
+    Query: ?q=keyword
+    Returns: {"results": [msg, ...]}
+    """
+    q = (request.args.get("q") or "").strip().lower()
+    if not q:
+        return jsonify({"results": []})
+    with _chatroom_lock:
+        results = [
+            m for m in _chatroom_history
+            if not m.get("deleted") and q in (m.get("text") or "").lower()
+        ]
+    return jsonify({"results": results})
+
+
+# ── Polls ─────────────────────────────────────────────────────────────────────
+_chatroom_polls: dict = {}   # poll_id → {id, creator, question, options, votes, closed, ts}
+_chatroom_poll_counter = 0
+_CHATROOM_POLLS_MAX = 20
+
+@app.route("/chatroom/poll", methods=["POST"])
+def chatroom_poll_create():
+    """Create a new poll.
+
+    Body: {"nick": "...", "question": "...", "options": ["opt1", "opt2", ...]}
+    Returns: {"ok": true, "poll_id": <int>}
+    """
+    global _chatroom_poll_counter
+    body = request.get_json(silent=True) or {}
+    nick = (body.get("nick") or "").strip()[:32]
+    question = (body.get("question") or "").strip()[:200]
+    options  = [str(o)[:100] for o in (body.get("options") or []) if str(o).strip()]
+    if not nick:
+        return jsonify({"ok": False, "error": "nick required"}), 400
+    if not question:
+        return jsonify({"ok": False, "error": "question required"}), 400
+    if len(options) < 2 or len(options) > 10:
+        return jsonify({"ok": False, "error": "2–10 options required"}), 400
+    with _chatroom_lock:
+        user_info = _chatroom_users.get(nick, {})
+        color = user_info.get("color", "#888")
+        _chatroom_poll_counter += 1
+        poll_id = _chatroom_poll_counter
+        ts = datetime.now(timezone.utc).strftime("%H:%M")
+        poll = {
+            "id": poll_id,
+            "creator": nick,
+            "color": color,
+            "question": question,
+            "options": options,
+            "votes": {o: [] for o in options},   # option → list of nicks
+            "closed": False,
+            "ts": ts,
+        }
+        _chatroom_polls[poll_id] = poll
+        # Evict oldest polls if too many
+        if len(_chatroom_polls) > _CHATROOM_POLLS_MAX:
+            oldest = min(_chatroom_polls.keys())
+            del _chatroom_polls[oldest]
+    _chatroom_broadcast({"type": "poll_new", "poll": poll})
+    return jsonify({"ok": True, "poll_id": poll_id})
+
+
+@app.route("/chatroom/poll/vote", methods=["POST"])
+def chatroom_poll_vote():
+    """Vote on a poll option.
+
+    Body: {"nick": "...", "poll_id": <int>, "option": "..."}
+    Returns: {"ok": true, "poll": {...}}
+    """
+    body = request.get_json(silent=True) or {}
+    nick    = (body.get("nick") or "").strip()[:32]
+    poll_id = int(body.get("poll_id") or 0)
+    option  = str(body.get("option") or "").strip()[:100]
+    if not nick:
+        return jsonify({"ok": False, "error": "nick required"}), 400
+    with _chatroom_lock:
+        poll = _chatroom_polls.get(poll_id)
+        if not poll:
+            return jsonify({"ok": False, "error": "poll not found"}), 404
+        if poll.get("closed"):
+            return jsonify({"ok": False, "error": "poll closed"}), 400
+        if option not in poll["options"]:
+            return jsonify({"ok": False, "error": "invalid option"}), 400
+        # Remove previous vote by this nick
+        for opt_votes in poll["votes"].values():
+            if nick in opt_votes:
+                opt_votes.remove(nick)
+        poll["votes"][option].append(nick)
+        poll_snap = dict(poll)
+    _chatroom_broadcast({"type": "poll_update", "poll": poll_snap})
+    return jsonify({"ok": True, "poll": poll_snap})
+
+
+@app.route("/chatroom/polls", methods=["GET"])
+def chatroom_polls_list():
+    """Return all active (non-closed) polls, newest first."""
+    with _chatroom_lock:
+        polls = sorted(
+            [p for p in _chatroom_polls.values() if not p.get("closed")],
+            key=lambda p: p["id"],
+            reverse=True,
+        )
+    return jsonify({"polls": polls})
+
+
+@app.route("/chatroom/poll/close", methods=["POST"])
+def chatroom_poll_close():
+    """Close a poll (creator only).
+
+    Body: {"nick": "...", "poll_id": <int>}
+    """
+    body = request.get_json(silent=True) or {}
+    nick    = (body.get("nick") or "").strip()[:32]
+    poll_id = int(body.get("poll_id") or 0)
+    if not nick:
+        return jsonify({"ok": False, "error": "nick required"}), 400
+    with _chatroom_lock:
+        poll = _chatroom_polls.get(poll_id)
+        if not poll:
+            return jsonify({"ok": False, "error": "poll not found"}), 404
+        if poll["creator"] != nick:
+            return jsonify({"ok": False, "error": "only creator can close"}), 403
+        poll["closed"] = True
+        poll_snap = dict(poll)
+    _chatroom_broadcast({"type": "poll_update", "poll": poll_snap})
+    return jsonify({"ok": True})
+
+
+# ── Image / file upload ───────────────────────────────────────────────────────
+import mimetypes as _mimetypes
+import pathlib as _pathlib
+_CHATROOM_UPLOAD_DIR = _pathlib.Path(__file__).parent / "static" / "chatroom_uploads"
+_CHATROOM_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+_CHATROOM_UPLOAD_MAX_MB = 10
+_CHATROOM_ALLOWED_EXT = {
+    ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp",
+    ".mp3", ".ogg", ".wav", ".webm", ".m4a",
+    ".pdf", ".txt", ".md",
+    ".mp4",
+}
+
+@app.route("/chatroom/upload", methods=["POST"])
+def chatroom_upload():
+    """Upload a file (image / audio / document) to the chatroom.
+
+    multipart/form-data fields: file, nick, color
+    Returns: {"ok": true, "url": "/chatroom/uploads/<filename>", "name": "...", "mime": "..."}
+    """
+    nick  = (request.form.get("nick")  or "").strip()[:32]
+    color = (request.form.get("color") or "#888").strip()[:20]
+    if not nick:
+        return jsonify({"ok": False, "error": "nick required"}), 400
+    f = request.files.get("file")
+    if not f:
+        return jsonify({"ok": False, "error": "no file"}), 400
+    from werkzeug.utils import secure_filename as _secure_filename
+    orig_name = _secure_filename(f.filename) if f.filename else "file"
+    ext = _pathlib.Path(orig_name).suffix.lower()
+    if ext not in _CHATROOM_ALLOWED_EXT:
+        return jsonify({"ok": False, "error": f"file type {ext!r} not allowed"}), 400
+    # Size check
+    f.seek(0, 2)
+    size = f.tell()
+    f.seek(0)
+    if size > _CHATROOM_UPLOAD_MAX_MB * 1024 * 1024:
+        return jsonify({"ok": False, "error": f"max {_CHATROOM_UPLOAD_MAX_MB} MB"}), 400
+    unique_name = f"{int(time.time()*1000)}_{uuid.uuid4().hex[:8]}_{orig_name}"
+    dest = _CHATROOM_UPLOAD_DIR / unique_name
+    f.save(dest)
+    url = f"/chatroom/uploads/{unique_name}"
+    mime = _mimetypes.guess_type(orig_name)[0] or "application/octet-stream"
+    # Broadcast a message with the file attachment
+    global _chatroom_msg_counter
+    with _chatroom_lock:
+        _chatroom_msg_counter += 1
+        msg_id = _chatroom_msg_counter
+        ts = datetime.now(timezone.utc).strftime("%H:%M")
+        msg = {
+            "id": msg_id,
+            "nick": nick,
+            "color": color,
+            "text": orig_name,
+            "ts": ts,
+            "attachment": {"url": url, "name": orig_name, "mime": mime},
+        }
+        _chatroom_history.append(msg)
+        if len(_chatroom_history) > _CHATROOM_HISTORY_MAX:
+            _chatroom_history.pop(0)
+    _chatroom_broadcast(msg)
+    return jsonify({"ok": True, "url": url, "name": orig_name, "mime": mime})
+
+
+@app.route("/chatroom/uploads/<path:filename>")
+def chatroom_upload_serve(filename):
+    """Serve uploaded chatroom files."""
+    return send_from_directory(str(_CHATROOM_UPLOAD_DIR), filename)
+
+
+# ── Bookmarks (per-session, stored client-side; backend not required)
+# ── Forward message (re-send as own message with forward attribution)
+@app.route("/chatroom/forward", methods=["POST"])
+def chatroom_forward():
+    """Forward a message to the group chat.
+
+    Body: {"nick": "...", "msg_id": <int>, "color": "..."}
+    Returns: {"ok": true}
+    """
+    body = request.get_json(silent=True) or {}
+    nick   = (body.get("nick")  or "").strip()[:32]
+    color  = (body.get("color") or "#888").strip()[:20]
+    msg_id = int(body.get("msg_id") or 0)
+    if not nick:
+        return jsonify({"ok": False, "error": "nick required"}), 400
+    orig, _ = _chatroom_find_msg(msg_id)
+    if not orig or orig.get("deleted"):
+        return jsonify({"ok": False, "error": "message not found"}), 404
+    global _chatroom_msg_counter
+    with _chatroom_lock:
+        _chatroom_msg_counter += 1
+        new_id = _chatroom_msg_counter
+        ts = datetime.now(timezone.utc).strftime("%H:%M")
+        msg = {
+            "id": new_id,
+            "nick": nick,
+            "color": color,
+            "text": orig.get("text", ""),
+            "ts": ts,
+            "forward_from": orig.get("nick", ""),
+        }
+        _chatroom_history.append(msg)
+        if len(_chatroom_history) > _CHATROOM_HISTORY_MAX:
+            _chatroom_history.pop(0)
+    _chatroom_broadcast(msg)
+    return jsonify({"ok": True})
+
+
+# ---------------------------------------------------------------------------
 # TG → VM chat: Telegram messages forwarded to the VM AI chat panel
 # ---------------------------------------------------------------------------
 _TG_CHAT_MAX = 200          # keep last N TG messages in memory
