@@ -495,10 +495,10 @@ def _start_ollama_cors_relay() -> None:
         daemon_threads = True
 
     try:
-        relay_server = _ThreadingServer(("127.0.0.1", _OLLAMA_RELAY_PORT), _RelayHandler)
+        relay_server = _ThreadingServer(("0.0.0.0", _OLLAMA_RELAY_PORT), _RelayHandler)
         print(
-            f"[Code VM] Ollama CORS relay started on http://127.0.0.1:{_OLLAMA_RELAY_PORT}"
-            " — Chrome extensions can call Ollama through this address.",
+            f"[Code VM] Ollama CORS relay started on 0.0.0.0:{_OLLAMA_RELAY_PORT}"
+            " — Chrome extensions and LAN devices can call Ollama through this address.",
             flush=True,
         )
         relay_server.serve_forever()
@@ -8481,7 +8481,12 @@ def _generate_chrome_extension_files(model: str, prompt: str, name: str) -> dict
         "   - chrome.runtime.onMessage for 'CLICK_ELEMENT': click on matching element\n"
         "\n"
         "E. manifest.json — Manifest V3 with permissions: sidePanel, activeTab, scripting,\n"
-        f"   tabs, storage; host_permissions: [\"<all_urls>\", \"http://127.0.0.1:{_OLLAMA_RELAY_PORT}/*\"]\n"
+        f"   tabs, storage; host_permissions: [\"<all_urls>\", \"http://127.0.0.1:{_OLLAMA_RELAY_PORT}/*\", \"http://*:{_OLLAMA_RELAY_PORT}/*\"]\n"
+        "\n"
+        "LAN SUPPORT: background.js must read the relay URL from chrome.storage.local key\n"
+        f"'ollamaRelayUrl' (default 'http://127.0.0.1:{_OLLAMA_RELAY_PORT}/api/chat') so users\n"
+        "on other LAN devices can point the extension to a remote relay.\n"
+        "Add handler for chrome.runtime.onMessage type='SET_RELAY_URL' that saves msg.url to storage.\n"
         "\n"
         "Output EXACTLY these 5 files. Each file preceded by === filename === on its own line,\n"
         "then immediately a fenced code block (```json / ```html / ```javascript).\n"
@@ -8574,7 +8579,11 @@ def _generate_chrome_extension_files(model: str, prompt: str, name: str) -> dict
             "version": "1.0",
             "description": prompt[:120],
             "permissions": ["sidePanel", "activeTab", "scripting", "tabs", "storage"],
-            "host_permissions": ["<all_urls>", f"http://127.0.0.1:{_OLLAMA_RELAY_PORT}/*"],
+            "host_permissions": [
+                "<all_urls>",
+                f"http://127.0.0.1:{_OLLAMA_RELAY_PORT}/*",
+                f"http://*:{_OLLAMA_RELAY_PORT}/*",
+            ],
             "background": {"service_worker": "background.js"},
             "content_scripts": [{"matches": ["<all_urls>"], "js": ["content.js"]}],
             "side_panel": {"default_path": "sidepanel.html"},
@@ -8591,13 +8600,29 @@ def _generate_chrome_extension_files(model: str, prompt: str, name: str) -> dict
             "chrome.action.onClicked.addListener(function(tab) {\n"
             "  chrome.sidePanel.open({ tabId: tab.id });\n"
             "});\n\n"
+            "// Default relay URL (localhost). Override via chrome.storage.local {ollamaRelayUrl}\n"
+            f"var _DEFAULT_RELAY = 'http://127.0.0.1:{_OLLAMA_RELAY_PORT}/api/chat';\n\n"
+            "async function _getRelayUrl() {\n"
+            "  return new Promise(function(resolve) {\n"
+            "    try {\n"
+            "      chrome.storage.local.get('ollamaRelayUrl', function(d) {\n"
+            "        if (chrome.runtime.lastError) {\n"
+            "          resolve(_DEFAULT_RELAY);\n"
+            "          return;\n"
+            "        }\n"
+            "        resolve((d && d.ollamaRelayUrl) || _DEFAULT_RELAY);\n"
+            "      });\n"
+            "    } catch (e) {\n"
+            "      resolve(_DEFAULT_RELAY);\n"
+            "    }\n"
+            "  });\n"
+            "}\n\n"
             "// Long-lived port relay for streaming /api/chat responses\n"
             "chrome.runtime.onConnect.addListener(function(port) {\n"
             "  if (port.name !== 'ollama_stream') return;\n"
             "  port.onMessage.addListener(async function(msg) {\n"
             "    if (msg.type !== 'OLLAMA_CHAT') return;\n"
-            "    var ollamaUrl = msg.ollamaUrl ||\n"
-            f"      'http://127.0.0.1:{_OLLAMA_RELAY_PORT}/api/chat';\n"
+            "    var ollamaUrl = msg.ollamaUrl || (await _getRelayUrl());\n"
             "    try {\n"
             "      var body = JSON.stringify({\n"
             "        model: msg.model || 'gemma3:4b',\n"
@@ -8660,6 +8685,18 @@ def _generate_chrome_extension_files(model: str, prompt: str, name: str) -> dict
             "      },\n"
             "    }, function(results) {\n"
             "      sendResponse({ text: (results && results[0]) ? results[0].result : '' });\n"
+            "    });\n"
+            "    return true;\n"
+            "  }\n"
+            "  if (msg.type === 'SET_RELAY_URL') {\n"
+            "    chrome.storage.local.set({ ollamaRelayUrl: msg.url }, function() {\n"
+            "      sendResponse({ ok: true });\n"
+            "    });\n"
+            "    return true;\n"
+            "  }\n"
+            "  if (msg.type === 'GET_RELAY_URL') {\n"
+            "    chrome.storage.local.get('ollamaRelayUrl', function(d) {\n"
+            f"      sendResponse({{ url: d.ollamaRelayUrl || 'http://127.0.0.1:{_OLLAMA_RELAY_PORT}/api/chat' }});\n"
             "    });\n"
             "    return true;\n"
             "  }\n"
@@ -8739,6 +8776,16 @@ def _generate_chrome_extension_files(model: str, prompt: str, name: str) -> dict
         "который подключается к CORS-релею на `http://127.0.0.1:"
         f"{_OLLAMA_RELAY_PORT}` — он запускается автоматически вместе с VM-сервером.\n"
         "Это позволяет стримить токены прямо в боковой панели без ошибок CORS.\n\n"
+        "## Использование с другого устройства (LAN)\n\n"
+        "Если вы используете расширение на устройстве, отличном от сервера drgr-bot:\n\n"
+        "1. Найдите IP-адрес сервера (например `192.168.1.100`)\n"
+        f"2. В расширении откройте настройки и укажите URL релея:\n"
+        f"   `http://192.168.1.100:{_OLLAMA_RELAY_PORT}/api/chat`\n"
+        "3. Или выполните в консоли расширения (chrome://extensions → Service Worker):\n"
+        "   ```js\n"
+        f"   chrome.storage.local.set({{ollamaRelayUrl: 'http://192.168.1.100:{_OLLAMA_RELAY_PORT}/api/chat'}})\n"
+        "   ```\n\n"
+        "CORS-релей drgr-bot VM теперь слушает на `0.0.0.0` — доступен с любого устройства в сети.\n\n"
         "## Файлы\n\n"
         + "\n".join(f"- `{f}`" for f in files.keys() if f != "README.md")
         + "\n"

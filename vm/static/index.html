@@ -163,6 +163,10 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
   white-space:nowrap;transition:filter .15s;flex-shrink:0}
 #btn-patch:hover{filter:brightness(1.2)}
 #btn-patch:disabled{background:#333;cursor:not-allowed;filter:none}
+#btn-goose-analyze{background:#1a5c2a;border:none;color:#50fa7b;padding:8px 14px;
+  border-radius:8px;cursor:pointer;font-size:13px;font-weight:700;
+  white-space:nowrap;transition:filter .15s;flex-shrink:0}
+#btn-goose-analyze:hover{filter:brightness(1.2)}
 #btn-open-browser{background:#2a6b3a;border:none;color:#fff;padding:8px 14px;
   border-radius:8px;cursor:pointer;font-size:13px;font-weight:700;
   white-space:nowrap;transition:filter .15s;flex-shrink:0}
@@ -342,7 +346,7 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
   #colab-pane { min-height: 100vh }
   /* Prompt bar buttons wrap properly */
   .pbar-row { flex-wrap: wrap }
-  #btn-gen, #btn-patch, #btn-open-browser, #btn-save-project { padding: 8px 10px; font-size: 12px; min-height: 40px }
+  #btn-gen, #btn-patch, #btn-goose-analyze, #btn-open-browser, #btn-save-project { padding: 8px 10px; font-size: 12px; min-height: 40px }
   /* Editor toolbar: allow horizontal scrolling */
   #etb { overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none; -webkit-overflow-scrolling: touch }
   #etb::-webkit-scrollbar { display: none }
@@ -368,7 +372,7 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
   .vm-card h3 { font-size: 14px }
   /* Ensure pbar buttons wrap to multiple rows */
   .pbar-row { flex-wrap: wrap; gap: 5px }
-  #btn-gen, #btn-patch, #btn-open-browser, #btn-save-project { flex: 1; min-width: 70px; font-size: 11px; padding: 7px 8px }
+  #btn-gen, #btn-patch, #btn-goose-analyze, #btn-open-browser, #btn-save-project { flex: 1; min-width: 70px; font-size: 11px; padding: 7px 8px }
   /* Compact Monaco editor height on small phones */
   #epane { height: 45vh }
   #vpane { min-height: 38vh }
@@ -883,6 +887,7 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
         oninput="autoResize(this)"></textarea>
       <button id="btn-gen" onclick="generateCode()">▶ Сгенерировать</button>
       <button id="btn-patch" onclick="patchCode()" title="Внести правки в существующий код по запросу">✏ Правки</button>
+      <button id="btn-goose-analyze" onclick="sendEditorToGoose()" title="Отправить код в Goose для анализа и улучшения">🪿 Goose</button>
       <button id="btn-open-browser" onclick="openInBrowser()" title="Открыть текущий код в новой вкладке браузера">🌐 Открыть</button>
       <button id="btn-save-project" onclick="saveProjectFromEditor()" title="Сохранить текущий код как проект в папку projects/">💾 Сохранить</button>
     </div>
@@ -1358,7 +1363,9 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
       <div style="font-size:11px;color:var(--text2);margin-top:3px">Оставьте пустым — goose запустится в текущей директории сервера</div>
     </div>
     <div>
-      <div class="pl">📝 Инструкция для Goose</div>
+      <div class="pl" style="display:flex;align-items:center;gap:8px">📝 Инструкция для Goose
+        <button class="pb pb-s" onclick="sendEditorToGoose()" style="font-size:11px;padding:3px 8px;margin-left:auto" title="Загрузить код из редактора и сформировать инструкцию для анализа">📋 Из редактора</button>
+      </div>
       <textarea id="goose-instruction" rows="5" placeholder="Добавь авторизацию через JWT. Обнови модуль auth.py, создай middleware, обнови тесты." style="width:100%;resize:vertical"></textarea>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -6574,6 +6581,27 @@ window.addEventListener('load', function(){
 });
 
 // ── Goose Agent & OAF functions ─────────────────────────────────────────────
+function sendEditorToGoose() {
+  if (!editor) { toast('Редактор не инициализирован'); return; }
+  var code = editor.getValue().trim();
+  if (!code) { toast('Редактор пуст — нечего отправлять в Goose'); return; }
+  var instrEl = document.getElementById('goose-instruction');
+  if (instrEl) {
+    // Limit code snippet in instruction to avoid hitting Goose CLI argument limits
+    var MAX_INSTRUCTION_CODE_LENGTH = 2000;
+    var preview = code.length > MAX_INSTRUCTION_CODE_LENGTH
+      ? code.slice(0, MAX_INSTRUCTION_CODE_LENGTH) + '\n...(код обрезан для инструкции)'
+      : code;
+    instrEl.value = 'Проанализируй этот код, исправь все ошибки и сделай его полностью рабочим. Убедись что:\n'
+      + '1. Нет placeholder-ов, TODO, заглушек или demo-режима\n'
+      + '2. Все функции реализованы полностью\n'
+      + '3. Код запускается без ошибок\n\n'
+      + '```\n' + preview + '\n```';
+  }
+  setView('goose');
+  toast('📋 Код отправлен в Goose — введите директорию проекта и нажмите «Запустить»');
+}
+
 async function gooseRun() {
   var instruction = (document.getElementById('goose-instruction')||{}).value || '';
   instruction = instruction.trim();
