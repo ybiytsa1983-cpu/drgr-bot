@@ -5826,9 +5826,24 @@ def agent_describe_image():
     # Select the best available vision model (Ollama or LM Studio)
     selected_model = _best_vision_model()
     if not selected_model:
-        # No vision model available — return empty description gracefully
-        return jsonify({"description": "", "model": None, "success": False,
-                        "error": "No vision model available. Run: ollama pull llava"})
+        # No vision model available — trigger moondream pull and report
+        def _pull_moon_desc():
+            try:
+                _http.post(f"{OLLAMA_BASE}/api/pull", json={"name": "moondream:latest"}, timeout=600)
+            except Exception:  # pylint: disable=broad-except
+                pass
+        threading.Thread(target=_pull_moon_desc, daemon=True).start()
+        return jsonify({
+            "description": "",
+            "model": None,
+            "success": False,
+            "error": (
+                "No vision model available. "
+                "Auto-installing moondream:latest (lightweight, ~1 GB). "
+                "Try again in a minute, or run: ollama pull moondream"
+            ),
+            "pulling": "moondream:latest",
+        })
 
     _prompt_describe = (
         "Describe this image in detail in Russian. "
@@ -7036,6 +7051,71 @@ def browse_screenshot():
 
 
 # ---------------------------------------------------------------------------
+# Lightweight vision fallback — moondream auto-pull / status endpoint
+# ---------------------------------------------------------------------------
+
+@app.route("/vision/light/check", methods=["GET"])
+def vision_light_check():
+    """Check lightweight vision model availability; trigger auto-pull if absent.
+
+    Returns: {available: bool, model: "moondream:latest"|"", pulling: bool, status: "ok"|"pulling"|"none"}
+    A GET request checks if a lightweight vision model (moondream) is present in Ollama.
+    If missing and pull_if_absent=1 query param is set, starts an async pull.
+    Used by the Chrome extension on startup to ensure basic image description works
+    even when no heavy vision model (qwen3-vl / llava) is installed.
+    When a full vision VM (VISION_VM_URL) is configured and reachable, the light VM is
+    considered unnecessary and the response marks it as not needed.
+    """
+    pull_if_absent = request.args.get("pull_if_absent", "0") == "1"
+
+    # If a dedicated Vision VM is already online, no light VM needed
+    if VISION_VM_URL:
+        try:
+            r = _http.get(f"{VISION_VM_URL}/api/tags", timeout=3)
+            if r.status_code == 200 and r.json().get("models"):
+                return jsonify({
+                    "available": True,
+                    "model": "",
+                    "pulling": False,
+                    "status": "vision_vm_active",
+                    "message": "Vision VM already active — light fallback not needed",
+                })
+        except Exception:  # pylint: disable=broad-except
+            pass
+
+    _light_candidates = ["moondream:latest", "moondream:1.8b", "moondream", "minicpm-v:latest", "minicpm-v"]
+    found_model = ""
+    try:
+        r = _http.get(f"{OLLAMA_BASE}/api/tags", timeout=5)
+        if r.status_code == 200:
+            available = {m.get("name", "") for m in r.json().get("models", [])}
+            for c in _light_candidates:
+                if c in available:
+                    found_model = c
+                    break
+    except Exception:  # pylint: disable=broad-except
+        return jsonify({"available": False, "model": "", "pulling": False, "status": "ollama_unreachable"})
+
+    if found_model:
+        return jsonify({"available": True, "model": found_model, "pulling": False, "status": "ok"})
+
+    if pull_if_absent:
+        # Start async pull of moondream (lightweight ~1 GB vision model)
+        def _do_pull():
+            try:
+                _http.post(f"{OLLAMA_BASE}/api/pull", json={"name": "moondream:latest"}, timeout=600)
+            except Exception:  # pylint: disable=broad-except
+                pass
+        threading.Thread(target=_do_pull, daemon=True).start()
+        return jsonify({"available": False, "model": "moondream:latest", "pulling": True,
+                        "status": "pulling",
+                        "message": "moondream:latest pull started — light vision will be available soon"})
+
+    return jsonify({"available": False, "model": "", "pulling": False, "status": "none",
+                    "message": "No lightweight vision model found. Request with ?pull_if_absent=1 to auto-install moondream."})
+
+
+# ---------------------------------------------------------------------------
 # Visor VM — create retrained qwen3-vl model + live page-watch endpoint
 # ---------------------------------------------------------------------------
 
@@ -7527,11 +7607,14 @@ def visor_watch():
 def _best_vision_model() -> str:
     """Return the best available vision model name.
 
-    Priority: Vision VM (visionvm:) → Ollama (OLLAMA_BASE) → LM Studio (lmstudio:).
+    Priority: Vision VM (visionvm:) → Ollama (OLLAMA_BASE) → LM Studio (lmstudio:)
+              → lightweight fallback (moondream).
     When VISION_VM_URL is configured and online, all vision requests are routed
     to the dedicated vision instance, effectively bypassing the primary Ollama.
     """
     preferred = ["drgr-visor", "gpt-oss:latest", "qwen3-vl:8b", "qwen3-vl:235b-cloud", "llava", "llava:13b"]
+    # Lightweight fallback models (fast, ~1 GB, suitable when no heavy vision model)
+    _light_vision = ["moondream:latest", "moondream:1.8b", "moondream", "minicpm-v:latest", "minicpm-v"]
     # 1. Dedicated Vision VM (another Ollama instance) — highest priority
     if VISION_VM_URL:
         try:
@@ -7553,8 +7636,15 @@ def _best_vision_model() -> str:
             for p in preferred:
                 if p in available:
                     return p
-            if available:
-                return next(iter(available))
+            # Check lightweight vision models in Ollama
+            for lv in _light_vision:
+                if lv in available:
+                    return lv
+            # Check any model with vision-related name pattern
+            for m_name in available:
+                m_lower = m_name.lower()
+                if any(pat in m_lower for pat in ("vl", "vision", "llava", "bakllava", "moondream", "minicpm-v", "glm-4v")):
+                    return m_name
     except Exception:
         pass
     # 3. Fallback: try LM Studio — prefer models with known vision capability patterns
@@ -7573,7 +7663,30 @@ def _best_vision_model() -> str:
                     return f"{_LM_STUDIO_PREFIX}{lms_models[0]['id']}"
         except Exception:
             pass
-    return "qwen3-vl:8b"
+    # 4. Lightweight auto-fallback: try to pull moondream (fast ~1 GB model)
+    #    and return its name so the caller can use it once pull completes
+    try:
+        r = _http.get(f"{OLLAMA_BASE}/api/tags", timeout=3)
+        if r.status_code == 200:
+            available = {m.get("name", "") for m in r.json().get("models", [])}
+            if not any(
+                any(pat in m.lower() for pat in ("vl", "vision", "llava", "bakllava", "moondream", "minicpm-v"))
+                for m in available
+            ):
+                # No vision model at all — trigger async pull of moondream (lightweight)
+                def _pull_moondream():
+                    try:
+                        _http.post(
+                            f"{OLLAMA_BASE}/api/pull",
+                            json={"name": "moondream:latest"},
+                            timeout=600,
+                        )
+                    except Exception:  # pylint: disable=broad-except
+                        pass
+                threading.Thread(target=_pull_moondream, daemon=True).start()
+    except Exception:  # pylint: disable=broad-except
+        pass
+    return ""
 
 
 # ---------------------------------------------------------------------------
@@ -7880,6 +7993,12 @@ def _generate_chrome_extension_files(model: str, prompt: str, name: str) -> dict
         f"     fetch http://127.0.0.1:{_OLLAMA_RELAY_PORT}/api/chat POST stream:true,\n"
         "     read via response.body.getReader(), split lines, parse JSON,\n"
         "     relay tokens via port.postMessage({token}) and port.postMessage({done:true})\n"
+        f"   - On extension install/startup: fetch http://127.0.0.1:{int(os.environ.get('VM_PORT', 5000))}/vision/light/check?pull_if_absent=1\n"
+        "     to auto-install lightweight moondream vision model if no vision model is present;\n"
+        "     if response.status=='vision_vm_active' or response.available==true, skip pull.\n"
+        "     Store {lightVisionReady: bool, lightVisionModel: str} in chrome.storage.local.\n"
+        "   - When a vision VM URL is detected (sidepanel sends 'VISION_VM_CONNECTED' message),\n"
+        "     store {useVisionVM: true} in chrome.storage.local to suppress light VM usage.\n"
         "\n"
         "D. content.js — COMPLETE content script:\n"
         "   - chrome.runtime.onMessage for 'GET_TEXT': returns document.body.innerText\n"
@@ -9665,41 +9784,75 @@ def web_research():
                 "научно-популярный рассказ с интересными открытиями",
                 "репортаж с акцентом на последние события и тренды",
                 "сравнительный анализ с разными точками зрения",
+                "экспертный разбор с разными уровнями детализации",
+                "практический кейс с примерами из реальной жизни",
             ]
             _style = _rand.choice(_variation_styles)
             _year = _dt.date.today().year
-            prompt = (
-                f'Ты — профессиональный AI-журналист. Напиши УНИКАЛЬНУЮ ПОЛНОЦЕННУЮ статью СТРОГО по теме "{query}".\n\n'
-                f"Стиль статьи: {_style}.\n\n"
-                f"КРИТИЧЕСКИ ВАЖНО:\n"
-                f"- Статья должна быть ТОЛЬКО И ИСКЛЮЧИТЕЛЬНО о теме '{query}'\n"
-                f"- НЕ смешивай разные темы из источников\n"
-                f"- НЕ КОПИРУЙ тексты из источников — используй их ТОЛЬКО как справочный материал\n"
-                f"- Пиши СВОИМИ словами, статья должна быть уникальной\n"
-                f"- Включай конкретные факты, цифры, даты из источников\n\n"
-                f"Справочные данные из источников:\n{aggregated}\n\n"
-                f"СТРУКТУРА СТАТЬИ (обязательная, не менее 7 разделов):\n"
-                f"Строка 1: Оригинальный заголовок ТОЛЬКО о теме '{query}' (без символа #)\n\n"
-                f"## 🔍 Введение\n"
-                f"Что такое '{query}', почему эта тема актуальна в {_year} году.\n\n"
-                f"## 📌 Основные аспекты\n"
-                f"Ключевые характеристики и особенности темы.\n\n"
-                f"## 💡 Важные факты и цифры\n"
-                f"Конкретные данные, статистика, цитаты экспертов по теме '{query}'.\n\n"
-                f"## 🌍 Применение и примеры\n"
-                f"Реальные случаи и практическое применение.\n\n"
-                f"## 🌟 Интересные подробности\n"
-                f"Малоизвестные факты и детали темы '{query}'.\n\n"
-                f"## 📈 Актуальные тренды\n"
-                f"Последние тенденции и развитие темы в {_year} году.\n\n"
-                f"## ✅ Заключение\n"
-                f"Итоговые выводы и перспективы по теме '{query}'.\n\n"
-                f"Требования к тексту:\n"
-                f"- Минимум 700 слов\n"
-                f"- Только русский язык\n"
-                f"- Тема статьи: ТОЛЬКО '{query}'\n"
-                f"- Статья должна быть уникальной и информативной\n"
-            )
+            # Use enrichment prompt when existing article is provided
+            if existing_article:
+                _existing_snippet = existing_article[:1500].strip()
+                prompt = (
+                    f'Ты — профессиональный AI-журналист и редактор. Тебе предоставлена СУЩЕСТВУЮЩАЯ СТАТЬЯ по теме "{query}".\n\n'
+                    f"ТВОЯ ЗАДАЧА — создать УЛУЧШЕННУЮ, ОБОГАЩЁННУЮ версию статьи:\n"
+                    f"1. ПРОВЕРЬ факты из исходной статьи по свежим источникам\n"
+                    f"2. ДОБАВЬ недостающую актуальную информацию из источников ниже\n"
+                    f"3. ОПРОВЕРГНИ устаревшие или ошибочные утверждения (если есть)\n"
+                    f"4. РАСШИРИ статью новыми разделами и деталями\n"
+                    f"5. Стиль: {_style}\n\n"
+                    f"ИСХОДНАЯ СТАТЬЯ (для контекста и обогащения):\n"
+                    f"---\n{_existing_snippet}\n---\n\n"
+                    f"НОВЫЕ ДАННЫЕ ИЗ АКТУАЛЬНЫХ ИСТОЧНИКОВ {_year} ГОДА:\n{aggregated}\n\n"
+                    f"СТРУКТУРА УЛУЧШЕННОЙ СТАТЬИ (не менее 8 разделов):\n"
+                    f"Строка 1: Улучшенный заголовок статьи о теме '{query}' (без символа #)\n\n"
+                    f"## 🔍 Введение\nЧто такое '{query}', актуальность в {_year} году (с новыми данными).\n\n"
+                    f"## 📌 Ключевые факты\nОсновные характеристики — проверенные и обновлённые.\n\n"
+                    f"## 💡 Актуальная информация {_year}\nСамые свежие данные, исправления устаревших сведений.\n\n"
+                    f"## 📊 Цифры и статистика\nКонкретные данные, цитаты экспертов, исследования.\n\n"
+                    f"## 🌍 Применение и примеры\nРеальные кейсы, практическое применение.\n\n"
+                    f"## 🌟 Что не было в исходной статье\nНовые факты, открытия, детали по теме '{query}'.\n\n"
+                    f"## 📈 Тренды и перспективы\nПоследние тенденции и прогнозы на {_year} год.\n\n"
+                    f"## ✅ Итоговые выводы\nОбновлённые заключения, сравнение с исходной статьёй.\n\n"
+                    f"Требования:\n"
+                    f"- Минимум 800 слов\n"
+                    f"- Только русский язык\n"
+                    f"- Статья должна быть ЗАМЕТНО БОГАЧЕ исходной\n"
+                    f"- Включи конкретные ссылки на источники внутри текста\n"
+                    f"- Все разделы кликабельны через якоря в оглавлении\n"
+                )
+            else:
+                prompt = (
+                    f'Ты — профессиональный AI-журналист. Напиши УНИКАЛЬНУЮ ПОЛНОЦЕННУЮ статью СТРОГО по теме "{query}".\n\n'
+                    f"Стиль статьи: {_style}.\n\n"
+                    f"КРИТИЧЕСКИ ВАЖНО:\n"
+                    f"- Статья должна быть ТОЛЬКО И ИСКЛЮЧИТЕЛЬНО о теме '{query}'\n"
+                    f"- НЕ смешивай разные темы из источников\n"
+                    f"- НЕ КОПИРУЙ тексты из источников — используй их ТОЛЬКО как справочный материал\n"
+                    f"- Пиши СВОИМИ словами, статья должна быть уникальной\n"
+                    f"- Включай конкретные факты, цифры, даты из источников\n\n"
+                    f"Справочные данные из источников:\n{aggregated}\n\n"
+                    f"СТРУКТУРА СТАТЬИ (обязательная, не менее 7 разделов):\n"
+                    f"Строка 1: Оригинальный заголовок ТОЛЬКО о теме '{query}' (без символа #)\n\n"
+                    f"## 🔍 Введение\n"
+                    f"Что такое '{query}', почему эта тема актуальна в {_year} году.\n\n"
+                    f"## 📌 Основные аспекты\n"
+                    f"Ключевые характеристики и особенности темы.\n\n"
+                    f"## 💡 Важные факты и цифры\n"
+                    f"Конкретные данные, статистика, цитаты экспертов по теме '{query}'.\n\n"
+                    f"## 🌍 Применение и примеры\n"
+                    f"Реальные случаи и практическое применение.\n\n"
+                    f"## 🌟 Интересные подробности\n"
+                    f"Малоизвестные факты и детали темы '{query}'.\n\n"
+                    f"## 📈 Актуальные тренды\n"
+                    f"Последние тенденции и развитие темы в {_year} году.\n\n"
+                    f"## ✅ Заключение\n"
+                    f"Итоговые выводы и перспективы по теме '{query}'.\n\n"
+                    f"Требования к тексту:\n"
+                    f"- Минимум 700 слов\n"
+                    f"- Только русский язык\n"
+                    f"- Тема статьи: ТОЛЬКО '{query}'\n"
+                    f"- Статья должна быть уникальной и информативной\n"
+                )
             is_tgwui_research = model.startswith(_TGWUI_PREFIX)
             if is_lms_research:
                 real_model = model[len(_LM_STUDIO_PREFIX):]

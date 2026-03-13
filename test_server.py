@@ -219,6 +219,23 @@ def run_all() -> None:
     r = client.post("/generate/auto/stream", json={"prompt": "hello", "language": "python"})
     ok("POST /generate/auto/stream (no model) → 200", r.status_code == 200)
 
+    # ── Vision light check endpoint ───────────────────────────────────────────
+    print("\n[GET /vision/light/check]")
+    r = client.get("/vision/light/check")
+    ok("GET /vision/light/check → 200", r.status_code == 200)
+    d = r.get_json() or {}
+    ok("GET /vision/light/check → has 'available' key", "available" in d)
+    ok("GET /vision/light/check → has 'status' key", "status" in d)
+
+    # Research endpoint with existing_article (Ollama offline → no article_text fallback)
+    print("\n[POST /research existing_article]")
+    r = client.post("/research", json={
+        "query": "Python programming",
+        "existing_article": "Python programming\n\n## Introduction\nPython is a programming language.\n\n## Features\nIt is easy to learn.\n\n## Conclusion\nPython is great.",
+        "screenshots": False,
+    })
+    ok("POST /research existing_article → 200 or 404", r.status_code in (200, 404))
+
 
 # ── main ─────────────────────────────────────────────────────────────────────
 

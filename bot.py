@@ -1229,6 +1229,125 @@ def build_html_article(
 # RESEARCH PIPELINE
 # ===========================================================================
 
+async def _enrich_article_via_research(topic: str, existing_article: str, message: Message) -> None:
+    """Enrich an existing article: search fresh sources, verify facts, generate improved version.
+
+    Uses the VM /research endpoint with existing_article context so the LLM enriches
+    (not replaces) the uploaded content.
+    """
+    t0 = time.monotonic()
+    status = await message.answer(
+        f"\U0001f4f0 Обогащаю статью по теме: *{_esc(topic[:80])}*\n"
+        "\U0001f310 Ищу актуальные источники и скриншоты\u2026",
+        parse_mode="MarkdownV2",
+    )
+    model = await get_best_model()
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{VM_BASE}/research",
+                json={
+                    "query": topic,
+                    "max_results": 8,
+                    "screenshots": True,
+                    "model": model,
+                    "existing_article": existing_article,
+                },
+                timeout=aiohttp.ClientTimeout(total=300),
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    if data.get("success"):
+                        html_article = data.get("html", "")
+                        title        = data.get("title", topic)
+                        sources      = data.get("sources", [])
+
+                        # Save HTML article
+                        ts = int(time.time())
+                        article_path = str(ARTICLES_DIR / f"enriched_{ts}.html")
+                        async with aiofiles.open(article_path, "w", encoding="utf-8") as fh:
+                            await fh.write(html_article)
+
+                        # Take preview screenshot
+                        preview_path = str(SCREENSHOTS_DIR / f"enriched_preview_{ts}.png")
+                        preview_ok = await screenshot_html_article(article_path, preview_path)
+
+                        dur = int((time.monotonic() - t0) * 1000)
+                        await action_logger.log(
+                            "article_enrich",
+                            {"topic": topic, "existing_len": len(existing_article)},
+                            {"title": title, "sources": len(sources)},
+                            True,
+                            dur,
+                            {"model": model},
+                        )
+
+                        try:
+                            await status.delete()
+                        except Exception:
+                            pass
+
+                        if preview_ok and os.path.exists(preview_path):
+                            try:
+                                await message.answer_photo(
+                                    FSInputFile(preview_path),
+                                    caption=f"\U0001f4f0 Обогащённая статья: {title[:80]}",
+                                )
+                            except Exception as exc:
+                                logger.warning("enriched article preview: %s", exc)
+
+                        await message.answer(
+                            f"\u2705 *Статья обогащена новыми данными*\n\n"
+                            f"\U0001f4f0 *{_esc(title[:100])}*\n\n"
+                            f"\U0001f4da Источников использовано: {len(sources)}\n"
+                            f"\u23f1 Время генерации: {dur // 1000} сек",
+                            parse_mode="MarkdownV2",
+                        )
+
+                        # Send sources
+                        if sources:
+                            src_lines = ["\U0001f4da *Источники для обогащения:*"]
+                            for i, src in enumerate(sources[:10], 1):
+                                href = src.get("url", "#") or "#"
+                                ttl  = src.get("title", f"Источник {i}")
+                                src_lines.append(f"{i}\\. [{_esc(ttl)}]({href})")
+                            try:
+                                await message.answer(
+                                    "\n".join(src_lines),
+                                    parse_mode="MarkdownV2",
+                                    disable_web_page_preview=True,
+                                )
+                            except Exception:
+                                pass
+
+                        # Send HTML file
+                        try:
+                            await message.answer_document(
+                                FSInputFile(article_path, filename="enriched_article.html"),
+                                caption="\U0001f4c4 Полная обогащённая HTML-статья",
+                            )
+                        except Exception as exc:
+                            logger.warning("enriched HTML send: %s", exc)
+                        return
+
+                    err = data.get("error", "Нет данных")
+                    await status.edit_text(f"\u274c {err[:300]}")
+                    return
+
+                text_err = await resp.text()
+                await status.edit_text(f"\u274c VM вернула {resp.status}: {text_err[:200]}")
+                return
+    except Exception as exc:
+        logger.error("_enrich_article_via_research: %s", exc)
+        try:
+            await status.edit_text(
+                "\u274c Ошибка обогащения статьи\\. Убедитесь, что VM запущена \\(/vm\\)\\.",
+                parse_mode="MarkdownV2",
+            )
+        except Exception:
+            pass
+
+
 async def research_and_reply(query: str, message: Message) -> None:
     """
     Full autonomous research pipeline:
@@ -2941,13 +3060,32 @@ async def handle_photo_convert(message: Message) -> None:
                                 )
                             return
                         err = data.get("error", "")
-                        if "No vision model" in err:
-                            await status.edit_text(
-                                "\u26a0\ufe0f Нет vision\\-модели\\. Установите:\n"
-                                "`ollama pull llava`\n\n"
-                                "Или для конвертации фото отправьте с подписью: `jpeg`, `png`, `webp`, `bmp`",
-                                parse_mode="MarkdownV2",
-                            )
+                        if "No vision model" in err or "pulling" in data:
+                            pulling = data.get("pulling", "")
+                            if pulling:
+                                await status.edit_text(
+                                    f"\u26a0\ufe0f Нет vision\\-модели\\. "
+                                    f"Автоматически устанавливаю лёгкую модель `{_esc(pulling)}`\\.\n\n"
+                                    "Подождите 1\\-2 минуты и повторите отправку фото\\.",
+                                    parse_mode="MarkdownV2",
+                                )
+                            else:
+                                # Trigger light vision check which auto-pulls moondream
+                                try:
+                                    async with aiohttp.ClientSession() as _vs:
+                                        await _vs.get(
+                                            f"{VM_BASE}/vision/light/check?pull_if_absent=1",
+                                            timeout=aiohttp.ClientTimeout(total=5),
+                                        )
+                                except Exception:
+                                    pass
+                                await status.edit_text(
+                                    "\u26a0\ufe0f Нет vision\\-модели\\. "
+                                    "Автоматически устанавливаю лёгкую модель `moondream`\\.\n\n"
+                                    "Подождите 1\\-2 минуты и повторите отправку фото\\.\n\n"
+                                    "Или вручную: `ollama pull moondream`",
+                                    parse_mode="MarkdownV2",
+                                )
                             return
                         await status.edit_text(f"\u274c {err[:300] or 'Ошибка анализа фото'}")
                         return
@@ -3034,6 +3172,7 @@ async def handle_document_convert(message: Message) -> None:
 
     • Code files (.py, .js, .sh, …) — upload to VM and execute via /execute.
       Caption triggers execution; no caption shows file content in editor.
+    • Article files (.html, .htm, .txt, .md) that look like articles — enrich via /research.
     • Text format files (JSON, CSV, HTML, Markdown) — convert via /convert/text.
     """
     doc   = message.document
@@ -3115,6 +3254,49 @@ async def handle_document_convert(message: Message) -> None:
             logger.error("handle_document code exec: %s", exc)
             await status.edit_text(f"\u274c Ошибка: {str(exc)[:200]}")
         return
+
+    # --- Branch 1b: article file upload (html/htm/txt/md) → enrich via /research ---
+    _ARTICLE_EXTS = {"html", "htm", "txt", "md", "markdown"}
+    if ext in _ARTICLE_EXTS and not caption_lower.startswith(("csv", "json", "text", "txt")):
+        # Download file and check if it looks like an article
+        if doc.file_size and doc.file_size > 1_048_576:
+            await message.answer("\u26a0\ufe0f Файл слишком большой \\(макс 1 МБ\\)\\.", parse_mode="MarkdownV2")
+            return
+        try:
+            file_info = await bot.get_file(doc.file_id)
+            buf       = io.BytesIO()
+            await bot.download_file(file_info.file_path, buf)
+            raw_bytes = buf.getvalue()
+            try:
+                file_content = raw_bytes.decode("utf-8")
+            except UnicodeDecodeError:
+                file_content = raw_bytes.decode("cp1251", errors="replace")
+
+            # Strip HTML tags for plain text comparison
+            if ext in ("html", "htm"):
+                import html as _html_mod
+                plain_text = re.sub(r'<[^>]+>', ' ', file_content)
+                plain_text = re.sub(r'\s+', ' ', plain_text).strip()
+                plain_text = _html_mod.unescape(plain_text)
+            else:
+                plain_text = file_content
+
+            # Check if it looks like an article
+            article_topic = _extract_article_topic(plain_text) or (
+                _extract_article_topic(file_content) if ext in ("md", "markdown") else ""
+            )
+
+            if article_topic:
+                # It's an article — enrich it via /research
+                await message.answer(
+                    f"📰 Определил тему статьи: *{_esc(article_topic[:80])}*\n\n"
+                    "🔍 Ищу актуальную информацию для обогащения и проверки фактов…",
+                    parse_mode="MarkdownV2",
+                )
+                await _enrich_article_via_research(article_topic, plain_text[:4000], message)
+                return
+        except Exception as exc:
+            logger.warning("handle_document article check: %s", exc)
 
     # --- Branch 2: text format conversion ---
     from_fmt = ext if ext in _TEXT_CONVERT_DEFAULTS else None
@@ -3494,10 +3676,11 @@ async def handle_text(message: Message) -> None:
     if article_topic:
         await message.answer(
             f"📰 Определил тему статьи: *{_esc(article_topic[:80])}*\n\n"
-            "🔍 Ищу актуальную информацию для обогащения статьи…",
+            "🔍 Ищу актуальную информацию для обогащения и проверки фактов…",
             parse_mode="MarkdownV2",
         )
-        await research_and_reply(article_topic, message)
+        # Pass the original article text as context for enrichment
+        await _enrich_article_via_research(article_topic, query[:4000], message)
         return
 
     # Default: conversational VM chat with per-user history.
