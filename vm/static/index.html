@@ -1057,6 +1057,10 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
           <textarea id="research-query" rows="3" placeholder="Например: квантовые вычисления, ИИ в медицине…" style="width:100%;resize:vertical" onkeydown="if(event.ctrlKey&&event.key==='Enter'){researchRun();event.preventDefault();}"></textarea>
         </div>
         <div>
+          <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:5px">Модель для генерации статьи</label>
+          <select id="research-model" style="width:100%"><option value="">— автовыбор —</option></select>
+        </div>
+        <div>
           <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:5px">Макс. результатов</label>
           <select id="research-max">
             <option value="3">3</option>
@@ -3311,6 +3315,17 @@ function set(id, html, cls) {
 }
 
 // ── Models ────────────────────────────────────────────────────────────────────
+function _syncResearchModelSel(models) {
+  var rsel = document.getElementById('research-model');
+  if (!rsel) return;
+  var rprev = rsel.value;
+  rsel.innerHTML = '<option value="">— автовыбор —</option>';
+  models.forEach(function(m) {
+    var o = document.createElement('option'); o.value = m; o.textContent = m;
+    if (m === rprev) o.selected = true;
+    rsel.appendChild(o);
+  });
+}
 async function loadModels() {
   try {
     var r = await fetch('/ollama/models'); var d = await r.json();
@@ -3330,6 +3345,7 @@ async function loadModels() {
       }
     }
     curModel = sel.value; updateBadge();
+    _syncResearchModelSel(models);
     // Also load remote models if available (non-blocking)
     try {
       var rr = await fetch('/remote/models'); var rd = await rr.json();
@@ -6063,7 +6079,12 @@ function researchRun() {
   fetch('/research', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({query: query, max_results: maxR, screenshots: doSS})
+    body: JSON.stringify({
+      query: query,
+      max_results: maxR,
+      screenshots: doSS,
+      model: (document.getElementById('research-model').value || curModel || '').trim()
+    })
   })
   .then(function(r){ return r.json(); })
   .then(function(d){

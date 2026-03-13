@@ -152,6 +152,11 @@ COMFYUI_BASE = os.environ.get("COMFYUI_API_URL", "http://127.0.0.1:8188").rstrip
 # Sources that produce poor screenshots (JS-heavy, login walls, etc.)
 _EXCLUDED_SCREENSHOT_SOURCES = frozenset({"reddit", "hackernews"})
 
+# Regex to extract a YouTube video ID from a URL (watch?v=, youtu.be/, embed/)
+_YT_VIDEO_ID_RE = re.compile(
+    r'(?:youtube\.com/watch\?[^"\'>\s]*v=|youtu\.be/|youtube\.com/embed/)([A-Za-z0-9_-]{11})'
+)
+
 # CORS relay port — a lightweight HTTP server on this port proxies /api/*
 # requests to OLLAMA_BASE with permissive CORS headers so Chrome extensions
 # (sidepanel, content scripts) can call Ollama directly from the browser
@@ -8681,7 +8686,7 @@ def _research_html_escape(text: str) -> str:
     )
 
 
-def _research_build_html(title: str, body_text: str, sources: list, screenshot_uris: list) -> str:
+def _research_build_html(title: str, body_text: str, sources: list, screenshot_uris: list, yt_video_id: str = "") -> str:
     """Build a self-contained professional HTML research article with gallery, Chart.js, video, and action buttons."""
     esc = _research_html_escape
 
@@ -8851,56 +8856,97 @@ def _research_build_html(title: str, body_text: str, sources: list, screenshot_u
     _wrapped_lines.append(_flush_ol(_ol_buf))
     sections_html = "".join(l for l in _wrapped_lines if l)
 
-    # ── Video section (interactive YouTube embed) ─────────────────────────
+    # ── Video section (auto-embed if ID found, else interactive widget) ──────
     yt_query = urllib.parse.quote_plus(title[:80])
     yt_search_url = f"https://www.youtube.com/results?search_query={yt_query}"
-    # NOTE: YouTube removed the listType=search embed parameter in 2019.
-    # We use an interactive widget: user can paste a YouTube URL/ID to embed it,
-    # or click the search button to open YouTube in a new tab.
-    video_html = (
-        '<section class="video-section">\n'
-        '<h2>🎬 Видео по теме</h2>\n'
-        '<div id="yt-widget">\n'
-        '  <div class="yt-placeholder" id="yt-placeholder">\n'
-        f'    <p>Вставьте ссылку или ID видео YouTube по теме <strong>{esc(title)}</strong>:</p>\n'
-        '    <div class="yt-input-row">\n'
-        '      <input id="yt-url-input" type="text" placeholder="https://www.youtube.com/watch?v=... или ID видео"\n'
-        '             style="flex:1;padding:9px 12px;border:1px solid #ccc;border-radius:8px;font-size:14px"\n'
-        '             onkeydown="if(event.key===\'Enter\'){embedYTVideo();}" />\n'
-        '      <button class="btn-video" onclick="embedYTVideo()">▶ Смотреть</button>\n'
-        f'      <a class="btn-video-search" href="{yt_search_url}" target="_blank" rel="noopener">🔍 Найти на YouTube</a>\n'
-        '    </div>\n'
-        '  </div>\n'
-        '  <div id="yt-embed-wrap" style="display:none">\n'
-        '    <div class="video-embed-wrap">\n'
-        '      <iframe id="yt-iframe" src="" title="YouTube Video" frameborder="0" allowfullscreen\n'
-        '              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture">\n'
-        '      </iframe>\n'
-        '    </div>\n'
-        '    <div style="margin-top:8px;display:flex;gap:8px">\n'
-        '      <button class="btn-action" onclick="document.getElementById(\'yt-embed-wrap\').style.display=\'none\';'
-        'document.getElementById(\'yt-placeholder\').style.display=\'\'">⬅ Другое видео</button>\n'
-        f'      <a class="btn-video-search" href="{yt_search_url}" target="_blank" rel="noopener">🔍 Поиск на YouTube</a>\n'
-        '    </div>\n'
-        '  </div>\n'
-        '</div>\n'
-        '<script>\n'
-        'function embedYTVideo() {\n'
-        '  var raw = (document.getElementById("yt-url-input") || {}).value || "";\n'
-        '  var val = raw.trim();\n'
-        '  if (!val) { alert("Введите ссылку или ID видео YouTube"); return; }\n'
-        '  // Extract video ID from full URL (watch?v=, youtu.be/, embed/)\n'
-        '  var m = val.match(/(?:[?&]v=|youtu\\.be\\/|embed\\/)([A-Za-z0-9_-]{11})/);\n'
-        '  var vid = m ? m[1] : (val.length === 11 && /^[A-Za-z0-9_-]+$/.test(val) ? val : null);\n'
-        '  if (!vid) { alert("Не удалось распознать ID видео. Вставьте полную ссылку YouTube."); return; }\n'
-        '  var iframe = document.getElementById("yt-iframe");\n'
-        '  if (iframe) iframe.src = "https://www.youtube.com/embed/" + vid + "?autoplay=1";\n'
-        '  document.getElementById("yt-placeholder").style.display = "none";\n'
-        '  document.getElementById("yt-embed-wrap").style.display = "";\n'
-        '}\n'
-        '</script>\n'
-        '</section>\n'
-    )
+    if yt_video_id:
+        # Auto-embed the found video
+        yt_embed_src = f"https://www.youtube.com/embed/{yt_video_id}"
+        video_html = (
+            '<section class="video-section">\n'
+            '<h2>🎬 Видео по теме</h2>\n'
+            '<div class="video-embed-wrap">\n'
+            f'  <iframe src="{yt_embed_src}" title="YouTube Video" frameborder="0"\n'
+            '          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"\n'
+            '          allowfullscreen></iframe>\n'
+            '</div>\n'
+            '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">\n'
+            f'  <a class="btn-video-search" href="{yt_search_url}" target="_blank" rel="noopener">🔍 Ещё видео на YouTube</a>\n'
+            '  <button class="btn-action" onclick="document.getElementById(\'yt-manual\').style.display='
+            'document.getElementById(\'yt-manual\').style.display===\'none\'?\'\':\'none\'">✏ Другое видео</button>\n'
+            '</div>\n'
+            '<div id="yt-manual" style="display:none;margin-top:10px">\n'
+            '  <div class="yt-input-row">\n'
+            '    <input id="yt-url-input" type="text" placeholder="https://www.youtube.com/watch?v=... или ID видео"\n'
+            '           style="flex:1;padding:9px 12px;border:1px solid #ccc;border-radius:8px;font-size:14px"\n'
+            '           onkeydown="if(event.key===\'Enter\'){embedYTVideo();}" />\n'
+            '    <button class="btn-video" onclick="embedYTVideo()">▶ Смотреть</button>\n'
+            '  </div>\n'
+            '</div>\n'
+            '<script>\n'
+            'function embedYTVideo() {\n'
+            '  var raw = (document.getElementById("yt-url-input") || {}).value || "";\n'
+            '  var val = raw.trim();\n'
+            '  if (!val) { alert("Введите ссылку или ID видео YouTube"); return; }\n'
+            '  var m = val.match(/(?:[?&]v=|youtu\\.be\\/|embed\\/)([A-Za-z0-9_-]{11})/);\n'
+            '  var vid = m ? m[1] : (val.length === 11 && /^[A-Za-z0-9_-]+$/.test(val) ? val : null);\n'
+            '  if (!vid) { alert("Не удалось распознать ID видео. Вставьте полную ссылку YouTube."); return; }\n'
+            '  var iframe = document.querySelector(".video-embed-wrap iframe");\n'
+            '  if (iframe) iframe.src = "https://www.youtube.com/embed/" + vid + "?autoplay=1";\n'
+            '  document.getElementById("yt-manual").style.display = "none";\n'
+            '}\n'
+            '</script>\n'
+            '</section>\n'
+        )
+    else:
+        # No video found — show manual paste widget
+        # NOTE: YouTube removed the listType=search embed parameter in 2019.
+        # We use an interactive widget: user can paste a YouTube URL/ID to embed it,
+        # or click the search button to open YouTube in a new tab.
+        video_html = (
+            '<section class="video-section">\n'
+            '<h2>🎬 Видео по теме</h2>\n'
+            '<div id="yt-widget">\n'
+            '  <div class="yt-placeholder" id="yt-placeholder">\n'
+            f'    <p>Вставьте ссылку или ID видео YouTube по теме <strong>{esc(title)}</strong>:</p>\n'
+            '    <div class="yt-input-row">\n'
+            '      <input id="yt-url-input" type="text" placeholder="https://www.youtube.com/watch?v=... или ID видео"\n'
+            '             style="flex:1;padding:9px 12px;border:1px solid #ccc;border-radius:8px;font-size:14px"\n'
+            '             onkeydown="if(event.key===\'Enter\'){embedYTVideo();}" />\n'
+            '      <button class="btn-video" onclick="embedYTVideo()">▶ Смотреть</button>\n'
+            f'      <a class="btn-video-search" href="{yt_search_url}" target="_blank" rel="noopener">🔍 Найти на YouTube</a>\n'
+            '    </div>\n'
+            '  </div>\n'
+            '  <div id="yt-embed-wrap" style="display:none">\n'
+            '    <div class="video-embed-wrap">\n'
+            '      <iframe id="yt-iframe" src="" title="YouTube Video" frameborder="0" allowfullscreen\n'
+            '              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share">\n'
+            '      </iframe>\n'
+            '    </div>\n'
+            '    <div style="margin-top:8px;display:flex;gap:8px">\n'
+            '      <button class="btn-action" onclick="document.getElementById(\'yt-embed-wrap\').style.display=\'none\';'
+            'document.getElementById(\'yt-placeholder\').style.display=\'\'">⬅ Другое видео</button>\n'
+            f'      <a class="btn-video-search" href="{yt_search_url}" target="_blank" rel="noopener">🔍 Поиск на YouTube</a>\n'
+            '    </div>\n'
+            '  </div>\n'
+            '</div>\n'
+            '<script>\n'
+            'function embedYTVideo() {\n'
+            '  var raw = (document.getElementById("yt-url-input") || {}).value || "";\n'
+            '  var val = raw.trim();\n'
+            '  if (!val) { alert("Введите ссылку или ID видео YouTube"); return; }\n'
+            '  // Extract video ID from full URL (watch?v=, youtu.be/, embed/)\n'
+            '  var m = val.match(/(?:[?&]v=|youtu\\.be\\/|embed\\/)([A-Za-z0-9_-]{11})/);\n'
+            '  var vid = m ? m[1] : (val.length === 11 && /^[A-Za-z0-9_-]+$/.test(val) ? val : null);\n'
+            '  if (!vid) { alert("Не удалось распознать ID видео. Вставьте полную ссылку YouTube."); return; }\n'
+            '  var iframe = document.getElementById("yt-iframe");\n'
+            '  if (iframe) iframe.src = "https://www.youtube.com/embed/" + vid + "?autoplay=1";\n'
+            '  document.getElementById("yt-placeholder").style.display = "none";\n'
+            '  document.getElementById("yt-embed-wrap").style.display = "";\n'
+            '}\n'
+            '</script>\n'
+            '</section>\n'
+        )
 
     # ── Sources list ──────────────────────────────────────────────────────
     src_items = "".join(
@@ -9199,6 +9245,32 @@ def web_research():
         # No internet sources found — fall through to Ollama-only article generation
         _log.warning("research: no internet sources found for %r; generating AI-only article", query)
 
+    # ── 4b. Extract YouTube video ID from sources (for auto-embed) ────────
+    yt_video_id = ""
+    for _src in sources:
+        _yt_m = _YT_VIDEO_ID_RE.search(_src.get("url", "") + " " + _src.get("snippet", ""))
+        if _yt_m:
+            yt_video_id = _yt_m.group(1)
+            break
+    # Dedicated YouTube search if nothing found yet
+    if not yt_video_id and _DDGS is not None:
+        try:
+            def _do_yt_ddgs() -> list:
+                try:
+                    with _DDGS() as d:
+                        return list(d.text(f"youtube {query}", max_results=5))
+                except TypeError:
+                    return list(_DDGS().text(f"youtube {query}", max_results=5))
+
+            for _yr in _do_yt_ddgs():
+                _yurl = _yr.get("href", "") or _yr.get("url", "")
+                _yt_m = _YT_VIDEO_ID_RE.search(_yurl)
+                if _yt_m:
+                    yt_video_id = _yt_m.group(1)
+                    break
+        except Exception as _exc:  # pylint: disable=broad-except
+            _log.debug("research yt search: %s", _exc)
+
     # ── 5. Screenshots (base64 data URIs) ─────────────────────────────────
     screenshot_uris: list = []
     if do_screenshots:
@@ -9373,7 +9445,7 @@ def web_research():
                     f"{LM_STUDIO_BASE}/v1/chat/completions",
                     json={"model": real_model,
                           "messages": [{"role": "user", "content": prompt}],
-                          "stream": False, "max_tokens": 2000},
+                          "stream": False, "max_tokens": 4096},
                     timeout=int(os.environ.get("OLLAMA_TIMEOUT", 180)),
                 )
                 ar.raise_for_status()
@@ -9384,7 +9456,7 @@ def web_research():
                     f"{TGWUI_BASE}/v1/chat/completions",
                     json={"model": real_model,
                           "messages": [{"role": "user", "content": prompt}],
-                          "stream": False, "max_tokens": 2000},
+                          "stream": False, "max_tokens": 4096},
                     timeout=int(os.environ.get("OLLAMA_TIMEOUT", 180)),
                 )
                 ar.raise_for_status()
@@ -9426,7 +9498,7 @@ def web_research():
                     f"{LM_STUDIO_BASE}/v1/chat/completions",
                     json={"model": real_model,
                           "messages": [{"role": "user", "content": prompt}],
-                          "stream": False, "max_tokens": 2000},
+                          "stream": False, "max_tokens": 4096},
                     timeout=int(os.environ.get("OLLAMA_TIMEOUT", 180)),
                 )
                 ar.raise_for_status()
@@ -9437,7 +9509,7 @@ def web_research():
                     f"{TGWUI_BASE}/v1/chat/completions",
                     json={"model": real_model,
                           "messages": [{"role": "user", "content": prompt}],
-                          "stream": False, "max_tokens": 2000},
+                          "stream": False, "max_tokens": 4096},
                     timeout=int(os.environ.get("OLLAMA_TIMEOUT", 180)),
                 )
                 ar.raise_for_status()
@@ -9500,7 +9572,11 @@ def web_research():
         r'вот\s+(?:готовая\s+)?статья[.:!]?\s*$|'
         r'пожалуйста[,!]\s+вот\s+.{0,60}:\s*$|'
         r'here\s+is\s+(?:the\s+)?(?:article|text)[.:!]?\s*$|'
-        r'sure[,!]\s+here(?:\'s|\s+is).{0,60}$'
+        r'sure[,!]\s+here(?:\'s|\s+is).{0,60}$|'
+        r'below\s+is\s+(?:a\s+|an\s+|the\s+)?(?:article|text|draft).{0,60}$|'
+        r'i\'ve\s+(?:written|prepared|created)\s+.{0,60}$|'
+        r'(?:вот|это)\s+(?:готовая\s+)?(?:статья|текст)\s+(?:по|о|про)\s+.{0,80}$|'
+        r'\*{1,3}(?:статья|article|текст)\*{0,3}[.:\s]*$'
         r')',
         re.IGNORECASE,
     )
@@ -9515,7 +9591,7 @@ def web_research():
     # ── 9. Build HTML article ─────────────────────────────────────────────
     lines = article_text.strip().splitlines()
     title = lines[0].lstrip("#* ").strip() if lines else query
-    html_article = _research_build_html(title, article_text, sources, screenshot_uris)
+    html_article = _research_build_html(title, article_text, sources, screenshot_uris, yt_video_id)
 
     _record_agent_action({
         "timestamp": _now(),
