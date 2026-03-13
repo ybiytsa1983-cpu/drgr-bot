@@ -444,6 +444,48 @@ threading.Thread(target=_ollama_heartbeat, daemon=True).start()
 
 
 # ---------------------------------------------------------------------------
+# LM Studio auto-discovery and heartbeat
+# ---------------------------------------------------------------------------
+_LMS_HEARTBEAT_INTERVAL = 60      # seconds between LM Studio liveness probes
+_LMS_HEALTH_CHECK_TIMEOUT = 3     # seconds for heartbeat /v1/models probe
+
+
+def _autodiscover_lms() -> None:
+    """Run once at startup in a background thread to discover LM Studio.
+
+    Calls _resolve_lms_url() which scans common local/LAN addresses and
+    updates LM_STUDIO_BASE so it is available before the first browser request.
+    """
+    _resolve_lms_url()
+
+
+def _lms_heartbeat() -> None:
+    """Background thread: re-check LM Studio every 60 s and re-discover if lost.
+
+    This ensures LM_STUDIO_BASE stays up-to-date when LM Studio restarts,
+    moves to a different port, or becomes temporarily unreachable.
+    """
+    while True:
+        if not LM_STUDIO_BASE:
+            # Not configured yet — try to discover
+            _resolve_lms_url()
+        else:
+            try:
+                r = _http.get(f"{LM_STUDIO_BASE}/v1/models", timeout=_LMS_HEALTH_CHECK_TIMEOUT)
+                if r.status_code != 200:
+                    raise ValueError(f"LM Studio returned HTTP {r.status_code}")
+            except Exception:  # pylint: disable=broad-except
+                # Lost connection — attempt re-discovery silently
+                _resolve_lms_url()
+        time.sleep(_LMS_HEARTBEAT_INTERVAL)
+
+
+# Kick off LM Studio discovery at startup and keep it alive in background
+threading.Thread(target=_autodiscover_lms, daemon=True).start()
+threading.Thread(target=_lms_heartbeat, daemon=True).start()
+
+
+# ---------------------------------------------------------------------------
 # Ollama CORS relay  (port 11435 by default)
 # ---------------------------------------------------------------------------
 # A minimal HTTP proxy that runs on _OLLAMA_RELAY_PORT.
@@ -4842,10 +4884,10 @@ def generate_html_stream():
                         yield "data: [DONE]\n\n"
                         return
             except _http.exceptions.Timeout:
-                _oto = int(os.environ.get("OLLAMA_TIMEOUT", 120))
-                yield f'data: {{"error":"Нет ответа от LM Studio за {_oto} с — модель слишком медленная."}}\n\n'
+                yield f'data: {{"error":"Нет ответа от LM Studio за {_LMS_TIMEOUT} с — модель слишком медленная."}}\n\n'
             except _http.exceptions.ConnectionError:
-                yield f'data: {json.dumps({"error": f"Нет соединения с LM Studio по адресу {lms_url}"})}\n\n'
+                _resolve_lms_url()  # re-discover for next request
+                yield f'data: {json.dumps({"error": f"Нет соединения с LM Studio по адресу {lms_url} — проверьте, что LM Studio запущен"})}\n\n'
             except Exception as exc:  # pylint: disable=broad-except
                 yield f"data: {json.dumps({'error': str(exc)})}\n\n"
 
@@ -5044,10 +5086,10 @@ def generate_auto_stream():
                         yield "data: [DONE]\n\n"
                         return
             except _http.exceptions.Timeout:
-                _oto = int(os.environ.get("OLLAMA_TIMEOUT", 120))
-                yield f'data: {{"error":"Нет ответа от LM Studio за {_oto} с — модель слишком медленная."}}\n\n'
+                yield f'data: {{"error":"Нет ответа от LM Studio за {_LMS_TIMEOUT} с — модель слишком медленная."}}\n\n'
             except _http.exceptions.ConnectionError:
-                yield f'data: {json.dumps({"error": f"Нет соединения с LM Studio по адресу {lms_url}"})}\n\n'
+                _resolve_lms_url()  # re-discover for next request
+                yield f'data: {json.dumps({"error": f"Нет соединения с LM Studio по адресу {lms_url} — проверьте, что LM Studio запущен"})}\n\n'
             except Exception as exc:  # pylint: disable=broad-except
                 yield f"data: {json.dumps({'error': str(exc)})}\n\n"
 
@@ -5309,10 +5351,10 @@ def chat_stream():
                         yield "data: [DONE]\n\n"
                         return
             except _http.exceptions.Timeout:
-                _oto = int(os.environ.get("OLLAMA_TIMEOUT", 120))
-                yield f'data: {{"error":"Нет ответа от LM Studio за {_oto} с — модель слишком медленная."}}\n\n'
+                yield f'data: {{"error":"Нет ответа от LM Studio за {_LMS_TIMEOUT} с — модель слишком медленная."}}\n\n'
             except _http.exceptions.ConnectionError:
-                yield f'data: {json.dumps({"error": f"Нет соединения с LM Studio по адресу {lms_url}"})}\n\n'
+                _resolve_lms_url()  # re-discover for next request
+                yield f'data: {json.dumps({"error": f"Нет соединения с LM Studio по адресу {lms_url} — проверьте, что LM Studio запущен"})}\n\n'
             except Exception as exc:  # pylint: disable=broad-except
                 yield f"data: {json.dumps({'error': str(exc)})}\n\n"
 
@@ -6279,18 +6321,21 @@ def patch_stream():
     def _stream():
         try:
             # Route lmstudio: / tgwui: models through their OpenAI-compatible APIs
-            if _real_model.startswith(_LM_STUDIO_PREFIX) and LM_STUDIO_BASE:
+            if _real_model.startswith(_LM_STUDIO_PREFIX):
                 _m = _real_model[len(_LM_STUDIO_PREFIX):]
-                _base = LM_STUDIO_BASE
-                _use_chat = True
+                _base = _resolve_lms_url()  # auto-discover if not yet configured
+                _use_chat = bool(_base)
+                _timeout = _LMS_TIMEOUT
             elif _real_model.startswith(_TGWUI_PREFIX) and TGWUI_BASE:
                 _m = _real_model[len(_TGWUI_PREFIX):]
                 _base = TGWUI_BASE
                 _use_chat = True
+                _timeout = _LMS_TIMEOUT
             else:
                 _m = _real_model
                 _base = None
                 _use_chat = False
+                _timeout = _to
 
             if _use_chat and _base:
                 resp = _http.post(
@@ -6301,7 +6346,7 @@ def patch_stream():
                         "stream": True,
                     },
                     stream=True,
-                    timeout=_to,
+                    timeout=_timeout,
                 )
                 resp.raise_for_status()
                 for raw_line in resp.iter_lines():
