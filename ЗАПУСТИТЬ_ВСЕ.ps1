@@ -43,7 +43,58 @@ Say "  |           DRGR — Полный запуск системы            
 Say "  +====================================================+" "Cyan"
 Say ""
 
+# ── Step 0: Auto-update from GitHub ─────────────────────────────────────────
+Say "► Шаг 0: Проверка обновлений"
+
+if (Get-Command git -ErrorAction SilentlyContinue) {
+    if (Test-Path (Join-Path $repoDir ".git")) {
+        try {
+            # Stash any local modifications so pull doesn't fail
+            git -C $repoDir fetch origin 2>&1 | Out-Null
+            $localRev  = (& git -C $repoDir rev-parse HEAD 2>&1).Trim()
+            $branch    = (& git -C $repoDir rev-parse --abbrev-ref HEAD 2>&1).Trim()
+            if (-not $branch -or $branch -eq "HEAD") { $branch = "main" }
+            $remoteRev = (& git -C $repoDir rev-parse "origin/$branch" 2>&1).Trim()
+            if ($localRev -ne $remoteRev) {
+                Info "Найдены обновления — применяю git pull..."
+                git -C $repoDir pull --ff-only 2>&1 | Out-Null
+                if ($LASTEXITCODE -ne 0) {
+                    # ff-only failed (local changes) — try harder
+                    git -C $repoDir stash 2>&1 | Out-Null
+                    git -C $repoDir pull 2>&1 | Out-Null
+                }
+                Ok "Обновления применены"
+            } else {
+                Ok "Обновлений нет — всё актуально"
+            }
+        } catch {
+            Info "Не удалось проверить обновления (нет интернета?): $_"
+        }
+    } else {
+        Info "Git-репозиторий не найден — пропускаю авто-обновление"
+    }
+} else {
+    Info "Git не установлен — авто-обновление недоступно"
+}
+
+# ── Step 0b: Windows Firewall — allow port 5000 from LAN ────────────────────
+Say ""
+Say "► Шаг 0b: Настройка брандмауэра (порт 5000)"
+try {
+    $ruleName = "DRGR-VM-Port5000"
+    $existing = netsh advfirewall firewall show rule name=$ruleName 2>&1
+    if ($existing -match "No rules match") {
+        netsh advfirewall firewall add rule name=$ruleName dir=in action=allow protocol=tcp localport=5000 profile=private,domain 2>&1 | Out-Null
+        Ok "Правило брандмауэра добавлено: TCP 5000 (приватная сеть)"
+    } else {
+        Ok "Правило брандмауэра уже существует"
+    }
+} catch {
+    Info "Не удалось добавить правило брандмауэра (требуются права администратора): $_"
+}
+
 # ── Step 1: BOT_TOKEN ────────────────────────────────────────────────────────
+Say ""
 Say "► Шаг 1: Токен бота"
 
 $envFile = Join-Path $repoDir ".env"
@@ -250,10 +301,23 @@ try { Start-Process $url; Ok "Браузер открыт: $url" }
 catch { Info "Откройте в браузере: $url" }
 
 # ── Summary ────────────────────────────────────────────────────────────────────
+# Determine LAN IP for display
+$lanIp = ""
+try {
+    $lanIp = (Get-NetIPAddress -AddressFamily IPv4 |
+        Where-Object { $_.PrefixOrigin -in @("Dhcp","Manual") -and
+                       $_.IPAddress -notmatch '^(127\.|169\.254\.)' } |
+        Sort-Object InterfaceMetric |
+        Select-Object -First 1).IPAddress
+} catch {}
+
 Say ""
 Say "  +====================================================+" "Green"
 Say "  |  Система запущена!                                 |" "Green"
 Say "  |  VM-интерфейс:  http://localhost:5000              |" "Green"
+if ($lanIp) {
+Say "  |  Из сети (LAN): http://${lanIp}:5000              |" "Green"
+}
 if ($Token) {
 Say "  |  Telegram-бот:  активен                            |" "Green"
 } else {

@@ -281,6 +281,42 @@ _SEARCH_KEYWORDS_RU = (
 )
 
 
+def _extract_article_topic(text: str) -> str:
+    """If ``text`` looks like an existing article, return its inferred topic/title.
+
+    Returns empty string when the text is not an article (short query, etc.).
+    An existing article is detected when the text is long (>400 chars) and
+    has at least one Markdown-style heading (## …) or multiple paragraphs.
+    The topic is taken from the first heading, or the first non-empty line.
+    """
+    if len(text) < 400:
+        return ""
+    lines = [l.strip() for l in text.splitlines() if l.strip()]
+    if not lines:
+        return ""
+    # Must have several lines (i.e. it is not just a short paragraph)
+    if len(lines) < 4:
+        return ""
+    # Check for markdown heading markers
+    has_heading = any(l.startswith("##") or l.startswith("# ") for l in lines)
+    # Or many paragraphs / bullet points
+    paragraph_count = sum(1 for l in lines if len(l) > 60)
+    if not has_heading and paragraph_count < 3:
+        return ""
+    # Prefer the first non-heading, non-empty line as the article title
+    # (in typical article format: title comes before ## sections)
+    for l in lines:
+        if not l.startswith("#"):
+            stripped = re.sub(r'^[\U0001F300-\U0001F9FF\u2000-\u2FFF\s*]+', '', l).strip()
+            if stripped and len(stripped) > 3:
+                return stripped[:120]
+    # Fallback: use first ## heading text
+    for l in lines:
+        if l.startswith("## ") or l.startswith("# "):
+            return re.sub(r'^#+\s*[\U0001F300-\U0001F9FF\u2000-\u2FFF\s]*', '', l).strip()[:120]
+    return lines[0][:120]
+
+
 def _clean_url(raw: str) -> str:
     """Strip trailing punctuation from a URL, but preserve balanced parentheses.
 
@@ -1264,25 +1300,42 @@ async def research_and_reply(query: str, message: Message) -> None:
 
     await status.edit_text("\U0001f916 Генерирую статью\u2026")
 
-    # 4. Ollama article
+    # 4. Ollama article — use a variation seed so articles are never identical
+    import random as _random
+    import datetime as _dt_bot
     model  = await get_best_model()
+    _variation_styles = [
+        "глубокий аналитический обзор с историческим контекстом",
+        "практическое руководство с конкретными примерами и советами",
+        "журналистское расследование с цитатами экспертов и статистикой",
+        "научно-популярный рассказ с интересными деталями и открытиями",
+        "репортаж с акцентом на последние события и тренды",
+        "сравнительный анализ разных подходов и точек зрения",
+    ]
+    _style = _random.choice(_variation_styles)
+    _cur_year = _dt_bot.date.today().year
 
     prompt = (
-        f'Ты — профессиональный AI-журналист. Напиши ЕДИНУЮ ПОЛНОЦЕННУЮ статью СТРОГО по теме: "{query}".\n\n'
+        f'Ты — профессиональный AI-журналист. Напиши УНИКАЛЬНУЮ ПОЛНОЦЕННУЮ статью СТРОГО по теме: "{query}".\n\n'
+        f"Стиль этой статьи: {_style}.\n\n"
         f"КРИТИЧЕСКИ ВАЖНО:\n"
         f"- Статья ТОЛЬКО И ИСКЛЮЧИТЕЛЬНО о теме '{query}'\n"
         f"- НЕ смешивай разные темы из источников\n"
         f"- НЕ КОПИРУЙ тексты — используй источники КАК СПРАВОЧНЫЙ МАТЕРИАЛ\n"
-        f"- Пиши СВОИМИ словами\n\n"
+        f"- Пиши СВОИМИ словами, статья должна быть уникальной\n"
+        f"- Включи конкретные факты, цифры, даты из источников\n\n"
         f"Справочные данные:\n{aggregated}\n\n"
-        f"СТРУКТУРА СТАТЬИ:\n"
-        f"Строка 1: Заголовок о теме '{query}' (без # или *)\n\n"
-        f"## 🔍 Введение\nЧто такое '{query}', почему это актуально.\n\n"
-        f"## 📌 Основные аспекты\nКлючевые характеристики темы.\n\n"
-        f"## 💡 Важные факты\nКонкретные данные и цифры.\n\n"
-        f"## 🌟 Интересные подробности\nМалоизвестные факты по теме '{query}'.\n\n"
-        f"## ✅ Заключение\nИтоговые выводы.\n\n"
-        f"Требования: минимум 500 слов, только русский язык, ТОЛЬКО о теме '{query}'."
+        f"СТРУКТУРА СТАТЬИ (обязательная, не менее 7 разделов):\n"
+        f"Строка 1: Оригинальный заголовок о теме '{query}' (без # или *)\n\n"
+        f"## 🔍 Введение\nЧто такое '{query}', почему это актуально сегодня.\n\n"
+        f"## 📌 Основные аспекты\nКлючевые характеристики и особенности темы.\n\n"
+        f"## 💡 Важные факты и цифры\nКонкретные данные, статистика, цитаты.\n\n"
+        f"## 🌍 Применение и примеры\nРеальные случаи, практическое применение.\n\n"
+        f"## 🌟 Интересные подробности\nМалоизвестные факты, детали, нюансы по теме '{query}'.\n\n"
+        f"## 📈 Актуальные тренды\nПоследние тенденции и развитие темы в {_cur_year} году.\n\n"
+        f"## ✅ Заключение\nИтоговые выводы и перспективы по теме '{query}'.\n\n"
+        f"Требования: минимум 700 слов, только русский язык, ТОЛЬКО о теме '{query}', "
+        f"заголовки кликабельны, включи ссылки на источники.\n"
     )
     article_text = await ask_ollama(prompt, model)
     if not article_text:
@@ -3434,6 +3487,17 @@ async def handle_text(message: Message) -> None:
     # Smart routing: detect clear search intent keywords → use research_and_reply
     if any(kw in q_lower for kw in _SEARCH_KEYWORDS_RU):
         await research_and_reply(query, message)
+        return
+
+    # Smart routing: detect when user sends an existing article → enrich it
+    article_topic = _extract_article_topic(query)
+    if article_topic:
+        await message.answer(
+            f"📰 Определил тему статьи: *{_esc(article_topic[:80])}*\n\n"
+            "🔍 Ищу актуальную информацию для обогащения статьи…",
+            parse_mode="MarkdownV2",
+        )
+        await research_and_reply(article_topic, message)
         return
 
     # Default: conversational VM chat with per-user history.

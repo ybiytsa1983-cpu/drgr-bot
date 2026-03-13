@@ -9355,7 +9355,8 @@ def _research_build_html(title: str, body_text: str, sources: list, screenshot_u
 def web_research():
     """Full research pipeline: search multiple sources, take screenshots, generate HTML article.
 
-    Body: {"query": "topic", "max_results": 5, "screenshots": true, "model": ""}
+    Body: {"query": "topic", "max_results": 5, "screenshots": true, "model": "",
+           "existing_article": "...optional existing article text to enrich..."}
     Returns: {"html": "...", "title": "...", "sources": [...], "success": true}
     """
     import base64 as _b64r
@@ -9364,6 +9365,25 @@ def web_research():
     max_results = min(int(body.get("max_results", 5)), 10)
     do_screenshots = bool(body.get("screenshots", True))
     model = body.get("model", "").strip()
+    existing_article = body.get("existing_article", "").strip()
+
+    # If query looks like an existing article, extract topic from it
+    if not existing_article and len(query) > 400:
+        lines = [l.strip() for l in query.splitlines() if l.strip()]
+        has_heading = any(l.startswith("##") or l.startswith("# ") for l in lines)
+        para_count = sum(1 for l in lines if len(l) > 60)
+        if has_heading or para_count >= 3:
+            existing_article = query
+            # Extract topic from first heading or first line
+            topic = ""
+            for l in lines:
+                if l.startswith("## ") or l.startswith("# "):
+                    topic = re.sub(r'^#+\s*', '', l).strip()
+                    break
+            if not topic and lines:
+                topic = re.sub(r'^[\U0001F300-\U0001F9FF\u2000-\u2FFF\s#*]+', '', lines[0]).strip()[:120]
+            if topic:
+                query = topic
 
     if not query:
         return jsonify({"error": "Provide query", "success": False}), 400
@@ -9636,30 +9656,49 @@ def web_research():
 
     if model and aggregated:
         try:
+            import random as _rand
+            import datetime as _dt
+            _variation_styles = [
+                "глубокий аналитический обзор с историческим контекстом",
+                "практическое руководство с конкретными примерами и советами",
+                "журналистское расследование с цитатами и статистикой",
+                "научно-популярный рассказ с интересными открытиями",
+                "репортаж с акцентом на последние события и тренды",
+                "сравнительный анализ с разными точками зрения",
+            ]
+            _style = _rand.choice(_variation_styles)
+            _year = _dt.date.today().year
             prompt = (
-                f'Ты — профессиональный AI-журналист. Твоя задача: написать ЕДИНУЮ ПОЛНОЦЕННУЮ статью СТРОГО по теме "{query}".\n\n'
+                f'Ты — профессиональный AI-журналист. Напиши УНИКАЛЬНУЮ ПОЛНОЦЕННУЮ статью СТРОГО по теме "{query}".\n\n'
+                f"Стиль статьи: {_style}.\n\n"
                 f"КРИТИЧЕСКИ ВАЖНО:\n"
                 f"- Статья должна быть ТОЛЬКО И ИСКЛЮЧИТЕЛЬНО о теме '{query}'\n"
                 f"- НЕ смешивай разные темы из источников\n"
                 f"- НЕ КОПИРУЙ тексты из источников — используй их ТОЛЬКО как справочный материал\n"
-                f"- Пиши СВОИМИ словами, связно и логично\n\n"
+                f"- Пиши СВОИМИ словами, статья должна быть уникальной\n"
+                f"- Включай конкретные факты, цифры, даты из источников\n\n"
                 f"Справочные данные из источников:\n{aggregated}\n\n"
-                f"СТРУКТУРА СТАТЬИ (обязательная):\n"
-                f"Строка 1: Заголовок — краткий и чёткий, ТОЛЬКО о теме '{query}' (без символа #)\n\n"
+                f"СТРУКТУРА СТАТЬИ (обязательная, не менее 7 разделов):\n"
+                f"Строка 1: Оригинальный заголовок ТОЛЬКО о теме '{query}' (без символа #)\n\n"
                 f"## 🔍 Введение\n"
-                f"Что такое '{query}', почему эта тема актуальна сегодня.\n\n"
+                f"Что такое '{query}', почему эта тема актуальна в {_year} году.\n\n"
                 f"## 📌 Основные аспекты\n"
-                f"Ключевые характеристики, особенности темы.\n\n"
-                f"## 💡 Важные факты\n"
-                f"Конкретные цифры, данные и факты по теме '{query}'.\n\n"
-                f"## 🌐 Применение и значимость\n"
-                f"Практическое применение, примеры, реальные случаи.\n\n"
+                f"Ключевые характеристики и особенности темы.\n\n"
+                f"## 💡 Важные факты и цифры\n"
+                f"Конкретные данные, статистика, цитаты экспертов по теме '{query}'.\n\n"
+                f"## 🌍 Применение и примеры\n"
+                f"Реальные случаи и практическое применение.\n\n"
+                f"## 🌟 Интересные подробности\n"
+                f"Малоизвестные факты и детали темы '{query}'.\n\n"
+                f"## 📈 Актуальные тренды\n"
+                f"Последние тенденции и развитие темы в {_year} году.\n\n"
                 f"## ✅ Заключение\n"
-                f"Итоговые выводы о теме '{query}'.\n\n"
+                f"Итоговые выводы и перспективы по теме '{query}'.\n\n"
                 f"Требования к тексту:\n"
-                f"- Минимум 500 слов\n"
+                f"- Минимум 700 слов\n"
                 f"- Только русский язык\n"
                 f"- Тема статьи: ТОЛЬКО '{query}'\n"
+                f"- Статья должна быть уникальной и информативной\n"
             )
             is_tgwui_research = model.startswith(_TGWUI_PREFIX)
             if is_lms_research:
@@ -9697,21 +9736,36 @@ def web_research():
     elif model and not sources:
         # No internet sources available — generate article from AI knowledge alone
         try:
+            import random as _rand2
+            import datetime as _dt2
+            _styles2 = [
+                "глубокий аналитический обзор",
+                "научно-популярный рассказ",
+                "практическое руководство с примерами",
+                "репортаж с фактами и цифрами",
+            ]
+            _style2 = _rand2.choice(_styles2)
+            _year2 = _dt2.date.today().year
             prompt = (
-                f'Ты — профессиональный AI-журналист. Напиши ПОЛНОЦЕННУЮ статью на русском языке СТРОГО по теме: "{query}".\n\n'
-                f"СТРУКТУРА СТАТЬИ:\n"
-                f"Строка 1: Заголовок — только о теме '{query}' (без символа #)\n\n"
+                f'Ты — профессиональный AI-журналист. Напиши УНИКАЛЬНУЮ ПОЛНОЦЕННУЮ статью СТРОГО по теме: "{query}".\n\n'
+                f"Стиль: {_style2}.\n\n"
+                f"СТРУКТУРА СТАТЬИ (не менее 7 разделов):\n"
+                f"Строка 1: Оригинальный заголовок о теме '{query}' (без символа #)\n\n"
                 f"## 🔍 Введение\n"
-                f"Что такое '{query}' и почему это важно.\n\n"
+                f"Что такое '{query}' и почему это важно в {_year2} году.\n\n"
                 f"## 📌 Основные аспекты\n"
                 f"Ключевые характеристики и особенности.\n\n"
-                f"## 💡 Важные факты\n"
-                f"Конкретные данные и факты.\n\n"
-                f"## 🌐 Применение\n"
-                f"Практическое применение, примеры.\n\n"
+                f"## 💡 Важные факты и цифры\n"
+                f"Конкретные данные, статистика.\n\n"
+                f"## 🌍 Применение и примеры\n"
+                f"Практическое применение, реальные случаи.\n\n"
+                f"## 🌟 Интересные подробности\n"
+                f"Малоизвестные факты и детали.\n\n"
+                f"## 📈 Актуальные тренды\n"
+                f"Последние тенденции в {_year2} году.\n\n"
                 f"## ✅ Заключение\n"
-                f"Итоговые выводы.\n\n"
-                f"Требования: минимум 500 слов, только русский язык, ТОЛЬКО о теме '{query}'.\n"
+                f"Итоговые выводы и перспективы.\n\n"
+                f"Требования: минимум 700 слов, только русский язык, ТОЛЬКО о теме '{query}', статья уникальная.\n"
                 "Примечание: статья создана на основе знаний AI (без интернет-поиска)."
             )
             is_tgwui_research = model.startswith(_TGWUI_PREFIX)
