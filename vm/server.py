@@ -7003,12 +7003,41 @@ def generate_auto_complete():
     Supports Python and JavaScript execution; HTML is returned as-is after
     generation (no execution needed).  Unknown languages are also returned
     after the first generation attempt.
+    Supports Ollama, LM Studio (prefix "lmstudio:"), and TGWUI (prefix "tgwui:").
     """
     body         = request.get_json(silent=True) or {}
     model        = body.get("model", "").strip()
     prompt       = body.get("prompt", "").strip()
     max_attempts = min(int(body.get("max_attempts", 3)), 5)
 
+    if not model:
+        # Auto-detect best available model
+        try:
+            mr = _http.get(f"{OLLAMA_BASE}/api/tags", timeout=5)
+            if mr.status_code == 200:
+                models_list = mr.json().get("models", [])
+                if models_list:
+                    model = models_list[0].get("name", "")
+        except Exception:  # pylint: disable=broad-except
+            pass
+        if not model and LM_STUDIO_BASE:
+            try:
+                lms_mr = _http.get(f"{LM_STUDIO_BASE}/v1/models", timeout=5)
+                if lms_mr.status_code == 200:
+                    lms_list = lms_mr.json().get("data", [])
+                    if lms_list:
+                        model = f"{_LM_STUDIO_PREFIX}{lms_list[0]['id']}"
+            except Exception:  # pylint: disable=broad-except
+                pass
+        if not model and TGWUI_BASE:
+            try:
+                tw_mr = _http.get(f"{TGWUI_BASE}/v1/models", timeout=5)
+                if tw_mr.status_code == 200:
+                    tw_list = tw_mr.json().get("data", [])
+                    if tw_list:
+                        model = f"{_TGWUI_PREFIX}{tw_list[0]['id']}"
+            except Exception:  # pylint: disable=broad-except
+                pass
     if not model:
         return jsonify({"error": "No model selected", "success": False}), 400
     if not prompt:
@@ -7017,28 +7046,66 @@ def generate_auto_complete():
     data       = load_instructions()
     sys_prompt = data.get("system_prompt", "").strip() or _DEFAULT_AUTO_SYSTEM_PROMPT
 
-    current_prompt = f"{sys_prompt}\n\nЗадание: {prompt}"
+    # Determine backend
+    _is_lms_ac   = model.startswith(_LM_STUDIO_PREFIX)
+    _is_tgwui_ac = model.startswith(_TGWUI_PREFIX)
+    _real_model_ac = (
+        model[len(_LM_STUDIO_PREFIX):] if _is_lms_ac
+        else model[len(_TGWUI_PREFIX):] if _is_tgwui_ac
+        else model
+    )
+
+    def _call_llm_ac(user_content: str) -> str:
+        """Call the appropriate LLM backend and return the raw text response."""
+        if _is_lms_ac:
+            r = _http.post(
+                f"{LM_STUDIO_BASE}/v1/chat/completions",
+                json={"model": _real_model_ac,
+                      "messages": [{"role": "system", "content": sys_prompt},
+                                   {"role": "user", "content": user_content}],
+                      "stream": False},
+                timeout=int(os.environ.get("OLLAMA_TIMEOUT", 180)),
+            )
+            r.raise_for_status()
+            return r.json().get("choices", [{}])[0].get("message", {}).get("content", "")
+        if _is_tgwui_ac:
+            r = _http.post(
+                f"{TGWUI_BASE}/v1/chat/completions",
+                json={"model": _real_model_ac,
+                      "messages": [{"role": "system", "content": sys_prompt},
+                                   {"role": "user", "content": user_content}],
+                      "stream": False},
+                timeout=int(os.environ.get("OLLAMA_TIMEOUT", 180)),
+            )
+            r.raise_for_status()
+            return r.json().get("choices", [{}])[0].get("message", {}).get("content", "")
+        # Ollama
+        r = _http.post(
+            f"{OLLAMA_BASE}/api/generate",
+            json={"model": _real_model_ac,
+                  "prompt": f"{sys_prompt}\n\n{user_content}",
+                  "stream": False},
+            timeout=int(os.environ.get("OLLAMA_TIMEOUT", 180)),
+        )
+        r.raise_for_status()
+        return r.json().get("response", "")
+
+    current_user_content = f"Задание: {prompt}"
     code = output = err_text = ""
     language = "python"
 
     for attempt in range(1, max_attempts + 1):
         # 1. Generate code
         try:
-            resp = _http.post(
-                f"{OLLAMA_BASE}/api/generate",
-                json={"model": model, "prompt": current_prompt, "stream": False},
-                timeout=int(os.environ.get("OLLAMA_TIMEOUT", 180)),
-            )
-            resp.raise_for_status()
+            raw = _call_llm_ac(current_user_content)
         except _http.exceptions.ConnectionError:
+            backend_name = "LM Studio" if _is_lms_ac else "TGWUI" if _is_tgwui_ac else "Ollama"
             return jsonify({
-                "error": "Нет соединения с Ollama — запустите 'ollama serve'",
+                "error": f"Нет соединения с {backend_name}",
                 "success": False, "attempts": attempt,
             }), 503
         except Exception as exc:
             return jsonify({"error": str(exc), "success": False, "attempts": attempt}), 500
-
-        raw = resp.json().get("response", "")
 
         # Detect language from fenced block marker
         raw_lower = raw.lower()
@@ -7082,8 +7149,7 @@ def generate_auto_complete():
 
         # 4. Re-prompt with error context for next attempt
         if attempt < max_attempts:
-            current_prompt = (
-                f"{sys_prompt}\n\n"
+            current_user_content = (
                 f"Задание: {prompt}\n\n"
                 f"Попытка {attempt}: твой код вызвал ошибку при выполнении:\n"
                 f"```\n{err_text[:600]}\n```\n"
@@ -8508,8 +8574,14 @@ def web_research():
             pass
 
         if _PLAYWRIGHT_OK:
-            max_ss = min(3, len(sources))
-            for src in sources[:max_ss]:
+            # Only screenshot from reliable sources (not reddit/hackernews which are JS-heavy)
+            _ss_sources = [
+                s for s in sources
+                if s.get("url", "").startswith("http")
+                and s.get("source", "") not in ("reddit", "hackernews")
+            ]
+            max_ss = min(3, len(_ss_sources))
+            for src in _ss_sources[:max_ss]:
                 url = src.get("url", "")
                 if not url.startswith("http"):
                     continue
@@ -8595,13 +8667,14 @@ def web_research():
                 _log.warning("research vision analysis: %s", _vexc)
 
     # ── 6. Build aggregated text for Ollama ───────────────────────────────
+    # Filter: keep only sources with meaningful snippets (>= 50 chars)
     blocks = [
-        f"[{s['title']}]: {s.get('snippet','')[:600]}"
+        f"Источник «{s['title']}»: {s.get('snippet','')[:800]}"
         for s in sources[:10]
-        if s.get("snippet")
+        if len(s.get("snippet", "")) >= 50
     ]
     if vis_descriptions:
-        blocks += [f"[Скриншот {i+1}]: {d[:600]}" for i, d in enumerate(vis_descriptions)]
+        blocks += [f"Описание скриншота {i+1}: {d[:600]}" for i, d in enumerate(vis_descriptions)]
     aggregated = "\n\n".join(blocks)
 
     # ── 7. Generate article text via Ollama or LM Studio ─────────────────
@@ -8633,19 +8706,39 @@ def web_research():
     if model and aggregated:
         try:
             prompt = (
-                f'Ты — экспертный AI-журналист. Напиши статью на русском по теме: "{query}".\n\n'
-                f"Данные из источников:\n{aggregated}\n\n"
-                "Формат: первая строка — заголовок. Затем введение. "
-                "Разделы с подзаголовками (## Название). ## Заключение."
+                f'Ты — экспертный AI-журналист. Напиши ПОЛНУЮ, СВЯЗНУЮ статью на русском языке по теме: "{query}".\n\n'
+                f"Используй следующие данные из источников ТОЛЬКО как справочный материал — "
+                f"НЕ КОПИРУЙ тексты дословно, а напиши статью СВОИМИ словами:\n\n"
+                f"{aggregated}\n\n"
+                f"ТРЕБОВАНИЯ К СТАТЬЕ:\n"
+                f"1. Первая строка — чёткий заголовок статьи о теме '{query}' (без символа #)\n"
+                f"2. Вступительный абзац — о чём эта статья и почему тема важна\n"
+                f"3. Несколько разделов с подзаголовками (## Название раздела) — 3-5 разделов\n"
+                f"4. ## Заключение — итоговые выводы\n"
+                f"5. Статья должна быть ТОЛЬКО по теме '{query}', без посторонних тем\n"
+                f"6. Минимум 400 слов, максимум 1000 слов\n"
+                f"7. Только на русском языке\n"
             )
+            is_tgwui_research = model.startswith(_TGWUI_PREFIX)
             if is_lms_research:
                 real_model = model[len(_LM_STUDIO_PREFIX):]
                 ar = _http.post(
                     f"{LM_STUDIO_BASE}/v1/chat/completions",
                     json={"model": real_model,
                           "messages": [{"role": "user", "content": prompt}],
-                          "stream": False},
-                    timeout=int(os.environ.get("OLLAMA_TIMEOUT", 120)),
+                          "stream": False, "max_tokens": 2000},
+                    timeout=int(os.environ.get("OLLAMA_TIMEOUT", 180)),
+                )
+                ar.raise_for_status()
+                article_text = ar.json().get("choices", [{}])[0].get("message", {}).get("content", "")
+            elif is_tgwui_research:
+                real_model = model[len(_TGWUI_PREFIX):]
+                ar = _http.post(
+                    f"{TGWUI_BASE}/v1/chat/completions",
+                    json={"model": real_model,
+                          "messages": [{"role": "user", "content": prompt}],
+                          "stream": False, "max_tokens": 2000},
+                    timeout=int(os.environ.get("OLLAMA_TIMEOUT", 180)),
                 )
                 ar.raise_for_status()
                 article_text = ar.json().get("choices", [{}])[0].get("message", {}).get("content", "")
@@ -8653,7 +8746,7 @@ def web_research():
                 ar = _http.post(
                     f"{OLLAMA_BASE}/api/generate",
                     json={"model": model, "prompt": prompt, "stream": False},
-                    timeout=int(os.environ.get("OLLAMA_TIMEOUT", 120)),
+                    timeout=int(os.environ.get("OLLAMA_TIMEOUT", 180)),
                 )
                 ar.raise_for_status()
                 article_text = ar.json().get("response", "")
@@ -8663,20 +8756,37 @@ def web_research():
         # No internet sources available — generate article from AI knowledge alone
         try:
             prompt = (
-                f'Ты — экспертный AI-журналист. Напиши подробную статью на русском по теме: "{query}".\n\n'
-                "Используй свои знания по данной теме. "
-                "Формат: первая строка — заголовок. Затем введение. "
-                "Разделы с подзаголовками (## Название). ## Заключение.\n\n"
+                f'Ты — экспертный AI-журналист. Напиши ПОЛНУЮ, СВЯЗНУЮ статью на русском языке по теме: "{query}".\n\n'
+                f"ТРЕБОВАНИЯ К СТАТЬЕ:\n"
+                f"1. Первая строка — чёткий заголовок статьи о теме '{query}' (без символа #)\n"
+                f"2. Вступительный абзац — о чём эта статья и почему тема важна\n"
+                f"3. Несколько разделов с подзаголовками (## Название раздела) — 3-5 разделов\n"
+                f"4. ## Заключение — итоговые выводы\n"
+                f"5. Статья должна быть ТОЛЬКО по теме '{query}'\n"
+                f"6. Минимум 400 слов, максимум 1000 слов\n"
+                f"7. Только на русском языке\n\n"
                 "Примечание: статья создана на основе AI-знаний (без интернет-поиска)."
             )
+            is_tgwui_research = model.startswith(_TGWUI_PREFIX)
             if is_lms_research:
                 real_model = model[len(_LM_STUDIO_PREFIX):]
                 ar = _http.post(
                     f"{LM_STUDIO_BASE}/v1/chat/completions",
                     json={"model": real_model,
                           "messages": [{"role": "user", "content": prompt}],
-                          "stream": False},
-                    timeout=int(os.environ.get("OLLAMA_TIMEOUT", 120)),
+                          "stream": False, "max_tokens": 2000},
+                    timeout=int(os.environ.get("OLLAMA_TIMEOUT", 180)),
+                )
+                ar.raise_for_status()
+                article_text = ar.json().get("choices", [{}])[0].get("message", {}).get("content", "")
+            elif is_tgwui_research:
+                real_model = model[len(_TGWUI_PREFIX):]
+                ar = _http.post(
+                    f"{TGWUI_BASE}/v1/chat/completions",
+                    json={"model": real_model,
+                          "messages": [{"role": "user", "content": prompt}],
+                          "stream": False, "max_tokens": 2000},
+                    timeout=int(os.environ.get("OLLAMA_TIMEOUT", 180)),
                 )
                 ar.raise_for_status()
                 article_text = ar.json().get("choices", [{}])[0].get("message", {}).get("content", "")
@@ -8684,7 +8794,7 @@ def web_research():
                 ar = _http.post(
                     f"{OLLAMA_BASE}/api/generate",
                     json={"model": model, "prompt": prompt, "stream": False},
-                    timeout=int(os.environ.get("OLLAMA_TIMEOUT", 120)),
+                    timeout=int(os.environ.get("OLLAMA_TIMEOUT", 180)),
                 )
                 ar.raise_for_status()
                 article_text = ar.json().get("response", "")
@@ -8695,9 +8805,21 @@ def web_research():
         if not sources:
             # Neither internet nor Ollama available
             return jsonify({"error": "No results found and no AI model available", "success": False}), 404
-        # Fallback: simple assembly from snippets
-        intro = f"{query}\n\n"
-        article_text = intro + aggregated
+        # Fallback: build a structured article-like text from source snippets
+        # (better than raw concatenation)
+        good_snippets = [
+            s for s in sources
+            if len(s.get("snippet", "")) >= 50
+        ]
+        if good_snippets:
+            intro = f"{query}\n\n"
+            body_parts = [
+                f"## {s['title']}\n{s.get('snippet','')}"
+                for s in good_snippets[:5]
+            ]
+            article_text = intro + "\n\n".join(body_parts) + "\n\n## Заключение\nДанные получены из открытых источников."
+        else:
+            return jsonify({"error": "Не удалось получить достаточно данных по запросу", "success": False}), 404
 
     # ── 8. Build HTML article ─────────────────────────────────────────────
     lines = article_text.strip().splitlines()

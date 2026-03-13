@@ -343,9 +343,42 @@ async def get_ollama_models() -> List[str]:
 
 
 async def get_best_model() -> str:
-    """Return the first available Ollama model name, or fall back to OLLAMA_MODEL."""
+    """Return the best available model: Ollama first, then LM Studio, then TGWUI.
+
+    Returns the model name with prefix for non-Ollama models (e.g. "lmstudio:X").
+    """
     models = await get_ollama_models()
-    return models[0] if models else OLLAMA_MODEL
+    if models:
+        return models[0]
+    # Fallback: try LM Studio models via VM
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{VM_BASE}/lmstudio/models",
+                timeout=aiohttp.ClientTimeout(total=5),
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    lms_models = [m.get("id", "") for m in data.get("data", []) if m.get("id")]
+                    if lms_models:
+                        return f"lmstudio:{lms_models[0]}"
+    except Exception as exc:
+        logger.debug("VM /lmstudio/models: %s", exc)
+    # Fallback: try TGWUI models via VM
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{VM_BASE}/tgwui/models",
+                timeout=aiohttp.ClientTimeout(total=5),
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    tgwui_models = [m.get("id", "") for m in data.get("data", []) if m.get("id")]
+                    if tgwui_models:
+                        return f"tgwui:{tgwui_models[0]}"
+    except Exception as exc:
+        logger.debug("VM /tgwui/models: %s", exc)
+    return OLLAMA_MODEL
 
 
 async def chat_via_vm(user_id: int, text: str, message: Message) -> bool:
