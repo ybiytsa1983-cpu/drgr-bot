@@ -1943,7 +1943,7 @@ async function initMonaco() {
         bundleBtn.disabled = true;
         try {
           var r = await fetch('/bundle_monaco', {method:'POST'});
-          var d = await r.json();
+          var d = await _safeJson(r);
           if (d.ok) {
             notice.innerHTML = '✓ Monaco скачан! <b>Перезагрузите страницу (F5)</b> для активации.';
           } else {
@@ -2165,7 +2165,7 @@ async function saveProjectFromEditor() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ content: code, filename: filename, name: name })
     });
-    var d = await r.json();
+    var d = await _safeJson(r);
     if (d.success) {
       toast('✅ Сохранён: ' + d.project_id);
     } else {
@@ -2190,7 +2190,7 @@ async function autoSaveProject(code, lang, prompt) {
       body: JSON.stringify({ content: code, filename: filename, name: safeName,
                              description: prompt || '' })
     });
-    var d = await r.json();
+    var d = await _safeJson(r);
     if (d.success) {
       toast('💾 Сохранён в проекты: ' + (d.project_id || filename));
       // Always refresh project list so the user sees the new project immediately
@@ -2219,7 +2219,7 @@ async function loadProjectList() {
     }
 
     var r = await fetch('/project/list');
-    var d = await r.json();
+    var d = await _safeJson(r);
     if (!d.projects || !d.projects.length) {
       box.innerHTML = '<span style="color:var(--text2)">Нет сохранённых проектов</span>';
       return;
@@ -2372,7 +2372,7 @@ async function deleteProject(projectId) {
   if (!confirm('Удалить проект «' + projectId + '»?')) return;
   try {
     var r = await fetch('/project/delete/' + encodeURIComponent(projectId), { method: 'DELETE' });
-    var d = await r.json();
+    var d = await _safeJson(r);
     if (d.success) { toast('🗑 Удалён: ' + projectId); loadProjectList(); }
     else toast('❌ ' + (d.error || 'Ошибка удаления'));
   } catch(e) { toast('❌ ' + e.message); }
@@ -2706,7 +2706,7 @@ async function screenshotAndAnalyze() {
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({url: url})
     });
-    var d = await r.json();
+    var d = await _safeJson(r);
     if (d.screenshot_base64) {
       // Show screenshot in preview frame
       var imgHtml = '<!DOCTYPE html><html><head><meta charset="UTF-8">'
@@ -2751,7 +2751,7 @@ async function analyzePageAI() {
             prompt: 'Опиши этот HTML код: что он делает, какой интерфейс создаёт, какие функции выполняет?\n\n' + code.slice(0, 3000)
           })
         });
-        var d = await r.json();
+        var d = await _safeJson(r);
         showVaiResult('🧠 AI анализ кода:\n' + (d.response || 'Нет ответа'), false);
       } catch(e) { showVaiResult('⚠ Ошибка: ' + e.message, false); }
       vaiBusy = false;
@@ -2793,7 +2793,7 @@ async function _doUploadFile(file) {
   toast('⏳ Загружаю файл ' + file.name + '...');
   try {
     var r = await fetch('/files/upload', { method: 'POST', body: formData });
-    var d = await r.json();
+    var d = await _safeJson(r);
     if (!d.success) { toast('❌ ' + (d.error || 'Ошибка загрузки')); return; }
 
     if (d.is_image && d.data_url) {
@@ -2907,7 +2907,7 @@ async function downloadFileFromUrl() {
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ url: url, save: false })
     });
-    var d = await r.json();
+    var d = await _safeJson(r);
     if (!d.success) { toast('❌ ' + (d.error || 'Ошибка скачивания')); return; }
     if (editor) {
       editor.setValue(d.content);
@@ -2938,7 +2938,7 @@ async function doWebSearch() {
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ query: query, max_results: 5 })
     });
-    var d = await r.json();
+    var d = await _safeJson(r);
     if (!d.success || !d.results || !d.results.length) {
       showVaiResult('⚠ Нет результатов для: ' + query + (d.error ? '\n' + d.error : ''), false);
       return;
@@ -3131,7 +3131,7 @@ async function runCode() {
     var r = await fetch('/execute', { method:'POST',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ code: code, language: lang }) });
-    var d = await r.json();
+    var d = await _safeJson(r);
     var html = '';
     if (d.stdout || d.output) html += '<span class="o-ok">' + esc(d.stdout || d.output) + '</span>';
     if (d.stderr) html += '<span class="o-err">' + esc(d.stderr) + '</span>';
@@ -3506,7 +3506,7 @@ function closePanel() { document.getElementById('panel').classList.remove('open'
 async function loadHealth() {
   var noOl = document.getElementById('chat-no-ollama');
   try {
-    var r = await fetch('/health'); var d = await r.json();
+    var r = await fetch('/health'); var d = await _safeJson(r);
     var vm=d.vm&&d.vm.status==='ok', ol=d.ollama&&d.ollama.status==='ok',
         bot=d.bot&&d.bot.token_set, botRun=d.bot&&d.bot.running;
     var lmsData   = d.lm_studio || {};
@@ -3628,7 +3628,7 @@ function _syncResearchModelSel(models) {
 }
 async function loadModels() {
   try {
-    var r = await fetch('/ollama/models'); var d = await r.json();
+    var r = await fetch('/ollama/models'); var d = await _safeJson(r);
     var models = d.models||[], sel = document.getElementById('sel-model'), prev = sel.value;
     sel.innerHTML = '';
     if (!models.length) { sel.innerHTML = '<option value="">Нет моделей — pull модель ниже</option>'; }
@@ -3677,7 +3677,7 @@ function updateBadge() {
 // ── System prompt ─────────────────────────────────────────────────────────────
 async function loadSystemPrompt() {
   try {
-    var r = await fetch('/instructions'); var d = await r.json();
+    var r = await fetch('/instructions'); var d = await _safeJson(r);
     var ta = document.getElementById('ta-sys');
     ta.value = d.system_prompt || '';
   } catch(e) {}
@@ -3701,7 +3701,7 @@ async function saveBotToken() {
     var r = await fetch('/settings', { method:'POST',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ bot_token: tok }) });
-    var d = await r.json();
+    var d = await _safeJson(r);
     if (d.ok) {
       if (d.bot_restarted) {
         toast('✅ Токен сохранён — бот перезапущен автоматически');
@@ -3735,7 +3735,7 @@ async function testBotToken() {
     var r = await fetch('/bot/test', { method:'POST',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ bot_token: tok }) });
-    var d = await r.json();
+    var d = await _safeJson(r);
     if (d.ok) {
       var name = d.username ? '@' + d.username : d.first_name || 'Бот';
       if (statusEl) statusEl.innerHTML = '<span style="color:var(--accent2)">✅ Подключён: ' + esc(name) + '</span>';
@@ -3755,7 +3755,7 @@ async function testBotToken() {
 async function restartBot() {
   try {
     var r = await fetch('/bot/restart', { method:'POST' });
-    var d = await r.json();
+    var d = await _safeJson(r);
     if (d.ok) {
       toast('✅ Бот перезапущен');
       setTimeout(loadHealth, 1500);
@@ -3771,7 +3771,7 @@ async function saveChatId() {
     var r = await fetch('/settings', { method:'POST',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ chat_id: cid }) });
-    var d = await r.json();
+    var d = await _safeJson(r);
     if (d.ok) {
       toast('✓ Chat ID сохранён — перезапустите start.ps1 для Telegram бота');
       document.getElementById('chatid-inp').value = '';
@@ -3782,7 +3782,7 @@ async function saveChatId() {
 // ── Ollama URL ────────────────────────────────────────────────────────────────
 async function loadOllamaUrl() {
   try {
-    var r = await fetch('/settings'); var d = await r.json();
+    var r = await fetch('/settings'); var d = await _safeJson(r);
     if (d.ollama_url) document.getElementById('ol-url').value = d.ollama_url;
     if (d.lm_studio_url && document.getElementById('lms-url')) {
       document.getElementById('lms-url').value = d.lm_studio_url;
@@ -3829,7 +3829,7 @@ async function saveOllamaUrl() {
     var r = await fetch('/settings', { method:'POST',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ ollama_url: url }) });
-    var d = await r.json();
+    var d = await _safeJson(r);
     if (d.ok) {
       toast('✓ Ollama URL сохранён, проверяю соединение...');
       setTimeout(function(){ loadHealth(); loadModels(); }, 1500);
@@ -3846,7 +3846,7 @@ async function saveLmStudioUrl() {
     var r = await fetch('/settings', { method:'POST',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ lm_studio_url: url }) });
-    var d = await r.json();
+    var d = await _safeJson(r);
     if (d.ok) {
       toast('✓ LM Studio URL сохранён, проверяю соединение...');
       setTimeout(function(){ loadHealth(); loadModels(); }, 1500);
@@ -3867,7 +3867,7 @@ async function autoDetectLmStudio() {
   toast('🔍 Ищу LM Studio...');
   try {
     var r = await fetch('/lmstudio/detect' + (hostHint ? '?hint=' + encodeURIComponent(hostHint) : ''));
-    var d = await r.json();
+    var d = await _safeJson(r);
     if (d.url) {
       if (inp) inp.value = d.url;
       toast('✅ LM Studio найден: ' + d.url + (d.models&&d.models.length ? ' (' + d.models[0] + ')' : ''));
@@ -3884,7 +3884,7 @@ async function saveTgwuiUrl() {
     var r = await fetch('/settings', { method:'POST',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ tgwui_url: url }) });
-    var d = await r.json();
+    var d = await _safeJson(r);
     if (d.ok) {
       toast('✓ TGWUI URL сохранён, проверяю соединение...');
       setTimeout(function(){ loadHealth(); loadModels(); }, 1500);
@@ -3901,7 +3901,7 @@ async function checkTgwuiStatus() {
       if (statusEl) statusEl.textContent = '⚠ Недоступно (код ' + r.status + ')';
       return;
     }
-    var d = await r.json();
+    var d = await _safeJson(r);
     if (statusEl) {
       if (d.available) {
         statusEl.textContent = '✅ Подключено. Моделей: ' + d.models.length;
@@ -3921,7 +3921,7 @@ async function saveOafUrl() {
     var r = await fetch('/settings', { method:'POST',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ oaf_url: url }) });
-    var d = await r.json();
+    var d = await _safeJson(r);
     if (d.ok) {
       toast('✓ OAF URL сохранён, проверяю соединение...');
       setTimeout(function(){ loadHealth(); }, 1500);
@@ -3933,7 +3933,7 @@ async function checkOafStatus() {
   if (statusEl) statusEl.textContent = '🔄 Проверяю...';
   try {
     var r = await fetch('/oaf/status');
-    var d = await r.json();
+    var d = await _safeJson(r);
     if (statusEl) {
       statusEl.textContent = d.ok ? '✅ Подключено' : '⚠ Недоступно: ' + (d.error || 'нет ответа');
     }
@@ -3949,7 +3949,7 @@ async function saveRemoteVmUrl() {
     var r = await fetch('/settings', { method:'POST',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ remote_vm_url: url }) });
-    var d = await r.json();
+    var d = await _safeJson(r);
     if (d.ok) {
       toast('✓ Remote VM URL сохранён, проверяю соединение...');
       setTimeout(function(){ loadHealth(); }, 1500);
@@ -3964,7 +3964,7 @@ async function saveVisionVmUrl() {
     var r = await fetch('/settings', { method:'POST',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ vision_vm_url: url }) });
-    var d = await r.json();
+    var d = await _safeJson(r);
     if (d.ok) {
       toast('✓ Vision VM URL сохранён, проверяю соединение...');
       setTimeout(function(){ loadHealth(); loadModels(); }, 1500);
@@ -3981,7 +3981,7 @@ async function saveSdUrl() {
     var r = await fetch('/settings', { method:'POST',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ sd_url: url }) });
-    var d = await r.json();
+    var d = await _safeJson(r);
     if (d.ok) {
       toast('✓ SD URL сохранён, проверяю соединение...');
       setTimeout(function(){ loadHealth(); }, 1500);
@@ -3998,7 +3998,7 @@ async function saveComfyuiUrl() {
     var r = await fetch('/settings', { method:'POST',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ comfyui_url: url }) });
-    var d = await r.json();
+    var d = await _safeJson(r);
     if (d.ok) {
       toast('✓ ComfyUI URL сохранён, проверяю соединение...');
       setTimeout(function(){ loadHealth(); }, 1500);
@@ -4013,7 +4013,7 @@ var _igLastPrompt = '';
 async function imagegenRefreshStatus() {
   try {
     var r = await fetch('/health');
-    var d = await r.json();
+    var d = await _safeJson(r);
     var sdBadge = document.getElementById('ig-sd-badge');
     var cfBadge = document.getElementById('ig-comfy-badge');
     var sdD = d.stable_diffusion || {};
@@ -4059,7 +4059,7 @@ async function imagegenGenerate() {
       body: JSON.stringify({ prompt: prompt, negative_prompt: negative,
         width: width, height: height, steps: steps, cfg_scale: cfg })
     });
-    var d = await r.json();
+    var d = await _safeJson(r);
     if (!d.success) {
       if (status) status.textContent = '✗ ' + (d.error || 'Ошибка генерации');
       toast('⚠ ' + (d.error || 'Ошибка генерации').substring(0, 80));
@@ -4389,7 +4389,7 @@ async function checkRemoteVm() {
   var statusEl = document.getElementById('rvm-status');
   if (statusEl) statusEl.textContent = '⏳ Проверяю...';
   try {
-    var r = await fetch('/remote/status'); var d = await r.json();
+    var r = await fetch('/remote/status'); var d = await _safeJson(r);
     if (d.ok) {
       if (statusEl) statusEl.textContent = '✓ Remote VM доступна: ' + (d.url||'');
     } else {
@@ -4502,7 +4502,7 @@ async function pollPushJob() {
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({prompt: prompt, model: model})
     });
-    var d = await r.json();
+    var d = await _safeJson(r);
     if (d.ok) {
       toast('✓ Задание отправлено: ' + d.job_id.slice(0,8));
       document.getElementById('poll-job-prompt').value = '';
@@ -4516,7 +4516,7 @@ async function pollPushJob() {
 async function pollRefreshJobs() {
   try {
     var r = await fetch('/remote/jobs');
-    var d = await r.json();
+    var d = await _safeJson(r);
     var jobs = d.jobs || [];
     var list = document.getElementById('poll-jobs-list');
     var resultDiv = document.getElementById('poll-job-result');
@@ -4574,7 +4574,7 @@ async function pollRefreshJobs() {
 async function pollClearDone() {
   try {
     var r = await fetch('/remote/jobs');
-    var d = await r.json();
+    var d = await _safeJson(r);
     var done = (d.jobs || []).filter(function(j){ return j.status === 'done'; });
     await Promise.all(done.map(function(j){
       return fetch('/remote/jobs/' + j.id, {method:'DELETE'});
@@ -4628,7 +4628,7 @@ async function colabSaveUrl() {
     var r = await fetch('/settings', { method:'POST',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ remote_vm_url: url }) });
-    var d = await r.json();
+    var d = await _safeJson(r);
     if (d.ok) {
       toast('✓ Remote VM URL сохранён');
       document.getElementById('colab-url-status').textContent = '✓ Сохранено';
@@ -4644,7 +4644,7 @@ async function colabTestConnection() {
   var info  = document.getElementById('colab-health-info');
   if (badge) badge.textContent = '⏳ Подключение...';
   try {
-    var r = await fetch('/remote/status'); var d = await r.json();
+    var r = await fetch('/remote/status'); var d = await _safeJson(r);
     if (d.ok) {
       if (badge) { badge.textContent = '✅ Подключено'; badge.style.color='#4caf50'; }
       var healthData = d.data || {};
@@ -4673,7 +4673,7 @@ async function colabLoadModels() {
   var testSel = document.getElementById('colab-test-model');
   if (listEl) listEl.innerHTML = '<div style="font-size:12px;color:var(--text2)">⏳ Загрузка моделей...</div>';
   try {
-    var r = await fetch('/remote/models'); var d = await r.json();
+    var r = await fetch('/remote/models'); var d = await _safeJson(r);
     _colabModels = d.models || [];
     var raw = d.raw_models || [];
     if (listEl) {
@@ -4800,12 +4800,12 @@ async function deleteModel() {
   if(!confirm('Удалить ' + name + '?')) return;
   var r = await fetch('/ollama/delete', { method:'POST',
     headers:{'Content-Type':'application/json'}, body: JSON.stringify({name:name}) });
-  var d = await r.json();
+  var d = await _safeJson(r);
   document.getElementById('wlog').textContent = d.ok ? 'Удалено: ' + name : 'Ошибка: ' + d.error;
   loadModels();
 }
 async function retrain() {
-  var r = await fetch('/retrain', {method:'POST'}); var d = await r.json();
+  var r = await fetch('/retrain', {method:'POST'}); var d = await _safeJson(r);
   toast(d.message || 'Retrain запущен');
 }
 
@@ -4824,7 +4824,7 @@ async function vmRefreshAiStatus() {
   if (!ollamaEl) return;
   try {
     var r = await fetch('/health');
-    var d = await r.json();
+    var d = await _safeJson(r);
     var ol = d.ollama || {};
     ollamaEl.textContent  = ol.status === 'ok'
       ? '✅ Ollama ' + (ol.url || '').replace('http://', '')
@@ -4891,7 +4891,7 @@ async function vmDetectLmStudio() {
   try {
     // Also hint the common LAN bridge address for WSL/VM setups
     var r = await fetch('/lmstudio/detect?hint=172.22.208.1');
-    var d = await r.json();
+    var d = await _safeJson(r);
     if (d.url) {
       if (res) res.innerHTML = '✅ Найден LM Studio: <b>' + d.url + '</b> — модели: ' + (d.models || []).join(', ') + '<br>'
         + '<button class="pb pb-s" style="margin-top:6px;padding:5px 10px" onclick="vmSaveLmsUrl(\'' + d.url + '\')">💾 Сохранить URL</button>';
@@ -4909,7 +4909,7 @@ async function vmSaveLmsUrl(url) {
     var r = await fetch('/settings', { method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ lm_studio_url: url }) });
-    var d = await r.json();
+    var d = await _safeJson(r);
     if (d.ok) { toast('✅ LM Studio URL сохранён: ' + url); vmRefreshAiStatus(); loadModels(); }
     else toast('⚠ ' + (d.error || 'Ошибка сохранения'));
   } catch(e) { toast('⚠ ' + e.message); }
@@ -4921,7 +4921,7 @@ async function vmCheckLightVision(silent) {
   if (lvEl) { lvEl.textContent = '⏳ Проверяю лёгкое зрение…'; lvEl.style.color = '#888'; }
   try {
     var r = await fetch('/vision/light/check?pull_if_absent=1');
-    var d = await r.json();
+    var d = await _safeJson(r);
     if (d.status === 'vision_vm_active') {
       if (lvEl) { lvEl.textContent = '➖ Лёгк. зрение (Vision VM активна)'; lvEl.style.color = '#888'; }
       if (!silent) toast('👁 Vision VM активна — лёгкая модель не нужна');
@@ -4948,7 +4948,7 @@ async function vmConnectLmStudioLan() {
   toast('🔗 Проверяю LM Studio на ' + url + '…');
   try {
     var r = await fetch('/lmstudio/detect?hint=172.22.208.1:1234');
-    var d = await r.json();
+    var d = await _safeJson(r);
     if (d.url) {
       await vmSaveLmsUrl(d.url);
       var area = document.getElementById('vm-report-area');
@@ -4970,7 +4970,7 @@ async function vmShowReport() {
   area.textContent = '⏳ Получаю отчёт системы…';
   try {
     var r = await fetch('/vm/report');
-    var d = await r.json();
+    var d = await _safeJson(r);
     var lines = [];
     lines.push('═══════════════════════════════════════════════════════');
     lines.push('  📊 ПОЛНЫЙ ОТЧЁТ СИСТЕМЫ DRGR VM');
@@ -5039,7 +5039,7 @@ async function vmTestModel() {
     }
     area.textContent = '⏳ Тестирую модель ' + model + '…';
     var r = await fetch('/vm/report?model=' + encodeURIComponent(model));
-    var d = await r.json();
+    var d = await _safeJson(r);
     var t = d.test || {};
     if (t.ok) {
       area.textContent = '✅ ТЕСТ МОДЕЛИ: ' + model + '\nВремя: ' + t.elapsed_s + 'с\n\nОтвет модели:\n' + (t.output || '');
@@ -5068,7 +5068,7 @@ async function vmAutoStartColab() {
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({url: colabUrl})
     });
-    var d = await r.json();
+    var d = await _safeJson(r);
     if (d.ok) {
       toast('✅ Colab VM настроен: ' + colabUrl);
       if (area) area.textContent = '✅ Colab VM подключён: ' + colabUrl + '\nСтатус: ' + (d.connected ? 'онлайн' : 'офлайн (URL сохранён)');
@@ -5120,7 +5120,7 @@ async function checkVisorStatus() {
   vmRefreshAiStatus();
   try {
     var r = await fetch('/ollama/models');
-    var d = await r.json();
+    var d = await _safeJson(r);
     var models = d.models || [];
     var hasVisor = models.some(function(m){ return m === VISOR_MODEL_NAME || m.startsWith(VISOR_MODEL_NAME + ':'); });
     if (hasVisor) {
@@ -5879,7 +5879,7 @@ function _pollTgChatMessages() {
     try {
       var r = await fetch('/chat/tg_messages?after=' + _tgPollLastId);
       if (!r.ok) return;
-      var data = await r.json();
+      var data = await _safeJson(r);
       if (!data.messages || !data.messages.length) return;
       var msgs = document.getElementById('chat-messages');
       data.messages.forEach(function(m) {
@@ -5958,7 +5958,7 @@ async function chatRetrain() {
   msgs.scrollTop = msgs.scrollHeight;
   try {
     var r = await fetch('/retrain', {method: 'POST'});
-    var d = await r.json();
+    var d = await _safeJson(r);
     infoDiv.className = 'cm cm-tool-result';
     if (d.success !== false) {
       var cycles = (d.cycles_completed !== undefined) ? (' Циклов: ' + d.cycles_completed + '.') : '';
@@ -6011,7 +6011,7 @@ async function chatDescribeVisor() {
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({ url: visorUrl })
       });
-      var d = await r.json();
+      var d = await _safeJson(r);
       if (d.success && d.description) {
         description = 'Описание страницы ' + visorUrl + ':\n' + d.description;
         // Also attach screenshot as pending image for direct vision analysis
@@ -6086,7 +6086,7 @@ async function chatRunSearch(query) {
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ query: query, max_results: 5 })
     });
-    var d = await r.json();
+    var d = await _safeJson(r);
     if (!d.success || !d.results || !d.results.length) {
       infoDiv.className = 'cm cm-tool-result';
       infoDiv.textContent = '🔍 Поиск "' + query + '": результатов нет.';
@@ -6156,7 +6156,7 @@ async function chatRunResearch(query) {
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ query: query, max_results: 5, screenshots: doScreenshots, model: curModel })
     });
-    var d = await r.json();
+    var d = await _safeJson(r);
     if (!d.success) {
       infoDiv.className = 'cm cm-err';
       infoDiv.textContent = '⚠ Ошибка исследования: ' + (d.error || 'неизвестно');
@@ -6345,7 +6345,7 @@ async function chatRunCode() {
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ code: code, language: lang })
     });
-    var d = await r.json();
+    var d = await _safeJson(r);
     var out = (d.output || d.stdout || '').trim();
     var err = (d.error || d.stderr || '').trim();
     var resultText = '▶ Результат (' + lang + '):\n';
@@ -6457,6 +6457,21 @@ function toast(msg) {
   var t = document.getElementById('toast');
   t.textContent = msg; t.style.opacity = '1';
   clearTimeout(t._t); t._t = setTimeout(function(){ t.style.opacity='0'; }, 2800);
+}
+
+/**
+ * Safely parse JSON from a fetch Response.
+ * Throws a descriptive error when the server returns HTML or a non-JSON body
+ * (e.g. a Flask 500 page), preventing confusing "Unexpected token '<'" errors.
+ */
+async function _safeJson(r) {
+  var ct = r.headers.get('content-type') || '';
+  if (!ct.includes('application/json') && !ct.includes('text/json')) {
+    var preview = '';
+    try { preview = (await r.text()).slice(0, 150); } catch(_) {}
+    throw new Error('Сервер вернул не-JSON ответ (статус ' + r.status + ')' + (preview ? ': ' + preview : ''));
+  }
+  return r.json();
 }
 
 // F5 global
@@ -6655,8 +6670,8 @@ async function gltfGenerate() {
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({shape: _gltfCurrentShape, params: params, color: color})
     });
-    if (!r.ok) { var e = await r.json(); throw new Error(e.error || r.statusText); }
-    _gltfLastData = await r.json();
+    if (!r.ok) { var e = await _safeJson(r); throw new Error(e.error || r.statusText); }
+    _gltfLastData = await _safeJson(r);
     gltfShowInPreview(_gltfLastData, color);
     // Populate JSON editor
     var jsonEd = document.getElementById('gltf-json-editor');
@@ -7015,7 +7030,7 @@ async function gooseRun() {
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ instruction: instruction, project_dir: dir, timeout: timeout })
     });
-    var d = await r.json();
+    var d = await _safeJson(r);
     // ── Fallback to local LLM when Goose CLI is not installed ──────────────
     if (!d.ok && (d.error_code === 'GOOSE_NOT_FOUND' || (d.error && d.error.indexOf('not found in PATH') !== -1))) {
       if (statusEl) statusEl.textContent = '⚠ Goose не установлен → переключаюсь на локальный ИИ...';
@@ -7149,7 +7164,7 @@ async function oafSendTask() {
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(payload)
     });
-    var d = await r.json();
+    var d = await _safeJson(r);
     if (resultEl) {
       if (d.ok) {
         resultEl.textContent = '✅ Задача принята:\n' + JSON.stringify(d.data, null, 2);
@@ -7171,7 +7186,7 @@ async function saveTriposrUrl() {
   try {
     var r = await fetch('/settings', { method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ triposr_url: url }) });
-    var d = await r.json();
+    var d = await _safeJson(r);
     if (st) st.textContent = d.ok ? '✅ Сохранено' : ('⚠ ' + (d.error || 'Ошибка'));
   } catch(e) { if (st) st.textContent = '⚠ ' + e.message; }
 }
@@ -7180,7 +7195,7 @@ async function checkTriposrStatus() {
   if (st) st.textContent = '🔄 Проверка...';
   try {
     var r = await fetch('/health');
-    var d = await r.json();
+    var d = await _safeJson(r);
     var ts = d.triposr || {};
     if (st) st.textContent = ts.status === 'ok' ? '✅ Онлайн' :
       (ts.status === 'not_configured' ? '➖ Не настроен' : '⚠ Недоступен: ' + (ts.url || ''));
@@ -7194,7 +7209,7 @@ async function saveWebbuilderUrl() {
   try {
     var r = await fetch('/settings', { method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ webbuilder_url: url }) });
-    var d = await r.json();
+    var d = await _safeJson(r);
     if (st) st.textContent = d.ok ? '✅ Сохранено' : ('⚠ ' + (d.error || 'Ошибка'));
   } catch(e) { if (st) st.textContent = '⚠ ' + e.message; }
 }
@@ -7203,7 +7218,7 @@ async function checkWebbuilderStatus() {
   if (st) st.textContent = '🔄 Проверка...';
   try {
     var r = await fetch('/health');
-    var d = await r.json();
+    var d = await _safeJson(r);
     var ws = d.webbuilder || {};
     if (st) st.textContent = ws.status === 'ok' ? '✅ Онлайн' :
       (ws.status === 'not_configured' ? '➖ Не настроен (используется локальная ВМ)' : '⚠ Недоступен');
@@ -7217,7 +7232,7 @@ async function saveVideditorUrl() {
   try {
     var r = await fetch('/settings', { method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ videditor_url: url }) });
-    var d = await r.json();
+    var d = await _safeJson(r);
     if (st) st.textContent = d.ok ? '✅ Сохранено' : ('⚠ ' + (d.error || 'Ошибка'));
   } catch(e) { if (st) st.textContent = '⚠ ' + e.message; }
 }
@@ -7226,7 +7241,7 @@ async function checkVideditorStatus() {
   if (st) st.textContent = '🔄 Проверка...';
   try {
     var r = await fetch('/health');
-    var d = await r.json();
+    var d = await _safeJson(r);
     var vs = d.videditor || {};
     if (st) st.textContent = vs.status === 'ok' ? '✅ Онлайн' :
       (vs.status === 'not_configured' ? '➖ Не настроен (используется локальная ВМ)' : '⚠ Недоступен');
@@ -7266,7 +7281,7 @@ async function tdgenGenerate() {
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(payload)
     });
-    var d = await r.json();
+    var d = await _safeJson(r);
     if (d.ok && d.data) {
       var data = d.data;
       if (statusEl) statusEl.textContent = '✅ 3D модель сгенерирована!';
@@ -7335,7 +7350,7 @@ async function wbGenerate() {
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(payload)
     });
-    var d = await r.json();
+    var d = await _safeJson(r);
     if (d.ok && d.data) {
       var html = d.data.html || (typeof d.data === 'string' ? d.data : JSON.stringify(d.data, null, 2));
       _wbLastHtml = html;
@@ -7391,7 +7406,7 @@ async function veGenerate() {
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(payload)
     });
-    var d = await r.json();
+    var d = await _safeJson(r);
     if (d.ok && d.data) {
       var edl = d.data.edl || (typeof d.data === 'string' ? d.data : JSON.stringify(d.data, null, 2));
       _veLastEdl = edl;

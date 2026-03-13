@@ -70,6 +70,14 @@ from flask import Flask, Response, jsonify, redirect, request, send_from_directo
 app = Flask(__name__, static_folder="static")
 _log = logging.getLogger("CodeVM")
 
+
+@app.errorhandler(Exception)
+def _handle_unhandled_exception(exc):
+    """Return a JSON error response for any unhandled exception so the frontend
+    never receives an HTML 500 page that would cause JSON.parse to fail."""
+    _log.exception("Unhandled exception in request: %s", exc)
+    return jsonify({"ok": False, "error": str(exc)}), 500
+
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
@@ -157,6 +165,21 @@ _YT_VIDEO_ID_RE = re.compile(
     r'(?:youtube\.com/watch\?[^"\'>\s]*v=|youtu\.be/|youtube\.com/embed/)([A-Za-z0-9_-]{11})'
 )
 
+# LM Studio streaming timeout — long-running generations can exceed 4 minutes.
+# Override via LMS_TIMEOUT env var (seconds).  Falls back to OLLAMA_TIMEOUT if
+# that is set, otherwise defaults to 600 (10 minutes).
+try:
+    _LMS_TIMEOUT = int(
+        os.environ.get(
+            "LMS_TIMEOUT",
+            os.environ.get("OLLAMA_TIMEOUT", 600),
+        )
+    )
+except ValueError as _e:
+    raise ValueError(
+        f"Invalid LMS_TIMEOUT or OLLAMA_TIMEOUT environment variable: {_e}"
+    ) from _e
+
 # CORS relay port — a lightweight HTTP server on this port proxies /api/*
 # requests to OLLAMA_BASE with permissive CORS headers so Chrome extensions
 # (sidepanel, content scripts) can call Ollama directly from the browser
@@ -172,6 +195,9 @@ _OLLAMA_RELAY_PORT = int(os.environ.get("OLLAMA_RELAY_PORT", 11435))
 # and POST results back — no ngrok tunnel required on the local side.
 _remote_jobs: "dict[str, dict]" = {}   # job_id -> job dict
 _remote_jobs_lock = threading.Lock()
+
+# Lock protecting LM_STUDIO_BASE auto-discovery updates.
+_LMS_DISCOVER_LOCK = threading.Lock()
 
 # Heartbeat configuration
 _OLLAMA_HEARTBEAT_INTERVAL = 60   # seconds between liveness pings
@@ -201,6 +227,51 @@ _UPDATE_CMD_URL = (
     "try { irm https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/update.ps1 | iex }"
     " catch { irm https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/copilot/create-monaco-code-generator/update.ps1 | iex }"
 )
+
+
+def _resolve_lms_url() -> str:
+    """Return a working LM Studio base URL.
+
+    First tries the configured LM_STUDIO_BASE.  If it is unreachable or not
+    set, scans common local/LAN addresses and updates the global so subsequent
+    calls use the discovered address automatically.  Thread-safe: URL update
+    is protected by _LMS_DISCOVER_LOCK.
+    """
+    global LM_STUDIO_BASE  # noqa: PLW0603
+    # Quick probe of the current base (if set) — read without lock
+    _current = LM_STUDIO_BASE
+    if _current:
+        try:
+            r = _http.get(f"{_current}/v1/models", timeout=3)
+            if r.status_code == 200:
+                return _current
+        except Exception:  # pylint: disable=broad-except
+            pass
+    # Configured URL unreachable — scan well-known addresses under lock so only
+    # one thread performs discovery at a time.
+    with _LMS_DISCOVER_LOCK:
+        # Re-check after acquiring the lock: another thread may have updated it.
+        _current = LM_STUDIO_BASE
+        if _current:
+            try:
+                r = _http.get(f"{_current}/v1/models", timeout=3)
+                if r.status_code == 200:
+                    return _current
+            except Exception:  # pylint: disable=broad-except
+                pass
+        for _host in ("127.0.0.1", "localhost", "172.22.208.1", "172.22.0.1"):
+            for _port in (1234, 1235, 8080, 11434, 8000):
+                _url = f"http://{_host}:{_port}"
+                if _url == _current:
+                    continue  # already failed above
+                try:
+                    _r = _http.get(f"{_url}/v1/models", timeout=1)
+                    if _r.status_code == 200:
+                        LM_STUDIO_BASE = _url
+                        return _url
+                except Exception:  # pylint: disable=broad-except
+                    continue
+    return LM_STUDIO_BASE  # return original even if unreachable
 
 
 def _find_ollama_exe() -> "str | None":
@@ -1975,7 +2046,7 @@ def health():
     lms_models: list = []
     if LM_STUDIO_BASE:
         try:
-            lms_resp = _http.get(f"{LM_STUDIO_BASE}/v1/models", timeout=3)
+            lms_resp = _http.get(f"{LM_STUDIO_BASE}/v1/models", timeout=10)
             if lms_resp.status_code == 200:
                 lms_ok = True
                 lms_data = lms_resp.json()
@@ -3231,7 +3302,7 @@ def ollama_models():
     # --- LM Studio models (OpenAI-compatible /v1/models) ---
     if LM_STUDIO_BASE:
         try:
-            lms_resp = _http.get(f"{LM_STUDIO_BASE}/v1/models", timeout=3)
+            lms_resp = _http.get(f"{LM_STUDIO_BASE}/v1/models", timeout=10)
             lms_resp.raise_for_status()
             lms_models = [
                 f"{_LM_STUDIO_PREFIX}{m['id']}"
@@ -3267,7 +3338,12 @@ def ollama_models():
 
 @app.route("/lmstudio/models", methods=["GET"])
 def lmstudio_models():
-    """Return the list of models available in LM Studio (OpenAI-compatible /v1/models)."""
+    """Return the list of models available in LM Studio (OpenAI-compatible /v1/models).
+
+    If the configured URL is unreachable, the endpoint automatically falls back to
+    scanning common LM Studio addresses so the UI can reconnect without user action.
+    """
+    global LM_STUDIO_BASE  # noqa: PLW0603
     if not LM_STUDIO_BASE:
         return jsonify({"models": [], "available": False, "url": "", "error": "LM Studio URL not configured"})
     try:
@@ -3275,8 +3351,27 @@ def lmstudio_models():
         resp.raise_for_status()
         models = [m["id"] for m in resp.json().get("data", [])]
         return jsonify({"models": models, "available": bool(models), "url": LM_STUDIO_BASE})
-    except Exception as exc:  # pylint: disable=broad-except
-        return jsonify({"models": [], "available": False, "url": LM_STUDIO_BASE, "error": str(exc)})
+    except Exception:  # pylint: disable=broad-except
+        pass
+    # Configured URL unreachable — try common local/LAN addresses automatically
+    _fallback_candidates = []
+    for _host in ("127.0.0.1", "localhost", "172.22.208.1", "172.22.0.1", "192.168.1.1"):
+        for _port in (1234, 1235, 8080, 11434, 8000):
+            _url = f"http://{_host}:{_port}"
+            if _url != LM_STUDIO_BASE:
+                _fallback_candidates.append(_url)
+    for _url in _fallback_candidates:
+        try:
+            _r = _http.get(f"{_url}/v1/models", timeout=1)
+            if _r.status_code == 200:
+                _models = [m["id"] for m in _r.json().get("data", [])]
+                LM_STUDIO_BASE = _url  # auto-update for subsequent requests
+                return jsonify({"models": _models, "available": bool(_models), "url": _url,
+                                "auto_detected": True})
+        except Exception:  # pylint: disable=broad-except
+            continue
+    return jsonify({"models": [], "available": False, "url": LM_STUDIO_BASE,
+                    "error": "LM Studio недоступен по сохранённому адресу"})
 
 
 @app.route("/lmstudio/detect", methods=["GET"])
@@ -3387,7 +3482,7 @@ def vm_report():
     lms_models: list = []
     if LM_STUDIO_BASE:
         try:
-            r = _http.get(f"{LM_STUDIO_BASE}/v1/models", timeout=3)
+            r = _http.get(f"{LM_STUDIO_BASE}/v1/models", timeout=10)
             if r.status_code == 200:
                 lms_models = [m["id"] for m in r.json().get("data", [])]
                 lms_status = "ok"
@@ -4702,7 +4797,7 @@ def generate_html_stream():
 
     if is_lms_gen:
         real_model = model[len(_LM_STUDIO_PREFIX):]
-        lms_url    = LM_STUDIO_BASE
+        lms_url    = _resolve_lms_url()
 
         def _stream_lms_gen():
             if not lms_url:
@@ -4720,7 +4815,7 @@ def generate_html_stream():
                         "stream": True,
                     },
                     stream=True,
-                    timeout=int(os.environ.get("OLLAMA_TIMEOUT", 240)),
+                    timeout=_LMS_TIMEOUT,
                 )
                 resp.raise_for_status()
                 for raw_line in resp.iter_lines():
@@ -4904,7 +4999,7 @@ def generate_auto_stream():
     is_lms = model.startswith(_LM_STUDIO_PREFIX)
     if is_lms:
         real_model = model[len(_LM_STUDIO_PREFIX):]
-        lms_url    = LM_STUDIO_BASE
+        lms_url    = _resolve_lms_url()
 
         def _stream_lms_auto():
             if not lms_url:
@@ -4922,7 +5017,7 @@ def generate_auto_stream():
                         "stream": True,
                     },
                     stream=True,
-                    timeout=int(os.environ.get("OLLAMA_TIMEOUT", 240)),
+                    timeout=_LMS_TIMEOUT,
                 )
                 resp.raise_for_status()
                 for raw_line in resp.iter_lines():
@@ -4983,7 +5078,7 @@ def generate_auto_stream():
                         "stream": True,
                     },
                     stream=True,
-                    timeout=int(os.environ.get("OLLAMA_TIMEOUT", 240)),
+                    timeout=_LMS_TIMEOUT,
                 )
                 resp.raise_for_status()
                 for raw_line in resp.iter_lines():
@@ -5141,7 +5236,7 @@ def chat_stream():
                           "message": message, "history": history,
                           "system": system, "image_base64": image_base64},
                     stream=True,
-                    timeout=int(os.environ.get("OLLAMA_TIMEOUT", 240)),
+                    timeout=_LMS_TIMEOUT,
                 )
                 resp.raise_for_status()
                 for raw_line in resp.iter_lines():
@@ -5168,7 +5263,7 @@ def chat_stream():
     if is_lms:
         # LM Studio uses OpenAI-compatible /v1/chat/completions
         real_model = model[len(_LM_STUDIO_PREFIX):]
-        lms_url    = LM_STUDIO_BASE
+        lms_url    = _resolve_lms_url()
 
         # For OpenAI-compatible API, image must be in content array format
         if image_base64:
@@ -5188,7 +5283,7 @@ def chat_stream():
                     f"{lms_url}/v1/chat/completions",
                     json={"model": real_model, "messages": messages, "stream": True},
                     stream=True,
-                    timeout=int(os.environ.get("OLLAMA_TIMEOUT", 240)),
+                    timeout=_LMS_TIMEOUT,
                 )
                 resp.raise_for_status()
                 for raw_line in resp.iter_lines():
@@ -5241,7 +5336,7 @@ def chat_stream():
                     f"{tw_url}/v1/chat/completions",
                     json={"model": real_model, "messages": messages, "stream": True},
                     stream=True,
-                    timeout=int(os.environ.get("OLLAMA_TIMEOUT", 240)),
+                    timeout=_LMS_TIMEOUT,
                 )
                 resp.raise_for_status()
                 for raw_line in resp.iter_lines():
@@ -7772,7 +7867,7 @@ def browse_screenshot():
     # Fallback to LM Studio when no Ollama vision model is available
     if not selected_model and LM_STUDIO_BASE:
         try:
-            r = _http.get(f"{LM_STUDIO_BASE}/v1/models", timeout=3)
+            r = _http.get(f"{LM_STUDIO_BASE}/v1/models", timeout=10)
             if r.status_code == 200:
                 lms_models = r.json().get("data", [])
                 if lms_models:
@@ -8467,7 +8562,7 @@ def _best_vision_model() -> str:
     # 3. Fallback: try LM Studio — prefer models with known vision capability patterns
     if LM_STUDIO_BASE:
         try:
-            r = _http.get(f"{LM_STUDIO_BASE}/v1/models", timeout=3)
+            r = _http.get(f"{LM_STUDIO_BASE}/v1/models", timeout=10)
             if r.status_code == 200:
                 lms_models = r.json().get("data", [])
                 if lms_models:
@@ -8843,7 +8938,7 @@ def _generate_chrome_extension_files(model: str, prompt: str, name: str) -> dict
     is_lms = model.startswith(_LM_STUDIO_PREFIX)
     if is_lms:
         real_model = model[len(_LM_STUDIO_PREFIX):]
-        lms_url    = LM_STUDIO_BASE
+        lms_url    = _resolve_lms_url()
         resp = _http.post(
             f"{lms_url}/v1/chat/completions",
             json={
@@ -9188,7 +9283,7 @@ def project_generate():
             if is_lms:
                 # Route to LM Studio OpenAI-compatible API
                 real_model = model[len(_LM_STUDIO_PREFIX):]
-                lms_url    = LM_STUDIO_BASE
+                lms_url    = _resolve_lms_url()
                 if not lms_url:
                     return jsonify({"error": "LM Studio URL не настроен — укажите URL в настройках (☰)", "success": False})
                 resp = _http.post(
@@ -9201,7 +9296,7 @@ def project_generate():
                         ],
                         "stream": False,
                     },
-                    timeout=int(os.environ.get("OLLAMA_TIMEOUT", 240)),
+                    timeout=_LMS_TIMEOUT,
                 )
                 resp.raise_for_status()
                 raw = resp.json().get("choices", [{}])[0].get("message", {}).get("content", "")
@@ -9221,7 +9316,7 @@ def project_generate():
                         ],
                         "stream": False,
                     },
-                    timeout=int(os.environ.get("OLLAMA_TIMEOUT", 240)),
+                    timeout=_LMS_TIMEOUT,
                 )
                 resp.raise_for_status()
                 raw = resp.json().get("choices", [{}])[0].get("message", {}).get("content", "")
