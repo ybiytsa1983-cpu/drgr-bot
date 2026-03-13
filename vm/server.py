@@ -117,6 +117,14 @@ VISION_VM_URL = os.environ.get("VISION_VM_URL", "").rstrip("/")
 # Prefix used in model names to indicate the model lives on the Vision VM.
 _VISION_VM_PREFIX = "visionvm:"
 
+# CORS relay port — a lightweight HTTP server on this port proxies /api/*
+# requests to OLLAMA_BASE with permissive CORS headers so Chrome extensions
+# (sidepanel, content scripts) can call Ollama directly from the browser
+# without running into CORS restrictions.
+# Default: 11435  (Ollama default is 11434; +1 keeps it easy to remember).
+# Override via env var: OLLAMA_RELAY_PORT=0 to disable.
+_OLLAMA_RELAY_PORT = int(os.environ.get("OLLAMA_RELAY_PORT", 11435))
+
 # ---------------------------------------------------------------------------
 # Remote VM polling job queue
 # ---------------------------------------------------------------------------
@@ -319,9 +327,133 @@ def _ollama_heartbeat() -> None:
 
 threading.Thread(target=_ollama_heartbeat, daemon=True).start()
 
+
 # ---------------------------------------------------------------------------
-# Telegram bot process manager
+# Ollama CORS relay  (port 11435 by default)
 # ---------------------------------------------------------------------------
+# A minimal HTTP proxy that runs on _OLLAMA_RELAY_PORT.
+# It forwards /api/chat, /api/generate, /api/tags … to OLLAMA_BASE
+# and adds Access-Control-Allow-Origin: * to every response.
+#
+# Chrome extensions (sidepanel, content scripts) cannot call Ollama at
+# localhost:11434 directly because Chrome blocks mixed-content / CORS for
+# extension pages that have no declared host_permissions for that origin.
+# The relay lives at http://127.0.0.1:11435 and the extension declares
+# host_permissions for THAT origin — so the request succeeds.
+# ---------------------------------------------------------------------------
+def _start_ollama_cors_relay() -> None:
+    """Start a CORS-aware HTTP proxy for Ollama on _OLLAMA_RELAY_PORT."""
+    if _OLLAMA_RELAY_PORT == 0:
+        return  # disabled by user
+    import http.server as _hs
+    import socketserver as _ss
+    import urllib.request as _ur
+    import urllib.error as _ue
+
+    _ollama_relay_timeout = int(os.environ.get("OLLAMA_TIMEOUT", 240))
+
+    class _RelayHandler(_hs.BaseHTTPRequestHandler):
+        def log_message(self, _fmt, *_args):  # suppress access log
+            pass
+
+        def _send_cors_headers(self) -> None:
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+            self.send_header(
+                "Access-Control-Allow-Headers",
+                "Content-Type, Authorization, Accept",
+            )
+
+        def do_OPTIONS(self) -> None:          # pre-flight
+            self.send_response(204)
+            self._send_cors_headers()
+            self.end_headers()
+
+        def do_GET(self) -> None:
+            target = f"{OLLAMA_BASE}{self.path}"
+            try:
+                req = _ur.Request(target, headers={"Accept": "application/json"})
+                with _ur.urlopen(req, timeout=5) as resp:
+                    data = resp.read()
+                    ct = resp.headers.get("Content-Type", "application/json")
+                self.send_response(200)
+                self.send_header("Content-Type", ct)
+                self._send_cors_headers()
+                self.end_headers()
+                self.wfile.write(data)
+            except _ue.URLError as exc:
+                err = json.dumps({"error": str(exc)}).encode()
+                self.send_response(502)
+                self.send_header("Content-Type", "application/json")
+                self._send_cors_headers()
+                self.end_headers()
+                self.wfile.write(err)
+
+        def do_POST(self) -> None:
+            length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(length) if length > 0 else b""
+            target = f"{OLLAMA_BASE}{self.path}"
+            try:
+                req = _ur.Request(
+                    target,
+                    data=body,
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with _ur.urlopen(req, timeout=_ollama_relay_timeout) as resp:
+                    ct = resp.headers.get("Content-Type", "application/json")
+                    self.send_response(200)
+                    self.send_header("Content-Type", ct)
+                    self._send_cors_headers()
+                    self.end_headers()
+                    # Stream chunks as they arrive so /api/chat stream works
+                    while True:
+                        chunk = resp.read(4096)
+                        if not chunk:
+                            break
+                        self.wfile.write(chunk)
+                        self.wfile.flush()
+            except _ue.URLError as exc:
+                err = json.dumps({"error": str(exc)}).encode()
+                self.send_response(502)
+                self.send_header("Content-Type", "application/json")
+                self._send_cors_headers()
+                self.end_headers()
+                self.wfile.write(err)
+            except Exception as exc:  # pylint: disable=broad-except
+                err = json.dumps({"error": str(exc)}).encode()
+                try:
+                    self.send_response(500)
+                    self.send_header("Content-Type", "application/json")
+                    self._send_cors_headers()
+                    self.end_headers()
+                    self.wfile.write(err)
+                except Exception:  # pylint: disable=broad-except
+                    pass
+
+    class _ThreadingServer(_ss.ThreadingMixIn, _ss.TCPServer):
+        allow_reuse_address = True
+        daemon_threads = True
+
+    try:
+        relay_server = _ThreadingServer(("127.0.0.1", _OLLAMA_RELAY_PORT), _RelayHandler)
+        print(
+            f"[Code VM] Ollama CORS relay started on http://127.0.0.1:{_OLLAMA_RELAY_PORT}"
+            " — Chrome extensions can call Ollama through this address.",
+            flush=True,
+        )
+        relay_server.serve_forever()
+    except OSError as exc:
+        print(
+            f"[Code VM] Could not start Ollama CORS relay on port {_OLLAMA_RELAY_PORT}: {exc}"
+            " — Chrome extensions may encounter CORS errors when calling Ollama.",
+            flush=True,
+        )
+
+
+threading.Thread(target=_start_ollama_cors_relay, daemon=True).start()
+
+
 # server.py manages the lifecycle of bot.py so that saving a new token via
 # POST /settings immediately restarts the bot with the updated credential.
 
@@ -1733,12 +1865,29 @@ def health():
         except Exception:  # pylint: disable=broad-except
             pass
 
+    # --- Ollama CORS relay ---
+    relay_ok = False
+    if _OLLAMA_RELAY_PORT > 0:
+        try:
+            import urllib.request as _ur
+            with _ur.urlopen(
+                f"http://127.0.0.1:{_OLLAMA_RELAY_PORT}/api/tags", timeout=2
+            ) as _rr:
+                relay_ok = _rr.status == 200
+        except Exception:  # pylint: disable=broad-except
+            pass
+
     return jsonify({
         "vm":     {"status": "ok"},
         "ollama": {
             "status": "ok" if ollama_ok else "unreachable",
             "url":    OLLAMA_BASE,
             "models": ollama_models,
+        },
+        "ollama_relay": {
+            "status": "ok" if relay_ok else ("disabled" if _OLLAMA_RELAY_PORT == 0 else "starting"),
+            "port":   _OLLAMA_RELAY_PORT,
+            "url":    f"http://127.0.0.1:{_OLLAMA_RELAY_PORT}" if _OLLAMA_RELAY_PORT > 0 else "",
         },
         "lm_studio": {
             "status":  "ok" if lms_ok else ("unreachable" if LM_STUDIO_BASE else "not_configured"),
@@ -2502,6 +2651,7 @@ def get_settings():
         "remote_vm_url": REMOTE_VM_URL,
         "vision_vm_url": VISION_VM_URL,
         "bot_token_set": bot_token_set,
+        "ollama_relay_port": _OLLAMA_RELAY_PORT,
     })
 
 
@@ -6369,6 +6519,18 @@ def _generate_chrome_extension_files(model: str, prompt: str, name: str) -> dict
         "no incomplete blocks, no comments saying 'add code here'.\n"
         "3. ALL functions must have REAL implementations — not just console.log or empty bodies.\n"
         "\n"
+        "ARCHITECTURE — MV3 background relay for streaming (CORS bypass):\n"
+        "   Sidepanel cannot call Ollama directly due to CORS. Use background.js as relay:\n"
+        "   sidepanel.js opens a long-lived port: chrome.runtime.connect({name:'ollama_stream'})\n"
+        "   then posts {type:'OLLAMA_CHAT', model, messages, images?} to the port.\n"
+        "   background.js listens on that port, fetches from\n"
+        f"   http://127.0.0.1:{_OLLAMA_RELAY_PORT}/api/chat with stream:true,\n"
+        "   reads via response.body.getReader(), splits on '\\n', parses JSON,\n"
+        "   extracts token = json.message?.content || json.response || ''\n"
+        "   and relays each token back via port.postMessage({token}).\n"
+        "   On finish (json.done === true) sends port.postMessage({done:true}).\n"
+        "   On error sends port.postMessage({error: e.message}).\n"
+        "\n"
         "REQUIRED FEATURES — IMPLEMENT ALL:\n"
         "A. sidepanel.html — complete dark-themed UI with:\n"
         "   - Header with extension name, model selector (gemma3:4b, qwen2.5:3b, llava:7b), status dot\n"
@@ -6381,14 +6543,15 @@ def _generate_chrome_extension_files(model: str, prompt: str, name: str) -> dict
         "   - Uses sidepanel.js (separate file referenced with <script src='sidepanel.js'>)\n"
         "\n"
         "B. sidepanel.js — COMPLETE JavaScript implementing ALL of the following:\n"
-        "   - sendMessage(): POST to http://localhost:11434/api/chat with stream:true,\n"
-        "     read chunks via response.body.getReader(), parse JSON, append tokens\n"
+        "   - sendMessage(text, model, images?): open port via chrome.runtime.connect({name:'ollama_stream'}),\n"
+        "     post {type:'OLLAMA_CHAT', model, messages:[{role:'user',content:text}], images},\n"
+        "     port.onMessage: append token, on done hideTyping, on error show error\n"
         "   - capturePageScreenshot(): chrome.runtime.sendMessage({type:'CAPTURE_SCREENSHOT'}),\n"
         "     receive dataUrl, display preview, send to Ollama llava/gemma3 for description\n"
         "   - getPageText(): chrome.tabs.query({active:true,currentWindow:true}), then\n"
         "     chrome.scripting.executeScript to get document.body.innerText\n"
         "   - getPageHTML(): executeScript to get document.documentElement.outerHTML\n"
-        "   - describeImage(base64): POST to Ollama with images array for vision description\n"
+        "   - describeImage(base64): POST via port to background.js with images array for vision description\n"
         "   - handleFileAttach(file): FileReader to read as DataURL if image, as text otherwise\n"
         "   - appendMessage(role, content): creates styled bubble in #messages div\n"
         "   - showTyping() / hideTyping(): typing indicator in chat\n"
@@ -6400,6 +6563,10 @@ def _generate_chrome_extension_files(model: str, prompt: str, name: str) -> dict
         "   - chrome.action.onClicked: opens side panel for the tab\n"
         "   - chrome.runtime.onMessage for 'CAPTURE_SCREENSHOT': chrome.tabs.captureVisibleTab\n"
         "   - chrome.runtime.onMessage for 'GET_PAGE_TEXT': chrome.scripting.executeScript\n"
+        "   - chrome.runtime.onConnect for port name 'ollama_stream': handle OLLAMA_CHAT messages,\n"
+        f"     fetch http://127.0.0.1:{_OLLAMA_RELAY_PORT}/api/chat POST stream:true,\n"
+        "     read via response.body.getReader(), split lines, parse JSON,\n"
+        "     relay tokens via port.postMessage({token}) and port.postMessage({done:true})\n"
         "\n"
         "D. content.js — COMPLETE content script:\n"
         "   - chrome.runtime.onMessage for 'GET_TEXT': returns document.body.innerText\n"
@@ -6410,7 +6577,7 @@ def _generate_chrome_extension_files(model: str, prompt: str, name: str) -> dict
         "   - chrome.runtime.onMessage for 'CLICK_ELEMENT': click on matching element\n"
         "\n"
         "E. manifest.json — Manifest V3 with permissions: sidePanel, activeTab, scripting,\n"
-        "   tabs, storage; host_permissions: <all_urls>\n"
+        f"   tabs, storage; host_permissions: [\"<all_urls>\", \"http://127.0.0.1:{_OLLAMA_RELAY_PORT}/*\"]\n"
         "\n"
         "Output EXACTLY these 5 files. Each file preceded by === filename === on its own line,\n"
         "then immediately a fenced code block (```json / ```html / ```javascript).\n"
@@ -6487,21 +6654,78 @@ def _generate_chrome_extension_files(model: str, prompt: str, name: str) -> dict
             "version": "1.0",
             "description": prompt[:120],
             "permissions": ["sidePanel", "activeTab", "scripting", "tabs", "storage"],
-            "host_permissions": ["<all_urls>"],
+            "host_permissions": ["<all_urls>", f"http://127.0.0.1:{_OLLAMA_RELAY_PORT}/*"],
             "background": {"service_worker": "background.js"},
             "content_scripts": [{"matches": ["<all_urls>"], "js": ["content.js"]}],
             "side_panel": {"default_path": "sidepanel.html"},
             "action": {"default_title": ext_name},
         }, ensure_ascii=False, indent=2)
 
-    # Ensure background.js with correct sidePanel registration
+    # Ensure background.js with correct sidePanel registration and Ollama streaming relay
     if "background.js" not in files:
         files["background.js"] = (
             "// Service Worker — Chrome Extension Manifest V3\n"
+            "// Relays streaming Ollama requests from sidepanel via long-lived port\n"
+            "// to avoid CORS restrictions in the extension side panel.\n\n"
             "chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });\n\n"
             "chrome.action.onClicked.addListener(function(tab) {\n"
             "  chrome.sidePanel.open({ tabId: tab.id });\n"
             "});\n\n"
+            "// Long-lived port relay for streaming /api/chat responses\n"
+            "chrome.runtime.onConnect.addListener(function(port) {\n"
+            "  if (port.name !== 'ollama_stream') return;\n"
+            "  port.onMessage.addListener(async function(msg) {\n"
+            "    if (msg.type !== 'OLLAMA_CHAT') return;\n"
+            "    var ollamaUrl = msg.ollamaUrl ||\n"
+            f"      'http://127.0.0.1:{_OLLAMA_RELAY_PORT}/api/chat';\n"
+            "    try {\n"
+            "      var body = JSON.stringify({\n"
+            "        model: msg.model || 'gemma3:4b',\n"
+            "        messages: msg.messages || [{role:'user', content: msg.message || ''}],\n"
+            "        stream: true\n"
+            "      });\n"
+            "      if (msg.images && msg.images.length) {\n"
+            "        var parsed = JSON.parse(body);\n"
+            "        parsed.messages[parsed.messages.length - 1].images = msg.images;\n"
+            "        body = JSON.stringify(parsed);\n"
+            "      }\n"
+            "      var resp = await fetch(ollamaUrl, {\n"
+            "        method: 'POST',\n"
+            "        headers: { 'Content-Type': 'application/json' },\n"
+            "        body: body\n"
+            "      });\n"
+            "      if (!resp.ok) {\n"
+            "        port.postMessage({ error: 'HTTP ' + resp.status });\n"
+            "        return;\n"
+            "      }\n"
+            "      var reader = resp.body.getReader();\n"
+            "      var decoder = new TextDecoder();\n"
+            "      var buf = '';\n"
+            "      while (true) {\n"
+            "        var _r = await reader.read();\n"
+            "        if (_r.done) break;\n"
+            "        buf += decoder.decode(_r.value, { stream: true });\n"
+            "        var lines = buf.split('\\n');\n"
+            "        buf = lines.pop();\n"
+            "        for (var i = 0; i < lines.length; i++) {\n"
+            "          var line = lines[i].trim();\n"
+            "          if (!line) continue;\n"
+            "          try {\n"
+            "            var json = JSON.parse(line);\n"
+            "            var token = (json.message && json.message.content) ||\n"
+            "                        json.response || '';\n"
+            "            if (token) port.postMessage({ token: token });\n"
+            "            if (json.done) { port.postMessage({ done: true }); return; }\n"
+            "          } catch (e) { /* skip malformed line */ }\n"
+            "        }\n"
+            "      }\n"
+            "      port.postMessage({ done: true });\n"
+            "    } catch (e) {\n"
+            "      port.postMessage({ error: e.message });\n"
+            "    }\n"
+            "  });\n"
+            "});\n\n"
+            "// One-shot message handlers (screenshot, page text, etc.)\n"
             "chrome.runtime.onMessage.addListener(function(msg, sender, sendResponse) {\n"
             "  if (msg.type === 'CAPTURE_SCREENSHOT') {\n"
             "    chrome.tabs.captureVisibleTab(null, { format: 'jpeg', quality: 80 },\n"
@@ -6580,11 +6804,21 @@ def _generate_chrome_extension_files(model: str, prompt: str, name: str) -> dict
         "- 📋 **HTML структура** — полный HTML для анализа\n"
         "- 💾 **История чата** — сохраняется в chrome.storage.local\n\n"
         "## Требования\n\n"
+        "Запустите **drgr-bot VM** (он автоматически запускает CORS-релей на порту "
+        f"{_OLLAMA_RELAY_PORT}):\n"
+        "```\n"
+        "python vm/server.py\n"
+        "```\n\n"
         "Ollama должна быть запущена: `ollama serve`\n\n"
         "Рекомендуемые модели:\n"
         "- `ollama pull gemma3:4b` — чат\n"
         "- `ollama pull llava:7b` — анализ изображений\n"
         "- `ollama pull qwen2.5:3b` — код\n\n"
+        "## Архитектура (CORS relay)\n\n"
+        "Расширение общается с Ollama через фоновый скрипт (background.js),\n"
+        "который подключается к CORS-релею на `http://127.0.0.1:"
+        f"{_OLLAMA_RELAY_PORT}` — он запускается автоматически вместе с VM-сервером.\n"
+        "Это позволяет стримить токены прямо в боковой панели без ошибок CORS.\n\n"
         "## Файлы\n\n"
         + "\n".join(f"- `{f}`" for f in files.keys() if f != "README.md")
         + "\n"
