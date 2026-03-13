@@ -482,11 +482,12 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
 
     <!-- Model -->
     <div>
-      <div class="pl">🤖 Модель Qwen / Ollama</div>
+      <div class="pl">🤖 Модель Ollama / LM Studio</div>
       <div class="pr">
         <select id="sel-model" onchange="curModel=this.value;updateBadge()"><option value="">загрузка...</option></select>
         <button class="pb pb-m" onclick="loadModels()">↻</button>
       </div>
+      <div style="font-size:10px;color:var(--text2)">Модели Ollama и LM Studio (с префиксом <b>lmstudio:</b>) — настройте URL LM Studio выше</div>
     </div>
 
     <!-- System prompt -->
@@ -1286,7 +1287,9 @@ async function initMonaco() {
         + 'color:#7fc27f;font-size:11px;font-family:monospace;'
         + 'border-bottom:1px solid #2a3a2a;';
       notice.innerHTML = '⚠ Monaco offline — простой редактор активен. '
-        + 'Для полного Monaco: Windows: <code>vm/bundle_monaco.ps1</code> | Linux/macOS: <code>bash vm/bundle_monaco.sh</code>';
+        + 'Для полного Monaco (запускать из папки проекта): '
+        + 'Windows: <code>.\\vm\\bundle_monaco.ps1</code> &nbsp;·&nbsp; '
+        + 'Linux/macOS: <code>bash vm/bundle_monaco.sh</code>';
       var ta = document.createElement('textarea');
       ta.id = 'editor-textarea';
       ta.spellcheck = false;
