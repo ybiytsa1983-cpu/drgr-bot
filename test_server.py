@@ -168,6 +168,14 @@ def run_all() -> None:
     r = client.post("/bot/test", json={})
     ok("POST /bot/test (no token → ok=False)", r.status_code == 200 and not r.get_json().get("ok"))
 
+    # ── /bundle_monaco ───────────────────────────────────────────────────────
+    print("\n[POST /bundle_monaco]")
+    r = client.post("/bundle_monaco")
+    d = r.get_json() or {}
+    ok("POST /bundle_monaco → 200",    r.status_code == 200)
+    ok("POST /bundle_monaco has ok",   "ok" in d)
+    ok("POST /bundle_monaco has msg",  "message" in d)
+
     # ── _is_chrome_extension_request (internal helper) ────────────────────────
     print("\n[_is_chrome_extension_request helper]")
     ok("ext detect — chrome extension",  server._is_chrome_extension_request("create a chrome extension"))

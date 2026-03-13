@@ -1285,11 +1285,37 @@ async function initMonaco() {
       var notice = document.createElement('div');
       notice.style.cssText = 'flex-shrink:0;padding:5px 10px;background:#1a3a1a;'
         + 'color:#7fc27f;font-size:11px;font-family:monospace;'
-        + 'border-bottom:1px solid #2a3a2a;';
+        + 'border-bottom:1px solid #2a3a2a;display:flex;align-items:center;gap:10px;flex-wrap:wrap;';
       notice.innerHTML = '⚠ Monaco offline — простой редактор активен. '
-        + 'Для полного Monaco (запускать из папки проекта): '
+        + 'Для полного Monaco: '
         + 'Windows: <code>.\\vm\\bundle_monaco.ps1</code> &nbsp;·&nbsp; '
         + 'Linux/macOS: <code>bash vm/bundle_monaco.sh</code>';
+      var bundleBtn = document.createElement('button');
+      bundleBtn.textContent = '📦 Скачать Monaco';
+      bundleBtn.style.cssText = 'background:#2a5a2a;color:#7fc27f;border:1px solid #3a7a3a;'
+        + 'border-radius:3px;padding:2px 8px;cursor:pointer;font-size:11px;font-family:monospace;white-space:nowrap;';
+      bundleBtn.onclick = async function() {
+        bundleBtn.textContent = '⏳ Скачивание...';
+        bundleBtn.disabled = true;
+        try {
+          var r = await fetch('/bundle_monaco', {method:'POST'});
+          var d = await r.json();
+          if (d.ok) {
+            notice.innerHTML = '✓ Monaco скачан! <b>Перезагрузите страницу (F5)</b> для активации.';
+          } else {
+            notice.innerHTML = '✗ Ошибка: ' + (d.message||'не удалось скачать') + ' — запустите скрипт вручную';
+            notice.appendChild(bundleBtn);
+            bundleBtn.textContent = '↺ Повторить';
+            bundleBtn.disabled = false;
+          }
+        } catch(e) {
+          notice.innerHTML = '✗ Ошибка сети: ' + (e.message || String(e)) + ' — запустите скрипт вручную';
+          notice.appendChild(bundleBtn);
+          bundleBtn.textContent = '↺ Повторить';
+          bundleBtn.disabled = false;
+        }
+      };
+      notice.appendChild(bundleBtn);
       var ta = document.createElement('textarea');
       ta.id = 'editor-textarea';
       ta.spellcheck = false;

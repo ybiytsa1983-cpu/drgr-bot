@@ -1593,6 +1593,41 @@ def chatroom_redirect():
     return redirect("/chatroom/page")
 
 
+@app.route("/bundle_monaco", methods=["POST"])
+def bundle_monaco():
+    """Download Monaco Editor files for offline use by running the bundling script."""
+    import platform as _platform
+    import subprocess as _sp
+
+    vendor_dir = os.path.join(_DIR, "static", "vendor", "monaco", "vs")
+    loader_path = os.path.join(vendor_dir, "loader.js")
+
+    # Already bundled?
+    if os.path.isfile(loader_path):
+        return jsonify({"ok": True, "message": "Monaco уже скачан"})
+
+    try:
+        if _platform.system() == "Windows":
+            script = os.path.join(_DIR, "bundle_monaco.ps1")
+            cmd = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script]
+        else:
+            script = os.path.join(_DIR, "bundle_monaco.sh")
+            cmd = ["bash", script]
+
+        result = _sp.run(cmd, capture_output=True, text=True, timeout=120)
+        ok = result.returncode == 0 and os.path.isfile(loader_path)
+        return jsonify({
+            "ok": ok,
+            "message": "Monaco успешно скачан — перезагрузите страницу" if ok else "Не удалось скачать Monaco",
+            "stdout": result.stdout[-1000:] if result.stdout else "",
+            "stderr": result.stderr[-500:] if result.stderr else "",
+        })
+    except _sp.TimeoutExpired:
+        return jsonify({"ok": False, "message": "Время вышло при скачивании Monaco (>120 с) — попробуйте позже"})
+    except Exception as exc:  # pylint: disable=broad-except
+        return jsonify({"ok": False, "message": str(exc)})
+
+
 @app.route("/ping", methods=["GET"])
 def ping():
     """Instant liveness probe — returns immediately without any external calls."""
@@ -2968,6 +3003,9 @@ def ollama_ask_stream():
                 if chunk.get("done"):
                     yield "data: [DONE]\n\n"
                     return
+        except _http.exceptions.Timeout:
+            _oto = int(os.environ.get("OLLAMA_TIMEOUT", 120))
+            yield f'data: {{"error":"Ollama не ответил за {_oto} с — модель слишком медленная. Попробуйте увеличить OLLAMA_TIMEOUT или выбрать меньшую модель."}}\n\n'
         except _http.exceptions.ConnectionError:
             yield 'data: {"error":"Cannot connect to Ollama — is \'ollama serve\' running?"}\n\n'
         except Exception as exc:  # pylint: disable=broad-except
@@ -3025,6 +3063,9 @@ def ollama_pull():
                     })
                     yield f"data: {payload}\n\n"
             yield "data: {\"status\":\"done\",\"percent\":100}\n\n"
+        except _http.exceptions.Timeout:
+            _oto = int(os.environ.get("OLLAMA_TIMEOUT", 120))
+            yield f'data: {{"error":"Ollama не ответил за {_oto} с — модель слишком медленная. Попробуйте увеличить OLLAMA_TIMEOUT или выбрать меньшую модель."}}\n\n'
         except _http.exceptions.ConnectionError:
             yield "data: {\"error\":\"Cannot connect to Ollama\"}\n\n"
         except Exception as exc:  # pylint: disable=broad-except
@@ -3173,6 +3214,9 @@ def ollama_create():
                     yield f"data: {json.dumps({'status': obj.get('status', ''), 'error': obj.get('error', '')})}\n\n"
             _done_msg = f"Model '{name}' created successfully!"
             yield f"data: {json.dumps({'status': _done_msg, 'done': True})}\n\n"
+        except _http.exceptions.Timeout:
+            _oto = int(os.environ.get("OLLAMA_TIMEOUT", 120))
+            yield f'data: {{"error":"Ollama не ответил за {_oto} с — модель слишком медленная. Попробуйте увеличить OLLAMA_TIMEOUT или выбрать меньшую модель."}}\n\n'
         except _http.exceptions.ConnectionError:
             yield "data: {\"error\":\"Cannot connect to Ollama\"}\n\n"
         except Exception as exc:  # pylint: disable=broad-except
@@ -3477,6 +3521,9 @@ def generate_html_stream():
                         _record_generation("html", model, prompt)
                         yield "data: [DONE]\n\n"
                         return
+            except _http.exceptions.Timeout:
+                _oto = int(os.environ.get("OLLAMA_TIMEOUT", 120))
+                yield f'data: {{"error":"Нет ответа от LM Studio за {_oto} с — модель слишком медленная."}}\n\n'
             except _http.exceptions.ConnectionError:
                 yield f'data: {json.dumps({"error": f"Нет соединения с LM Studio по адресу {lms_url}"})}\n\n'
             except Exception as exc:  # pylint: disable=broad-except
@@ -3520,6 +3567,9 @@ def generate_html_stream():
                     _record_generation("html", model, prompt)
                     yield "data: [DONE]\n\n"
                     return
+        except _http.exceptions.Timeout:
+            _oto = int(os.environ.get("OLLAMA_TIMEOUT", 120))
+            yield f'data: {{"error":"Ollama не ответил за {_oto} с — модель слишком медленная. Попробуйте увеличить OLLAMA_TIMEOUT или выбрать меньшую модель."}}\n\n'
         except _http.exceptions.ConnectionError:
             yield 'data: {"error":"Нет соединения с Ollama — запустите \'ollama serve\'"}\n\n'
         except Exception as exc:  # pylint: disable=broad-except
@@ -3673,6 +3723,9 @@ def generate_auto_stream():
                         _record_generation("auto", model, prompt)
                         yield "data: [DONE]\n\n"
                         return
+            except _http.exceptions.Timeout:
+                _oto = int(os.environ.get("OLLAMA_TIMEOUT", 120))
+                yield f'data: {{"error":"Нет ответа от LM Studio за {_oto} с — модель слишком медленная."}}\n\n'
             except _http.exceptions.ConnectionError:
                 yield f'data: {json.dumps({"error": f"Нет соединения с LM Studio по адресу {lms_url}"})}\n\n'
             except Exception as exc:  # pylint: disable=broad-except
@@ -3718,6 +3771,9 @@ def generate_auto_stream():
                     _record_generation("auto", model, prompt)
                     yield "data: [DONE]\n\n"
                     return
+        except _http.exceptions.Timeout:
+            _oto = int(os.environ.get("OLLAMA_TIMEOUT", 120))
+            yield f'data: {{"error":"Ollama не ответил за {_oto} с — модель слишком медленная. Попробуйте увеличить OLLAMA_TIMEOUT или выбрать меньшую модель."}}\n\n'
         except _http.exceptions.ConnectionError:
             yield 'data: {"error":"Нет соединения с Ollama — запустите \'ollama serve\'"}\n\n'
         except Exception as exc:  # pylint: disable=broad-except
@@ -3809,6 +3865,9 @@ def chat_stream():
                     yield f"{line_str}\n\n"
                     if "[DONE]" in line_str:
                         return
+            except _http.exceptions.Timeout:
+                _oto = int(os.environ.get("OLLAMA_TIMEOUT", 120))
+                yield f'data: {{"error":"Нет ответа от Remote VM за {_oto} с — модель слишком медленная."}}\n\n'
             except _http.exceptions.ConnectionError:
                 yield f'data: {json.dumps({"error": f"Нет соединения с Remote VM по адресу {rvm_url}"})}\n\n'
             except Exception as exc:  # pylint: disable=broad-except
@@ -3868,6 +3927,9 @@ def chat_stream():
                     if finish:
                         yield "data: [DONE]\n\n"
                         return
+            except _http.exceptions.Timeout:
+                _oto = int(os.environ.get("OLLAMA_TIMEOUT", 120))
+                yield f'data: {{"error":"Нет ответа от LM Studio за {_oto} с — модель слишком медленная."}}\n\n'
             except _http.exceptions.ConnectionError:
                 yield f'data: {json.dumps({"error": f"Нет соединения с LM Studio по адресу {lms_url}"})}\n\n'
             except Exception as exc:  # pylint: disable=broad-except
@@ -3911,6 +3973,9 @@ def chat_stream():
                 if chunk.get("done"):
                     yield "data: [DONE]\n\n"
                     return
+        except _http.exceptions.Timeout:
+            _oto = int(os.environ.get("OLLAMA_TIMEOUT", 120))
+            yield f'data: {{"error":"Ollama не ответил за {_oto} с — модель слишком медленная. Попробуйте увеличить OLLAMA_TIMEOUT или выбрать меньшую модель."}}\n\n'
         except _http.exceptions.ConnectionError:
             yield 'data: {"error":"Нет соединения с Ollama — запустите \'ollama serve\'"}\n\n'
         except Exception as exc:  # pylint: disable=broad-except
@@ -4218,6 +4283,9 @@ def patch_stream():
                     _record_generation("patch", model, prompt)
                     yield "data: [DONE]\n\n"
                     return
+        except _http.exceptions.Timeout:
+            _oto = int(os.environ.get("OLLAMA_TIMEOUT", 120))
+            yield f'data: {{"error":"Ollama не ответил за {_oto} с — модель слишком медленная. Попробуйте увеличить OLLAMA_TIMEOUT или выбрать меньшую модель."}}\n\n'
         except _http.exceptions.ConnectionError:
             yield 'data: {"error":"Нет соединения с Ollama — запустите \'ollama serve\'"}\n\n'
         except Exception as exc:  # pylint: disable=broad-except
@@ -5616,6 +5684,9 @@ def create_visor_vm():
                     yield f"data: {json.dumps({'status': status, 'error': error})}\n\n"
             _done_status = f"✅ Модель '{model_name}' создана! Используй её в настройках как '{model_name}'"
             yield f"data: {json.dumps({'status': _done_status, 'done': True})}\n\n"
+        except _http.exceptions.Timeout:
+            _oto = int(os.environ.get("OLLAMA_TIMEOUT", 120))
+            yield f'data: {{"error":"Ollama не ответил за {_oto} с — модель слишком медленная. Попробуйте увеличить OLLAMA_TIMEOUT или выбрать меньшую модель."}}\n\n'
         except _http.exceptions.ConnectionError:
             yield "data: {\"error\":\"Cannot connect to Ollama — убедись что Ollama запущена\"}\n\n"
         except Exception as exc:  # pylint: disable=broad-except
