@@ -8324,6 +8324,33 @@ def _research_build_html(title: str, body_text: str, sources: list, screenshot_u
     """Build a self-contained professional HTML research article with gallery, Chart.js, video, and action buttons."""
     esc = _research_html_escape
 
+    # ── Reading-time / stats ──────────────────────────────────────────────
+    word_count = len(body_text.split())
+    reading_min = max(1, word_count // 200)
+    h2_headings = [line[3:].strip() for line in body_text.splitlines() if line.startswith("## ")]
+    stats_html = (
+        '<div class="article-stats">\n'
+        f'<span>⏱ Время чтения: <strong>~{reading_min} мин</strong></span>\n'
+        f'<span>📝 Слов: <strong>{word_count}</strong></span>\n'
+        f'<span>📚 Источников: <strong>{len(sources)}</strong></span>\n'
+        f'<span>📸 Иллюстраций: <strong>{len(screenshot_uris)}</strong></span>\n'
+        '</div>\n'
+    )
+
+    # ── Table of contents ─────────────────────────────────────────────────
+    toc_html = ""
+    if h2_headings:
+        toc_items = "".join(
+            f'<li><a href="#section-{i}">{esc(h)}</a></li>\n'
+            for i, h in enumerate(h2_headings)
+        )
+        toc_html = (
+            '<nav class="toc">\n'
+            '<h3>📋 Содержание</h3>\n'
+            f'<ol>{toc_items}</ol>\n'
+            '</nav>\n'
+        )
+
     # ── Photo gallery ─────────────────────────────────────────────────────
     gallery_items = ""
     for i, uri in enumerate(screenshot_uris):
@@ -8369,8 +8396,9 @@ def _research_build_html(title: str, body_text: str, sources: list, screenshot_u
             sections_html += _flush_para(current_para)
             current_para = []
             icon = _section_icons[_sec_idx % len(_section_icons)]
+            anchor_id = f"section-{_sec_idx}"
             _sec_idx += 1
-            sections_html += f"<h2>{icon} {esc(line[3:].strip())}</h2>\n"
+            sections_html += f'<h2 id="{anchor_id}">{icon} {esc(line[3:].strip())}</h2>\n'
         elif line.startswith("# "):
             sections_html += _flush_para(current_para)
             current_para = []
@@ -8503,11 +8531,19 @@ def _research_build_html(title: str, body_text: str, sources: list, screenshot_u
         "article{background:var(--card);padding:36px;border-radius:12px;"
         "box-shadow:0 4px 20px rgba(0,0,0,.10);max-width:960px;margin:0 auto}"
         "h1{font-size:2em;margin-bottom:8px;color:var(--accent);border-bottom:3px solid var(--accent2);padding-bottom:10px}"
-        "h2{font-size:1.25em;margin:28px 0 10px;color:var(--accent2);display:flex;align-items:center;gap:6px}"
+        "h2{font-size:1.25em;margin:28px 0 10px;color:var(--accent2);display:flex;align-items:center;gap:6px;scroll-margin-top:80px}"
         "p{line-height:1.75;margin:0 0 14px;color:#333}"
         "a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}"
         ".art-list{margin:8px 0 14px 0;padding-left:1.5em}"
         ".art-list li{margin:4px 0;line-height:1.6}"
+        ".article-stats{display:flex;gap:16px;flex-wrap:wrap;padding:10px 16px;margin:12px 0 20px;"
+        "background:#e8f4fd;border-radius:8px;font-size:.9em;color:#444;border:1px solid #c5ddf0}"
+        ".article-stats span{white-space:nowrap}"
+        ".toc{background:#f8f9ff;border:1px solid #dde4f5;border-radius:8px;padding:14px 20px;"
+        "margin:16px 0 28px;display:inline-block;min-width:200px}"
+        ".toc h3{margin:0 0 8px;font-size:1em;color:var(--accent)}"
+        ".toc ol{margin:0;padding-left:1.4em}"
+        ".toc li{margin:3px 0;font-size:.92em}"
         ".gallery{margin:32px 0}"
         ".gallery-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}"
         ".gallery-item{background:#f9f9f9;border-radius:10px;overflow:hidden;transition:transform .2s;"
@@ -8538,7 +8574,7 @@ def _research_build_html(title: str, body_text: str, sources: list, screenshot_u
         "border-radius:6px;cursor:pointer;font-size:.88em;font-weight:600;transition:background .2s}"
         ".btn-action:hover{background:#0a6aab}"
         ".btn-scroll{background:#1aad5a}.btn-scroll:hover{background:#148a48}"
-        "@media print{.action-bar,.video-section{display:none}}"
+        "@media print{.action-bar,.video-section,.toc{display:none}}"
     )
 
     return (
@@ -8549,7 +8585,9 @@ def _research_build_html(title: str, body_text: str, sources: list, screenshot_u
         f"<style>{css}</style>\n"
         "</head>\n<body>\n<article>\n"
         f"<h1>📰 {esc(title)}</h1>\n"
+        f"{stats_html}"
         f"{buttons_html}"
+        f"{toc_html}"
         f'<section class="article-body">\n{sections_html}</section>\n'
         f"{gallery_html}"
         f"{video_html}"

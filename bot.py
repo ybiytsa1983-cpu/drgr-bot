@@ -108,7 +108,7 @@ _TXT_START_CMD = (
     'powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\\drgr-bot\\start.ps1"'
 )
 
-_MD_WEB_URL = "`http://localhost:5000/`"
+_MD_WEB_URL = f"`{VM_BASE}/`"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -952,6 +952,33 @@ def build_html_article(
     import html as _html
     image_descriptions = image_descriptions or {}
 
+    # ── Reading-time / stats ──────────────────────────────────────────────
+    word_count = len(body.split())
+    reading_min = max(1, word_count // 200)
+    h2_headings = [re.sub(r"^##\s+", "", l).strip() for l in body.splitlines() if re.match(r"^##\s+", l)]
+    stats_html = (
+        '<div class="article-stats">'
+        f'<span>⏱ Время чтения: <strong>~{reading_min} мин</strong></span>'
+        f'<span>📝 Слов: <strong>{word_count}</strong></span>'
+        f'<span>📚 Источников: <strong>{len(sources)}</strong></span>'
+        f'<span>📸 Иллюстраций: <strong>{len(screenshot_paths)}</strong></span>'
+        '</div>\n'
+    )
+
+    # ── Table of contents ─────────────────────────────────────────────────
+    toc_html = ""
+    if h2_headings:
+        toc_items = "".join(
+            f'<li><a href="#section-{i}">{_html.escape(h)}</a></li>\n'
+            for i, h in enumerate(h2_headings)
+        )
+        toc_html = (
+            '<nav class="toc">'
+            '<h3>📋 Содержание</h3>'
+            f'<ol>{toc_items}</ol>'
+            '</nav>\n'
+        )
+
     # ── Photo gallery (CSS grid) ──────────────────────────────────────────
     gallery_items = ""
     valid_screenshots: List[str] = []
@@ -1008,6 +1035,7 @@ def build_html_article(
             sections_html += _flush_section(current_section_lines)
             current_section_lines = []
             heading_text = re.sub(r"^#{1,3}\s+", "", line)
+            anchor_id = f"section-{_sec_idx}"
             # Add section icon if not already present (no emoji in first 2 chars)
             if heading_text and not any(0x1F000 <= ord(c) <= 0x1FFFF for c in heading_text[:3]):
                 icon = _sec_icons[_sec_idx % len(_sec_icons)]
@@ -1015,7 +1043,7 @@ def build_html_article(
                 heading_text = f"{icon} {heading_text}"
             else:
                 _sec_idx += 1
-            sections_html += f"<h2>{_html.escape(heading_text)}</h2>\n"
+            sections_html += f'<h2 id="{anchor_id}">{_html.escape(heading_text)}</h2>\n'
         else:
             current_section_lines.append(raw_line)
     sections_html += _flush_section(current_section_lines)
@@ -1087,12 +1115,22 @@ def build_html_article(
         "background:var(--bg);color:var(--text);line-height:1.7}"
         "h1{color:var(--accent);border-bottom:3px solid var(--accent2);padding-bottom:10px;"
         "margin-bottom:16px;font-size:2em}"
-        "h2{color:var(--accent2);margin-top:28px;margin-bottom:10px;display:flex;align-items:center;gap:6px}"
+        "h2{color:var(--accent2);margin-top:28px;margin-bottom:10px;display:flex;align-items:center;"
+        "gap:6px;scroll-margin-top:80px}"
         "article{background:var(--card);padding:36px;border-radius:12px;"
         "box-shadow:0 4px 20px rgba(0,0,0,.10)}"
         ".section-body p{line-height:1.8;margin:0 0 14px;color:#333}"
         "blockquote{border-left:3px solid var(--accent);margin:10px 0;padding-left:15px;"
         "color:#555;font-style:italic}"
+        ".article-stats{display:flex;gap:16px;flex-wrap:wrap;padding:10px 16px;margin:12px 0 20px;"
+        "background:#e8f4fd;border-radius:8px;font-size:.9em;color:#444;border:1px solid #c5ddf0}"
+        ".article-stats span{white-space:nowrap}"
+        ".toc{background:#f8f9ff;border:1px solid #dde4f5;border-radius:8px;padding:14px 20px;"
+        "margin:16px 0 28px;display:inline-block;min-width:200px}"
+        ".toc h3{margin:0 0 8px;font-size:1em;color:var(--accent)}"
+        ".toc ol{margin:0;padding-left:1.4em}"
+        ".toc li{margin:3px 0;font-size:.92em}"
+        "a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}"
         ".gallery{margin:32px 0}"
         ".gallery-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));"
         "gap:16px;margin-top:12px}"
@@ -1137,7 +1175,9 @@ def build_html_article(
         f"<title>{_html.escape(title)}</title>\n"
         f"<style>{css}</style>\n"
         f"</head>\n<body>\n<article>\n<h1>📰 {_html.escape(title)}</h1>\n"
+        f"{stats_html}"
         f"{buttons_html}"
+        f"{toc_html}"
         f"{svg_html}"
         f"{gallery_html}"
         f'<section class="article-body">\n{sections_html}</section>\n'
@@ -1436,7 +1476,7 @@ async def cmd_web(message: Message) -> None:
         "• 🧑‍💻 Monaco редактор кода\n"
         "• 🌐 HTML\\-генератор \\(вкладка **HTML**\\)\n"
         "• 💬 Чат с AI \\(вкладка 💬 **Чат**\\)\n"
-        "• 🌐 Чат\\-зал \\(онлайн\\-чат\\): `http://localhost:5000/chatroom/page`\n"
+        f"• 🌐 Чат\\-зал \\(онлайн\\-чат\\): `{_esc(VM_BASE)}/chatroom/page`\n"
         "• 🖥 ВИЗОР — браузер\\-инспектор \\(скриншоты\\+AI анализ\\)\n"
         "• 🔍 Поиск\\+Статья — поиск в интернете \\+ HTML отчёт\n"
         "• 🔧 Visor VM — управление моделями Ollama\n"
@@ -2100,6 +2140,23 @@ async def cmd_code(message: Message) -> None:
                                 f"\n\n⚠ Не удалось исправить за {attempts} попытки\\. "
                                 f"Последняя ошибка:\n`{_esc(err_msg[:200])}`"
                             )
+                        if lang_det == "html":
+                            caption += (
+                                f"\n\n🌐 Откройте файл в браузере \\(двойной клик\\) "
+                                f"или загрузите в VM → редактор → кнопка *🖥 Визор*"
+                            )
+                        # For HTML: render a screenshot preview
+                        if lang_det == "html":
+                            html_preview_path = str(ARTICLES_DIR / f"code_preview_{ts}.png")
+                            preview_ok = await screenshot_html_article(path, html_preview_path)
+                            if preview_ok and os.path.exists(html_preview_path):
+                                try:
+                                    await message.answer_photo(
+                                        FSInputFile(html_preview_path),
+                                        caption=f"🖥 Превью HTML: {prompt[:80]}",
+                                    )
+                                except Exception as _pe:
+                                    logger.warning("html code preview send: %s", _pe)
                         try:
                             await message.answer_document(
                                 FSInputFile(path, filename=f"code_{ts}.{ext}"),
@@ -2219,7 +2276,7 @@ async def cmd_execute(message: Message) -> None:
             "execute_code", {"code": code[:200], "language": lang}, {"error": str(exc)}, False
         )
     await status.edit_text(
-        "\u274c Ошибка\\. Убедитесь, что VM запущена \\(http://localhost:5000/\\)\\.",
+        f"\u274c Ошибка\\. Убедитесь, что VM запущена \\({_esc(VM_BASE)}/\\)\\.",
         parse_mode="MarkdownV2",
     )
 
@@ -2259,10 +2316,10 @@ async def cmd_convert(message: Message) -> None:
                         )
 
                     lines.append(
-                        "\n*API VM:*\n"
-                        "`POST http://localhost:5000/convert/image`\n"
-                        "`POST http://localhost:5000/convert/text`\n"
-                        "`GET  http://localhost:5000/convert/formats`"
+                        f"\n*API VM:*\n"
+                        f"`POST {_esc(VM_BASE)}/convert/image`\n"
+                        f"`POST {_esc(VM_BASE)}/convert/text`\n"
+                        f"`GET  {_esc(VM_BASE)}/convert/formats`"
                     )
                     await message.answer("\n".join(lines), parse_mode="MarkdownV2")
                     return
@@ -2728,7 +2785,7 @@ async def cmd_vm(message: Message) -> None:
         f"{_MD_UPDATE_CMD}\n\n"
         f"{_MD_START_CMD}\n\n"
         f"*\U0001f5a5 Адрес VM в браузере:* {_MD_WEB_URL}\n"
-        f"*🌐 Онлайн чат\\-зал:* `http://localhost:5000/chatroom/page`\n\n"
+        f"*🌐 Онлайн чат\\-зал:* `{_esc(VM_BASE)}/chatroom/page`\n\n"
         "_Или дважды кликни ярлык «Code VM» на Рабочем столе_\n"
         "_Для подключения LM Studio: откройте настройки \\(☰\\) в VM → введите URL LM Studio_\n"
         "_Vision VM: отдельный Ollama с llava/minicpm\\-v — добавьте URL в настройках \\(☰\\) → Vision VM_\n"
@@ -2751,7 +2808,7 @@ async def cmd_vm(message: Message) -> None:
             "▶ Запуск VM:\n"
             f'powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\\drgr-bot\\start.ps1"\n\n'
             f"🖥 Адрес VM в браузере: {VM_BASE}\n"
-            "🌐 Онлайн чат-зал: http://localhost:5000/chatroom/page\n\n"
+            f"🌐 Онлайн чат-зал: {VM_BASE}/chatroom/page\n\n"
             "Для подключения LM Studio: откройте настройки (☰) в VM → введите URL LM Studio\n"
             "Vision VM: добавьте URL второго Ollama с vision-моделью в настройках (☰) → Vision VM\n"
             "Пример Vision VM: http://localhost:11436 (llava, minicpm-v, moondream2)"
@@ -3305,9 +3362,9 @@ async def handle_text(message: Message) -> None:
             await message.answer(
                 "🌐 *Онлайн чат \\(Чат\\-зал\\)*\n\n"
                 "Откройте в браузере на компьютере, где запущена VM:\n\n"
-                "🔗 `http://localhost:5000/chatroom/page`\n\n"
+                f"🔗 `{_esc(VM_BASE)}/chatroom/page`\n\n"
                 "Или нажмите кнопку *🌐 Чат\\-зал* в веб\\-интерфейсе VM:\n"
-                "`http://localhost:5000/`\n\n"
+                f"`{_esc(VM_BASE)}/`\n\n"
                 "Чат\\-зал — это многопользовательский онлайн\\-чат, "
                 "доступный в локальной сети\\.",
                 parse_mode="MarkdownV2",
@@ -3316,9 +3373,9 @@ async def handle_text(message: Message) -> None:
             await message.answer(
                 "🌐 Онлайн чат (Чат-зал)\n\n"
                 "Откройте в браузере:\n"
-                "http://localhost:5000/chatroom/page\n\n"
+                f"{VM_BASE}/chatroom/page\n\n"
                 "Или нажмите кнопку 🌐 Чат-зал в веб-интерфейсе VM:\n"
-                "http://localhost:5000/"
+                f"{VM_BASE}/"
             )
         return
 
