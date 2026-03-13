@@ -41,8 +41,52 @@ Say "  |   DRGR — Авто-запуск Colab VM в расширении      
 Say "  +====================================================+" "Cyan"
 Say ""
 
-# ── Step 1: Ask for Colab URL if not provided ────────────────────────────────
+# ── Step 1: Ask for Colab URL (or offer to open the notebook) ────────────────
 if (-not $ColabUrl) {
+    Say "► Что хотите сделать?" "Yellow"
+    Say "  1) Подключить уже запущенный Colab VM (вввести ngrok URL)" "White"
+    Say "  2) Открыть ноутбук DRGR VM в Google Colab (браузер)" "White"
+    Say "  Enter без ввода — открыть ноутбук" "White"
+    $choice = Read-Host "Выбор [1/2]"
+    $choice = $choice.Trim()
+
+    if ($choice -eq '2' -or $choice -eq '') {
+        # Try to get notebook URL from the running VM server
+        $notebookUrl = ''
+        try {
+            $nb = Invoke-WebRequest -Uri "http://localhost:$VmPort/colab/notebook_url" `
+                -TimeoutSec 5 -UseBasicParsing -EA Stop
+            $nbJson = $nb.Content | ConvertFrom-Json
+            if ($nbJson.colab_url) { $notebookUrl = $nbJson.colab_url }
+        } catch {}
+
+        if (-not $notebookUrl) {
+            # Fallback: build URL from git remote
+            try {
+                $remote = git -C $repoDir remote get-url origin 2>$null
+                $remote = $remote -replace 'git@github\.com:', 'https://github.com/'
+                $remote = $remote -replace '\.git$', ''
+                if ($remote -match 'github\.com/(.+)') {
+                    $repoPath = $Matches[1]
+                    $notebookUrl = "https://colab.research.google.com/github/$repoPath/blob/HEAD/drgr_vm_colab.ipynb"
+                }
+            } catch {}
+        }
+
+        if (-not $notebookUrl) {
+            $notebookUrl = 'https://colab.research.google.com/'
+        }
+
+        Ok "Открываю ноутбук DRGR VM в Colab..."
+        Say "  URL: $notebookUrl" "White"
+        Start-Process $notebookUrl
+        Say ""
+        Say "  После запуска ноутбука скопируйте ngrok URL и запустите:" "Yellow"
+        Say "    ЗАПУСТИТЬ_COLAB_VM.bat <ngrok-url>" "White"
+        Read-Host "Нажмите Enter для выхода"
+        exit 0
+    }
+
     $ColabUrl = Read-Host "Введите URL Colab VM (например: https://xxxx.ngrok-free.app)"
     $ColabUrl = $ColabUrl.Trim().TrimEnd("/")
 }

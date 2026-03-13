@@ -3690,6 +3690,54 @@ def colab_autostart():
     return jsonify({"ok": True, "url": url, "connected": connected, "ui_url": ui_url})
 
 
+@app.route("/colab/notebook_url", methods=["GET"])
+def colab_notebook_url():
+    """Return the Google Colab notebook URL for drgr_vm_colab.ipynb.
+
+    The notebook is looked up in the repository root.  If found it returns a
+    colab.research.google.com/github/... deep-link.  Falls back to the raw
+    GitHub URL if the repo remote is available.
+    """
+    # Try to resolve the GitHub repo remote URL from git config
+    repo_root = os.path.join(os.path.dirname(__file__), "..")
+    notebook_rel = "drgr_vm_colab.ipynb"
+    notebook_path = os.path.join(repo_root, notebook_rel)
+
+    colab_url = ""
+    github_url = ""
+    try:
+        result = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            capture_output=True, text=True, cwd=repo_root, timeout=5,
+        )
+        remote = result.stdout.strip()
+        # Convert SSH → HTTPS and strip .git
+        remote = remote.replace("git@github.com:", "https://github.com/")
+        if remote.endswith(".git"):
+            remote = remote[:-4]
+        # Parse the URL to validate the host is exactly github.com
+        from urllib.parse import urlparse  # noqa: PLC0415
+        parsed = urlparse(remote)
+        if parsed.scheme in ("http", "https") and parsed.netloc in ("github.com", "www.github.com"):
+            repo_path = parsed.path.lstrip("/")
+            if repo_path:
+                github_url = f"https://raw.githubusercontent.com/{repo_path}/HEAD/{notebook_rel}"
+                colab_url = (
+                    f"https://colab.research.google.com/github/{repo_path}/blob/HEAD/{notebook_rel}"
+                )
+    except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
+        app.logger.debug("colab_notebook_url: could not resolve git remote: %s", exc)
+
+    exists = os.path.isfile(notebook_path)
+    return jsonify({
+        "ok": True,
+        "exists": exists,
+        "colab_url": colab_url,
+        "github_url": github_url,
+        "notebook_file": notebook_rel,
+    })
+
+
 @app.route("/tgwui/models", methods=["GET"])
 def tgwui_models():
     """Return the list of models available in text-generation-webui (OpenAI-compatible /v1/models)."""

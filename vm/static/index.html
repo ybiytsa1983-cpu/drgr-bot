@@ -1214,6 +1214,12 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
         <h2 style="margin:0 0 2px;font-size:16px">🌐 Google Colab / Remote VM</h2>
         <p style="margin:0;font-size:12px;color:var(--text2)">Режим прокси (ngrok) или очередь задач (поллинг, без ngrok).</p>
       </div>
+      <!-- Open in Colab button -->
+      <button id="colab-open-notebook-btn"
+        style="padding:7px 14px;border-radius:6px;border:1px solid #f9ab00;background:rgba(249,171,0,.15);color:#f9ab00;cursor:pointer;font-size:12px;font-weight:600;flex-shrink:0"
+        title="Открыть ноутбук DRGR VM в Google Colab">
+        📓 Открыть ноутбук в Colab
+      </button>
       <!-- Mode toggle -->
       <div style="display:flex;gap:6px;flex-shrink:0">
         <button id="colab-mode-proxy" onclick="colabSetMode('proxy')" style="padding:5px 12px;border-radius:6px;border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer;font-size:12px;font-weight:600">🔌 Прокси</button>
@@ -1254,10 +1260,12 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
 
           <div style="font-size:10px;color:var(--text2);line-height:1.5;border-top:1px solid var(--border);padding-top:10px">
             <b>Как запустить VM в Google Colab:</b><br>
-            1. Откройте ноутбук с сервером VM в Colab<br>
-            2. Запустите ячейку с ngrok + сервером<br>
-            3. Скопируйте ngrok URL сюда<br>
-            4. Нажмите «Сохранить» и «Тест»<br><br>
+            1. Нажмите <b>«📓 Открыть ноутбук в Colab»</b> вверху<br>
+            2. Вставьте ngrok-токен в ячейку настроек<br>
+            3. Запустите все ячейки (Ctrl+F9)<br>
+            4. Скопируйте ngrok URL и вставьте ниже<br>
+            5. Нажмите «Сохранить» и «Тест»<br><br>
+            Или запустите <code>ЗАПУСТИТЬ_COLAB_VM.bat</code> на ПК.<br><br>
             Модели с префиксом <code>remote:</code> в чате автоматически используют Remote VM.
           </div>
         </div>
@@ -4604,6 +4612,44 @@ async function colabInit() {
   if (urlInput && !urlInput.value && settingsUrl) urlInput.value = settingsUrl;
   await colabTestConnection();
   if (_colabModels.length === 0) await colabLoadModels();
+  // Load notebook URL for the Open in Colab button
+  colabLoadNotebookUrl();
+}
+
+async function colabLoadNotebookUrl() {
+  try {
+    var r = await fetch('/colab/notebook_url');
+    var d = await _safeJson(r);
+    var btn = document.getElementById('colab-open-notebook-btn');
+    if (!btn) return;
+    // Always wire the click handler — colabOpenNotebook() handles all cases
+    btn.onclick = colabOpenNotebook;
+    if (d.ok && d.colab_url) {
+      btn.title = 'Открыть drgr_vm_colab.ipynb в Google Colab: ' + d.colab_url;
+    } else if (d.ok && d.exists) {
+      btn.title = 'Загрузите drgr_vm_colab.ipynb на Google Colab вручную';
+    }
+  } catch(e) {
+    var btn = document.getElementById('colab-open-notebook-btn');
+    if (btn) btn.onclick = colabOpenNotebook;
+  }
+}
+
+async function colabOpenNotebook() {
+  try {
+    var r = await fetch('/colab/notebook_url');
+    var d = await _safeJson(r);
+    if (d.ok && d.colab_url) {
+      window.open(d.colab_url, '_blank');
+    } else if (d.ok && d.exists) {
+      toast('📓 Загрузите drgr_vm_colab.ipynb на Google Colab вручную (нет GitHub remote)');
+      window.open('https://colab.research.google.com/', '_blank');
+    } else {
+      toast('⚠ Ноутбук drgr_vm_colab.ipynb не найден в репозитории');
+    }
+  } catch(e) {
+    toast('⚠ Ошибка: ' + e.message);
+  }
 }
 
 // Helper: add a model option to a <select> if not already present
