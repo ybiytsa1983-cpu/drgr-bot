@@ -21,3 +21,5 @@ vm/instructions.json
 # Auto-generated SSL certificate (created by vm.ps1 on first run)
 ssl_cert.pem
 ssl_key.pem
+# Uploaded APK files (runtime uploads, not source code)
+vm/static/android_apks/
