@@ -60,6 +60,8 @@ def run_all() -> None:
     r = client.get("/settings");          ok("GET /settings",           r.status_code == 200)
     r = client.get("/ollama/models");     ok("GET /ollama/models",      r.status_code == 200)
     r = client.get("/lmstudio/models");   ok("GET /lmstudio/models",    r.status_code == 200)
+    r = client.get("/tgwui/models");      ok("GET /tgwui/models",       r.status_code == 200)
+    r = client.get("/oaf/status");        ok("GET /oaf/status",         r.status_code == 200)
     r = client.get("/project/list");      ok("GET /project/list",       r.status_code == 200)
     r = client.get("/project/path");      ok("GET /project/path",       r.status_code == 200)
     r = client.get("/generate/gltf/shapes"); ok("GET /generate/gltf/shapes", r.status_code == 200)
@@ -75,6 +77,17 @@ def run_all() -> None:
     print("\n[POST /settings]")
     r = client.post("/settings", json={"ollama_url": "http://localhost:11434"})
     ok("POST /settings (save ollama_url)", r.status_code == 200)
+    r = client.post("/settings", json={"tgwui_url": "http://127.0.0.1:5000"})
+    ok("POST /settings (save tgwui_url)",  r.status_code == 200)
+    r = client.post("/settings", json={"oaf_url": "http://127.0.0.1:8080"})
+    ok("POST /settings (save oaf_url)",    r.status_code == 200)
+
+    # ── /goose/run ───────────────────────────────────────────────────────────
+    print("\n[POST /goose/run]")
+    r = client.post("/goose/run", json={"instruction": "test"})
+    ok("POST /goose/run (no goose bin) → 200", r.status_code == 200)
+    d = r.get_json()
+    ok("POST /goose/run (no goose bin) → ok:False", not d.get("ok"))
 
     # ── /execute ─────────────────────────────────────────────────────────────
     print("\n[POST /execute]")

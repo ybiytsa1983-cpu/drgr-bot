@@ -411,6 +411,8 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
         <div class="hr"><span class="hk">Ollama</span><span id="h-ol" class="hv">—</span></div>
         <div class="hr"><span class="hk">URL</span><span id="h-url" class="hv" style="font-size:9px">—</span></div>
         <div class="hr"><span class="hk">LM Studio</span><span id="h-lms" class="hv">—</span></div>
+        <div class="hr"><span class="hk">🧠 TGWUI</span><span id="h-tgwui" class="hv">—</span></div>
+        <div class="hr"><span class="hk">🤝 OAF</span><span id="h-oaf" class="hv">—</span></div>
         <div class="hr"><span class="hk">🌐 Remote VM</span><span id="h-rvm" class="hv">—</span></div>
         <div class="hr"><span class="hk">👁 Vision VM</span><span id="h-vvm" class="hv">—</span></div>
         <div class="hr"><span class="hk">📱 TG Bot</span><span id="h-bot" class="hv">—</span></div>
@@ -434,6 +436,30 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
       <input type="text" id="lms-url" placeholder="http://172.28.240.1:1234" autocomplete="off"/>
       <button class="pb pb-p pb-f" style="margin-top:4px" onclick="saveLmStudioUrl()">💾 Сохранить LM Studio URL</button>
       <div style="font-size:10px;color:var(--text2)">URL вашего LM Studio сервера (OpenAI-совместимый API, порт 1234). Модели LM Studio отображаются в селекторе с префиксом <b>lmstudio:</b></div>
+    </div>
+
+    <!-- text-generation-webui URL -->
+    <div>
+      <div class="pl">🧠 text-generation-webui URL</div>
+      <input type="text" id="tgwui-url" placeholder="http://127.0.0.1:5000" autocomplete="off"/>
+      <div class="pr" style="margin-top:4px">
+        <button class="pb pb-p" style="flex:1" onclick="saveTgwuiUrl()">💾 Сохранить TGWUI URL</button>
+        <button class="pb pb-m" style="flex:1" onclick="checkTgwuiStatus()" title="Проверить соединение">🔗 Проверить</button>
+      </div>
+      <div id="tgwui-status" style="font-size:10px;margin-top:2px"></div>
+      <div style="font-size:10px;color:var(--text2)">URL <a href="https://github.com/oobabooga/text-generation-webui" target="_blank">oobabooga/text-generation-webui</a> с флагом <code>--api</code>. Запуск: <code>python server.py --api --listen</code>. Модели отображаются с префиксом <b>tgwui:</b></div>
+    </div>
+
+    <!-- Open Agentic Framework URL -->
+    <div>
+      <div class="pl">🤝 Open Agentic Framework URL</div>
+      <input type="text" id="oaf-url" placeholder="http://127.0.0.1:8080" autocomplete="off"/>
+      <div class="pr" style="margin-top:4px">
+        <button class="pb pb-p" style="flex:1" onclick="saveOafUrl()">💾 Сохранить OAF URL</button>
+        <button class="pb pb-m" style="flex:1" onclick="checkOafStatus()" title="Проверить соединение">🔗 Проверить</button>
+      </div>
+      <div id="oaf-status" style="font-size:10px;margin-top:2px"></div>
+      <div style="font-size:10px;color:var(--text2)">URL <a href="https://github.com/oscarvalenzuelab/open_agentic_framework" target="_blank">Open Agentic Framework</a> (оркестратор агентов). Запуск: <code>docker-compose up -d</code></div>
     </div>
 
     <!-- Remote VM URL (Google Colab / ngrok) -->
@@ -487,7 +513,7 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
         <select id="sel-model" onchange="curModel=this.value;updateBadge()"><option value="">загрузка...</option></select>
         <button class="pb pb-m" onclick="loadModels()">↻</button>
       </div>
-      <div style="font-size:10px;color:var(--text2)">Модели Ollama и LM Studio (с префиксом <b>lmstudio:</b>) — настройте URL LM Studio выше</div>
+      <div style="font-size:10px;color:var(--text2)">Модели Ollama, LM Studio (<b>lmstudio:</b>), text-generation-webui (<b>tgwui:</b>) — настройте URL выше</div>
     </div>
 
     <!-- System prompt -->
@@ -573,6 +599,7 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
     <button class="tv-btn" id="tv-vm" onclick="setView('vm')">🧠 Visor VM</button>
     <button class="tv-btn" id="tv-gltf" onclick="setView('gltf')">🧊 GLTF</button>
     <button class="tv-btn" id="tv-colab" onclick="setView('colab')">🌐 Colab VM</button>
+    <button class="tv-btn" id="tv-goose" onclick="setView('goose')" title="Goose AI coding agent — авто-правки кода в папке проекта" style="border-color:#50fa7b;color:#50fa7b">🪿 Goose</button>
     <button class="tv-btn" onclick="var w=window.open('/chatroom/page','_blank','width=480,height=700');if(!w||w.closed)location.href='/chatroom/page';" title="Открыть онлайн-чат пользователей в отдельном окне">🌐 Чат-зал</button>
     <button class="tv-btn" onclick="copyPs('ps-update-cmd');openPanel();setTimeout(function(){var el=document.getElementById('ps-update');if(el)el.scrollIntoView({behavior:'smooth'});},300);" title="Скопировать команду обновления в буфер обмена и открыть раздел обновлений" style="border-color:#e8a020;color:#e8a020">⬆ Обновить</button>
     <span class="tb-sep"></span>
@@ -1124,6 +1151,49 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
     sandbox="allow-scripts allow-forms allow-modals allow-popups"></iframe>
 </div>
 
+<!-- ── Goose AI coding agent pane ─────────────────────────────────────── -->
+<div id="goose-pane" style="display:none;flex:1;flex-direction:column;overflow:hidden;min-height:0;background:var(--bg2)">
+  <div style="padding:14px 18px 10px;border-bottom:1px solid var(--border);flex-shrink:0">
+    <h2 style="margin:0 0 4px;font-size:16px">🪿 Goose — AI Coding Agent</h2>
+    <p style="margin:0;font-size:12px;color:var(--text2)">Goose автономно читает, редактирует и тестирует файлы проекта.
+      <a href="https://github.com/block/goose" target="_blank" style="color:var(--accent)">block/goose</a> —
+      установка: <code>curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh | bash</code></p>
+  </div>
+  <div style="padding:14px 18px;flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:12px">
+    <div>
+      <div class="pl">📁 Директория проекта</div>
+      <input type="text" id="goose-dir" placeholder="C:\Users\...\my-project или /home/user/project" autocomplete="off" style="width:100%"/>
+      <div style="font-size:11px;color:var(--text2);margin-top:3px">Оставьте пустым — goose запустится в текущей директории сервера</div>
+    </div>
+    <div>
+      <div class="pl">📝 Инструкция для Goose</div>
+      <textarea id="goose-instruction" rows="5" placeholder="Добавь авторизацию через JWT. Обнови модуль auth.py, создай middleware, обнови тесты." style="width:100%;resize:vertical"></textarea>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="pb pb-p" onclick="gooseRun()" id="goose-btn">▶ Запустить Goose</button>
+      <select id="goose-timeout" style="padding:6px;border-radius:6px;border:1px solid var(--border);background:var(--bg4);color:var(--text1);font-size:12px">
+        <option value="60">60 сек</option>
+        <option value="120" selected>2 мин</option>
+        <option value="300">5 мин</option>
+        <option value="600">10 мин</option>
+      </select>
+    </div>
+    <div id="goose-status" style="font-size:12px;color:var(--text2)"></div>
+    <div id="goose-output" style="background:var(--bg4);border:1px solid var(--border);border-radius:8px;padding:12px;font-family:monospace;font-size:12px;white-space:pre-wrap;display:none;max-height:400px;overflow-y:auto"></div>
+
+    <hr style="border:none;border-top:1px solid var(--border);margin:8px 0"/>
+    <div>
+      <div class="pl">🤝 Open Agentic Framework — отправить задачу</div>
+      <textarea id="oaf-task-text" rows="3" placeholder="Опиши задачу для агента-оркестратора..." style="width:100%;resize:vertical"></textarea>
+      <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap">
+        <input type="text" id="oaf-agent-name" placeholder="Агент (необязательно)" style="flex:1;min-width:140px"/>
+        <button class="pb pb-s" onclick="oafSendTask()">🚀 Отправить в OAF</button>
+      </div>
+      <div id="oaf-task-result" style="font-size:12px;color:var(--text2);margin-top:6px;white-space:pre-wrap"></div>
+    </div>
+  </div>
+</div>
+
 <script>
 // ── Globals ─────────────────────────────────────────────────────────────────
 var editor = null;
@@ -1192,10 +1262,11 @@ function setView(v) {
   var gp = document.getElementById('gltf-pane');
   var rp = document.getElementById('research-pane');
   var clp= document.getElementById('colab-pane');
+  var gsp= document.getElementById('goose-pane');
   var mn = document.getElementById('main');
   var appEl = document.getElementById('app') || document.body;
   appEl.classList.remove('chat-code-mode');
-  ['both','editor','preview','chat','chat-code','vm','gltf','research','colab'].forEach(function(x){
+  ['both','editor','preview','chat','chat-code','vm','gltf','research','colab','goose'].forEach(function(x){
     var el = document.getElementById('tv-'+x);
     if (el) el.classList.toggle('on', x===v);
   });
@@ -1205,12 +1276,14 @@ function setView(v) {
   var isGLTF     = (v === 'gltf');
   var isResearch = (v === 'research');
   var isColab    = (v === 'colab');
-  var isSpecial  = isChat || isVM || isGLTF || isResearch || isColab;
+  var isGoose    = (v === 'goose');
+  var isSpecial  = isChat || isVM || isGLTF || isResearch || isColab || isGoose;
   cp.style.display  = (isChat || isChatCode) ? 'flex' : 'none';
   vmp.style.display = isVM       ? 'flex' : 'none';
   gp.style.display  = isGLTF    ? 'flex' : 'none';
   rp.style.display  = isResearch ? 'flex' : 'none';
   if (clp) clp.style.display = isColab ? 'flex' : 'none';
+  if (gsp) gsp.style.display = isGoose ? 'flex' : 'none';
   pb.style.display  = (isSpecial || isChatCode) ? 'none' : '';
   mn.style.display  = isSpecial ? 'none' : 'flex';
   if (v === 'both')     { ep.style.display='flex'; rh.style.display='block'; vp.style.display='flex'; }
@@ -2508,6 +2581,7 @@ async function generateCode() {
 
   var accumulated = '';
   var done = false;
+  var flushedLength = 0;
 
   if (editor) editor.setValue('');
 
@@ -2528,7 +2602,24 @@ async function generateCode() {
     function flushToEditor() {
       var now = Date.now();
       if (editor && (now - lastEditorUpdate) > 150) {
-        editor.setValue(accumulated);
+        // Use applyEdits for incremental token insertion at end of document.
+        // Track flushedLength to avoid calling getValue() every flush.
+        var newText = accumulated.slice(flushedLength);
+        if (!newText) return;
+        var model = editor.getModel();
+        if (model) {
+          var lineCount = model.getLineCount();
+          var lastCol   = model.getLineMaxColumn(lineCount);
+          model.applyEdits([{
+            range: new monaco.Range(lineCount, lastCol, lineCount, lastCol),
+            text: newText,
+            forceMoveMarkers: true
+          }]);
+          flushedLength = accumulated.length;
+        } else {
+          editor.setValue(accumulated);
+          flushedLength = accumulated.length;
+        }
         lastEditorUpdate = now;
       }
     }
@@ -2641,12 +2732,32 @@ async function patchCode() {
     var dec = new TextDecoder();
     var buf = '';
     var lastEditorUpdate = 0;
+    var patchFlushedLength = 0;
+
+    if (editor) editor.setValue('');
 
     function flushToEditor() {
       var now = Date.now();
       if (editor && (now - lastEditorUpdate) > 150) {
         var partial = extractCode(accumulated);
-        editor.setValue(partial);
+        // Use applyEdits for incremental insertion; track patchFlushedLength
+        // to avoid calling getValue() every flush.
+        var newText = partial.slice(patchFlushedLength);
+        if (!newText) return;
+        var model = editor.getModel();
+        if (model) {
+          var lineCount = model.getLineCount();
+          var lastCol   = model.getLineMaxColumn(lineCount);
+          model.applyEdits([{
+            range: new monaco.Range(lineCount, lastCol, lineCount, lastCol),
+            text: newText,
+            forceMoveMarkers: true
+          }]);
+          patchFlushedLength = partial.length;
+        } else {
+          editor.setValue(partial);
+          patchFlushedLength = partial.length;
+        }
         lastEditorUpdate = now;
       }
     }
@@ -2755,15 +2866,21 @@ async function loadHealth() {
     var r = await fetch('/health'); var d = await r.json();
     var vm=d.vm&&d.vm.status==='ok', ol=d.ollama&&d.ollama.status==='ok',
         bot=d.bot&&d.bot.token_set, botRun=d.bot&&d.bot.running;
-    var lmsData = d.lm_studio || {};
-    var lmsOk   = lmsData.status === 'ok';
-    var lmsCfg  = lmsData.status !== 'not_configured';
-    var rvmData = d.remote_vm || {};
-    var rvmOk   = rvmData.status === 'ok';
-    var rvmCfg  = rvmData.status !== 'not_configured';
-    var vvmData = d.vision_vm || {};
-    var vvmOk   = vvmData.status === 'ok';
-    var vvmCfg  = vvmData.status !== 'not_configured';
+    var lmsData   = d.lm_studio || {};
+    var lmsOk     = lmsData.status === 'ok';
+    var lmsCfg    = lmsData.status !== 'not_configured';
+    var tgwuiData = d.tgwui || {};
+    var tgwuiOk   = tgwuiData.status === 'ok';
+    var tgwuiCfg  = tgwuiData.status !== 'not_configured';
+    var oafData   = d.oaf || {};
+    var oafOk     = oafData.status === 'ok';
+    var oafCfg    = oafData.status !== 'not_configured';
+    var rvmData   = d.remote_vm || {};
+    var rvmOk     = rvmData.status === 'ok';
+    var rvmCfg    = rvmData.status !== 'not_configured';
+    var vvmData   = d.vision_vm || {};
+    var vvmOk     = vvmData.status === 'ok';
+    var vvmCfg    = vvmData.status !== 'not_configured';
     set('h-vm',  vm ? '✓ OK'        : '✗ Ошибка',    vm  ? 'ok' : 'fail');
     set('h-ol',  ol ? '✓ OK'        : '✗ Недоступна', ol  ? 'ok' : 'fail');
     document.getElementById('h-url').textContent = (d.ollama&&d.ollama.url)||'—';
@@ -2771,6 +2888,16 @@ async function loadHealth() {
       var lmsText = lmsOk ? '✓ OK' : (lmsCfg ? '✗ Недоступен' : '— Не настроен');
       var lmsCls  = lmsOk ? 'ok'   : (lmsCfg ? 'fail'          : '');
       set('h-lms', lmsText, lmsCls);
+    }
+    if (document.getElementById('h-tgwui')) {
+      var tgwuiText = tgwuiOk ? '✓ OK' : (tgwuiCfg ? '✗ Недоступен' : '— Не настроен');
+      var tgwuiCls  = tgwuiOk ? 'ok'   : (tgwuiCfg ? 'fail'          : '');
+      set('h-tgwui', tgwuiText, tgwuiCls);
+    }
+    if (document.getElementById('h-oaf')) {
+      var oafText = oafOk ? '✓ OK' : (oafCfg ? '✗ Недоступен' : '— Не настроен');
+      var oafCls  = oafOk ? 'ok'   : (oafCfg ? 'fail'          : '');
+      set('h-oaf', oafText, oafCls);
     }
     if (document.getElementById('h-rvm')) {
       var rvmText = rvmOk ? '✓ OK' : (rvmCfg ? '✗ Недоступен' : '— Не настроен');
@@ -2784,9 +2911,10 @@ async function loadHealth() {
     }
     set('h-bot', botRun ? '✓ Работает' : (bot ? '⚠ Не запущен' : '✗ Нет токена'),
         botRun ? 'ok' : (bot ? 'warn' : 'fail'));
-    document.getElementById('sdot').className = (ol || lmsOk || rvmOk || vvmOk) ? 'ok' : '';
+    var anyOk = ol || lmsOk || tgwuiOk || rvmOk || vvmOk;
+    document.getElementById('sdot').className = anyOk ? 'ok' : '';
     // Show/hide "Ollama not running" banner in chat view
-    noOl.style.display = (ol || lmsOk || rvmOk || vvmOk) ? 'none' : '';
+    noOl.style.display = anyOk ? 'none' : '';
   } catch(e) {
     noOl.style.display = '';
   }
@@ -2957,6 +3085,12 @@ async function loadOllamaUrl() {
     if (d.lm_studio_url && document.getElementById('lms-url')) {
       document.getElementById('lms-url').value = d.lm_studio_url;
     }
+    if (d.tgwui_url && document.getElementById('tgwui-url')) {
+      document.getElementById('tgwui-url').value = d.tgwui_url;
+    }
+    if (d.oaf_url && document.getElementById('oaf-url')) {
+      document.getElementById('oaf-url').value = d.oaf_url;
+    }
     if (d.remote_vm_url && document.getElementById('rvm-url')) {
       document.getElementById('rvm-url').value = d.remote_vm_url;
     }
@@ -3001,6 +3135,66 @@ async function saveLmStudioUrl() {
       setTimeout(function(){ loadHealth(); loadModels(); }, 1500);
     } else { toast('⚠ ' + (d.error||'Ошибка')); }
   } catch(e) { toast('⚠ Ошибка: ' + e.message); }
+}
+async function saveTgwuiUrl() {
+  var url = ((document.getElementById('tgwui-url')||{}).value || '').trim();
+  if (!url) { toast('Введите URL text-generation-webui, например: http://127.0.0.1:5000'); return; }
+  if (!/^https?:\/\/.+/.test(url)) { toast('Неверный формат URL'); return; }
+  try {
+    var r = await fetch('/settings', { method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ tgwui_url: url }) });
+    var d = await r.json();
+    if (d.ok) {
+      toast('✓ TGWUI URL сохранён, проверяю соединение...');
+      setTimeout(function(){ loadHealth(); loadModels(); }, 1500);
+    } else { toast('⚠ ' + (d.error||'Ошибка')); }
+  } catch(e) { toast('⚠ Ошибка: ' + e.message); }
+}
+async function checkTgwuiStatus() {
+  var statusEl = document.getElementById('tgwui-status');
+  if (statusEl) statusEl.textContent = '🔄 Проверяю...';
+  try {
+    var r = await fetch('/tgwui/models');
+    var d = await r.json();
+    if (statusEl) {
+      if (d.available) {
+        statusEl.textContent = '✅ Подключено. Моделей: ' + d.models.length;
+      } else {
+        statusEl.textContent = '⚠ Недоступно: ' + (d.error || 'нет ответа');
+      }
+    }
+  } catch(e) {
+    if (statusEl) statusEl.textContent = '⚠ Ошибка: ' + e.message;
+  }
+}
+async function saveOafUrl() {
+  var url = ((document.getElementById('oaf-url')||{}).value || '').trim();
+  if (!url) { toast('Введите URL Open Agentic Framework, например: http://127.0.0.1:8080'); return; }
+  if (!/^https?:\/\/.+/.test(url)) { toast('Неверный формат URL'); return; }
+  try {
+    var r = await fetch('/settings', { method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ oaf_url: url }) });
+    var d = await r.json();
+    if (d.ok) {
+      toast('✓ OAF URL сохранён, проверяю соединение...');
+      setTimeout(function(){ loadHealth(); }, 1500);
+    } else { toast('⚠ ' + (d.error||'Ошибка')); }
+  } catch(e) { toast('⚠ Ошибка: ' + e.message); }
+}
+async function checkOafStatus() {
+  var statusEl = document.getElementById('oaf-status');
+  if (statusEl) statusEl.textContent = '🔄 Проверяю...';
+  try {
+    var r = await fetch('/oaf/status');
+    var d = await r.json();
+    if (statusEl) {
+      statusEl.textContent = d.ok ? '✅ Подключено' : '⚠ Недоступно: ' + (d.error || 'нет ответа');
+    }
+  } catch(e) {
+    if (statusEl) statusEl.textContent = '⚠ Ошибка: ' + e.message;
+  }
 }
 async function saveRemoteVmUrl() {
   var url = ((document.getElementById('rvm-url')||{}).value || '').trim();
@@ -5285,6 +5479,68 @@ window.addEventListener('load', function(){
   // Start polling for TG messages forwarded to VM chat
   _pollTgChatMessages();
 });
+
+// ── Goose Agent & OAF functions ─────────────────────────────────────────────
+async function gooseRun() {
+  var instruction = (document.getElementById('goose-instruction')||{}).value || '';
+  instruction = instruction.trim();
+  if (!instruction) { toast('Введите инструкцию для Goose'); return; }
+  var dir     = ((document.getElementById('goose-dir')||{}).value || '').trim();
+  var timeout = parseInt(((document.getElementById('goose-timeout')||{}).value) || '120');
+  var btn     = document.getElementById('goose-btn');
+  var statusEl= document.getElementById('goose-status');
+  var outputEl= document.getElementById('goose-output');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Goose работает...'; }
+  if (statusEl) statusEl.textContent = '🔄 Запускаю goose...';
+  if (outputEl) { outputEl.style.display = 'none'; outputEl.textContent = ''; }
+  try {
+    var r = await fetch('/goose/run', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ instruction: instruction, project_dir: dir, timeout: timeout })
+    });
+    var d = await r.json();
+    if (statusEl) statusEl.textContent = d.ok ? '✅ Goose завершил работу (код: ' + (d.return_code||0) + ')' : '⚠ Ошибка: ' + (d.error||'неизвестная ошибка');
+    if (outputEl && d.output) {
+      outputEl.style.display = 'block';
+      outputEl.textContent   = d.output;
+      outputEl.scrollTop     = outputEl.scrollHeight;
+    }
+    if (d.ok) toast('✅ Goose завершил задачу');
+    else      toast('⚠ Goose: ' + (d.error||'ошибка'));
+  } catch(e) {
+    if (statusEl) statusEl.textContent = '⚠ Ошибка запроса: ' + e.message;
+    toast('⚠ ' + e.message);
+  }
+  if (btn) { btn.disabled = false; btn.textContent = '▶ Запустить Goose'; }
+}
+
+async function oafSendTask() {
+  var task  = ((document.getElementById('oaf-task-text')||{}).value  || '').trim();
+  var agent = ((document.getElementById('oaf-agent-name')||{}).value || '').trim();
+  if (!task) { toast('Введите задачу для OAF'); return; }
+  var resultEl = document.getElementById('oaf-task-result');
+  if (resultEl) resultEl.textContent = '🔄 Отправляю задачу в OAF...';
+  try {
+    var payload = { task: task };
+    if (agent) payload.agent = agent;
+    var r = await fetch('/oaf/task', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload)
+    });
+    var d = await r.json();
+    if (resultEl) {
+      if (d.ok) {
+        resultEl.textContent = '✅ Задача принята:\n' + JSON.stringify(d.data, null, 2);
+      } else {
+        resultEl.textContent = '⚠ ' + (d.error || 'Ошибка OAF');
+      }
+    }
+  } catch(e) {
+    if (resultEl) resultEl.textContent = '⚠ Ошибка: ' + e.message;
+  }
+}
 </script>
 </body>
 </html>

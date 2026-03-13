@@ -105,6 +105,16 @@ LM_STUDIO_BASE = os.environ.get("LM_STUDIO_URL", "").rstrip("/")
 # Prefix used in model selector to distinguish LM Studio models from Ollama ones.
 _LM_STUDIO_PREFIX = "lmstudio:"
 
+# text-generation-webui (oobabooga) base URL — OpenAI-compatible API.
+# Override via TGWUI_URL env var or the settings panel.
+# Typically runs on port 5000 with --api flag and exposes /v1/models, /v1/chat/completions.
+TGWUI_BASE = os.environ.get("TGWUI_URL", "").rstrip("/")
+_TGWUI_PREFIX = "tgwui:"
+
+# Open Agentic Framework base URL — multi-agent orchestrator.
+# Override via OAF_URL env var or the settings panel.
+OAF_BASE = os.environ.get("OAF_URL", "").rstrip("/")
+
 # Remote VM URL — URL of an externally hosted VM (e.g. Google Colab via ngrok).
 # When set, the /remote/proxy endpoint forwards requests there.
 REMOTE_VM_URL = os.environ.get("REMOTE_VM_URL", "").rstrip("/")
@@ -1841,6 +1851,31 @@ def health():
         except Exception:  # pylint: disable=broad-except
             pass
 
+    # --- text-generation-webui (oobabooga) ---
+    tgwui_ok     = False
+    tgwui_models: list = []
+    if TGWUI_BASE:
+        try:
+            tgwui_resp = _http.get(f"{TGWUI_BASE}/v1/models", timeout=3)
+            if tgwui_resp.status_code == 200:
+                tgwui_ok = True
+                tgwui_data = tgwui_resp.json()
+                tgwui_models = [
+                    f"{_TGWUI_PREFIX}{m['id']}"
+                    for m in tgwui_data.get("data", [])
+                ]
+        except Exception:  # pylint: disable=broad-except
+            pass
+
+    # --- Open Agentic Framework ---
+    oaf_ok = False
+    if OAF_BASE:
+        try:
+            oaf_resp = _http.get(f"{OAF_BASE}/health", timeout=3)
+            oaf_ok = oaf_resp.status_code < 400
+        except Exception:  # pylint: disable=broad-except
+            pass
+
     # --- Remote VM (Google Colab / ngrok) ---
     rvm_ok = False
     if REMOTE_VM_URL:
@@ -1893,6 +1928,15 @@ def health():
             "status":  "ok" if lms_ok else ("unreachable" if LM_STUDIO_BASE else "not_configured"),
             "url":     LM_STUDIO_BASE,
             "models":  lms_models,
+        },
+        "tgwui": {
+            "status":  "ok" if tgwui_ok else ("unreachable" if TGWUI_BASE else "not_configured"),
+            "url":     TGWUI_BASE,
+            "models":  tgwui_models,
+        },
+        "oaf": {
+            "status": "ok" if oaf_ok else ("unreachable" if OAF_BASE else "not_configured"),
+            "url":    OAF_BASE,
         },
         "remote_vm": {
             "status": "ok" if rvm_ok else ("unreachable" if REMOTE_VM_URL else "not_configured"),
@@ -2648,6 +2692,8 @@ def get_settings():
     return jsonify({
         "ollama_url": OLLAMA_BASE,
         "lm_studio_url": LM_STUDIO_BASE,
+        "tgwui_url": TGWUI_BASE,
+        "oaf_url": OAF_BASE,
         "remote_vm_url": REMOTE_VM_URL,
         "vision_vm_url": VISION_VM_URL,
         "bot_token_set": bot_token_set,
@@ -2658,16 +2704,18 @@ def get_settings():
 @app.route("/settings", methods=["POST"])
 def save_settings():
     """Save settings (Telegram bot token, chat ID, Ollama URL, LM Studio URL, Remote VM URL) to .env."""
-    global OLLAMA_BASE, _OLLAMA_SCANNED, LM_STUDIO_BASE, REMOTE_VM_URL, VISION_VM_URL  # noqa: PLW0603
+    global OLLAMA_BASE, _OLLAMA_SCANNED, LM_STUDIO_BASE, TGWUI_BASE, OAF_BASE, REMOTE_VM_URL, VISION_VM_URL  # noqa: PLW0603
     body = request.get_json(silent=True) or {}
     bot_token      = body.get("bot_token",      "").strip()
     chat_id        = body.get("chat_id",         "").strip()
     ollama_url     = body.get("ollama_url",      "").strip()
     lm_studio_url  = body.get("lm_studio_url",   "").strip().rstrip("/")
+    tgwui_url      = body.get("tgwui_url",        "").strip().rstrip("/")
+    oaf_url        = body.get("oaf_url",          "").strip().rstrip("/")
     remote_vm_url  = body.get("remote_vm_url",   "").strip().rstrip("/")
     vision_vm_url  = body.get("vision_vm_url",   "").strip().rstrip("/")
 
-    if not any([bot_token, chat_id, ollama_url, lm_studio_url, remote_vm_url, vision_vm_url]):
+    if not any([bot_token, chat_id, ollama_url, lm_studio_url, tgwui_url, oaf_url, remote_vm_url, vision_vm_url]):
         return jsonify({"ok": False, "error": "Nothing to save"})
 
     env_path = os.path.join(os.path.dirname(_DIR), ".env")
@@ -2733,6 +2781,30 @@ def save_settings():
             lines.append(f"LM_STUDIO_URL={lm_studio_url}\n")
         os.environ["LM_STUDIO_URL"] = lm_studio_url
         LM_STUDIO_BASE = lm_studio_url
+
+    if tgwui_url:
+        tgwui_found = False
+        for i, line in enumerate(lines):
+            if line.startswith("TGWUI_URL="):
+                lines[i] = f"TGWUI_URL={tgwui_url}\n"
+                tgwui_found = True
+                break
+        if not tgwui_found:
+            lines.append(f"TGWUI_URL={tgwui_url}\n")
+        os.environ["TGWUI_URL"] = tgwui_url
+        TGWUI_BASE = tgwui_url
+
+    if oaf_url:
+        oaf_found = False
+        for i, line in enumerate(lines):
+            if line.startswith("OAF_URL="):
+                lines[i] = f"OAF_URL={oaf_url}\n"
+                oaf_found = True
+                break
+        if not oaf_found:
+            lines.append(f"OAF_URL={oaf_url}\n")
+        os.environ["OAF_URL"] = oaf_url
+        OAF_BASE = oaf_url
 
     if remote_vm_url:
         # Update or append REMOTE_VM_URL line
@@ -2876,6 +2948,21 @@ def ollama_models():
         except Exception:  # pylint: disable=broad-except
             pass
 
+    # --- text-generation-webui models (OpenAI-compatible /v1/models) ---
+    if TGWUI_BASE:
+        try:
+            tgwui_resp = _http.get(f"{TGWUI_BASE}/v1/models", timeout=3)
+            tgwui_resp.raise_for_status()
+            tw_models = [
+                f"{_TGWUI_PREFIX}{m['id']}"
+                for m in tgwui_resp.json().get("data", [])
+            ]
+            models.extend(tw_models)
+            if not preferred and tw_models:
+                preferred = tw_models[0]
+        except Exception:  # pylint: disable=broad-except
+            pass
+
     available = bool(models)
     if not preferred and models:
         preferred = models[0]
@@ -2894,6 +2981,20 @@ def lmstudio_models():
         return jsonify({"models": models, "available": bool(models), "url": LM_STUDIO_BASE})
     except Exception as exc:  # pylint: disable=broad-except
         return jsonify({"models": [], "available": False, "url": LM_STUDIO_BASE, "error": str(exc)})
+
+
+@app.route("/tgwui/models", methods=["GET"])
+def tgwui_models():
+    """Return the list of models available in text-generation-webui (OpenAI-compatible /v1/models)."""
+    if not TGWUI_BASE:
+        return jsonify({"models": [], "available": False, "url": "", "error": "text-generation-webui URL not configured"})
+    try:
+        resp = _http.get(f"{TGWUI_BASE}/v1/models", timeout=5)
+        resp.raise_for_status()
+        models = [m["id"] for m in resp.json().get("data", [])]
+        return jsonify({"models": models, "available": bool(models), "url": TGWUI_BASE})
+    except Exception as exc:  # pylint: disable=broad-except
+        return jsonify({"models": [], "available": False, "url": TGWUI_BASE, "error": str(exc)})
 
 
 # ---------------------------------------------------------------------------
@@ -3066,6 +3167,101 @@ def remote_jobs_list():
     with _remote_jobs_lock:
         jobs = list(_remote_jobs.values())
     return jsonify({"jobs": sorted(jobs, key=lambda j: j.get("created_at", 0), reverse=True)})
+
+
+# ---------------------------------------------------------------------------
+# Goose agent — on-machine AI coding agent (github.com/block/goose)
+# ---------------------------------------------------------------------------
+
+@app.route("/goose/run", methods=["POST"])
+def goose_run():
+    """Run goose CLI in a project directory with a given instruction.
+
+    Body: {"instruction": "...", "project_dir": "...", "model": "..."}
+    Returns: {"ok": True/False, "output": "...", "error": "..."}
+
+    Goose must be installed: curl -fsSL .../download_cli.sh | bash
+    Configure LLM provider in goose config (~/.config/goose/config.yaml)
+    pointing to Ollama: provider: openai, base_url: http://127.0.0.1:11434/v1
+    """
+    import shutil
+    body        = request.get_json(silent=True) or {}
+    instruction = body.get("instruction", "").strip()
+    project_dir = body.get("project_dir", "").strip()
+    timeout_s   = int(body.get("timeout", 120))
+
+    if not instruction:
+        return jsonify({"ok": False, "error": "instruction required"})
+
+    goose_bin = shutil.which("goose") or shutil.which("goose.exe")
+    if not goose_bin:
+        return jsonify({"ok": False, "error": "goose CLI not found in PATH. Install: curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh | bash"})
+
+    # Validate project_dir: must be an existing absolute path to prevent traversal.
+    # If not provided or invalid, fall back to the server's working directory.
+    safe_cwd = os.getcwd()
+    if project_dir:
+        abs_dir = os.path.realpath(project_dir)
+        if os.path.isdir(abs_dir):
+            safe_cwd = abs_dir
+        else:
+            return jsonify({"ok": False, "error": f"project_dir не найден или не является директорией: {project_dir}"})
+
+    try:
+        result = subprocess.run(  # noqa: S603
+            [goose_bin, "run", "--text", instruction],
+            cwd=safe_cwd,
+            capture_output=True,
+            text=True,
+            timeout=timeout_s,
+        )
+        output = (result.stdout or "") + (result.stderr or "")
+        return jsonify({"ok": result.returncode == 0, "output": output, "return_code": result.returncode})
+    except subprocess.TimeoutExpired:
+        return jsonify({"ok": False, "error": f"goose timeout after {timeout_s}s"})
+    except Exception as exc:  # pylint: disable=broad-except
+        return jsonify({"ok": False, "error": str(exc)})
+
+
+# ---------------------------------------------------------------------------
+# Open Agentic Framework — multi-agent orchestrator
+# ---------------------------------------------------------------------------
+
+@app.route("/oaf/task", methods=["POST"])
+def oaf_task():
+    """Submit a task to the Open Agentic Framework.
+
+    Body: {"task": "...", "agent": "...", "context": {...}}
+    Returns the framework's JSON response.
+    Configure OAF_URL in settings pointing to your docker-compose instance.
+    """
+    if not OAF_BASE:
+        return jsonify({"ok": False, "error": "Open Agentic Framework URL не настроен — укажите OAF URL в настройках (☰)"})
+    body = request.get_json(silent=True) or {}
+    try:
+        resp = _http.post(
+            f"{OAF_BASE}/api/task",
+            json=body,
+            timeout=int(os.environ.get("OLLAMA_TIMEOUT", 120)),
+        )
+        resp.raise_for_status()
+        return jsonify({"ok": True, "data": resp.json()})
+    except _http.exceptions.ConnectionError:
+        return jsonify({"ok": False, "error": f"Нет соединения с OAF по адресу {OAF_BASE}"})
+    except Exception as exc:  # pylint: disable=broad-except
+        return jsonify({"ok": False, "error": str(exc)})
+
+
+@app.route("/oaf/status", methods=["GET"])
+def oaf_status():
+    """Probe the Open Agentic Framework health endpoint."""
+    if not OAF_BASE:
+        return jsonify({"ok": False, "url": "", "error": "OAF URL not configured"})
+    try:
+        resp = _http.get(f"{OAF_BASE}/health", timeout=5)
+        return jsonify({"ok": resp.status_code < 400, "url": OAF_BASE, "status_code": resp.status_code})
+    except Exception as exc:  # pylint: disable=broad-except
+        return jsonify({"ok": False, "url": OAF_BASE, "error": str(exc)})
 
 
 @app.route("/ollama/ask", methods=["POST"])
@@ -3887,6 +4083,67 @@ def generate_auto_stream():
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
+    is_tgwui = model.startswith(_TGWUI_PREFIX)
+    if is_tgwui:
+        real_model = model[len(_TGWUI_PREFIX):]
+        tw_url     = TGWUI_BASE
+
+        def _stream_tgwui_auto():
+            if not tw_url:
+                yield 'data: {"error":"text-generation-webui URL не настроен — укажите URL в настройках (☰)"}\n\n'
+                return
+            try:
+                resp = _http.post(
+                    f"{tw_url}/v1/chat/completions",
+                    json={
+                        "model": real_model,
+                        "messages": [
+                            {"role": "system", "content": sys_prompt},
+                            {"role": "user",   "content": f"Задание: {prompt}"},
+                        ],
+                        "stream": True,
+                    },
+                    stream=True,
+                    timeout=int(os.environ.get("OLLAMA_TIMEOUT", 240)),
+                )
+                resp.raise_for_status()
+                for raw_line in resp.iter_lines():
+                    if not raw_line:
+                        continue
+                    line_str = raw_line.decode("utf-8") if isinstance(raw_line, bytes) else raw_line
+                    if line_str.startswith("data: "):
+                        line_str = line_str[6:]
+                    if line_str.strip() in ("[DONE]", ""):
+                        _record_generation("auto", model, prompt)
+                        yield "data: [DONE]\n\n"
+                        return
+                    try:
+                        chunk = json.loads(line_str)
+                    except ValueError:
+                        continue
+                    delta  = chunk.get("choices", [{}])[0].get("delta", {})
+                    token  = delta.get("content", "")
+                    finish = chunk.get("choices", [{}])[0].get("finish_reason")
+                    if token:
+                        yield f"data: {json.dumps({'token': token})}\n\n"
+                    if finish:
+                        _record_generation("auto", model, prompt)
+                        yield "data: [DONE]\n\n"
+                        return
+            except _http.exceptions.Timeout:
+                _oto = int(os.environ.get("OLLAMA_TIMEOUT", 120))
+                yield f'data: {{"error":"Нет ответа от text-generation-webui за {_oto} с."}}\n\n'
+            except _http.exceptions.ConnectionError:
+                yield f'data: {json.dumps({"error": f"Нет соединения с text-generation-webui по адресу {tw_url}"})}\n\n'
+            except Exception as exc:  # pylint: disable=broad-except
+                yield f"data: {json.dumps({'error': str(exc)})}\n\n"
+
+        return Response(
+            stream_with_context(_stream_tgwui_auto()),
+            mimetype="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
     full_prompt = f"{sys_prompt}\n\nЗадание: {prompt}"
 
     def _stream():
@@ -4087,6 +4344,58 @@ def chat_stream():
 
         return Response(
             stream_with_context(_stream_lms()),
+            mimetype="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
+    is_tgwui = model.startswith(_TGWUI_PREFIX)
+    if is_tgwui:
+        real_model = model[len(_TGWUI_PREFIX):]
+        tw_url     = TGWUI_BASE
+
+        def _stream_tgwui():
+            if not tw_url:
+                yield 'data: {"error":"text-generation-webui URL не настроен — укажите URL в настройках (☰)"}\n\n'
+                return
+            try:
+                resp = _http.post(
+                    f"{tw_url}/v1/chat/completions",
+                    json={"model": real_model, "messages": messages, "stream": True},
+                    stream=True,
+                    timeout=int(os.environ.get("OLLAMA_TIMEOUT", 240)),
+                )
+                resp.raise_for_status()
+                for raw_line in resp.iter_lines():
+                    if not raw_line:
+                        continue
+                    line_str = raw_line.decode("utf-8") if isinstance(raw_line, bytes) else raw_line
+                    if line_str.startswith("data: "):
+                        line_str = line_str[6:]
+                    if line_str.strip() in ("[DONE]", ""):
+                        yield "data: [DONE]\n\n"
+                        return
+                    try:
+                        chunk = json.loads(line_str)
+                    except ValueError:
+                        continue
+                    delta  = chunk.get("choices", [{}])[0].get("delta", {})
+                    token  = delta.get("content", "")
+                    finish = chunk.get("choices", [{}])[0].get("finish_reason")
+                    if token:
+                        yield f"data: {json.dumps({'token': token})}\n\n"
+                    if finish:
+                        yield "data: [DONE]\n\n"
+                        return
+            except _http.exceptions.Timeout:
+                _oto = int(os.environ.get("OLLAMA_TIMEOUT", 120))
+                yield f'data: {{"error":"Нет ответа от text-generation-webui за {_oto} с."}}\n\n'
+            except _http.exceptions.ConnectionError:
+                yield f'data: {json.dumps({"error": f"Нет соединения с text-generation-webui по адресу {tw_url}"})}\n\n'
+            except Exception as exc:  # pylint: disable=broad-except
+                yield f"data: {json.dumps({'error': str(exc)})}\n\n"
+
+        return Response(
+            stream_with_context(_stream_tgwui()),
             mimetype="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
@@ -6604,6 +6913,22 @@ def _generate_chrome_extension_files(model: str, prompt: str, name: str) -> dict
         )
         resp.raise_for_status()
         raw = resp.json().get("choices", [{}])[0].get("message", {}).get("content", "")
+    elif model.startswith(_TGWUI_PREFIX):
+        real_model = model[len(_TGWUI_PREFIX):]
+        resp = _http.post(
+            f"{TGWUI_BASE}/v1/chat/completions",
+            json={
+                "model": real_model,
+                "messages": [
+                    {"role": "system", "content": "You are an expert Chrome Extension developer (Manifest V3). Generate only complete, fully functional code."},
+                    {"role": "user",   "content": sys_prompt},
+                ],
+                "stream": False,
+            },
+            timeout=int(os.environ.get("OLLAMA_TIMEOUT", 300)),
+        )
+        resp.raise_for_status()
+        raw = resp.json().get("choices", [{}])[0].get("message", {}).get("content", "")
     else:
         resp = _http.post(
             f"{OLLAMA_BASE}/api/generate",
@@ -6881,6 +7206,26 @@ def project_generate():
                     return jsonify({"error": "LM Studio URL не настроен — укажите URL в настройках (☰)", "success": False})
                 resp = _http.post(
                     f"{lms_url}/v1/chat/completions",
+                    json={
+                        "model": real_model,
+                        "messages": [
+                            {"role": "system", "content": "You are an expert full-stack web developer. Generate only complete, fully functional code."},
+                            {"role": "user",   "content": sys_prompt},
+                        ],
+                        "stream": False,
+                    },
+                    timeout=int(os.environ.get("OLLAMA_TIMEOUT", 240)),
+                )
+                resp.raise_for_status()
+                raw = resp.json().get("choices", [{}])[0].get("message", {}).get("content", "")
+            elif model.startswith(_TGWUI_PREFIX):
+                # Route to text-generation-webui OpenAI-compatible API
+                real_model = model[len(_TGWUI_PREFIX):]
+                tw_url     = TGWUI_BASE
+                if not tw_url:
+                    return jsonify({"error": "text-generation-webui URL не настроен — укажите URL в настройках (☰)", "success": False})
+                resp = _http.post(
+                    f"{tw_url}/v1/chat/completions",
                     json={
                         "model": real_model,
                         "messages": [
