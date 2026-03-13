@@ -172,9 +172,145 @@ html, body {
   font-size: 10px;
   color: var(--text2);
   padding: 0 4px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
 }
+.msg-edited-badge { font-size: 9px; color: var(--text2); font-style: italic; }
+.msg-deleted .msg-bubble { color: var(--text2); font-style: italic; opacity: .6; }
 
-/* ── Emoji Picker ── */
+/* ── Reply quote ── */
+.msg-reply {
+  background: var(--bg3);
+  border-left: 3px solid var(--accent);
+  border-radius: 6px 6px 0 0;
+  padding: 4px 10px;
+  font-size: 11px;
+  color: var(--text2);
+  margin-bottom: -4px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.msg-reply-nick { color: var(--accent); font-weight: 600; }
+
+/* ── Reactions ── */
+.msg-reactions {
+  display: flex; flex-wrap: wrap; gap: 4px; padding: 2px 4px;
+}
+.reaction-pill {
+  display: inline-flex; align-items: center; gap: 3px;
+  background: var(--bg3); border: 1px solid var(--border);
+  border-radius: 12px; padding: 2px 8px;
+  font-size: 13px; cursor: pointer; transition: background .12s;
+  user-select: none;
+}
+.reaction-pill:hover { background: var(--bg4); }
+.reaction-pill.mine { border-color: var(--accent); background: rgba(0,120,212,.15); }
+.reaction-count { font-size: 11px; color: var(--text); }
+
+/* ── Context menu ── */
+#ctx-menu {
+  display: none;
+  position: fixed;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.5);
+  z-index: 1000;
+  min-width: 160px;
+  overflow: hidden;
+}
+#ctx-menu button {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; background: none; border: none;
+  color: var(--text); cursor: pointer;
+  padding: 10px 16px; font-size: 13px;
+  text-align: left; transition: background .1s;
+}
+#ctx-menu button:hover { background: var(--bg3); }
+#ctx-menu button.danger { color: var(--red); }
+#ctx-menu .ctx-sep { height: 1px; background: var(--border); margin: 4px 0; }
+
+/* ── Reaction picker ── */
+#reaction-picker {
+  display: none;
+  position: fixed;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.5);
+  z-index: 1001;
+  padding: 6px 10px;
+  gap: 4px;
+  flex-direction: row;
+}
+.rp-btn {
+  background: none; border: none; cursor: pointer;
+  font-size: 24px; padding: 4px; border-radius: 50%;
+  line-height: 1; transition: transform .1s, background .1s;
+}
+.rp-btn:hover { transform: scale(1.3); background: var(--bg3); }
+
+/* ── Reply bar ── */
+#reply-bar {
+  display: none;
+  background: var(--bg3);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  padding: 6px 14px;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+#reply-bar.show { display: flex; }
+#reply-bar-text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text2); }
+#reply-bar-nick { color: var(--accent); font-weight: 600; }
+#reply-bar-cancel { background: none; border: none; color: var(--text2); cursor: pointer; font-size: 16px; padding: 2px 6px; }
+
+/* ── Edit bar ── */
+#edit-bar {
+  display: none;
+  background: rgba(0,120,212,.12);
+  border-top: 1px solid var(--accent);
+  padding: 6px 14px;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+#edit-bar.show { display: flex; }
+#edit-bar-label { color: var(--accent); flex: 1; }
+#edit-bar-cancel { background: none; border: none; color: var(--text2); cursor: pointer; font-size: 16px; padding: 2px 6px; }
+
+/* ── Pinned messages bar ── */
+#pinned-bar {
+  display: none;
+  background: rgba(0,120,212,.1);
+  border-bottom: 1px solid var(--accent);
+  padding: 6px 14px;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+#pinned-bar.show { display: flex; }
+#pinned-bar-icon { color: var(--accent); font-size: 14px; }
+#pinned-bar-text { flex: 1; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#pinned-bar-count { font-size: 11px; color: var(--text2); background: var(--bg3); border-radius: 10px; padding: 2px 6px; }
+
+/* ── Typing indicator ── */
+.typing-dot {
+  display: inline-block; width: 6px; height: 6px;
+  border-radius: 50%; background: var(--text2);
+  animation: typing-bounce .9s infinite;
+}
+.typing-dot:nth-child(2) { animation-delay: .2s; }
+.typing-dot:nth-child(3) { animation-delay: .4s; }
+@keyframes typing-bounce { 0%,60%,100%{transform:none} 30%{transform:translateY(-5px)} }
+
+
 #emoji-wrap { position: relative; display: inline-block; }
 #emoji-picker {
   display: none;
@@ -537,7 +673,28 @@ html, body {
   </div>
 
   <!-- Messages -->
+  <!-- Pinned messages bar -->
+  <div id="pinned-bar" onclick="scrollToPinned()">
+    <span id="pinned-bar-icon">📌</span>
+    <span id="pinned-bar-text">Закреплённое сообщение</span>
+    <span id="pinned-bar-count">1</span>
+  </div>
+
   <div id="messages"></div>
+
+  <!-- Reply bar -->
+  <div id="reply-bar">
+    <span>↩</span>
+    <div id="reply-bar-text"><span id="reply-bar-nick"></span>: <span id="reply-bar-preview"></span></div>
+    <button id="reply-bar-cancel" onclick="cancelReply()" title="Отменить ответ">✕</button>
+  </div>
+
+  <!-- Edit bar -->
+  <div id="edit-bar">
+    <span>✏️</span>
+    <span id="edit-bar-label">Редактирование сообщения</span>
+    <button id="edit-bar-cancel" onclick="cancelEdit()" title="Отменить редактирование">✕</button>
+  </div>
 
   <!-- Input -->
   <div id="input-area">
@@ -562,6 +719,29 @@ html, body {
     <span class="dot ok" id="conn-dot"></span>
     <span id="conn-label">Подключение…</span>
   </div>
+</div>
+
+<!-- Context menu -->
+<div id="ctx-menu">
+  <button id="ctx-react" onclick="showReactionPicker()">😊 Реакция</button>
+  <button id="ctx-reply" onclick="replyToMsg()">↩ Ответить</button>
+  <button id="ctx-edit" onclick="editMsg()" style="display:none">✏️ Редактировать</button>
+  <button id="ctx-copy" onclick="copyMsgText()">📋 Копировать</button>
+  <button id="ctx-pin" onclick="pinMsg()">📌 Закрепить</button>
+  <div class="ctx-sep"></div>
+  <button id="ctx-delete" onclick="deleteMsg()" class="danger" style="display:none">🗑 Удалить</button>
+</div>
+
+<!-- Reaction picker -->
+<div id="reaction-picker">
+  <button class="rp-btn" onclick="sendReaction('👍')">👍</button>
+  <button class="rp-btn" onclick="sendReaction('❤')">❤</button>
+  <button class="rp-btn" onclick="sendReaction('😂')">😂</button>
+  <button class="rp-btn" onclick="sendReaction('😮')">😮</button>
+  <button class="rp-btn" onclick="sendReaction('😢')">😢</button>
+  <button class="rp-btn" onclick="sendReaction('🔥')">🔥</button>
+  <button class="rp-btn" onclick="sendReaction('🎉')">🎉</button>
+  <button class="rp-btn" onclick="sendReaction('👎')">👎</button>
 </div>
 
 <!-- Users panel (sidebar) -->
@@ -853,7 +1033,19 @@ function _esc(s) {
 // ── Render messages ──────────────────────────────────────────────────────────
 var _msgs = document.getElementById('messages');
 
+// Delegate reaction pill clicks (safe, no inline event handlers)
+_msgs.addEventListener('click', function(e) {
+  var pill = e.target.closest('.reaction-pill');
+  if (pill) {
+    sendReactionDirect(pill.dataset.msg, pill.dataset.emoji);
+  }
+});
+
 function addMsg(m) {
+  if (m.deleted) {
+    _updateMsgDeleted(m.id);
+    return;
+  }
   var isMe = (m.nick === _nick);
   var color = m.color || _nickColor(m.nick);
   var initial = avatarInitial(m.nick);
@@ -861,8 +1053,25 @@ function addMsg(m) {
   var div = document.createElement('div');
   div.className = 'msg ' + (isMe ? 'msg-me' : 'msg-other');
   div.dataset.id = m.id || '';
+  div.dataset.nick = m.nick || '';
+  div.dataset.text = m.text || '';
 
   var nickLabel = isMe ? 'Вы' : _esc(m.nick);
+
+  // Reply quote HTML
+  var replyHtml = '';
+  if (m.reply_to) {
+    var rt = m.reply_to;
+    replyHtml = '<div class="msg-reply" onclick="scrollToMsg(' + (rt.id||0) + ')">' +
+      '<span class="msg-reply-nick">' + _esc(rt.nick || '') + '</span>' +
+      ' ' + _esc((rt.text || '').slice(0, 80)) +
+      '</div>';
+  }
+
+  // Reactions HTML
+  var reactHtml = _buildReactionsHTML(m.id, m.reactions || {});
+
+  var tsExtra = m.edited ? '<span class="msg-edited-badge">изменено</span>' : '';
 
   div.innerHTML =
     '<div class="msg-avatar-wrap">' +
@@ -870,11 +1079,37 @@ function addMsg(m) {
     '</div>' +
     '<div class="msg-content">' +
       '<div class="msg-nick">' + nickLabel + '</div>' +
+      replyHtml +
       '<div class="msg-bubble">' + _esc(m.text) + '</div>' +
-      '<div class="msg-ts">' + _esc(m.ts || '') + '</div>' +
+      '<div class="msg-ts">' + _esc(m.ts || '') + tsExtra + '</div>' +
+      '<div class="msg-reactions" id="react-' + m.id + '">' + reactHtml + '</div>' +
     '</div>';
+
+  // Context menu via long-press or right-click
+  div.addEventListener('contextmenu', function(e) { e.preventDefault(); openCtxMenu(e, m.id, isMe); });
+  var _pressTimer;
+  div.addEventListener('touchstart', function(e) {
+    _pressTimer = setTimeout(function() { openCtxMenu(e.touches[0], m.id, isMe); }, 600);
+  }, { passive: true });
+  div.addEventListener('touchend', function() { clearTimeout(_pressTimer); });
+  div.addEventListener('touchmove', function() { clearTimeout(_pressTimer); });
+
   _msgs.appendChild(div);
   _scrollBottom();
+}
+
+function _buildReactionsHTML(msgId, reactions) {
+  if (!reactions || !Object.keys(reactions).length) return '';
+  var html = '';
+  Object.keys(reactions).forEach(function(emoji) {
+    var users = reactions[emoji] || [];
+    if (!users.length) return;
+    var mine = users.indexOf(_nick) >= 0;
+    html += '<span class="reaction-pill' + (mine ? ' mine' : '') +
+      '" data-msg="' + msgId + '" data-emoji="' + _esc(emoji) + '" title="' + _esc(users.join(', ')) + '">' +
+      _esc(emoji) + '<span class="reaction-count">' + users.length + '</span></span>';
+  });
+  return html;
 }
 
 function addSys(text) {
@@ -909,7 +1144,23 @@ function loadHistory() {
   fetch(BASE + '/chatroom/history')
     .then(function(r) { return r.json(); })
     .then(function(d) {
-      (d.messages || []).forEach(function(m) { addMsg(m); });
+      var msgs = d.messages || [];
+      msgs.forEach(function(m) {
+        if (m.deleted) {
+          // Render deleted placeholder
+          var div = document.createElement('div');
+          div.className = 'msg ' + (m.nick === _nick ? 'msg-me' : 'msg-other') + ' msg-deleted';
+          div.dataset.id = m.id || '';
+          div.dataset.nick = m.nick || '';
+          div.dataset.text = '';
+          div.innerHTML = '<div class="msg-content"><div class="msg-bubble">🗑 Сообщение удалено</div></div>';
+          _msgs.appendChild(div);
+        } else {
+          addMsg(m);
+        }
+        if (m.id && m.id > _lastMsgId) _lastMsgId = m.id;
+      });
+      _scrollBottom();
     })
     .catch(function() {});
 }
@@ -918,6 +1169,11 @@ function loadHistory() {
 var _lastMsgId = 0;
 var _es = null;
 var _reconnectDelay = 1500;
+// State for reply and edit
+var _replyToId = null;
+var _editMsgId = null;
+// Pinned messages
+var _currentPins = [];
 
 function connectSSE() {
   if (_es) { try { _es.close(); } catch(e) {} }
@@ -930,6 +1186,25 @@ function connectSSE() {
     var data;
     try { data = JSON.parse(ev.data); } catch(e) { return; }
     if (!data || data.type === 'ping' || data.type === 'connected') return;
+    // Handle typed events
+    if (data.type === 'reaction') {
+      _updateReactions(data.msg_id, data.reactions);
+      return;
+    }
+    if (data.type === 'edit') {
+      _updateMsgEdit(data.msg_id, data.text);
+      return;
+    }
+    if (data.type === 'delete') {
+      _updateMsgDeleted(data.msg_id);
+      return;
+    }
+    if (data.type === 'pin_update') {
+      _currentPins = data.pins || [];
+      _refreshPinnedBar();
+      return;
+    }
+    // Regular message
     if (data.id && data.id <= _lastMsgId) return;
     if (data.id) _lastMsgId = data.id;
     addMsg(data);
@@ -955,16 +1230,44 @@ function sendMsg() {
   if (!text) return;
   var btn = document.getElementById('btn-send');
   btn.disabled = true;
+
+  // Handle edit mode
+  if (_editMsgId) {
+    fetch(BASE + '/chatroom/edit', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({nick: _nick, msg_id: _editMsgId, text: text}),
+    })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (d.ok) {
+          inp.value = '';
+          autoResize(inp);
+          cancelEdit();
+          inp.focus();
+        } else {
+          addSys('⚠ ' + (d.error || 'Ошибка редактирования'));
+        }
+      })
+      .catch(function() { addSys('⚠ Ошибка соединения'); })
+      .finally(function() { btn.disabled = false; });
+    return;
+  }
+
+  var body = {nick: _nick, text: text, color: _color};
+  if (_replyToId) body.reply_to = _replyToId;
+
   fetch(BASE + '/chatroom/send', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({nick: _nick, text: text, color: _color}),
+    body: JSON.stringify(body),
   })
     .then(function(r) { return r.json(); })
     .then(function(d) {
       if (d.ok) {
         inp.value = '';
         autoResize(inp);
+        cancelReply();
         inp.focus();
       } else {
         addSys('⚠ ' + (d.error || 'Ошибка отправки'));
@@ -972,6 +1275,210 @@ function sendMsg() {
     })
     .catch(function() { addSys('⚠ Ошибка соединения'); })
     .finally(function() { btn.disabled = false; });
+}
+
+// ── Context menu ──────────────────────────────────────────────────────────────
+var _ctxMsgId = null;
+var _ctxIsMe = false;
+
+function openCtxMenu(e, msgId, isMe) {
+  _ctxMsgId = msgId;
+  _ctxIsMe  = isMe;
+  var menu = document.getElementById('ctx-menu');
+  document.getElementById('ctx-edit').style.display   = isMe ? '' : 'none';
+  document.getElementById('ctx-delete').style.display = isMe ? '' : 'none';
+
+  var x = e.clientX !== undefined ? e.clientX : e.pageX;
+  var y = e.clientY !== undefined ? e.clientY : e.pageY;
+  menu.style.display = 'block';
+  // Position within viewport
+  var mw = menu.offsetWidth || 180, mh = menu.offsetHeight || 200;
+  x = Math.min(x, window.innerWidth  - mw - 8);
+  y = Math.min(y, window.innerHeight - mh - 8);
+  menu.style.left = x + 'px';
+  menu.style.top  = y + 'px';
+
+  // Close on outside click
+  setTimeout(function() {
+    document.addEventListener('click', _closeCtxMenu, { once: true });
+    document.addEventListener('touchstart', _closeCtxMenu, { once: true });
+  }, 50);
+}
+
+function _closeCtxMenu() {
+  var menu = document.getElementById('ctx-menu');
+  if (menu) menu.style.display = 'none';
+  var rp = document.getElementById('reaction-picker');
+  if (rp) rp.style.display = 'none';
+}
+
+function showReactionPicker() {
+  var menu = document.getElementById('ctx-menu');
+  var rp   = document.getElementById('reaction-picker');
+  // Position near the context menu
+  rp.style.display = 'flex';
+  var ml = parseInt(menu.style.left) || 0;
+  var mt = parseInt(menu.style.top)  || 0;
+  rp.style.left = ml + 'px';
+  rp.style.top  = (mt - 60) + 'px';
+  menu.style.display = 'none';
+  setTimeout(function() {
+    document.addEventListener('click', function() {
+      rp.style.display = 'none';
+    }, { once: true });
+  }, 50);
+}
+
+function sendReaction(emoji) {
+  document.getElementById('reaction-picker').style.display = 'none';
+  if (!_ctxMsgId || !_registered) return;
+  sendReactionDirect(_ctxMsgId, emoji);
+}
+
+function sendReactionDirect(msgId, emoji) {
+  if (!_registered) return;
+  fetch(BASE + '/chatroom/react', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({nick: _nick, msg_id: parseInt(msgId), emoji: emoji}),
+  }).catch(function() {});
+}
+
+function _updateReactions(msgId, reactions) {
+  var el = document.getElementById('react-' + msgId);
+  if (el) el.innerHTML = _buildReactionsHTML(msgId, reactions);
+  // Also update data-text for the owning message
+  var msg = _msgs.querySelector('[data-id="' + msgId + '"]');
+  if (msg) msg._reactionsData = reactions;
+}
+
+function copyMsgText() {
+  var msg = _msgs.querySelector('[data-id="' + _ctxMsgId + '"]');
+  if (msg) {
+    var text = msg.dataset.text || '';
+    navigator.clipboard && navigator.clipboard.writeText(text).catch(function() {});
+  }
+  _closeCtxMenu();
+}
+
+function replyToMsg() {
+  _closeCtxMenu();
+  var msg = _msgs.querySelector('[data-id="' + _ctxMsgId + '"]');
+  if (!msg) return;
+  _replyToId = _ctxMsgId;
+  document.getElementById('reply-bar-nick').textContent    = msg.dataset.nick || '';
+  document.getElementById('reply-bar-preview').textContent = (msg.dataset.text || '').slice(0, 60);
+  document.getElementById('reply-bar').classList.add('show');
+  document.getElementById('msg-inp').focus();
+}
+
+function cancelReply() {
+  _replyToId = null;
+  document.getElementById('reply-bar').classList.remove('show');
+}
+
+function editMsg() {
+  _closeCtxMenu();
+  var msg = _msgs.querySelector('[data-id="' + _ctxMsgId + '"]');
+  if (!msg) return;
+  _editMsgId = _ctxMsgId;
+  var inp = document.getElementById('msg-inp');
+  inp.value = msg.dataset.text || '';
+  autoResize(inp);
+  document.getElementById('edit-bar').classList.add('show');
+  inp.focus();
+}
+
+function cancelEdit() {
+  _editMsgId = null;
+  document.getElementById('edit-bar').classList.remove('show');
+  var inp = document.getElementById('msg-inp');
+  inp.value = '';
+  autoResize(inp);
+}
+
+function _updateMsgEdit(msgId, text) {
+  var msg = _msgs.querySelector('[data-id="' + msgId + '"]');
+  if (!msg) return;
+  var bubble = msg.querySelector('.msg-bubble');
+  if (bubble) bubble.textContent = text;
+  msg.dataset.text = text;
+  var ts = msg.querySelector('.msg-ts');
+  if (ts && !ts.querySelector('.msg-edited-badge')) {
+    ts.insertAdjacentHTML('beforeend', '<span class="msg-edited-badge">изменено</span>');
+  }
+}
+
+function deleteMsg() {
+  _closeCtxMenu();
+  if (!_ctxMsgId || !_registered) return;
+  fetch(BASE + '/chatroom/delete', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({nick: _nick, msg_id: _ctxMsgId}),
+  }).catch(function() {});
+}
+
+function _updateMsgDeleted(msgId) {
+  var msg = _msgs.querySelector('[data-id="' + msgId + '"]');
+  if (!msg) return;
+  var bubble = msg.querySelector('.msg-bubble');
+  if (bubble) bubble.textContent = '🗑 Сообщение удалено';
+  msg.classList.add('msg-deleted');
+  msg.dataset.text = '';
+  // Remove reactions since message is deleted
+  var reactEl = document.getElementById('react-' + msgId);
+  if (reactEl) reactEl.innerHTML = '';
+}
+
+// ── Pinned messages ────────────────────────────────────────────────────────────
+function pinMsg() {
+  _closeCtxMenu();
+  if (!_ctxMsgId || !_registered) return;
+  fetch(BASE + '/chatroom/pin', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({nick: _nick, msg_id: _ctxMsgId}),
+  }).catch(function() {});
+}
+
+function _refreshPinnedBar() {
+  var bar = document.getElementById('pinned-bar');
+  if (!_currentPins || !_currentPins.length) {
+    bar.classList.remove('show');
+    return;
+  }
+  bar.classList.add('show');
+  // Fetch pinned message details
+  fetch(BASE + '/chatroom/pins')
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      var pins = d.pins || [];
+      if (!pins.length) { bar.classList.remove('show'); return; }
+      var last = pins[pins.length - 1];
+      document.getElementById('pinned-bar-text').textContent =
+        (last.nick ? last.nick + ': ' : '') + (last.text || '').slice(0, 80);
+      document.getElementById('pinned-bar-count').textContent = pins.length;
+      bar._pins = pins;
+    })
+    .catch(function() {});
+}
+
+function scrollToPinned() {
+  var bar = document.getElementById('pinned-bar');
+  var pins = bar._pins;
+  if (!pins || !pins.length) return;
+  var last = pins[pins.length - 1];
+  scrollToMsg(last.id);
+}
+
+function scrollToMsg(msgId) {
+  var el = _msgs.querySelector('[data-id="' + msgId + '"]');
+  if (el) {
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el.style.background = 'rgba(0,120,212,.2)';
+    setTimeout(function() { el.style.background = ''; }, 1500);
+  }
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
@@ -987,6 +1494,16 @@ function sendMsg() {
 
   loadHistory();
   connectSSE();
+
+  // Load initial pinned messages
+  fetch(BASE + '/chatroom/pins')
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      var pins = d.pins || [];
+      _currentPins = pins.map(function(p) { return p.id; });
+      _refreshPinnedBar();
+    })
+    .catch(function() {});
 
   var inp = document.getElementById('msg-inp');
   inp.addEventListener('input', function() { autoResize(inp); });

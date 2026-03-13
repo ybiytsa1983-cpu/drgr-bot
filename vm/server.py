@@ -5300,13 +5300,14 @@ def chatroom_register():
 def chatroom_send():
     """Post a message to the chat room.
 
-    Body: {"nick": "...", "text": "...", "color": "#rrggbb"}
+    Body: {"nick": "...", "text": "...", "color": "#rrggbb", "reply_to": N}
     Returns: {"ok": true, "id": N}
     """
     global _chatroom_msg_counter
     body = request.get_json(silent=True) or {}
-    nick = (body.get("nick") or "Аноним").strip()[:_CHATROOM_MAX_NICK_LEN]
-    text = (body.get("text") or "").strip()[:_CHATROOM_MAX_MSG_LEN]
+    nick     = (body.get("nick") or "Аноним").strip()[:_CHATROOM_MAX_NICK_LEN]
+    text     = (body.get("text") or "").strip()[:_CHATROOM_MAX_MSG_LEN]
+    reply_to = body.get("reply_to")  # optional msg id being replied to
     if not text:
         return jsonify({"ok": False, "error": "empty message"}), 400
 
@@ -5318,6 +5319,23 @@ def chatroom_send():
         h = int(hashlib.md5(nick.encode()).hexdigest(), 16)
         color = sorted(_CHATROOM_VALID_COLORS)[h % len(_CHATROOM_VALID_COLORS)]
 
+    # Resolve reply-to snippet
+    reply_snippet = None
+    if reply_to:
+        try:
+            reply_to = int(reply_to)
+            with _chatroom_lock:
+                for m in _chatroom_history:
+                    if m.get("id") == reply_to:
+                        reply_snippet = {
+                            "id": reply_to,
+                            "nick": m.get("nick", ""),
+                            "text": (m.get("text") or "")[:80],
+                        }
+                        break
+        except (TypeError, ValueError):
+            reply_to = None
+
     with _chatroom_lock:
         _chatroom_msg_counter += 1
         msg_id = _chatroom_msg_counter
@@ -5328,6 +5346,8 @@ def chatroom_send():
             "text": text,
             "ts": datetime.now(timezone.utc).strftime("%H:%M"),
         }
+        if reply_to and reply_snippet:
+            msg["reply_to"] = reply_snippet
         _chatroom_history.append(msg)
         if len(_chatroom_history) > _CHATROOM_HISTORY_MAX:
             _chatroom_history.pop(0)
@@ -5509,6 +5529,173 @@ def chatroom_dm_events():
         mimetype="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+# ---------------------------------------------------------------------------
+# Chatroom — reactions, edit, delete, pin (Telegram-like features)
+# ---------------------------------------------------------------------------
+_CHATROOM_ALLOWED_REACTIONS = {"👍", "👎", "❤", "😂", "😮", "😢", "🔥", "🎉"}
+_chatroom_pins: list = []       # list of message ids that are pinned
+_CHATROOM_PINS_MAX = 5
+
+
+def _chatroom_find_msg(msg_id: int):
+    """Return (msg, index) from _chatroom_history or (None, -1)."""
+    with _chatroom_lock:
+        for i, m in enumerate(_chatroom_history):
+            if m.get("id") == msg_id:
+                return m, i
+    return None, -1
+
+
+@app.route("/chatroom/react", methods=["POST"])
+def chatroom_react():
+    """Toggle an emoji reaction on a message.
+
+    Body: {"nick": "...", "msg_id": N, "emoji": "👍"}
+    Broadcasts a 'reaction' event with full reactions state.
+    """
+    body = request.get_json(silent=True) or {}
+    nick    = (body.get("nick") or "").strip()[:_CHATROOM_MAX_NICK_LEN]
+    try:
+        msg_id = int(body.get("msg_id") or 0)
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "invalid msg_id"}), 400
+    emoji   = (body.get("emoji") or "").strip()
+    if not nick or not msg_id or emoji not in _CHATROOM_ALLOWED_REACTIONS:
+        return jsonify({"ok": False, "error": "invalid params"}), 400
+
+    msg, _ = _chatroom_find_msg(msg_id)
+    if msg is None:
+        return jsonify({"ok": False, "error": "message not found"}), 404
+
+    with _chatroom_lock:
+        if "reactions" not in msg:
+            msg["reactions"] = {}
+        r = msg["reactions"].setdefault(emoji, [])
+        if nick in r:
+            r.remove(nick)   # toggle off
+        else:
+            r.append(nick)   # toggle on
+        if not r:
+            del msg["reactions"][emoji]
+        reactions_snap = dict(msg.get("reactions", {}))
+
+    _chatroom_broadcast({
+        "type": "reaction",
+        "msg_id": msg_id,
+        "reactions": reactions_snap,
+    })
+    return jsonify({"ok": True, "reactions": reactions_snap})
+
+
+@app.route("/chatroom/edit", methods=["POST"])
+def chatroom_edit():
+    """Edit the text of an existing message (own messages only).
+
+    Body: {"nick": "...", "msg_id": N, "text": "..."}
+    """
+    body = request.get_json(silent=True) or {}
+    nick   = (body.get("nick") or "").strip()[:_CHATROOM_MAX_NICK_LEN]
+    try:
+        msg_id = int(body.get("msg_id") or 0)
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "invalid msg_id"}), 400
+    text   = (body.get("text") or "").strip()[:_CHATROOM_MAX_MSG_LEN]
+    if not nick or not msg_id or not text:
+        return jsonify({"ok": False, "error": "invalid params"}), 400
+
+    msg, _ = _chatroom_find_msg(msg_id)
+    if msg is None:
+        return jsonify({"ok": False, "error": "message not found"}), 404
+    if msg.get("nick") != nick:
+        return jsonify({"ok": False, "error": "not your message"}), 403
+
+    with _chatroom_lock:
+        msg["text"] = text
+        msg["edited"] = True
+
+    _chatroom_broadcast({"type": "edit", "msg_id": msg_id, "text": text, "edited": True})
+    return jsonify({"ok": True})
+
+
+@app.route("/chatroom/delete", methods=["POST"])
+def chatroom_delete():
+    """Soft-delete a message (mark as deleted, keep in history).
+
+    Body: {"nick": "...", "msg_id": N}
+    """
+    body = request.get_json(silent=True) or {}
+    nick   = (body.get("nick") or "").strip()[:_CHATROOM_MAX_NICK_LEN]
+    try:
+        msg_id = int(body.get("msg_id") or 0)
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "invalid msg_id"}), 400
+    if not nick or not msg_id:
+        return jsonify({"ok": False, "error": "invalid params"}), 400
+
+    msg, _ = _chatroom_find_msg(msg_id)
+    if msg is None:
+        return jsonify({"ok": False, "error": "message not found"}), 404
+    if msg.get("nick") != nick:
+        return jsonify({"ok": False, "error": "not your message"}), 403
+
+    with _chatroom_lock:
+        msg["deleted"] = True
+        msg["text"]    = ""
+
+    _chatroom_broadcast({"type": "delete", "msg_id": msg_id})
+    return jsonify({"ok": True})
+
+
+@app.route("/chatroom/pin", methods=["POST"])
+def chatroom_pin():
+    """Pin or unpin a message.
+
+    Body: {"nick": "...", "msg_id": N}
+    Toggles: if already pinned — unpins; otherwise pins (max _CHATROOM_PINS_MAX).
+    """
+    global _chatroom_pins
+    body   = request.get_json(silent=True) or {}
+    nick   = (body.get("nick") or "").strip()[:_CHATROOM_MAX_NICK_LEN]
+    try:
+        msg_id = int(body.get("msg_id") or 0)
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "invalid msg_id"}), 400
+    if not nick or not msg_id:
+        return jsonify({"ok": False, "error": "invalid params"}), 400
+
+    msg, _ = _chatroom_find_msg(msg_id)
+    if msg is None:
+        return jsonify({"ok": False, "error": "message not found"}), 404
+
+    with _chatroom_lock:
+        if msg_id in _chatroom_pins:
+            _chatroom_pins.remove(msg_id)
+            pinned = False
+        else:
+            _chatroom_pins.append(msg_id)
+            if len(_chatroom_pins) > _CHATROOM_PINS_MAX:
+                _chatroom_pins.pop(0)
+            pinned = True
+        pins_snap = list(_chatroom_pins)
+
+    _chatroom_broadcast({"type": "pin_update", "pins": pins_snap})
+    return jsonify({"ok": True, "pinned": pinned, "pins": pins_snap})
+
+
+@app.route("/chatroom/pins", methods=["GET"])
+def chatroom_pins_get():
+    """Return pinned message ids and their content."""
+    with _chatroom_lock:
+        pins = list(_chatroom_pins)
+        result = []
+        for pid in pins:
+            for m in _chatroom_history:
+                if m.get("id") == pid and not m.get("deleted"):
+                    result.append(m)
+                    break
+    return jsonify({"pins": result})
 
 
 # ---------------------------------------------------------------------------

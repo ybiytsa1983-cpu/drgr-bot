@@ -373,6 +373,91 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
   #epane { height: 45vh }
   #vpane { min-height: 38vh }
 }
+/* ── Mobile bottom navigation bar ── */
+#mobile-nav {
+  display: none;
+}
+@media (max-width: 768px) {
+  /* Reserve space for bottom nav so content doesn't hide behind it */
+  #app { padding-bottom: 56px }
+  /* Hide the horizontal topbar view buttons on mobile — use bottom nav instead */
+  .tv-btn { display: none !important }
+  /* Keep menu button and title visible */
+  #btn-menu { display: inline-flex !important }
+  #topbar { overflow: hidden; padding: 6px 10px; gap: 8px }
+  #topbar-title { display: inline !important }
+  #model-badge { display: inline !important; max-width: 120px }
+  #sdot { display: inline-block !important }
+  /* Bottom nav */
+  #mobile-nav {
+    display: flex;
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    height: 56px;
+    background: var(--bg2);
+    border-top: 1px solid var(--border);
+    z-index: 500;
+    align-items: stretch;
+    justify-content: space-around;
+  }
+  .mnav-btn {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    background: none;
+    border: none;
+    color: var(--text2);
+    cursor: pointer;
+    font-size: 10px;
+    padding: 4px 2px;
+    border-top: 2px solid transparent;
+    transition: color .15s, border-color .15s;
+    min-width: 0;
+  }
+  .mnav-btn .mn-icon { font-size: 20px; line-height: 1; }
+  .mnav-btn .mn-label { font-size: 9px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 52px; }
+  .mnav-btn.active { color: var(--accent); border-top-color: var(--accent); }
+  .mnav-btn:active { opacity: .7; }
+  /* More menu popup */
+  #mobile-more-menu {
+    display: none;
+    position: fixed;
+    bottom: 56px; left: 0; right: 0;
+    background: var(--bg2);
+    border-top: 1px solid var(--border);
+    z-index: 499;
+    padding: 12px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  #mobile-more-menu.open { display: flex; }
+  .mnav-more-btn {
+    flex: 0 0 calc(25% - 6px);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text2);
+    cursor: pointer;
+    font-size: 10px;
+    padding: 8px 4px;
+  }
+  .mnav-more-btn .mn-icon { font-size: 22px; }
+  .mnav-more-btn:active { opacity: .7; }
+  /* Ensure input is always visible above bottom nav */
+  #pbar { position: sticky; bottom: 56px; z-index: 10; }
+  #chat-input-row { position: sticky; bottom: 56px; background: var(--bg2); z-index: 10; }
+}
+@media (max-width: 480px) {
+  .tv-btn { display: none !important }
+}
+
 /* ── Emoji picker styles ── */
 #btn-emoji {
   background: var(--bg4); border: 1px solid var(--border); color: var(--text2);
@@ -1634,6 +1719,35 @@ function setView(v) {
   }
   if (isColab) colabInit();
   if (isImageGen) imagegenRefreshStatus();
+  _updateMobileNav(v);
+}
+
+// ── Mobile bottom nav ─────────────────────────────────────────────────────────
+var _mobileMoreOpen = false;
+function _updateMobileNav(v) {
+  var map = { editor:'mnav-editor', chat:'mnav-chat', preview:'mnav-preview', vm:'mnav-vm' };
+  ['mnav-editor','mnav-chat','mnav-preview','mnav-vm','mnav-more'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.classList.remove('active');
+  });
+  var btnId = map[v];
+  if (btnId) {
+    var btn = document.getElementById(btnId);
+    if (btn) btn.classList.add('active');
+  } else {
+    var moreBtn = document.getElementById('mnav-more');
+    if (moreBtn) moreBtn.classList.add('active');
+  }
+}
+function toggleMobileMore() {
+  _mobileMoreOpen = !_mobileMoreOpen;
+  var menu = document.getElementById('mobile-more-menu');
+  if (menu) menu.classList.toggle('open', _mobileMoreOpen);
+}
+function closeMobileMore() {
+  _mobileMoreOpen = false;
+  var menu = document.getElementById('mobile-more-menu');
+  if (menu) menu.classList.remove('open');
 }
 
 // ── Resize handle ────────────────────────────────────────────────────────────
@@ -2727,9 +2841,16 @@ async function doWebSearch() {
 
 
 // ── Chat room window ─────────────────────────────────────────────────────────
+var _chatroomWin = null;
 function openChatroom() {
-  var w = window.open('/chatroom/page', 'drgr_chatroom', 'width=520,height=750');
-  if (w) { w.focus(); } else { location.href = '/chatroom/page'; }
+  // Re-use existing window if still open
+  if (_chatroomWin && !_chatroomWin.closed) {
+    _chatroomWin.focus();
+    return;
+  }
+  var w = window.open('/chatroom/page', 'drgr_chatroom', 'width=540,height=800,resizable=yes');
+  if (w) { _chatroomWin = w; w.focus(); }
+  else { location.href = '/chatroom/page'; }
 }
 
 // ── Debug mode ────────────────────────────────────────────────────────────────
@@ -6754,5 +6875,37 @@ function veOpenInEditor() {
   }
 }
 </script>
+<!-- Mobile bottom navigation bar -->
+<div id="mobile-nav">
+  <button class="mnav-btn" id="mnav-editor" onclick="setView('editor');closeMobileMore()">
+    <span class="mn-icon">📝</span><span class="mn-label">Редактор</span>
+  </button>
+  <button class="mnav-btn" id="mnav-chat" onclick="setView('chat');closeMobileMore()">
+    <span class="mn-icon">💬</span><span class="mn-label">Чат</span>
+  </button>
+  <button class="mnav-btn" id="mnav-preview" onclick="setView('preview');closeMobileMore()">
+    <span class="mn-icon">🖥</span><span class="mn-label">Визор</span>
+  </button>
+  <button class="mnav-btn" id="mnav-vm" onclick="setView('vm');closeMobileMore()">
+    <span class="mn-icon">🧠</span><span class="mn-label">VM</span>
+  </button>
+  <button class="mnav-btn" id="mnav-more" onclick="toggleMobileMore()">
+    <span class="mn-icon">⋯</span><span class="mn-label">Ещё</span>
+  </button>
+</div>
+<div id="mobile-more-menu">
+  <button class="mnav-more-btn" onclick="setView('both');closeMobileMore()"><span class="mn-icon">⬜</span>Ред+Визор</button>
+  <button class="mnav-more-btn" onclick="setView('chat-code');closeMobileMore()"><span class="mn-icon">💬</span>Чат+Код</button>
+  <button class="mnav-more-btn" onclick="setView('research');closeMobileMore()"><span class="mn-icon">🔍</span>Поиск</button>
+  <button class="mnav-more-btn" onclick="setView('imagegen');closeMobileMore()"><span class="mn-icon">🎨</span>Арт</button>
+  <button class="mnav-more-btn" onclick="setView('colab');closeMobileMore()"><span class="mn-icon">🌐</span>Colab</button>
+  <button class="mnav-more-btn" onclick="setView('3dgen');closeMobileMore()"><span class="mn-icon">🧊</span>3D</button>
+  <button class="mnav-more-btn" onclick="setView('webbuilder');closeMobileMore()"><span class="mn-icon">🌐</span>Сайт</button>
+  <button class="mnav-more-btn" onclick="setView('videditor');closeMobileMore()"><span class="mn-icon">🎬</span>Видео</button>
+  <button class="mnav-more-btn" onclick="setView('goose');closeMobileMore()"><span class="mn-icon">🪿</span>Goose</button>
+  <button class="mnav-more-btn" onclick="setView('gltf');closeMobileMore()"><span class="mn-icon">🧊</span>GLTF</button>
+  <button class="mnav-more-btn" onclick="openChatroom();closeMobileMore()"><span class="mn-icon">🌐</span>Чат-зал</button>
+  <button class="mnav-more-btn" onclick="openPanel();closeMobileMore()"><span class="mn-icon">⚙️</span>Настройки</button>
+</div>
 </body>
 </html>
