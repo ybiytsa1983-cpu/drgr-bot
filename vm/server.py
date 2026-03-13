@@ -3580,13 +3580,51 @@ def webbuilder_generate():
     # Fallback: generate HTML directly using local Ollama / LM Studio / TGWUI.
     model = body.get("model", "").strip()
     style = body.get("style", "tailwind").strip()
+
+    # Choose CDN for the selected style framework
+    _style_cdn = {
+        "tailwind": '<script src="https://cdn.tailwindcss.com"></script>',
+        "bootstrap": '<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"><script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>',
+        "plain": "",
+    }.get(style, "")
+
     system_prompt = (
-        "You are an expert HTML/CSS/JS developer. "
-        "Generate a complete, standalone, production-ready single-page website. "
-        f"Use {style} for styling. "
-        "Output only valid HTML — no explanations, no markdown fences."
+        "You are an expert full-stack web developer. Generate a COMPLETE, STANDALONE, "
+        "production-ready single-page website as a single HTML file.\n\n"
+        f"CSS framework: {style}. Include CDN links as needed.\n\n"
+        "STRICT REQUIREMENTS — every generated page MUST have ALL of these:\n"
+        "1. Valid HTML5 with <!DOCTYPE html>, <html lang>, <head> with charset+viewport+title.\n"
+        "2. A sticky navigation bar with working SCROLL links (href='#section-id') to all sections.\n"
+        "3. At least 4 distinct, uniquely-styled full-width sections with id attributes.\n"
+        "4. Hero section with headline, sub-headline, and a prominent CTA button.\n"
+        "5. Features/services section with cards or icon grid (minimum 3 items).\n"
+        "6. A contact form with name, email, message fields and a submit button "
+        "   (use JS alert on submit — no actual server required).\n"
+        "7. A footer with copyright, social links, and back-to-top button.\n"
+        "8. Smooth scroll behaviour: <script>document.querySelectorAll('a[href^=\"#\"]').forEach(a=>a.addEventListener('click',e=>{e.preventDefault();document.querySelector(a.getAttribute('href'))?.scrollIntoView({behavior:'smooth'})}));</script>\n"
+        "9. Responsive design: desktop + mobile (min-width breakpoints or flexbox/grid).\n"
+        "10. Visually rich: gradients, box-shadows, hover transitions, colour palette.\n"
+        "11. ALL buttons and nav links must be CLICKABLE and FUNCTIONAL (scroll or JS action).\n\n"
+        "OUTPUT RULES:\n"
+        "- Output ONLY raw HTML. Do NOT wrap in ``` code fences.\n"
+        "- Do NOT include any explanation text before or after the HTML.\n"
+        "- The first character of your response must be '<' (start of <!DOCTYPE html>).\n"
     )
-    user_prompt = f"Create a website for: {prompt}"
+    user_prompt = (
+        f"Create a complete, richly-styled, fully-functional single-page website for:\n\n{prompt}\n\n"
+        "Remember: all sections must be unique, all links must work, the design must be beautiful "
+        "and modern. Start your response with <!DOCTYPE html>."
+    )
+
+    def _strip_html_fences(raw: str) -> str:
+        """Remove markdown code fences that some models add around HTML output."""
+        raw = raw.strip()
+        # Strip optional language tag and leading newline(s) after opening fence
+        raw = re.sub(r'^```[a-zA-Z]*\s*\n', '', raw)
+        # Strip trailing closing fence
+        raw = re.sub(r'\n```\s*$', '', raw)
+        return raw.strip()
+
     try:
         if model.startswith("lmstudio:") and LM_STUDIO_BASE:
             real_model = model[len("lmstudio:"):]
@@ -3599,7 +3637,7 @@ def webbuilder_generate():
                 timeout=int(os.environ.get("OLLAMA_TIMEOUT", 300)),
             )
             r.raise_for_status()
-            html = r.json()["choices"][0]["message"]["content"]
+            html = _strip_html_fences(r.json()["choices"][0]["message"]["content"])
         elif model.startswith("tgwui:") and TGWUI_BASE:
             real_model = model[len("tgwui:"):]
             r = _http.post(
@@ -3611,7 +3649,7 @@ def webbuilder_generate():
                 timeout=int(os.environ.get("OLLAMA_TIMEOUT", 300)),
             )
             r.raise_for_status()
-            html = r.json()["choices"][0]["message"]["content"]
+            html = _strip_html_fences(r.json()["choices"][0]["message"]["content"])
         else:
             # Default: Ollama — auto-pick first available model if none specified
             if not model:
@@ -3632,7 +3670,7 @@ def webbuilder_generate():
                 timeout=int(os.environ.get("OLLAMA_TIMEOUT", 300)),
             )
             r.raise_for_status()
-            html = r.json().get("message", {}).get("content", "")
+            html = _strip_html_fences(r.json().get("message", {}).get("content", ""))
         return jsonify({"ok": True, "data": {"html": html}})
     except _http.exceptions.Timeout:
         return jsonify({"ok": False, "error": "Таймаут — модель не отвечает"})
@@ -8699,12 +8737,33 @@ def _research_build_html(title: str, body_text: str, sources: list, screenshot_u
         )
 
     # ── Article sections (Markdown → HTML) ───────────────────────────────
+    def _inline_md(raw: str) -> str:
+        """Convert inline Markdown (bold, italic, inline code, links) to HTML.
+
+        Escapes HTML entities first, then applies safe pattern substitutions.
+        """
+        # Escape HTML special chars
+        s = raw.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        # Bold: **text** or __text__
+        s = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', s)
+        s = re.sub(r'__(.+?)__', r'<strong>\1</strong>', s)
+        # Italic: *text* or _text_ (only single * or _, not touching already-processed **)
+        s = re.sub(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)', r'<em>\1</em>', s)
+        s = re.sub(r'(?<!_)_(?!_)(.+?)(?<!_)_(?!_)', r'<em>\1</em>', s)
+        # Inline code: `code`
+        s = re.sub(r'`([^`]+)`', r'<code>\1</code>', s)
+        # Markdown links: [text](url)
+        s = re.sub(r'\[([^\]]+)\]\((https?://[^\)]+)\)',
+                   r'<a href="\2" target="_blank" rel="noopener">\1</a>', s)
+        return s
+
     sections_html = ""
     lines = body_text.strip().splitlines()
     # Section icons for h2 headings
     _section_icons = ["📌", "🔍", "💡", "📊", "🏆", "⚙️", "🌐", "📝", "🔬", "✅"]
     _sec_idx = 0
     current_para: list = []
+    _in_code_block = False
 
     def _flush_para(paras: list) -> str:
         if not paras:
@@ -8712,24 +8771,48 @@ def _research_build_html(title: str, body_text: str, sources: list, screenshot_u
         text = " ".join(paras).strip()
         if not text:
             return ""
-        return "<p>" + esc(text) + "</p>\n"
+        return "<p>" + _inline_md(text) + "</p>\n"
 
     for line in (lines[1:] if len(lines) > 1 else lines):
-        if line.startswith("## "):
+        # Fenced code blocks (``` or ~~~)
+        if line.strip().startswith("```") or line.strip().startswith("~~~"):
+            sections_html += _flush_para(current_para)
+            current_para = []
+            _in_code_block = not _in_code_block
+            continue
+        if _in_code_block:
+            # Render code block lines as-is (escaped)
+            sections_html += f'<code class="code-line">{esc(line)}</code><br>\n'
+            continue
+        if line.startswith("#### "):
+            sections_html += _flush_para(current_para)
+            current_para = []
+            sections_html += f'<h4>{_inline_md(line[5:].strip())}</h4>\n'
+        elif line.startswith("### "):
+            sections_html += _flush_para(current_para)
+            current_para = []
+            sections_html += f'<h3>{_inline_md(line[4:].strip())}</h3>\n'
+        elif line.startswith("## "):
             sections_html += _flush_para(current_para)
             current_para = []
             icon = _section_icons[_sec_idx % len(_section_icons)]
             anchor_id = f"section-{_sec_idx}"
             _sec_idx += 1
-            sections_html += f'<h2 id="{anchor_id}">{icon} {esc(line[3:].strip())}</h2>\n'
+            sections_html += f'<h2 id="{anchor_id}">{icon} {_inline_md(line[3:].strip())}</h2>\n'
         elif line.startswith("# "):
             sections_html += _flush_para(current_para)
             current_para = []
-            sections_html += f"<h2>{esc(line[2:].strip())}</h2>\n"
+            sections_html += f"<h2>{_inline_md(line[2:].strip())}</h2>\n"
         elif line.strip().startswith("- ") or line.strip().startswith("* "):
             sections_html += _flush_para(current_para)
             current_para = []
-            sections_html += f'<li>{esc(line.strip()[2:].strip())}</li>\n'
+            sections_html += f'<li>{_inline_md(line.strip()[2:].strip())}</li>\n'
+        elif re.match(r'^\d+\.\s+', line.strip()):
+            # Numbered list item: "1. text" (requires at least one space after period)
+            sections_html += _flush_para(current_para)
+            current_para = []
+            item_text = re.sub(r'^\d+\.\s+', '', line.strip())
+            sections_html += f'<li class="ol-item">{_inline_md(item_text)}</li>\n'
         elif line.strip():
             current_para.append(line.strip())
         else:
@@ -8737,27 +8820,86 @@ def _research_build_html(title: str, body_text: str, sources: list, screenshot_u
             current_para = []
     sections_html += _flush_para(current_para)
 
-    # Wrap consecutive <li> items in a single <ul>
-    sections_html = re.sub(r'(?:<li>.*?</li>\n)+', lambda m: '<ul class="art-list">' + m.group(0) + '</ul>\n', sections_html)
+    # Wrap consecutive <li> / <li class="ol-item"> items into <ul>/<ol> blocks.
+    # Use a simple line-by-line pass to avoid catastrophic backtracking in regex.
+    _wrapped_lines: list = []
+    _ul_buf: list = []
+    _ol_buf: list = []
 
-    # ── Video embed (YouTube search) ──────────────────────────────────────
+    def _flush_ul(buf: list) -> str:
+        if not buf:
+            return ""
+        return '<ul class="art-list">' + "".join(buf) + "</ul>\n"
+
+    def _flush_ol(buf: list) -> str:
+        if not buf:
+            return ""
+        return '<ol class="art-list">' + "".join(buf) + "</ol>\n"
+
+    for _sl in sections_html.splitlines(keepends=True):
+        if _sl.startswith('<li class="ol-item">'):
+            _wrapped_lines.append(_flush_ul(_ul_buf)); _ul_buf = []
+            _ol_buf.append(_sl)
+        elif _sl.startswith('<li>'):
+            _wrapped_lines.append(_flush_ol(_ol_buf)); _ol_buf = []
+            _ul_buf.append(_sl)
+        else:
+            _wrapped_lines.append(_flush_ul(_ul_buf)); _ul_buf = []
+            _wrapped_lines.append(_flush_ol(_ol_buf)); _ol_buf = []
+            _wrapped_lines.append(_sl)
+    _wrapped_lines.append(_flush_ul(_ul_buf))
+    _wrapped_lines.append(_flush_ol(_ol_buf))
+    sections_html = "".join(l for l in _wrapped_lines if l)
+
+    # ── Video section (interactive YouTube embed) ─────────────────────────
     yt_query = urllib.parse.quote_plus(title[:80])
+    yt_search_url = f"https://www.youtube.com/results?search_query={yt_query}"
+    # NOTE: YouTube removed the listType=search embed parameter in 2019.
+    # We use an interactive widget: user can paste a YouTube URL/ID to embed it,
+    # or click the search button to open YouTube in a new tab.
     video_html = (
         '<section class="video-section">\n'
         '<h2>🎬 Видео по теме</h2>\n'
-        '<div class="video-grid">\n'
-        f'<div class="video-embed-wrap">'
-        f'<iframe src="https://www.youtube.com/embed?listType=search&list={yt_query}" '
-        f'title="YouTube — {esc(title)}" frameborder="0" allowfullscreen '
-        f'allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" '
-        f'loading="lazy"></iframe>'
-        f'</div>\n'
-        f'<div class="video-link-box">'
-        f'<p>🔎 Смотрите видео по теме <strong>{esc(title)}</strong> на YouTube:</p>'
-        f'<a class="btn-video" href="https://www.youtube.com/results?search_query={yt_query}" '
-        f'target="_blank" rel="noopener">▶ Открыть YouTube-поиск</a>'
-        f'</div>\n'
-        '</div></section>\n'
+        '<div id="yt-widget">\n'
+        '  <div class="yt-placeholder" id="yt-placeholder">\n'
+        f'    <p>Вставьте ссылку или ID видео YouTube по теме <strong>{esc(title)}</strong>:</p>\n'
+        '    <div class="yt-input-row">\n'
+        '      <input id="yt-url-input" type="text" placeholder="https://www.youtube.com/watch?v=... или ID видео"\n'
+        '             style="flex:1;padding:9px 12px;border:1px solid #ccc;border-radius:8px;font-size:14px"\n'
+        '             onkeydown="if(event.key===\'Enter\'){embedYTVideo();}" />\n'
+        '      <button class="btn-video" onclick="embedYTVideo()">▶ Смотреть</button>\n'
+        f'      <a class="btn-video-search" href="{yt_search_url}" target="_blank" rel="noopener">🔍 Найти на YouTube</a>\n'
+        '    </div>\n'
+        '  </div>\n'
+        '  <div id="yt-embed-wrap" style="display:none">\n'
+        '    <div class="video-embed-wrap">\n'
+        '      <iframe id="yt-iframe" src="" title="YouTube Video" frameborder="0" allowfullscreen\n'
+        '              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture">\n'
+        '      </iframe>\n'
+        '    </div>\n'
+        '    <div style="margin-top:8px;display:flex;gap:8px">\n'
+        '      <button class="btn-action" onclick="document.getElementById(\'yt-embed-wrap\').style.display=\'none\';'
+        'document.getElementById(\'yt-placeholder\').style.display=\'\'">⬅ Другое видео</button>\n'
+        f'      <a class="btn-video-search" href="{yt_search_url}" target="_blank" rel="noopener">🔍 Поиск на YouTube</a>\n'
+        '    </div>\n'
+        '  </div>\n'
+        '</div>\n'
+        '<script>\n'
+        'function embedYTVideo() {\n'
+        '  var raw = (document.getElementById("yt-url-input") || {}).value || "";\n'
+        '  var val = raw.trim();\n'
+        '  if (!val) { alert("Введите ссылку или ID видео YouTube"); return; }\n'
+        '  // Extract video ID from full URL (watch?v=, youtu.be/, embed/)\n'
+        '  var m = val.match(/(?:[?&]v=|youtu\\.be\\/|embed\\/)([A-Za-z0-9_-]{11})/);\n'
+        '  var vid = m ? m[1] : (val.length === 11 && /^[A-Za-z0-9_-]+$/.test(val) ? val : null);\n'
+        '  if (!vid) { alert("Не удалось распознать ID видео. Вставьте полную ссылку YouTube."); return; }\n'
+        '  var iframe = document.getElementById("yt-iframe");\n'
+        '  if (iframe) iframe.src = "https://www.youtube.com/embed/" + vid + "?autoplay=1";\n'
+        '  document.getElementById("yt-placeholder").style.display = "none";\n'
+        '  document.getElementById("yt-embed-wrap").style.display = "";\n'
+        '}\n'
+        '</script>\n'
+        '</section>\n'
     )
 
     # ── Sources list ──────────────────────────────────────────────────────
@@ -8897,6 +9039,25 @@ def _research_build_html(title: str, body_text: str, sources: list, screenshot_u
         "border-radius:6px;cursor:pointer;font-size:.88em;font-weight:600;transition:background .2s}"
         ".btn-action:hover{background:#0a6aab}"
         ".btn-scroll{background:#1aad5a}.btn-scroll:hover{background:#148a48}"
+        "h3{font-size:1.1em;margin:20px 0 8px;color:#2c5f8a}"
+        "h4{font-size:1em;margin:16px 0 6px;color:#444;font-style:italic}"
+        "code{background:#f0f0f0;border-radius:4px;padding:1px 5px;font-size:.88em;font-family:monospace}"
+        "code.code-line{display:inline-block;font-family:monospace;background:#f5f5f5;"
+        "padding:0 6px;width:100%;font-size:.85em}"
+        ".yt-placeholder{background:#fff3e0;border:1px solid #ffcc80;border-radius:12px;padding:20px;margin:12px 0}"
+        ".yt-placeholder p{margin:0 0 12px;font-size:.95em;color:#555}"
+        ".yt-input-row{display:flex;gap:8px;flex-wrap:wrap}"
+        ".btn-video{display:inline-block;padding:9px 18px;background:#ff0000;"
+        "color:#fff;border-radius:8px;text-decoration:none;font-weight:600;font-size:.9em;"
+        "border:none;cursor:pointer;white-space:nowrap}"
+        ".btn-video:hover{background:#cc0000;text-decoration:none}"
+        ".btn-video-search{display:inline-block;padding:9px 18px;background:#0e84d4;"
+        "color:#fff;border-radius:8px;text-decoration:none;font-weight:600;font-size:.9em;"
+        "white-space:nowrap}"
+        ".btn-video-search:hover{background:#0a6aab;text-decoration:none}"
+        ".video-embed-wrap{position:relative;padding-bottom:56.25%;height:0;overflow:hidden;"
+        "border-radius:10px;box-shadow:0 4px 12px rgba(0,0,0,.15);margin-bottom:12px}"
+        ".video-embed-wrap iframe{position:absolute;top:0;left:0;width:100%;height:100%;border:0}"
         "@media print{.action-bar,.video-section,.toc{display:none}}"
     )
 
@@ -9321,7 +9482,37 @@ def web_research():
         else:
             return jsonify({"error": "Не удалось получить достаточно данных по запросу", "success": False}), 404
 
-    # ── 8. Build HTML article ─────────────────────────────────────────────
+    # ── 8. Clean article text from LLM artefacts ─────────────────────────
+    # Strip fenced code blocks wrapping the whole output (some models wrap their
+    # response in ```html ... ``` or ``` ... ```)
+    article_text = article_text.strip()
+    article_text = re.sub(r'^```[a-zA-Z]*\s*\n', '', article_text)
+    article_text = re.sub(r'\n```\s*$', '', article_text)
+    article_text = article_text.strip()
+
+    # Strip leading lines that look like LLM preamble phrases
+    # (e.g. "Конечно! Вот ваша статью:", "Here is the article:", "Sure, here's...")
+    _preamble_line = re.compile(
+        r'^(?:'
+        r'конечно[,!].{0,60}$|'
+        r'конечно\s*$|'
+        r'вот\s+(?:ваша\s+)?(?:статья|текст)[.:!]?\s*$|'
+        r'вот\s+(?:готовая\s+)?статья[.:!]?\s*$|'
+        r'пожалуйста[,!]\s+вот\s+.{0,60}:\s*$|'
+        r'here\s+is\s+(?:the\s+)?(?:article|text)[.:!]?\s*$|'
+        r'sure[,!]\s+here(?:\'s|\s+is).{0,60}$'
+        r')',
+        re.IGNORECASE,
+    )
+    _art_lines = article_text.splitlines()
+    while _art_lines and _preamble_line.match(_art_lines[0].strip()):
+        _art_lines.pop(0)
+    # Also skip leading blank lines after preamble removal
+    while _art_lines and not _art_lines[0].strip():
+        _art_lines.pop(0)
+    article_text = "\n".join(_art_lines).strip()
+
+    # ── 9. Build HTML article ─────────────────────────────────────────────
     lines = article_text.strip().splitlines()
     title = lines[0].lstrip("#* ").strip() if lines else query
     html_article = _research_build_html(title, article_text, sources, screenshot_uris)
