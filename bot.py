@@ -948,7 +948,7 @@ def build_html_article(
     screenshot_paths: List[str],
     image_descriptions: Optional[Dict[str, str]] = None,
 ) -> str:
-    """Return a self-contained HTML article with CSS-grid gallery, Chart.js, and SVG diagram."""
+    """Return a self-contained professional HTML article with CSS-grid gallery, Chart.js, video and action buttons."""
     import html as _html
     image_descriptions = image_descriptions or {}
 
@@ -971,7 +971,7 @@ def build_html_article(
             f"{link_open}"
             f'<img src="{uri}" alt="{cap}" loading="lazy"/>'
             f"{link_close}"
-            f"<figcaption>{cap}</figcaption>"
+            f"<figcaption>🔗 {cap}</figcaption>"
             "</figure>\n"
         )
         valid_screenshots.append(path)
@@ -980,7 +980,7 @@ def build_html_article(
     if gallery_items:
         gallery_html = (
             '<section class="gallery">\n'
-            '<h2>\U0001f4f7 Галерея скриншотов</h2>\n'
+            '<h2>📸 Галерея материалов</h2>\n'
             '<div class="gallery-grid">\n'
             f"{gallery_items}"
             "</div>\n</section>\n"
@@ -989,6 +989,8 @@ def build_html_article(
     # ── Body: split on markdown-style headings ────────────────────────────
     sections_html = ""
     current_section_lines: List[str] = []
+    _sec_icons = ["🔍", "📌", "💡", "🌐", "🏆", "⚙️", "📊", "✅", "🔬", "📝"]
+    _sec_idx = 0
 
     def _flush_section(lines: List[str]) -> str:
         if not lines:
@@ -1002,20 +1004,47 @@ def build_html_article(
 
     for raw_line in body.splitlines():
         line = raw_line.strip()
-        # Treat lines starting with # / ## / ### as section headings
         if re.match(r"^#{1,3}\s+", line):
             sections_html += _flush_section(current_section_lines)
             current_section_lines = []
-            heading_text = _html.escape(re.sub(r"^#{1,3}\s+", "", line))
-            sections_html += f"<h2>{heading_text}</h2>\n"
+            heading_text = re.sub(r"^#{1,3}\s+", "", line)
+            # Add section icon if not already present (no emoji in first 2 chars)
+            if heading_text and not any(0x1F000 <= ord(c) <= 0x1FFFF for c in heading_text[:3]):
+                icon = _sec_icons[_sec_idx % len(_sec_icons)]
+                _sec_idx += 1
+                heading_text = f"{icon} {heading_text}"
+            else:
+                _sec_idx += 1
+            sections_html += f"<h2>{_html.escape(heading_text)}</h2>\n"
         else:
             current_section_lines.append(raw_line)
     sections_html += _flush_section(current_section_lines)
 
+    # ── Video embed section ───────────────────────────────────────────────
+    import urllib.parse as _up
+    yt_query = _up.quote_plus(title[:80])
+    video_html = (
+        '<section class="video-section">\n'
+        '<h2>🎬 Видео по теме</h2>\n'
+        '<div class="video-grid">\n'
+        '<div class="video-embed-wrap">'
+        f'<iframe src="https://www.youtube.com/embed?listType=search&list={yt_query}" '
+        f'title="YouTube — {_html.escape(title)}" frameborder="0" allowfullscreen '
+        'allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" '
+        'loading="lazy"></iframe>'
+        '</div>\n'
+        '<div class="video-link-box">'
+        f'<p>🔎 Смотрите видео по теме <strong>{_html.escape(title)}</strong> на YouTube:</p>'
+        f'<a class="btn-video" href="https://www.youtube.com/results?search_query={yt_query}" '
+        'target="_blank" rel="noopener">▶ Открыть YouTube-поиск</a>'
+        '</div>\n'
+        '</div></section>\n'
+    )
+
     # ── Sources list ──────────────────────────────────────────────────────
     sources_items = "".join(
         f'<li><a href="{_safe_href(s.get("href",""))}" target="_blank" rel="noopener noreferrer">'
-        f'{_html.escape(s.get("title", f"Источник {i+1}"))}</a></li>\n'
+        f'🔗 {_html.escape(s.get("title", f"Источник {i+1}"))}</a></li>\n'
         for i, s in enumerate(sources)
     )
 
@@ -1023,34 +1052,82 @@ def build_html_article(
     chart_html = _build_source_chart_js(sources)
     svg_html   = _build_svg_diagram(title)
 
+    # ── Action buttons bar ────────────────────────────────────────────────
+    buttons_html = (
+        '<div class="action-bar">\n'
+        '<button class="btn-action" onclick="window.print()">🖨️ Печать</button>\n'
+        '<button class="btn-action" onclick="copyArticle()">📋 Копировать текст</button>\n'
+        '<button class="btn-action" onclick="shareArticle()">🔗 Поделиться</button>\n'
+        '<button class="btn-action btn-scroll" onclick="window.scrollTo({top:0,behavior:\'smooth\'})">⬆️ Наверх</button>\n'
+        '</div>\n'
+        '<script>\n'
+        'function copyArticle(){\n'
+        '  var t=document.querySelector(".article-body");'
+        '  if(!t){return;}'
+        '  navigator.clipboard.writeText(t.innerText).then(function(){'
+        '    alert("Текст скопирован!");'
+        '  }).catch(function(){alert("Не удалось скопировать.");});\n'
+        '}\n'
+        'function shareArticle(){\n'
+        '  if(navigator.share){\n'
+        f'    navigator.share({{title:"{_html.escape(title)}",url:window.location.href}});\n'
+        '  } else {\n'
+        '    navigator.clipboard.writeText(window.location.href).then(function(){'
+        '      alert("Ссылка скопирована!");'
+        '    });\n'
+        '  }\n'
+        '}\n'
+        '</script>\n'
+    )
+
     # ── CSS ───────────────────────────────────────────────────────────────
     css = (
-        "body{font-family:Georgia,serif;max-width:960px;margin:0 auto;padding:24px;"
-        "background:#f4f4f4;color:#222}"
-        "h1{color:#1a1a2e;border-bottom:3px solid #e94560;padding-bottom:8px;margin-bottom:20px}"
-        "h2{color:#16213e;margin-top:28px;margin-bottom:8px}"
-        "article{background:#fff;padding:32px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.12)}"
-        ".section-body p{line-height:1.8;margin:0 0 12px}"
-        "blockquote{border-left:3px solid #e94560;margin:10px 0;padding-left:15px;"
+        ":root{--accent:#0e84d4;--accent2:#1aad5a;--bg:#f0f4f8;--card:#fff;--text:#1a1a2e}"
+        "body{font-family:'Segoe UI',Georgia,serif;max-width:960px;margin:0 auto;padding:24px;"
+        "background:var(--bg);color:var(--text);line-height:1.7}"
+        "h1{color:var(--accent);border-bottom:3px solid var(--accent2);padding-bottom:10px;"
+        "margin-bottom:16px;font-size:2em}"
+        "h2{color:var(--accent2);margin-top:28px;margin-bottom:10px;display:flex;align-items:center;gap:6px}"
+        "article{background:var(--card);padding:36px;border-radius:12px;"
+        "box-shadow:0 4px 20px rgba(0,0,0,.10)}"
+        ".section-body p{line-height:1.8;margin:0 0 14px;color:#333}"
+        "blockquote{border-left:3px solid var(--accent);margin:10px 0;padding-left:15px;"
         "color:#555;font-style:italic}"
         ".gallery{margin:32px 0}"
         ".gallery-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));"
         "gap:16px;margin-top:12px}"
-        ".gallery-item{background:#f9f9f9;border-radius:8px;overflow:hidden;"
-        "box-shadow:0 2px 6px rgba(0,0,0,.1);transition:transform .2s}"
-        ".gallery-item:hover{transform:translateY(-3px)}"
+        ".gallery-item{background:#f9f9f9;border-radius:10px;overflow:hidden;"
+        "box-shadow:0 2px 8px rgba(0,0,0,.08);transition:transform .2s}"
+        ".gallery-item:hover{transform:translateY(-4px);box-shadow:0 6px 16px rgba(0,0,0,.15)}"
         ".gallery-item img{width:100%;display:block;border-bottom:1px solid #ddd}"
         ".gallery-item figcaption{padding:8px 10px;font-size:.82em;color:#555;font-style:italic}"
         ".gallery-item a{display:block}"
-        ".chart-wrap{margin:32px 0;background:#f9f9f9;border-radius:8px;padding:20px;"
+        ".chart-wrap{margin:32px 0;background:#f9f9f9;border-radius:10px;padding:20px;"
         "border:1px solid #e0e0e0}"
         ".svg-wrap{margin:32px 0}"
-        ".sources{background:#f9f9f9;border-left:4px solid #e94560;padding:16px 20px;"
-        "margin-top:32px;border-radius:0 6px 6px 0}"
-        ".sources h3{color:#e94560;margin-top:0}"
+        ".sources{background:#f0f7ff;border-left:4px solid var(--accent);padding:16px 20px;"
+        "margin-top:32px;border-radius:0 8px 8px 0}"
+        ".sources h3{color:var(--accent);margin-top:0}"
         ".sources a{color:#0f3460;word-break:break-all}"
         ".sources ol{padding-left:20px}"
         ".sources li{margin-bottom:6px;line-height:1.5}"
+        ".video-section{margin:32px 0}"
+        ".video-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start}"
+        "@media(max-width:640px){.video-grid{grid-template-columns:1fr}}"
+        ".video-embed-wrap{position:relative;padding-bottom:56.25%;height:0;overflow:hidden;"
+        "border-radius:10px;box-shadow:0 4px 12px rgba(0,0,0,.15)}"
+        ".video-embed-wrap iframe{position:absolute;top:0;left:0;width:100%;height:100%;border:0}"
+        ".video-link-box{background:#fff3e0;border-radius:10px;padding:16px;border:1px solid #ffcc80}"
+        ".btn-video{display:inline-block;margin-top:10px;padding:10px 20px;background:#ff0000;"
+        "color:#fff;border-radius:8px;text-decoration:none;font-weight:600;font-size:.9em}"
+        ".btn-video:hover{background:#cc0000;text-decoration:none}"
+        ".action-bar{display:flex;gap:10px;flex-wrap:wrap;margin:24px 0;padding:16px;"
+        "background:#f9f9f9;border-radius:10px;border:1px solid #e0e0e0}"
+        ".btn-action{padding:8px 16px;background:var(--accent);color:#fff;border:none;"
+        "border-radius:6px;cursor:pointer;font-size:.88em;font-weight:600;transition:background .2s}"
+        ".btn-action:hover{background:#0a6aab}"
+        ".btn-scroll{background:var(--accent2)}.btn-scroll:hover{background:#148a48}"
+        "@media print{.action-bar,.video-section{display:none}}"
     )
 
     return (
@@ -1059,12 +1136,14 @@ def build_html_article(
         '<meta name="viewport" content="width=device-width,initial-scale=1">\n'
         f"<title>{_html.escape(title)}</title>\n"
         f"<style>{css}</style>\n"
-        f"</head>\n<body>\n<article>\n<h1>{_html.escape(title)}</h1>\n"
+        f"</head>\n<body>\n<article>\n<h1>📰 {_html.escape(title)}</h1>\n"
+        f"{buttons_html}"
         f"{svg_html}"
         f"{gallery_html}"
         f'<section class="article-body">\n{sections_html}</section>\n'
+        f"{video_html}"
         f"{chart_html}"
-        '<div class="sources">\n<h3>\U0001f4da Источники</h3>\n'
+        '<div class="sources">\n<h3>📚 Источники</h3>\n'
         f"<ol>{sources_items}</ol>\n</div>\n"
         "</article>\n</body>\n</html>"
     )
@@ -1149,19 +1228,36 @@ async def research_and_reply(query: str, message: Message) -> None:
     model  = await get_best_model()
 
     prompt = (
-        f'Ты — экспертный AI-журналист. Напиши полноценную статью на русском языке по теме: "{query}".\n\n'
-        f"Данные из источников (DuckDuckGo, Wikipedia, Reddit, HackerNews):\n{aggregated}\n\n"
-        "Требования:\n"
-        "1. Дай заголовок статьи (первая строка, без # или *).\n"
-        "2. Введение (2-3 предложения, без заголовка).\n"
-        "3. Несколько разделов с подзаголовками (формат: ## Название раздела).\n"
-        "4. Выдели редкую и малоизвестную информацию по теме (## Интересные факты).\n"
-        "5. Заключение (## Заключение).\n"
-        "Пиши связно и информативно."
+        f'Ты — профессиональный AI-журналист. Напиши ЕДИНУЮ ПОЛНОЦЕННУЮ статью СТРОГО по теме: "{query}".\n\n'
+        f"КРИТИЧЕСКИ ВАЖНО:\n"
+        f"- Статья ТОЛЬКО И ИСКЛЮЧИТЕЛЬНО о теме '{query}'\n"
+        f"- НЕ смешивай разные темы из источников\n"
+        f"- НЕ КОПИРУЙ тексты — используй источники КАК СПРАВОЧНЫЙ МАТЕРИАЛ\n"
+        f"- Пиши СВОИМИ словами\n\n"
+        f"Справочные данные:\n{aggregated}\n\n"
+        f"СТРУКТУРА СТАТЬИ:\n"
+        f"Строка 1: Заголовок о теме '{query}' (без # или *)\n\n"
+        f"## 🔍 Введение\nЧто такое '{query}', почему это актуально.\n\n"
+        f"## 📌 Основные аспекты\nКлючевые характеристики темы.\n\n"
+        f"## 💡 Важные факты\nКонкретные данные и цифры.\n\n"
+        f"## 🌟 Интересные подробности\nМалоизвестные факты по теме '{query}'.\n\n"
+        f"## ✅ Заключение\nИтоговые выводы.\n\n"
+        f"Требования: минимум 500 слов, только русский язык, ТОЛЬКО о теме '{query}'."
     )
     article_text = await ask_ollama(prompt, model)
     if not article_text:
-        article_text = f"{query}\n\n" + aggregated
+        # Fallback: structured article from source snippets (better than raw dump)
+        good_snippets = [s for s in all_sources if len(s.get("body", "")) >= 50]
+        if good_snippets:
+            parts = [f"## 📌 {s['title'][:80]}\n{s.get('body','')[:500]}" for s in good_snippets[:5]]
+            article_text = (
+                f"{query}\n\n"
+                f"По запросу найдена следующая информация из открытых источников.\n\n"
+                + "\n\n".join(parts)
+                + f"\n\n## ✅ Заключение\nДанные получены из открытых источников по теме '{query}'."
+            )
+        else:
+            article_text = f"{query}\n\nИнформация по данной теме не найдена."
 
     # 5. Build and save HTML
     lines = article_text.strip().splitlines()

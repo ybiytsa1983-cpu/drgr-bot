@@ -8321,7 +8321,7 @@ def _research_html_escape(text: str) -> str:
 
 
 def _research_build_html(title: str, body_text: str, sources: list, screenshot_uris: list) -> str:
-    """Build a self-contained HTML research article with gallery, Chart.js and SVG."""
+    """Build a self-contained professional HTML research article with gallery, Chart.js, video, and action buttons."""
     esc = _research_html_escape
 
     # ── Photo gallery ─────────────────────────────────────────────────────
@@ -8335,113 +8335,224 @@ def _research_build_html(title: str, body_text: str, sources: list, screenshot_u
             f'<a href="{src_url}" target="_blank" rel="noopener">'
             f'<img src="{uri}" alt="{src_title}" loading="lazy"/>'
             f'</a>'
-            f'<figcaption><a href="{src_url}" target="_blank" rel="noopener">{src_title}</a></figcaption>'
+            f'<figcaption><a href="{src_url}" target="_blank" rel="noopener">🔗 {src_title}</a></figcaption>'
             f'</figure>\n'
         )
     gallery_html = ""
     if gallery_items:
         gallery_html = (
             '<section class="gallery">\n'
-            "<h2>📸 Галерея скриншотов</h2>\n"
+            "<h2>📸 Галерея материалов</h2>\n"
             '<div class="gallery-grid">\n'
             f"{gallery_items}"
             "</div></section>\n"
         )
 
-    # ── Article sections ──────────────────────────────────────────────────
+    # ── Article sections (Markdown → HTML) ───────────────────────────────
     sections_html = ""
     lines = body_text.strip().splitlines()
+    # Section icons for h2 headings
+    _section_icons = ["📌", "🔍", "💡", "📊", "🏆", "⚙️", "🌐", "📝", "🔬", "✅"]
+    _sec_idx = 0
     current_para: list = []
+
+    def _flush_para(paras: list) -> str:
+        if not paras:
+            return ""
+        text = " ".join(paras).strip()
+        if not text:
+            return ""
+        return "<p>" + esc(text) + "</p>\n"
+
     for line in (lines[1:] if len(lines) > 1 else lines):
         if line.startswith("## "):
-            if current_para:
-                sections_html += "<p>" + esc(" ".join(current_para)) + "</p>\n"
-                current_para = []
-            sections_html += f"<h2>{esc(line[3:].strip())}</h2>\n"
+            sections_html += _flush_para(current_para)
+            current_para = []
+            icon = _section_icons[_sec_idx % len(_section_icons)]
+            _sec_idx += 1
+            sections_html += f"<h2>{icon} {esc(line[3:].strip())}</h2>\n"
+        elif line.startswith("# "):
+            sections_html += _flush_para(current_para)
+            current_para = []
+            sections_html += f"<h2>{esc(line[2:].strip())}</h2>\n"
+        elif line.strip().startswith("- ") or line.strip().startswith("* "):
+            sections_html += _flush_para(current_para)
+            current_para = []
+            sections_html += f'<li>{esc(line.strip()[2:].strip())}</li>\n'
         elif line.strip():
             current_para.append(line.strip())
         else:
-            if current_para:
-                sections_html += "<p>" + esc(" ".join(current_para)) + "</p>\n"
-                current_para = []
-    if current_para:
-        sections_html += "<p>" + esc(" ".join(current_para)) + "</p>\n"
+            sections_html += _flush_para(current_para)
+            current_para = []
+    sections_html += _flush_para(current_para)
+
+    # Wrap consecutive <li> items in a single <ul>
+    sections_html = re.sub(r'(?:<li>.*?</li>\n)+', lambda m: '<ul class="art-list">' + m.group(0) + '</ul>\n', sections_html)
+
+    # ── Video embed (YouTube search) ──────────────────────────────────────
+    yt_query = urllib.parse.quote_plus(title[:80])
+    video_html = (
+        '<section class="video-section">\n'
+        '<h2>🎬 Видео по теме</h2>\n'
+        '<div class="video-grid">\n'
+        f'<div class="video-embed-wrap">'
+        f'<iframe src="https://www.youtube.com/embed?listType=search&list={yt_query}" '
+        f'title="YouTube — {esc(title)}" frameborder="0" allowfullscreen '
+        f'allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" '
+        f'loading="lazy"></iframe>'
+        f'</div>\n'
+        f'<div class="video-link-box">'
+        f'<p>🔎 Смотрите видео по теме <strong>{esc(title)}</strong> на YouTube:</p>'
+        f'<a class="btn-video" href="https://www.youtube.com/results?search_query={yt_query}" '
+        f'target="_blank" rel="noopener">▶ Открыть YouTube-поиск</a>'
+        f'</div>\n'
+        '</div></section>\n'
+    )
 
     # ── Sources list ──────────────────────────────────────────────────────
     src_items = "".join(
         f'<li><a href="{esc(s.get("url","#"))}" target="_blank" rel="noopener">'
-        f'{esc(s.get("title","Источник"))}</a></li>\n'
+        f'🔗 {esc(s.get("title","Источник"))}</a></li>\n'
         for s in sources[:10]
     )
-    sources_html = f'<section class="sources"><h2>📚 Источники</h2><ol>\n{src_items}</ol></section>\n'
+    sources_html = (
+        '<section class="sources">\n'
+        '<h2>📚 Источники и ссылки</h2>\n'
+        f'<ol>\n{src_items}</ol>\n'
+        '</section>\n'
+    )
 
     # ── Chart.js bar chart ────────────────────────────────────────────────
-    chart_labels = json.dumps([s.get("title", "")[:30] for s in sources[:8]])
-    chart_data = json.dumps([len(s.get("snippet", "").split()) for s in sources[:8]])
+    chart_labels = json.dumps([s.get("title", "")[:25] for s in sources[:8]])
+    chart_data = json.dumps([max(1, len(s.get("snippet", "").split())) for s in sources[:8]])
+    chart_colors = json.dumps([
+        "rgba(14,132,212,0.7)", "rgba(26,173,90,0.7)", "rgba(232,160,32,0.7)",
+        "rgba(160,32,232,0.7)", "rgba(217,64,64,0.7)", "rgba(64,160,217,0.7)",
+        "rgba(217,160,64,0.7)", "rgba(64,217,160,0.7)",
+    ])
     chart_html = (
-        '<section class="chart-section"><h2>📊 Данные по источникам</h2>\n'
-        '<canvas id="srcChart" height="80"></canvas>\n'
+        '<section class="chart-section">\n'
+        '<h2>📊 Охват источников</h2>\n'
+        '<div class="chart-wrap"><canvas id="srcChart" height="100"></canvas></div>\n'
         '<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>\n'
         "<script>\n"
         "new Chart(document.getElementById('srcChart'),{"
         f"type:'bar',data:{{labels:{chart_labels},"
-        f"datasets:[{{label:'Слова',data:{chart_data},"
-        "backgroundColor:'rgba(14,132,212,0.6)',borderColor:'#0e84d4',borderWidth:1}}]}},"
-        "options:{responsive:true,plugins:{legend:{display:false}}}"
+        f"datasets:[{{label:'Объём данных (слов)',data:{chart_data},"
+        f"backgroundColor:{chart_colors},borderColor:'rgba(0,0,0,0.1)',borderWidth:1}}]}},"
+        "options:{responsive:true,plugins:{legend:{display:true,position:'top'}},"
+        "scales:{y:{beginAtZero:true,ticks:{stepSize:5}}}}"
         "});\n</script></section>\n"
+    )
+
+    # ── Action buttons bar ────────────────────────────────────────────────
+    buttons_html = (
+        '<div class="action-bar">\n'
+        '<button class="btn-action" onclick="window.print()">🖨️ Печать</button>\n'
+        '<button class="btn-action" onclick="copyArticle()">📋 Копировать текст</button>\n'
+        '<button class="btn-action" onclick="shareArticle()">🔗 Поделиться</button>\n'
+        '<button class="btn-action btn-scroll" onclick="window.scrollTo({top:0,behavior:\'smooth\'})">⬆️ Наверх</button>\n'
+        '</div>\n'
+        '<script>\n'
+        'function copyArticle(){\n'
+        '  var t=document.querySelector(".article-body");'
+        '  if(!t){return;}'
+        '  navigator.clipboard.writeText(t.innerText).then(function(){'
+        '    alert("Текст скопирован!");'
+        '  }).catch(function(){alert("Не удалось скопировать.");});\n'
+        '}\n'
+        'function shareArticle(){\n'
+        '  if(navigator.share){\n'
+        f'    navigator.share({{title:"{esc(title)}",url:window.location.href}});\n'
+        '  } else {\n'
+        '    navigator.clipboard.writeText(window.location.href).then(function(){'
+        '      alert("Ссылка скопирована!");'
+        '    });\n'
+        '  }\n'
+        '}\n'
+        '</script>\n'
     )
 
     # ── SVG pipeline diagram ───────────────────────────────────────────────
     svg_html = (
-        '<section class="svg-section"><h2>🔄 Пайплайн исследования</h2>\n'
-        '<svg viewBox="0 0 640 80" xmlns="http://www.w3.org/2000/svg"'
+        '<section class="svg-section">\n'
+        '<h2>🔄 Как создавалась статья</h2>\n'
+        '<svg viewBox="0 0 700 90" xmlns="http://www.w3.org/2000/svg"'
         ' style="max-width:100%;font-family:sans-serif">\n'
-        '<rect x="0" y="20" width="100" height="40" rx="8" fill="#0e84d4"/>'
-        '<text x="50" y="44" text-anchor="middle" fill="#fff" font-size="11">Запрос</text>\n'
-        '<polygon points="105,40 120,30 120,50" fill="#555"/>\n'
-        '<rect x="125" y="20" width="100" height="40" rx="8" fill="#1aad5a"/>'
-        '<text x="175" y="44" text-anchor="middle" fill="#fff" font-size="11">Поиск</text>\n'
-        '<polygon points="230,40 245,30 245,50" fill="#555"/>\n'
-        '<rect x="250" y="20" width="100" height="40" rx="8" fill="#e8a020"/>'
-        '<text x="300" y="44" text-anchor="middle" fill="#fff" font-size="11">Скриншоты</text>\n'
-        '<polygon points="355,40 370,30 370,50" fill="#555"/>\n'
-        '<rect x="375" y="20" width="100" height="40" rx="8" fill="#a020e8"/>'
-        '<text x="425" y="44" text-anchor="middle" fill="#fff" font-size="11">Ollama AI</text>\n'
-        '<polygon points="480,40 495,30 495,50" fill="#555"/>\n'
-        '<rect x="500" y="20" width="130" height="40" rx="8" fill="#d94040"/>'
-        '<text x="565" y="44" text-anchor="middle" fill="#fff" font-size="11">HTML-статья</text>\n'
+        '<rect x="0" y="20" width="110" height="50" rx="10" fill="#0e84d4"/>'
+        '<text x="55" y="48" text-anchor="middle" fill="#fff" font-size="12">🔍 Запрос</text>\n'
+        '<polygon points="115,45 128,35 128,55" fill="#555"/>\n'
+        '<rect x="133" y="20" width="110" height="50" rx="10" fill="#1aad5a"/>'
+        '<text x="188" y="48" text-anchor="middle" fill="#fff" font-size="12">🌐 Поиск</text>\n'
+        '<polygon points="248,45 261,35 261,55" fill="#555"/>\n'
+        '<rect x="266" y="20" width="110" height="50" rx="10" fill="#e8a020"/>'
+        '<text x="321" y="48" text-anchor="middle" fill="#fff" font-size="12">📸 Данные</text>\n'
+        '<polygon points="381,45 394,35 394,55" fill="#555"/>\n'
+        '<rect x="399" y="20" width="110" height="50" rx="10" fill="#a020e8"/>'
+        '<text x="454" y="48" text-anchor="middle" fill="#fff" font-size="12">🤖 AI</text>\n'
+        '<polygon points="514,45 527,35 527,55" fill="#555"/>\n'
+        '<rect x="532" y="20" width="160" height="50" rx="10" fill="#d94040"/>'
+        '<text x="612" y="48" text-anchor="middle" fill="#fff" font-size="12">📰 Статья</text>\n'
         '</svg></section>\n'
     )
 
     css = (
+        ":root{--accent:#0e84d4;--accent2:#1aad5a;--bg:#f0f4f8;--card:#fff;--text:#1a1a2e}"
         "body{margin:0;padding:20px;font-family:'Segoe UI',system-ui,sans-serif;"
-        "background:#f5f5f5;color:#222}"
-        "article{background:#fff;padding:32px;border-radius:8px;"
-        "box-shadow:0 2px 8px rgba(0,0,0,.12);max-width:960px;margin:0 auto}"
-        "h1{font-size:1.8em;margin-bottom:16px;color:#0e84d4}"
-        "h2{font-size:1.2em;margin:24px 0 8px;color:#1aad5a}"
-        "p{line-height:1.65;margin:0 0 12px}"
-        "a{color:#0e84d4;text-decoration:none}a:hover{text-decoration:underline}"
+        "background:var(--bg);color:var(--text);line-height:1.7}"
+        "article{background:var(--card);padding:36px;border-radius:12px;"
+        "box-shadow:0 4px 20px rgba(0,0,0,.10);max-width:960px;margin:0 auto}"
+        "h1{font-size:2em;margin-bottom:8px;color:var(--accent);border-bottom:3px solid var(--accent2);padding-bottom:10px}"
+        "h2{font-size:1.25em;margin:28px 0 10px;color:var(--accent2);display:flex;align-items:center;gap:6px}"
+        "p{line-height:1.75;margin:0 0 14px;color:#333}"
+        "a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}"
+        ".art-list{margin:8px 0 14px 0;padding-left:1.5em}"
+        ".art-list li{margin:4px 0;line-height:1.6}"
         ".gallery{margin:32px 0}"
         ".gallery-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}"
-        ".gallery-item{background:#f9f9f9;border-radius:8px;overflow:hidden;transition:transform .2s}"
-        ".gallery-item:hover{transform:translateY(-3px)}"
+        ".gallery-item{background:#f9f9f9;border-radius:10px;overflow:hidden;transition:transform .2s;"
+        "box-shadow:0 2px 8px rgba(0,0,0,.08)}"
+        ".gallery-item:hover{transform:translateY(-4px);box-shadow:0 6px 16px rgba(0,0,0,.15)}"
         ".gallery-item img{width:100%;display:block;border-bottom:1px solid #ddd}"
         ".gallery-item figcaption{padding:8px 10px;font-size:.82em;color:#555;font-style:italic}"
         ".gallery-item a{display:block}"
-        ".sources ol{padding-left:1.4em}.sources li{margin:4px 0}"
-        ".chart-section,.svg-section{margin:28px 0}"
+        ".sources{background:#f0f7ff;border-left:4px solid var(--accent);padding:16px 20px;"
+        "border-radius:0 8px 8px 0;margin:24px 0}"
+        ".sources ol{padding-left:1.4em}.sources li{margin:5px 0}"
+        ".chart-section{margin:28px 0}.chart-wrap{background:#f9f9f9;border-radius:8px;padding:16px;"
+        "border:1px solid #e0e0e0}"
+        ".svg-section{margin:28px 0}"
+        ".video-section{margin:32px 0}"
+        ".video-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start}"
+        "@media(max-width:640px){.video-grid{grid-template-columns:1fr}}"
+        ".video-embed-wrap{position:relative;padding-bottom:56.25%;height:0;overflow:hidden;"
+        "border-radius:10px;box-shadow:0 4px 12px rgba(0,0,0,.15)}"
+        ".video-embed-wrap iframe{position:absolute;top:0;left:0;width:100%;height:100%;border:0}"
+        ".video-link-box{background:#fff3e0;border-radius:10px;padding:16px;border:1px solid #ffcc80}"
+        ".btn-video{display:inline-block;margin-top:10px;padding:10px 20px;background:#ff0000;"
+        "color:#fff;border-radius:8px;text-decoration:none;font-weight:600;font-size:.9em}"
+        ".btn-video:hover{background:#cc0000;text-decoration:none}"
+        ".action-bar{display:flex;gap:10px;flex-wrap:wrap;margin:24px 0;padding:16px;"
+        "background:#f9f9f9;border-radius:10px;border:1px solid #e0e0e0}"
+        ".btn-action{padding:8px 16px;background:var(--accent);color:#fff;border:none;"
+        "border-radius:6px;cursor:pointer;font-size:.88em;font-weight:600;transition:background .2s}"
+        ".btn-action:hover{background:#0a6aab}"
+        ".btn-scroll{background:#1aad5a}.btn-scroll:hover{background:#148a48}"
+        "@media print{.action-bar,.video-section{display:none}}"
     )
 
     return (
         '<!DOCTYPE html>\n<html lang="ru">\n<head>\n'
         '<meta charset="UTF-8"/>\n'
+        '<meta name="viewport" content="width=device-width,initial-scale=1"/>\n'
         f"<title>{esc(title)}</title>\n"
         f"<style>{css}</style>\n"
         "</head>\n<body>\n<article>\n"
-        f"<h1>{esc(title)}</h1>\n"
+        f"<h1>📰 {esc(title)}</h1>\n"
+        f"{buttons_html}"
         f'<section class="article-body">\n{sections_html}</section>\n'
         f"{gallery_html}"
+        f"{video_html}"
         f"{chart_html}"
         f"{svg_html}"
         f"{sources_html}"
@@ -8709,18 +8820,29 @@ def web_research():
     if model and aggregated:
         try:
             prompt = (
-                f'Ты — экспертный AI-журналист. Напиши ПОЛНУЮ, СВЯЗНУЮ статью на русском языке по теме: "{query}".\n\n'
-                f"Используй следующие данные из источников ТОЛЬКО как справочный материал — "
-                f"НЕ КОПИРУЙ тексты дословно, а напиши статью СВОИМИ словами:\n\n"
-                f"{aggregated}\n\n"
-                f"ТРЕБОВАНИЯ К СТАТЬЕ:\n"
-                f"1. Первая строка — чёткий заголовок статьи о теме '{query}' (без символа #)\n"
-                f"2. Вступительный абзац — о чём эта статья и почему тема важна\n"
-                f"3. Несколько разделов с подзаголовками (## Название раздела) — 3-5 разделов\n"
-                f"4. ## Заключение — итоговые выводы\n"
-                f"5. Статья должна быть ТОЛЬКО по теме '{query}', без посторонних тем\n"
-                f"6. Минимум 400 слов, максимум 1000 слов\n"
-                f"7. Только на русском языке\n"
+                f'Ты — профессиональный AI-журналист. Твоя задача: написать ЕДИНУЮ ПОЛНОЦЕННУЮ статью СТРОГО по теме "{query}".\n\n'
+                f"КРИТИЧЕСКИ ВАЖНО:\n"
+                f"- Статья должна быть ТОЛЬКО И ИСКЛЮЧИТЕЛЬНО о теме '{query}'\n"
+                f"- НЕ смешивай разные темы из источников\n"
+                f"- НЕ КОПИРУЙ тексты из источников — используй их ТОЛЬКО как справочный материал\n"
+                f"- Пиши СВОИМИ словами, связно и логично\n\n"
+                f"Справочные данные из источников:\n{aggregated}\n\n"
+                f"СТРУКТУРА СТАТЬИ (обязательная):\n"
+                f"Строка 1: Заголовок — краткий и чёткий, ТОЛЬКО о теме '{query}' (без символа #)\n\n"
+                f"## 🔍 Введение\n"
+                f"Что такое '{query}', почему эта тема актуальна сегодня.\n\n"
+                f"## 📌 Основные аспекты\n"
+                f"Ключевые характеристики, особенности темы.\n\n"
+                f"## 💡 Важные факты\n"
+                f"Конкретные цифры, данные и факты по теме '{query}'.\n\n"
+                f"## 🌐 Применение и значимость\n"
+                f"Практическое применение, примеры, реальные случаи.\n\n"
+                f"## ✅ Заключение\n"
+                f"Итоговые выводы о теме '{query}'.\n\n"
+                f"Требования к тексту:\n"
+                f"- Минимум 500 слов\n"
+                f"- Только русский язык\n"
+                f"- Тема статьи: ТОЛЬКО '{query}'\n"
             )
             is_tgwui_research = model.startswith(_TGWUI_PREFIX)
             if is_lms_research:
@@ -8759,16 +8881,21 @@ def web_research():
         # No internet sources available — generate article from AI knowledge alone
         try:
             prompt = (
-                f'Ты — экспертный AI-журналист. Напиши ПОЛНУЮ, СВЯЗНУЮ статью на русском языке по теме: "{query}".\n\n'
-                f"ТРЕБОВАНИЯ К СТАТЬЕ:\n"
-                f"1. Первая строка — чёткий заголовок статьи о теме '{query}' (без символа #)\n"
-                f"2. Вступительный абзац — о чём эта статья и почему тема важна\n"
-                f"3. Несколько разделов с подзаголовками (## Название раздела) — 3-5 разделов\n"
-                f"4. ## Заключение — итоговые выводы\n"
-                f"5. Статья должна быть ТОЛЬКО по теме '{query}'\n"
-                f"6. Минимум 400 слов, максимум 1000 слов\n"
-                f"7. Только на русском языке\n\n"
-                "Примечание: статья создана на основе AI-знаний (без интернет-поиска)."
+                f'Ты — профессиональный AI-журналист. Напиши ПОЛНОЦЕННУЮ статью на русском языке СТРОГО по теме: "{query}".\n\n'
+                f"СТРУКТУРА СТАТЬИ:\n"
+                f"Строка 1: Заголовок — только о теме '{query}' (без символа #)\n\n"
+                f"## 🔍 Введение\n"
+                f"Что такое '{query}' и почему это важно.\n\n"
+                f"## 📌 Основные аспекты\n"
+                f"Ключевые характеристики и особенности.\n\n"
+                f"## 💡 Важные факты\n"
+                f"Конкретные данные и факты.\n\n"
+                f"## 🌐 Применение\n"
+                f"Практическое применение, примеры.\n\n"
+                f"## ✅ Заключение\n"
+                f"Итоговые выводы.\n\n"
+                f"Требования: минимум 500 слов, только русский язык, ТОЛЬКО о теме '{query}'.\n"
+                "Примечание: статья создана на основе знаний AI (без интернет-поиска)."
             )
             is_tgwui_research = model.startswith(_TGWUI_PREFIX)
             if is_lms_research:
@@ -8808,19 +8935,28 @@ def web_research():
         if not sources:
             # Neither internet nor Ollama available
             return jsonify({"error": "No results found and no AI model available", "success": False}), 404
-        # Fallback: build a structured article-like text from source snippets
-        # (better than raw concatenation)
+        # Fallback: build a structured article from source snippets
         good_snippets = [
             s for s in sources
             if len(s.get("snippet", "")) >= 50
         ]
         if good_snippets:
-            intro = f"{query}\n\n"
-            body_parts = [
-                f"## {s['title']}\n{s.get('snippet','')}"
-                for s in good_snippets[:5]
-            ]
-            article_text = intro + "\n\n".join(body_parts) + "\n\n## Заключение\nДанные получены из открытых источников."
+            # Build a readable article rather than a raw snippet dump
+            intro = (
+                f"{query}\n\n"
+                f"По данной теме удалось найти следующую информацию из открытых источников.\n"
+            )
+            body_parts = []
+            for s in good_snippets[:5]:
+                section_title = s['title'][:80].strip()
+                snippet_text = s.get('snippet', '').strip()
+                body_parts.append(f"## 📌 {section_title}\n{snippet_text}")
+            article_text = (
+                intro
+                + "\n\n".join(body_parts)
+                + "\n\n## ✅ Заключение\nПриведённые данные получены из открытых источников. "
+                "Для получения более подробной информации воспользуйтесь ссылками на источники ниже."
+            )
         else:
             return jsonify({"error": "Не удалось получить достаточно данных по запросу", "success": False}), 404
 
