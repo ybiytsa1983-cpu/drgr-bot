@@ -348,6 +348,24 @@ if (-not $fwCreated) {
     Write-Host "  netsh advfirewall firewall add rule name=`"$fwRuleName`" dir=in action=allow protocol=TCP localport=$Port" -ForegroundColor Cyan
 }
 
+# When HTTPS is enabled, also open firewall for the HTTP redirect port (Port+1)
+if ($useHttps) {
+    $fwRuleHttp = "Code VM HTTP redirect (port $($Port+1))"
+    try {
+        $existingHttp = Get-NetFirewallRule -DisplayName $fwRuleHttp -ErrorAction SilentlyContinue
+        if (-not $existingHttp) {
+            New-NetFirewallRule -DisplayName $fwRuleHttp `
+                -Direction Inbound -Protocol TCP -LocalPort ($Port + 1) `
+                -Action Allow -Profile Any -ErrorAction SilentlyContinue | Out-Null
+        }
+    } catch {
+        try {
+            $null = & netsh advfirewall firewall add rule name="$fwRuleHttp" `
+                dir=in action=allow protocol=TCP localport=$($Port+1) 2>&1
+        } catch { }
+    }
+}
+
 # -- Check LAN reachability (best-effort) --------------------------------------
 $scheme = if ($useHttps) { "https" } else { "http" }
 $lanReachable = $false
@@ -386,7 +404,12 @@ if ($localIP) {
     Write-Host ("  |  {0,-50}|" -f "Other devices on the same network:") -ForegroundColor Yellow
     Write-Host ("  |    {0,-48}|" -f "${scheme}://${localIP}:${Port}/  $lanStatus") -ForegroundColor $lanColor
     if ($useHttps) {
-        Write-Host ("  |  {0,-50}|" -f "HTTPS: откройте URL, нажмите Дополнительно → Перейти") -ForegroundColor DarkGray
+        $httpRedirPort = $Port + 1
+        Write-Host ("  |  {0,-50}|" -f "📱 Телефон/планшет — используйте HTTP (без SSL):") -ForegroundColor Cyan
+        Write-Host ("  |    {0,-48}|" -f "http://${localIP}:${httpRedirPort}/   (авто-редирект)") -ForegroundColor Cyan
+        Write-Host ("  |  {0,-50}|" -f "ИЛИ откройте HTTPS и примите сертификат:") -ForegroundColor DarkGray
+        Write-Host ("  |    {0,-48}|" -f "Chrome: Дополнительно → Перейти на сайт") -ForegroundColor DarkGray
+        Write-Host ("  |    {0,-48}|" -f "Firefox: Принять риск и продолжить") -ForegroundColor DarkGray
     }
 } else {
     Write-Host ("  |  {0,-50}|" -f "Other devices: run 'ipconfig' to find your IP,") -ForegroundColor Yellow

@@ -9554,6 +9554,31 @@ def _research_build_html(title: str, body_text: str, sources: list, screenshot_u
             f"{gallery_items}"
             "</div></section>\n"
         )
+    elif sources:
+        # No screenshots available — show source cards with snippet preview
+        _card_icons = ["🌐", "📖", "💬", "📰", "🔗", "📡", "🗞️", "📝"]
+        _cards = ""
+        for _ci, _src in enumerate(sources[:6]):
+            _ci_icon = _card_icons[_ci % len(_card_icons)]
+            _ct = esc(_src.get("title", "Источник"))
+            _cu = esc(_src.get("url", "#"))
+            _cs = esc(_src.get("snippet", "")[:200])
+            _cards += (
+                f'<figure class="gallery-item src-card">'
+                f'<div class="src-card-head">{_ci_icon}</div>'
+                f'<figcaption>'
+                f'<a href="{_cu}" target="_blank" rel="noopener"><strong>{_ct}</strong></a>'
+                f'{"<p>" + _cs + "…</p>" if _cs else ""}'
+                f'</figcaption>'
+                f'</figure>\n'
+            )
+        gallery_html = (
+            '<section class="gallery">\n'
+            "<h2>🔗 Материалы по теме</h2>\n"
+            '<div class="gallery-grid">\n'
+            f"{_cards}"
+            "</div></section>\n"
+        )
 
     # ── Article sections (Markdown → HTML) ───────────────────────────────
     def _inline_md(raw: str) -> str:
@@ -9775,27 +9800,46 @@ def _research_build_html(title: str, body_text: str, sources: list, screenshot_u
         '</section>\n'
     )
 
-    # ── Chart.js bar chart ────────────────────────────────────────────────
-    chart_labels = json.dumps([s.get("title", "")[:25] for s in sources[:8]])
-    chart_data = json.dumps([max(1, len(s.get("snippet", "").split())) for s in sources[:8]])
-    chart_colors = json.dumps([
-        "rgba(14,132,212,0.7)", "rgba(26,173,90,0.7)", "rgba(232,160,32,0.7)",
-        "rgba(160,32,232,0.7)", "rgba(217,64,64,0.7)", "rgba(64,160,217,0.7)",
-        "rgba(217,160,64,0.7)", "rgba(64,217,160,0.7)",
-    ])
+    # ── Inline SVG bar chart (no external CDN required) ──────────────────
+    _chart_src = sources[:8]
+    _chart_palette = [
+        "#0e84d4", "#1aad5a", "#e8a020", "#a020e8",
+        "#d94040", "#40a0d9", "#d9a040", "#40d9a0",
+    ]
+    _bar_vals = [max(1, len(s.get("snippet", "").split())) for s in _chart_src]
+    _bar_max = max(_bar_vals) if _bar_vals else 1
+    _bar_width = 60
+    _bar_gap = 10
+    _chart_w = (_bar_width + _bar_gap) * len(_chart_src) + _bar_gap
+    _chart_h = 180
+    _bar_area_h = 120
+    _svg_bars = ""
+    for _bi, (_bv, _bs) in enumerate(zip(_bar_vals, _chart_src)):
+        _bx = _bar_gap + _bi * (_bar_width + _bar_gap)
+        _bh = max(4, int(_bv / _bar_max * _bar_area_h))
+        _by = _bar_area_h - _bh + 10
+        _bc = _chart_palette[_bi % len(_chart_palette)]
+        _label = esc(_bs.get("title", "")[:18])
+        _svg_bars += (
+            f'<rect x="{_bx}" y="{_by}" width="{_bar_width}" height="{_bh}" fill="{_bc}" rx="4">'
+            f'<title>{_label}: {_bv} слов</title></rect>\n'
+            f'<text x="{_bx + _bar_width // 2}" y="{_by - 4}" text-anchor="middle" '
+            f'font-size="10" fill="#555">{_bv}</text>\n'
+            f'<text x="{_bx + _bar_width // 2}" y="{_bar_area_h + 24}" text-anchor="middle" '
+            f'font-size="9" fill="#777">{_label[:12]}</text>\n'
+        )
     chart_html = (
         '<section class="chart-section">\n'
         '<h2>📊 Охват источников</h2>\n'
-        '<div class="chart-wrap"><canvas id="srcChart" height="100"></canvas></div>\n'
-        '<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>\n'
-        "<script>\n"
-        "new Chart(document.getElementById('srcChart'),{"
-        f"type:'bar',data:{{labels:{chart_labels},"
-        f"datasets:[{{label:'Объём данных (слов)',data:{chart_data},"
-        f"backgroundColor:{chart_colors},borderColor:'rgba(0,0,0,0.1)',borderWidth:1}}]}},"
-        "options:{responsive:true,plugins:{legend:{display:true,position:'top'}},"
-        "scales:{y:{beginAtZero:true,ticks:{stepSize:5}}}}"
-        "});\n</script></section>\n"
+        '<div class="chart-wrap">\n'
+        f'<svg viewBox="0 0 {_chart_w} {_chart_h}" xmlns="http://www.w3.org/2000/svg"'
+        f' style="width:100%;max-width:{_chart_w}px;overflow:visible;font-family:sans-serif">\n'
+        f'<line x1="0" y1="{_bar_area_h + 10}" x2="{_chart_w}" y2="{_bar_area_h + 10}"'
+        ' stroke="#ccc" stroke-width="1"/>\n'
+        + _svg_bars +
+        '</svg>\n'
+        '</div>\n'
+        '</section>\n'
     )
 
     # ── Action buttons bar ────────────────────────────────────────────────
@@ -9850,40 +9894,52 @@ def _research_build_html(title: str, body_text: str, sources: list, screenshot_u
     )
 
     css = (
+        "@keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}"
+        "@keyframes slideInLeft{from{opacity:0;transform:translateX(-30px)}to{opacity:1;transform:translateX(0)}}"
+        "@keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}"
+        "@keyframes barGrow{from{transform:scaleY(0);transform-origin:bottom}to{transform:scaleY(1);transform-origin:bottom}}"
         ":root{--accent:#0e84d4;--accent2:#1aad5a;--bg:#f0f4f8;--card:#fff;--text:#1a1a2e}"
         "body{margin:0;padding:20px;font-family:'Segoe UI',system-ui,sans-serif;"
         "background:var(--bg);color:var(--text);line-height:1.7}"
         "article{background:var(--card);padding:36px;border-radius:12px;"
-        "box-shadow:0 4px 20px rgba(0,0,0,.10);max-width:960px;margin:0 auto}"
-        "h1{font-size:2em;margin-bottom:8px;color:var(--accent);border-bottom:3px solid var(--accent2);padding-bottom:10px}"
+        "box-shadow:0 4px 20px rgba(0,0,0,.10);max-width:960px;margin:0 auto;"
+        "animation:fadeInUp .5s ease both}"
+        "h1{font-size:2em;margin-bottom:8px;color:var(--accent);border-bottom:3px solid var(--accent2);padding-bottom:10px;"
+        "animation:slideInLeft .5s ease both}"
         "h2{font-size:1.25em;margin:28px 0 10px;color:var(--accent2);display:flex;align-items:center;gap:6px;scroll-margin-top:80px}"
         "p{line-height:1.75;margin:0 0 14px;color:#333}"
         "a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}"
         ".art-list{margin:8px 0 14px 0;padding-left:1.5em}"
         ".art-list li{margin:4px 0;line-height:1.6}"
         ".article-stats{display:flex;gap:16px;flex-wrap:wrap;padding:10px 16px;margin:12px 0 20px;"
-        "background:#e8f4fd;border-radius:8px;font-size:.9em;color:#444;border:1px solid #c5ddf0}"
+        "background:linear-gradient(135deg,#e8f4fd,#f0fff4);border-radius:8px;font-size:.9em;color:#444;"
+        "border:1px solid #c5ddf0;animation:fadeInUp .6s ease .1s both}"
         ".article-stats span{white-space:nowrap}"
         ".toc{background:#f8f9ff;border:1px solid #dde4f5;border-radius:8px;padding:14px 20px;"
-        "margin:16px 0 28px;display:inline-block;min-width:200px}"
+        "margin:16px 0 28px;display:inline-block;min-width:200px;"
+        "animation:slideInLeft .5s ease .2s both}"
         ".toc h3{margin:0 0 8px;font-size:1em;color:var(--accent)}"
         ".toc ol{margin:0;padding-left:1.4em}"
         ".toc li{margin:3px 0;font-size:.92em}"
         ".gallery{margin:32px 0}"
         ".gallery-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}"
-        ".gallery-item{background:#f9f9f9;border-radius:10px;overflow:hidden;transition:transform .2s;"
-        "box-shadow:0 2px 8px rgba(0,0,0,.08)}"
-        ".gallery-item:hover{transform:translateY(-4px);box-shadow:0 6px 16px rgba(0,0,0,.15)}"
-        ".gallery-item img{width:100%;display:block;border-bottom:1px solid #ddd}"
+        ".gallery-item{background:#f9f9f9;border-radius:10px;overflow:hidden;"
+        "transition:transform .25s ease,box-shadow .25s ease;"
+        "box-shadow:0 2px 8px rgba(0,0,0,.08);animation:fadeInUp .5s ease both}"
+        ".gallery-item:hover{transform:translateY(-5px) scale(1.01);box-shadow:0 8px 24px rgba(0,0,0,.18)}"
+        ".gallery-item img{width:100%;display:block;border-bottom:1px solid #ddd;"
+        "transition:filter .3s ease}.gallery-item:hover img{filter:brightness(1.05)}"
         ".gallery-item figcaption{padding:8px 10px;font-size:.82em;color:#555;font-style:italic}"
         ".gallery-item a{display:block}"
         ".sources{background:#f0f7ff;border-left:4px solid var(--accent);padding:16px 20px;"
         "border-radius:0 8px 8px 0;margin:24px 0}"
         ".sources ol{padding-left:1.4em}.sources li{margin:5px 0}"
-        ".chart-section{margin:28px 0}.chart-wrap{background:#f9f9f9;border-radius:8px;padding:16px;"
-        "border:1px solid #e0e0e0}"
+        ".chart-section{margin:28px 0;animation:fadeInUp .5s ease .15s both}"
+        ".chart-wrap{background:#f9f9f9;border-radius:8px;padding:16px;border:1px solid #e0e0e0;"
+        "overflow-x:auto}"
+        ".chart-wrap svg rect{animation:barGrow .6s ease both}"
         ".svg-section{margin:28px 0}"
-        ".video-section{margin:32px 0}"
+        ".video-section{margin:32px 0;animation:fadeInUp .5s ease .2s both}"
         ".video-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start}"
         "@media(max-width:640px){.video-grid{grid-template-columns:1fr}}"
         ".video-embed-wrap{position:relative;padding-bottom:56.25%;height:0;overflow:hidden;"
@@ -9891,13 +9947,15 @@ def _research_build_html(title: str, body_text: str, sources: list, screenshot_u
         ".video-embed-wrap iframe{position:absolute;top:0;left:0;width:100%;height:100%;border:0}"
         ".video-link-box{background:#fff3e0;border-radius:10px;padding:16px;border:1px solid #ffcc80}"
         ".btn-video{display:inline-block;margin-top:10px;padding:10px 20px;background:#ff0000;"
-        "color:#fff;border-radius:8px;text-decoration:none;font-weight:600;font-size:.9em}"
-        ".btn-video:hover{background:#cc0000;text-decoration:none}"
+        "color:#fff;border-radius:8px;text-decoration:none;font-weight:600;font-size:.9em;"
+        "transition:background .2s,transform .1s}"
+        ".btn-video:hover{background:#cc0000;text-decoration:none;transform:scale(1.03)}"
         ".action-bar{display:flex;gap:10px;flex-wrap:wrap;margin:24px 0;padding:16px;"
         "background:#f9f9f9;border-radius:10px;border:1px solid #e0e0e0}"
         ".btn-action{padding:8px 16px;background:var(--accent);color:#fff;border:none;"
-        "border-radius:6px;cursor:pointer;font-size:.88em;font-weight:600;transition:background .2s}"
-        ".btn-action:hover{background:#0a6aab}"
+        "border-radius:6px;cursor:pointer;font-size:.88em;font-weight:600;"
+        "transition:background .2s,transform .1s}"
+        ".btn-action:hover{background:#0a6aab;transform:translateY(-1px)}"
         ".btn-scroll{background:#1aad5a}.btn-scroll:hover{background:#148a48}"
         "h3{font-size:1.1em;margin:20px 0 8px;color:#2c5f8a}"
         "h4{font-size:1em;margin:16px 0 6px;color:#444;font-style:italic}"
@@ -9909,16 +9967,20 @@ def _research_build_html(title: str, body_text: str, sources: list, screenshot_u
         ".yt-input-row{display:flex;gap:8px;flex-wrap:wrap}"
         ".btn-video{display:inline-block;padding:9px 18px;background:#ff0000;"
         "color:#fff;border-radius:8px;text-decoration:none;font-weight:600;font-size:.9em;"
-        "border:none;cursor:pointer;white-space:nowrap}"
-        ".btn-video:hover{background:#cc0000;text-decoration:none}"
+        "border:none;cursor:pointer;white-space:nowrap;transition:background .2s,transform .1s}"
+        ".btn-video:hover{background:#cc0000;text-decoration:none;transform:scale(1.03)}"
         ".btn-video-search{display:inline-block;padding:9px 18px;background:#0e84d4;"
         "color:#fff;border-radius:8px;text-decoration:none;font-weight:600;font-size:.9em;"
-        "white-space:nowrap}"
-        ".btn-video-search:hover{background:#0a6aab;text-decoration:none}"
+        "white-space:nowrap;transition:background .2s,transform .1s}"
+        ".btn-video-search:hover{background:#0a6aab;text-decoration:none;transform:scale(1.03)}"
         ".video-embed-wrap{position:relative;padding-bottom:56.25%;height:0;overflow:hidden;"
         "border-radius:10px;box-shadow:0 4px 12px rgba(0,0,0,.15);margin-bottom:12px}"
         ".video-embed-wrap iframe{position:absolute;top:0;left:0;width:100%;height:100%;border:0}"
+        ".article-body p{animation:fadeInUp .4s ease both}"
         "@media print{.action-bar,.video-section,.toc{display:none}}"
+        "@media(max-width:600px){article{padding:18px}h1{font-size:1.5em}}"
+        ".src-card-head{font-size:2.5em;text-align:center;padding:20px 0 10px;background:#f0f7ff}"
+        ".src-card p{margin:6px 0 0;font-size:.82em;color:#555;line-height:1.5}"
     )
 
     return (
@@ -10116,12 +10178,22 @@ def web_research():
             pass
 
         if _PLAYWRIGHT_OK:
-            # Only screenshot from reliable sources (not reddit/hackernews which are JS-heavy)
-            _ss_sources = [
-                s for s in sources
-                if s.get("url", "").startswith("http")
-                and s.get("source", "") not in _EXCLUDED_SCREENSHOT_SOURCES
-            ]
+            # Only screenshot from reliable sources (not reddit/hackernews which are JS-heavy).
+            # Prefer sources whose title/snippet contains query keywords for topic relevance.
+            _query_kws = set(re.sub(r'[^\w\s]', '', query.lower()).split())
+            def _relevance_score(s: dict) -> int:
+                txt = (s.get("title", "") + " " + s.get("snippet", "")).lower()
+                return sum(1 for kw in _query_kws if kw in txt)
+
+            _ss_sources = sorted(
+                [
+                    s for s in sources
+                    if s.get("url", "").startswith("http")
+                    and s.get("source", "") not in _EXCLUDED_SCREENSHOT_SOURCES
+                ],
+                key=_relevance_score,
+                reverse=True,
+            )
             max_ss = min(3, len(_ss_sources))
             for src in _ss_sources[:max_ss]:
                 url = src.get("url", "")
@@ -10778,10 +10850,42 @@ if __name__ == "__main__":
         if _ssl_cert and _ssl_key and os.path.isfile(_ssl_cert) and os.path.isfile(_ssl_key):
             _ssl_ctx: object = (_ssl_cert, _ssl_key)
             print(f"[Code VM] HTTPS enabled (cert: {_ssl_cert})", flush=True)
+            # Start a plain-HTTP redirect server on port+1 so LAN phones can
+            # connect via http:// and get forwarded to the HTTPS URL.
+            _http_redir_port = port + 1
+            try:
+                import http.server as _hs
+                import threading as _thr
+
+                class _RedirectHandler(_hs.BaseHTTPRequestHandler):
+                    _https_port = port
+
+                    def do_GET(self):  # noqa: N802
+                        host = self.headers.get("Host", "").split(":")[0] or "localhost"
+                        target = f"https://{host}:{self._https_port}{self.path}"
+                        self.send_response(301)
+                        self.send_header("Location", target)
+                        self.end_headers()
+
+                    def do_POST(self):  # noqa: N802
+                        self.do_GET()
+
+                    def log_message(self, fmt, *args):  # noqa: D102
+                        """Suppress per-request log lines from the redirect server."""
+
+                _redir_srv = _hs.HTTPServer(("0.0.0.0", _http_redir_port), _RedirectHandler)
+                _redir_thr = _thr.Thread(target=_redir_srv.serve_forever, daemon=True)
+                _redir_thr.start()
+                print(
+                    f"[Code VM] HTTP→HTTPS redirect running on port {_http_redir_port}",
+                    flush=True,
+                )
+            except Exception as _redir_exc:
+                print(f"[Code VM] Could not start HTTP redirect: {_redir_exc}", flush=True)
         else:
             _ssl_ctx = None
         print("[Code VM] Flask app starting.", flush=True)
-        app.run(host="0.0.0.0", port=port, debug=False, ssl_context=_ssl_ctx)
+        app.run(host="0.0.0.0", port=port, debug=False, ssl_context=_ssl_ctx, threaded=True)
     except Exception:
         print(_tb.format_exc(), flush=True)
         raise

@@ -56,11 +56,40 @@ Write-Host "Папка репозитория: $repoDir" -ForegroundColor Green
 
 # --- Проверка Git ---
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
-    Write-Host ""
-    Write-Host "ОШИБКА: Git не установлен. Скачать: https://git-scm.com/download/win" -ForegroundColor Red
-    pause
-    exit 1
+    # Try common Git install locations
+    $gitPaths = @(
+        "$env:ProgramFiles\Git\bin\git.exe",
+        "${env:ProgramFiles(x86)}\Git\bin\git.exe",
+        "$env:LOCALAPPDATA\Programs\Git\bin\git.exe"
+    )
+    $gitFound = $false
+    foreach ($gp in $gitPaths) {
+        if (Test-Path $gp) {
+            $env:PATH = "$([System.IO.Path]::GetDirectoryName($gp));$env:PATH"
+            $gitFound = $true
+            break
+        }
+    }
+    if (-not $gitFound) {
+        Write-Host ""
+        Write-Host "ОШИБКА: Git не установлен. Скачать: https://git-scm.com/download/win" -ForegroundColor Red
+        pause
+        exit 1
+    }
 }
+
+# --- Остановить сервер перед обновлением (чтобы не было блокировки файлов) ---
+Write-Host ""
+Write-Host "Останавливаю запущенный сервер (если работает)..." -ForegroundColor Cyan
+try {
+    # Find python processes running server.py and stop them
+    $serverProcs = Get-Process -Name python,python3,pythonw -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandLine -like '*server.py*' -or $_.MainWindowTitle -like '*server*' }
+    foreach ($sp in $serverProcs) {
+        Stop-Process -Id $sp.Id -Force -ErrorAction SilentlyContinue
+        Write-Host "  Остановлен процесс $($sp.Id)" -ForegroundColor Gray
+    }
+} catch { }
 
 # --- Проверка наличия обновлений (git fetch + compare) ---
 Push-Location $repoDir
@@ -136,6 +165,9 @@ if (Test-Path $reqFile) {
         }
     }
     if ($pipExe) {
+        # Prefer venv pip if available
+        $venvPipExe = Join-Path $repoDir ".venv\Scripts\pip.exe"
+        if (Test-Path $venvPipExe) { $pipExe = $venvPipExe; $pipIsPython = $false }
         Write-Host ""
         Write-Host "Обновляю Python-зависимости (pip install -r requirements.txt)..." -ForegroundColor Cyan
         try {
@@ -152,9 +184,24 @@ if (Test-Path $reqFile) {
 }
 
 Write-Host ""
-Write-Host "Файлы обновлены!" -ForegroundColor Green
+Write-Host "========================================" -ForegroundColor Green
+Write-Host "  Файлы обновлены!" -ForegroundColor Green
+Write-Host "========================================" -ForegroundColor Green
 Write-Host ""
 Write-Host "Чтобы запустить Code VM:" -ForegroundColor Yellow
 Write-Host "  powershell -ExecutionPolicy Bypass -File `"$repoDir\start.ps1`"" -ForegroundColor Cyan
 Write-Host ""
-pause
+
+# --- Спросить о перезапуске ---
+$startPs1 = Join-Path $repoDir "start.ps1"
+if (Test-Path $startPs1) {
+    $ans = Read-Host "Запустить Code VM сейчас? (Y/N, Enter = да)"
+    if ($ans -eq "" -or $ans -match '^[YyДд]') {
+        Write-Host "Запускаю Code VM..." -ForegroundColor Cyan
+        Start-Process -FilePath "powershell.exe" `
+            -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$startPs1`"" `
+            -WorkingDirectory $repoDir
+    }
+} else {
+    pause
+}
