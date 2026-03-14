@@ -10313,6 +10313,9 @@ def _research_build_html(title: str, body_text: str, sources: list, screenshot_u
     _LAYOUT_STYLES = ["hero", "magazine", "timeline", "cards", "default"]
     _layout_style = _rnd_html.choice(_LAYOUT_STYLES)
 
+    # Inline images use lock values above this offset to ensure they differ from gallery images
+    _INLINE_IMG_LOCK_OFFSET = 100000
+
     # ── Topic-relevant fallback images – ensure 5–7 visuals per article ──
     # Extract Latin keywords from title for loremflickr topic-image search
     _img_kws_raw = re.sub(r'[^a-zA-Z0-9 ]', ' ', title).split()
@@ -10321,7 +10324,7 @@ def _research_build_html(title: str, body_text: str, sources: list, screenshot_u
         _img_latin = ["technology", "science"]
     _img_kw_joined = ','.join(_img_latin[:3])
     _img_kw_enc = urllib.parse.quote_plus(_img_kw_joined)
-    _all_img_uris: list = list(screenshot_uris)
+    _all_img_uris = list(screenshot_uris)
     _target_img_count = _rnd_html.randint(5, 7)
     for _fi in range(max(0, _target_img_count - len(_all_img_uris))):
         _lock_val = (abs(hash(title + str(_fi))) % 99997) + 1
@@ -10374,10 +10377,10 @@ def _research_build_html(title: str, body_text: str, sources: list, screenshot_u
     for i, uri in enumerate(_all_img_uris[_gallery_start:], start=_gallery_start):
         src = sources[i] if i < len(sources) else {}
         src_title = esc(src.get("title", f"Иллюстрация {i + 1}"))
-        src_url = esc(src.get("url", "#"))
+        _src_real_url = src.get("url", "")
+        src_url = esc(_src_real_url)
         # Fallback images link to source if available, or just the image
-        is_external_img = uri.startswith("http")
-        link_href = src_url if src.get("url") else uri
+        link_href = src_url if _src_real_url else uri
         gallery_items += (
             f'<figure class="gallery-item">'
             f'<a href="{link_href}" target="_blank" rel="noopener">'
@@ -10385,7 +10388,7 @@ def _research_build_html(title: str, body_text: str, sources: list, screenshot_u
             f'</a>'
             f'<figcaption>'
             + (f'<a href="{src_url}" target="_blank" rel="noopener">🔗 {src_title}</a>'
-               if src.get("url") else f'📷 {src_title}')
+               if _src_real_url else f'📷 {src_title}')
             + f'</figcaption>'
             f'</figure>\n'
         )
@@ -10488,7 +10491,7 @@ def _research_build_html(title: str, body_text: str, sources: list, screenshot_u
             # Interleave images: inject an inline image every 2nd h2 heading
             # Use unique lock values (offset by 100000) so inline images differ from gallery
             if _all_img_uris and _sec_idx > 0 and _sec_idx % 2 == 0:
-                _lock_inline = (abs(hash(title + "inline" + str(_sec_idx))) % 99997) + 100001
+                _lock_inline = (abs(hash(title + "inline" + str(_sec_idx))) % 99997) + _INLINE_IMG_LOCK_OFFSET + 1
                 _iuri = f"https://loremflickr.com/800/500/{_img_kw_enc}?lock={_lock_inline}"
                 _ifloat = "inline-img-right" if _sec_idx % 4 == 0 else "inline-img-left"
                 sections_html += (
@@ -10862,9 +10865,9 @@ def _research_build_html(title: str, body_text: str, sources: list, screenshot_u
         "background:#fafafa;border-radius:8px;padding:14px;border:1px solid #e0e0e0}"
         "@media(max-width:640px){.layout-magazine .toc{float:none;width:auto;margin:0 0 16px}}"
         # Timeline layout: numbered steps on h2
-        ".layout-timeline h2::before{content:counter(sec) '. ';counter-increment:sec;"
+        ".layout-timeline h2::before{content:counter(timeline-section) '. ';counter-increment:timeline-section;"
         "font-size:.8em;color:var(--accent2);margin-right:4px}"
-        ".layout-timeline .article-body{counter-reset:sec}"
+        ".layout-timeline .article-body{counter-reset:timeline-section}"
         # Cards layout: each section in a card-style box
         ".layout-cards .article-body h2{background:var(--accent);color:#fff;"
         "padding:10px 16px;border-radius:8px 8px 0 0;margin:28px 0 0}"
