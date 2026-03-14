@@ -1,0 +1,18 @@
+# Ensure Windows batch files always use CRLF line endings
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# PowerShell scripts: UTF-8 with BOM, CRLF (handled by editors; keep as-is)
+*.ps1 text eol=crlf
+
+# Shell scripts: LF
+*.sh text eol=lf
+
+# Python / other text files: auto
+*.py text=auto
+*.txt text=auto
+*.md text=auto
+*.json text=auto
+*.html text=auto
+*.css text=auto
+*.js text=auto
