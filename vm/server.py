@@ -119,6 +119,14 @@ _LM_STUDIO_PREFIX = "lmstudio:"
 TGWUI_BASE = os.environ.get("TGWUI_URL", "").rstrip("/")
 _TGWUI_PREFIX = "tgwui:"
 
+# Roo Code (https://github.com/RooCodeInc/Roo-Code) base URL — OpenAI-compatible API.
+# Roo Code is a VS Code AI coding assistant that forwards requests to any OpenAI-compatible
+# backend (Ollama, LM Studio, OpenRouter, etc.).  Point this URL at the same server Roo Code
+# is configured to use (e.g. http://127.0.0.1:1234 for LM Studio, http://127.0.0.1:11434 for
+# Ollama via its OpenAI-compat layer).  Models are shown with the prefix "roo:".
+ROO_CODE_BASE = os.environ.get("ROO_CODE_URL", "").rstrip("/")
+_ROO_CODE_PREFIX = "roo:"
+
 # Open Agentic Framework base URL — multi-agent orchestrator.
 # Override via OAF_URL env var or the settings panel.
 OAF_BASE = os.environ.get("OAF_URL", "").rstrip("/")
@@ -2115,6 +2123,21 @@ def health():
         except Exception:  # pylint: disable=broad-except
             pass
 
+    # --- Roo Code (OpenAI-compatible coding assistant) ---
+    roo_code_ok     = False
+    roo_code_models: list = []
+    if ROO_CODE_BASE:
+        try:
+            roo_resp = _http.get(f"{ROO_CODE_BASE}/v1/models", timeout=3)
+            if roo_resp.status_code == 200:
+                roo_code_ok = True
+                roo_code_models = [
+                    f"{_ROO_CODE_PREFIX}{m['id']}"
+                    for m in roo_resp.json().get("data", [])
+                ]
+        except Exception:  # pylint: disable=broad-except
+            pass
+
     # --- Open Agentic Framework ---
     oaf_ok = False
     if OAF_BASE:
@@ -2243,6 +2266,11 @@ def health():
             "status":  "ok" if tgwui_ok else ("unreachable" if TGWUI_BASE else "not_configured"),
             "url":     TGWUI_BASE,
             "models":  tgwui_models,
+        },
+        "roo_code": {
+            "status":  "ok" if roo_code_ok else ("unreachable" if ROO_CODE_BASE else "not_configured"),
+            "url":     ROO_CODE_BASE,
+            "models":  roo_code_models,
         },
         "oaf": {
             "status": "ok" if oaf_ok else ("unreachable" if OAF_BASE else "not_configured"),
@@ -3028,6 +3056,7 @@ def get_settings():
         "ollama_url": OLLAMA_BASE,
         "lm_studio_url": LM_STUDIO_BASE,
         "tgwui_url": TGWUI_BASE,
+        "roo_code_url": ROO_CODE_BASE,
         "oaf_url": OAF_BASE,
         "triposr_url": TRIPOSR_BASE,
         "webbuilder_url": WEBBUILDER_BASE,
@@ -3044,7 +3073,7 @@ def get_settings():
 @app.route("/settings", methods=["POST"])
 def save_settings():
     """Save settings (Telegram bot token, chat ID, Ollama URL, LM Studio URL, Remote VM URL) to .env."""
-    global OLLAMA_BASE, _OLLAMA_SCANNED, LM_STUDIO_BASE, TGWUI_BASE  # noqa: PLW0603
+    global OLLAMA_BASE, _OLLAMA_SCANNED, LM_STUDIO_BASE, TGWUI_BASE, ROO_CODE_BASE  # noqa: PLW0603
     global OAF_BASE, TRIPOSR_BASE, WEBBUILDER_BASE, VIDEDITOR_BASE  # noqa: PLW0603
     global REMOTE_VM_URL, VISION_VM_URL, SD_BASE, COMFYUI_BASE  # noqa: PLW0603
     body = request.get_json(silent=True) or {}
@@ -3053,6 +3082,7 @@ def save_settings():
     ollama_url     = body.get("ollama_url",      "").strip()
     lm_studio_url  = body.get("lm_studio_url",   "").strip().rstrip("/")
     tgwui_url      = body.get("tgwui_url",        "").strip().rstrip("/")
+    roo_code_url   = body.get("roo_code_url",     "").strip().rstrip("/")
     oaf_url        = body.get("oaf_url",          "").strip().rstrip("/")
     triposr_url    = body.get("triposr_url",      "").strip().rstrip("/")
     webbuilder_url = body.get("webbuilder_url",   "").strip().rstrip("/")
@@ -3062,7 +3092,7 @@ def save_settings():
     sd_url         = body.get("sd_url",           "").strip().rstrip("/")
     comfyui_url    = body.get("comfyui_url",      "").strip().rstrip("/")
 
-    if not any([bot_token, chat_id, ollama_url, lm_studio_url, tgwui_url, oaf_url,
+    if not any([bot_token, chat_id, ollama_url, lm_studio_url, tgwui_url, roo_code_url, oaf_url,
                 triposr_url, webbuilder_url, videditor_url, remote_vm_url, vision_vm_url,
                 sd_url, comfyui_url]):
         return jsonify({"ok": False, "error": "Nothing to save"})
@@ -3142,6 +3172,18 @@ def save_settings():
             lines.append(f"TGWUI_URL={tgwui_url}\n")
         os.environ["TGWUI_URL"] = tgwui_url
         TGWUI_BASE = tgwui_url
+
+    if roo_code_url:
+        roo_found = False
+        for i, line in enumerate(lines):
+            if line.startswith("ROO_CODE_URL="):
+                lines[i] = f"ROO_CODE_URL={roo_code_url}\n"
+                roo_found = True
+                break
+        if not roo_found:
+            lines.append(f"ROO_CODE_URL={roo_code_url}\n")
+        os.environ["ROO_CODE_URL"] = roo_code_url
+        ROO_CODE_BASE = roo_code_url
 
     if oaf_url:
         oaf_found = False
@@ -3372,6 +3414,21 @@ def ollama_models():
         except Exception:  # pylint: disable=broad-except
             pass
 
+    # --- Roo Code models (OpenAI-compatible /v1/models) ---
+    if ROO_CODE_BASE:
+        try:
+            roo_resp = _http.get(f"{ROO_CODE_BASE}/v1/models", timeout=3)
+            roo_resp.raise_for_status()
+            roo_models = [
+                f"{_ROO_CODE_PREFIX}{m['id']}"
+                for m in roo_resp.json().get("data", [])
+            ]
+            models.extend(roo_models)
+            if not preferred and roo_models:
+                preferred = roo_models[0]
+        except Exception:  # pylint: disable=broad-except
+            pass
+
     available = bool(models)
     if not preferred and models:
         preferred = models[0]
@@ -3549,6 +3606,21 @@ def vm_report():
             tgwui_status = "unreachable"
     backends.append({"id": "tgwui", "name": "⚙ TGWUI", "url": TGWUI_BASE, "status": tgwui_status, "models": tgwui_models})
 
+    # Roo Code
+    roo_code_status = "not_configured"
+    roo_code_models_vs: list = []
+    if ROO_CODE_BASE:
+        try:
+            r = _http.get(f"{ROO_CODE_BASE}/v1/models", timeout=3)
+            if r.status_code == 200:
+                roo_code_models_vs = [m["id"] for m in r.json().get("data", [])]
+                roo_code_status = "ok"
+            else:
+                roo_code_status = "unreachable"
+        except Exception:
+            roo_code_status = "unreachable"
+    backends.append({"id": "roocode", "name": "🦘 Roo Code", "url": ROO_CODE_BASE, "status": roo_code_status, "models": roo_code_models_vs})
+
     # Vision VM
     vvm_status = "not_configured"
     if VISION_VM_URL:
@@ -3600,6 +3672,19 @@ def vm_report():
                     "max_tokens": 512, "temperature": 0.2, "stream": False,
                 }
                 r = _http.post(f"{TGWUI_BASE}/v1/chat/completions", json=payload, timeout=30)
+                if r.status_code == 200:
+                    content = r.json()["choices"][0]["message"]["content"]
+                    test_result = {"ok": True, "model": test_model, "elapsed_s": round(_time.time() - t0, 2), "output": content[:1000]}
+                else:
+                    test_result = {"ok": False, "model": test_model, "error": f"HTTP {r.status_code}"}
+            elif test_model.startswith("roo:") and ROO_CODE_BASE:
+                real_model = test_model[len("roo:"):]
+                payload = {
+                    "model": real_model,
+                    "messages": [{"role": "user", "content": test_prompt}],
+                    "max_tokens": 512, "temperature": 0.2, "stream": False,
+                }
+                r = _http.post(f"{ROO_CODE_BASE}/v1/chat/completions", json=payload, timeout=30)
                 if r.status_code == 200:
                     content = r.json()["choices"][0]["message"]["content"]
                     test_result = {"ok": True, "model": test_model, "elapsed_s": round(_time.time() - t0, 2), "output": content[:1000]}
@@ -3750,6 +3835,24 @@ def tgwui_models():
         return jsonify({"models": models, "available": bool(models), "url": TGWUI_BASE})
     except Exception as exc:  # pylint: disable=broad-except
         return jsonify({"models": [], "available": False, "url": TGWUI_BASE, "error": str(exc)})
+
+
+@app.route("/roocode/models", methods=["GET"])
+def roocode_models():
+    """Return the list of models available via the Roo Code backend (OpenAI-compatible /v1/models).
+
+    Point ROO_CODE_URL at whatever LLM server Roo Code is configured to use
+    (e.g. http://127.0.0.1:1234 for LM Studio, http://127.0.0.1:11434 for Ollama).
+    """
+    if not ROO_CODE_BASE:
+        return jsonify({"models": [], "available": False, "url": "", "error": "Roo Code URL not configured"})
+    try:
+        resp = _http.get(f"{ROO_CODE_BASE}/v1/models", timeout=5)
+        resp.raise_for_status()
+        models = [m["id"] for m in resp.json().get("data", [])]
+        return jsonify({"models": models, "available": bool(models), "url": ROO_CODE_BASE})
+    except Exception as exc:  # pylint: disable=broad-except
+        return jsonify({"models": [], "available": False, "url": ROO_CODE_BASE, "error": str(exc)})
 
 
 # ---------------------------------------------------------------------------
@@ -5202,6 +5305,66 @@ def generate_auto_stream():
 
         return Response(
             stream_with_context(_stream_tgwui_auto()),
+            mimetype="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
+    is_roo = model.startswith(_ROO_CODE_PREFIX)
+    if is_roo:
+        real_model = model[len(_ROO_CODE_PREFIX):]
+        roo_url    = ROO_CODE_BASE
+
+        def _stream_roo_auto():
+            if not roo_url:
+                yield 'data: {"error":"Roo Code URL не настроен — укажите URL в настройках (☰)"}\n\n'
+                return
+            try:
+                resp = _http.post(
+                    f"{roo_url}/v1/chat/completions",
+                    json={
+                        "model": real_model,
+                        "messages": [
+                            {"role": "system", "content": sys_prompt},
+                            {"role": "user",   "content": f"Задание: {prompt}"},
+                        ],
+                        "stream": True,
+                    },
+                    stream=True,
+                    timeout=_LMS_TIMEOUT,
+                )
+                resp.raise_for_status()
+                for raw_line in resp.iter_lines():
+                    if not raw_line:
+                        continue
+                    line_str = raw_line.decode("utf-8") if isinstance(raw_line, bytes) else raw_line
+                    if line_str.startswith("data: "):
+                        line_str = line_str[6:]
+                    if line_str.strip() in ("[DONE]", ""):
+                        _record_generation("auto", model, prompt)
+                        yield "data: [DONE]\n\n"
+                        return
+                    try:
+                        chunk = json.loads(line_str)
+                    except ValueError:
+                        continue
+                    delta  = chunk.get("choices", [{}])[0].get("delta", {})
+                    token  = delta.get("content", "")
+                    finish = chunk.get("choices", [{}])[0].get("finish_reason")
+                    if token:
+                        yield f"data: {json.dumps({'token': token})}\n\n"
+                    if finish:
+                        _record_generation("auto", model, prompt)
+                        yield "data: [DONE]\n\n"
+                        return
+            except _http.exceptions.Timeout:
+                yield f'data: {{"error":"Нет ответа от Roo Code за {_LMS_TIMEOUT} с — модель слишком медленная."}}\n\n'
+            except _http.exceptions.ConnectionError:
+                yield f'data: {json.dumps({"error": f"Нет соединения с Roo Code по адресу {roo_url} — проверьте настройки"})}\n\n'
+            except Exception as exc:  # pylint: disable=broad-except
+                yield f"data: {json.dumps({'error': str(exc)})}\n\n"
+
+        return Response(
+            stream_with_context(_stream_roo_auto()),
             mimetype="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
@@ -8763,6 +8926,15 @@ def generate_auto_complete():
                         model = f"{_TGWUI_PREFIX}{tw_list[0]['id']}"
             except Exception:  # pylint: disable=broad-except
                 pass
+        if not model and ROO_CODE_BASE and ROO_CODE_BASE.strip():
+            try:
+                roo_mr = _http.get(f"{ROO_CODE_BASE}/v1/models", timeout=5)
+                if roo_mr.status_code == 200:
+                    roo_list = roo_mr.json().get("data", [])
+                    if roo_list:
+                        model = f"{_ROO_CODE_PREFIX}{roo_list[0]['id']}"
+            except Exception:  # pylint: disable=broad-except
+                pass
     if not model:
         return jsonify({"error": "No model selected", "success": False}), 400
     if not prompt:
@@ -8772,11 +8944,13 @@ def generate_auto_complete():
     sys_prompt = data.get("system_prompt", "").strip() or _DEFAULT_AUTO_SYSTEM_PROMPT
 
     # Determine backend
-    _is_lms_ac   = model.startswith(_LM_STUDIO_PREFIX)
-    _is_tgwui_ac = model.startswith(_TGWUI_PREFIX)
+    _is_lms_ac     = model.startswith(_LM_STUDIO_PREFIX)
+    _is_tgwui_ac   = model.startswith(_TGWUI_PREFIX)
+    _is_roo_ac     = model.startswith(_ROO_CODE_PREFIX)
     _real_model_ac = (
         model[len(_LM_STUDIO_PREFIX):] if _is_lms_ac
         else model[len(_TGWUI_PREFIX):] if _is_tgwui_ac
+        else model[len(_ROO_CODE_PREFIX):] if _is_roo_ac
         else model
     )
 
@@ -8806,6 +8980,19 @@ def generate_auto_complete():
             )
             r.raise_for_status()
             return r.json().get("choices", [{}])[0].get("message", {}).get("content", "")
+        if _is_roo_ac:
+            if not ROO_CODE_BASE:
+                raise ValueError("Roo Code URL не настроен — укажите URL в настройках (☰)")
+            r = _http.post(
+                f"{ROO_CODE_BASE}/v1/chat/completions",
+                json={"model": _real_model_ac,
+                      "messages": [{"role": "system", "content": sys_prompt},
+                                   {"role": "user", "content": user_content}],
+                      "stream": False},
+                timeout=int(os.environ.get("OLLAMA_TIMEOUT", 180)),
+            )
+            r.raise_for_status()
+            return r.json().get("choices", [{}])[0].get("message", {}).get("content", "")
         # Ollama
         r = _http.post(
             f"{OLLAMA_BASE}/api/generate",
@@ -8826,7 +9013,7 @@ def generate_auto_complete():
         try:
             raw = _call_llm_ac(current_user_content)
         except _http.exceptions.ConnectionError:
-            backend_name = "LM Studio" if _is_lms_ac else "TGWUI" if _is_tgwui_ac else "Ollama"
+            backend_name = "LM Studio" if _is_lms_ac else "TGWUI" if _is_tgwui_ac else ("Roo Code" if _is_roo_ac else "Ollama")
             return jsonify({
                 "error": f"Нет соединения с {backend_name}",
                 "success": False, "attempts": attempt,

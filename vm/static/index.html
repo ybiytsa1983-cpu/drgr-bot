@@ -503,6 +503,7 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
         <div class="hr"><span class="hk">URL</span><span id="h-url" class="hv" style="font-size:9px">—</span></div>
         <div class="hr"><span class="hk">LM Studio</span><span id="h-lms" class="hv">—</span></div>
         <div class="hr"><span class="hk">🧠 TGWUI</span><span id="h-tgwui" class="hv">—</span></div>
+        <div class="hr"><span class="hk">🦘 Roo Code</span><span id="h-roocode" class="hv">—</span></div>
         <div class="hr"><span class="hk">🤝 OAF</span><span id="h-oaf" class="hv">—</span></div>
         <div class="hr"><span class="hk">🧊 3D</span><span id="h-triposr" class="hv">—</span></div>
         <div class="hr"><span class="hk">🌐 WebBuild</span><span id="h-webbuilder" class="hv">—</span></div>
@@ -548,6 +549,18 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
       </div>
       <div id="tgwui-status" style="font-size:10px;margin-top:2px"></div>
       <div style="font-size:10px;color:var(--text2)">URL <a href="https://github.com/oobabooga/text-generation-webui" target="_blank">oobabooga/text-generation-webui</a> с флагом <code>--api</code>. Запуск: <code>python server.py --api --listen</code>. Модели отображаются с префиксом <b>tgwui:</b></div>
+    </div>
+
+    <!-- Roo Code URL -->
+    <div>
+      <div class="pl">🦘 Roo Code URL</div>
+      <input type="text" id="roocode-url" placeholder="http://127.0.0.1:1234" autocomplete="off"/>
+      <div class="pr" style="margin-top:4px">
+        <button class="pb pb-p" style="flex:1" onclick="saveRooCodeUrl()">💾 Сохранить Roo Code URL</button>
+        <button class="pb pb-m" style="flex:1" onclick="checkRooCodeStatus()" title="Проверить соединение">🔗 Проверить</button>
+      </div>
+      <div id="roocode-status" style="font-size:10px;margin-top:2px"></div>
+      <div style="font-size:10px;color:var(--text2)">URL бэкенда для <a href="https://github.com/RooCodeInc/Roo-Code" target="_blank">Roo Code</a> (OpenAI-совместимый API — тот же сервер, что использует расширение VS Code Roo Code). Модели отображаются с префиксом <b>roo:</b></div>
     </div>
 
     <!-- Open Agentic Framework URL -->
@@ -671,7 +684,7 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
         <select id="sel-model" onchange="curModel=this.value;updateBadge()"><option value="">загрузка...</option></select>
         <button class="pb pb-m" onclick="loadModels()">↻</button>
       </div>
-      <div style="font-size:10px;color:var(--text2)">Модели Ollama, LM Studio (<b>lmstudio:</b>), text-generation-webui (<b>tgwui:</b>) — настройте URL выше</div>
+      <div style="font-size:10px;color:var(--text2)">Модели Ollama, LM Studio (<b>lmstudio:</b>), text-generation-webui (<b>tgwui:</b>), Roo Code (<b>roo:</b>) — настройте URL выше</div>
     </div>
 
     <!-- System prompt -->
@@ -974,6 +987,7 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px" id="vm-ai-status">
           <div class="vm-ai-item" id="vai-ollama">⏳ Ollama…</div>
           <div class="vm-ai-item" id="vai-lmstudio">⏳ LM Studio…</div>
+          <div class="vm-ai-item" id="vai-roocode">⏳ Roo Code…</div>
           <div class="vm-ai-item" id="vai-model">⏳ Модель…</div>
           <div class="vm-ai-item" id="vai-relay">⏳ Relay…</div>
           <div class="vm-ai-item" id="vai-sd">⏳ SD…</div>
@@ -3546,6 +3560,14 @@ async function loadHealth() {
       var tgwuiCls  = tgwuiOk ? 'ok'   : (tgwuiCfg ? 'fail'          : '');
       set('h-tgwui', tgwuiText, tgwuiCls);
     }
+    var rcData   = d.roo_code || {};
+    var rcOk     = rcData.status === 'ok';
+    var rcCfg    = rcData.status !== 'not_configured';
+    if (document.getElementById('h-roocode')) {
+      var rcText = rcOk ? '✓ OK' : (rcCfg ? '✗ Недоступен' : '— Не настроен');
+      var rcCls  = rcOk ? 'ok'   : (rcCfg ? 'fail'          : '');
+      set('h-roocode', rcText, rcCls);
+    }
     if (document.getElementById('h-oaf')) {
       var oafText = oafOk ? '✓ OK' : (oafCfg ? '✗ Недоступен' : '— Не настроен');
       var oafCls  = oafOk ? 'ok'   : (oafCfg ? 'fail'          : '');
@@ -3610,7 +3632,7 @@ async function loadHealth() {
     }
     set('h-bot', botRun ? '✓ Работает' : (bot ? '⚠ Не запущен' : '✗ Нет токена'),
         botRun ? 'ok' : (bot ? 'warn' : 'fail'));
-    var anyOk = ol || lmsOk || tgwuiOk || rvmOk || vvmOk;
+    var anyOk = ol || lmsOk || tgwuiOk || rcOk || rvmOk || vvmOk;
     document.getElementById('sdot').className = anyOk ? 'ok' : '';
     // Show/hide "Ollama not running" banner in chat view
     noOl.style.display = anyOk ? 'none' : '';
@@ -3676,6 +3698,26 @@ async function loadModels() {
         curModel = sel.value; updateBadge();
       }
     } catch(e2) { /* remote models optional */ }
+    // Also load Roo Code models if configured (non-blocking)
+    try {
+      var rooResp = await fetch('/roocode/models'); var rooData = await rooResp.json();
+      var rooModels = (rooData.models || []).map(function(m){ return 'roo:' + m; });
+      if (rooModels.length) {
+        var grp2 = document.createElement('optgroup'); grp2.label = '🦘 Roo Code';
+        rooModels.forEach(function(m) {
+          var o = document.createElement('option'); o.value = m; o.textContent = m;
+          if (m === prev) o.selected = true;
+          grp2.appendChild(o);
+        });
+        sel.appendChild(grp2);
+        if (prev && prev.startsWith('roo:') && rooModels.includes(prev)) {
+          sel.value = prev;
+        } else if (!sel.value) {
+          sel.selectedIndex = 0;
+        }
+        curModel = sel.value; updateBadge();
+      }
+    } catch(e3) { /* Roo Code models optional */ }
   } catch(e) {}
 }
 function updateBadge() {
@@ -3799,6 +3841,9 @@ async function loadOllamaUrl() {
     if (d.tgwui_url && document.getElementById('tgwui-url')) {
       document.getElementById('tgwui-url').value = d.tgwui_url;
     }
+    if (d.roo_code_url && document.getElementById('roocode-url')) {
+      document.getElementById('roocode-url').value = d.roo_code_url;
+    }
     if (d.oaf_url && document.getElementById('oaf-url')) {
       document.getElementById('oaf-url').value = d.oaf_url;
     }
@@ -3905,6 +3950,43 @@ async function checkTgwuiStatus() {
   if (statusEl) statusEl.textContent = '🔄 Проверяю...';
   try {
     var r = await fetch('/tgwui/models');
+    var ct = r.headers.get('content-type') || '';
+    if (!ct.includes('application/json')) {
+      if (statusEl) statusEl.textContent = '⚠ Недоступно (код ' + r.status + ')';
+      return;
+    }
+    var d = await _safeJson(r);
+    if (statusEl) {
+      if (d.available) {
+        statusEl.textContent = '✅ Подключено. Моделей: ' + d.models.length;
+      } else {
+        statusEl.textContent = '⚠ Недоступно: ' + (d.error || 'нет ответа');
+      }
+    }
+  } catch(e) {
+    if (statusEl) statusEl.textContent = '⚠ Ошибка соединения: ' + e.message;
+  }
+}
+async function saveRooCodeUrl() {
+  var url = ((document.getElementById('roocode-url')||{}).value || '').trim();
+  if (!url) { toast('Введите URL Roo Code бэкенда, например: http://127.0.0.1:1234'); return; }
+  if (!/^https?:\/\/.+/.test(url)) { toast('Неверный формат URL'); return; }
+  try {
+    var r = await fetch('/settings', { method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ roo_code_url: url }) });
+    var d = await _safeJson(r);
+    if (d.ok) {
+      toast('✓ Roo Code URL сохранён, проверяю соединение...');
+      setTimeout(function(){ loadHealth(); loadModels(); }, 1500);
+    } else { toast('⚠ ' + (d.error||'Ошибка')); }
+  } catch(e) { toast('⚠ Ошибка: ' + e.message); }
+}
+async function checkRooCodeStatus() {
+  var statusEl = document.getElementById('roocode-status');
+  if (statusEl) statusEl.textContent = '🔄 Проверяю...';
+  try {
+    var r = await fetch('/roocode/models');
     var ct = r.headers.get('content-type') || '';
     if (!ct.includes('application/json')) {
       if (statusEl) statusEl.textContent = '⚠ Недоступно (код ' + r.status + ')';
@@ -4862,6 +4944,7 @@ async function retrain() {
 async function vmRefreshAiStatus() {
   var ollamaEl  = document.getElementById('vai-ollama');
   var lmsEl     = document.getElementById('vai-lmstudio');
+  var rcEl      = document.getElementById('vai-roocode');
   var modelEl   = document.getElementById('vai-model');
   var relayEl   = document.getElementById('vai-relay');
   var sdEl      = document.getElementById('vai-sd');
@@ -4882,6 +4965,13 @@ async function vmRefreshAiStatus() {
       ? '✅ LM Studio ' + (lms.url || '').replace('http://', '')
       : (lms.status === 'not_configured' ? '➖ LM Studio (не настроен)' : '⚠ LM Studio недоступен');
     lmsEl.style.color = lms.status === 'ok' ? '#50fa7b' : (lms.status === 'not_configured' ? '#888' : '#ff5555');
+    if (rcEl) {
+      var rc = d.roo_code || {};
+      rcEl.textContent = rc.status === 'ok'
+        ? '✅ Roo Code ' + (rc.url || '').replace('http://', '')
+        : (rc.status === 'not_configured' ? '➖ Roo Code (не настроен)' : '⚠ Roo Code недоступен');
+      rcEl.style.color = rc.status === 'ok' ? '#50fa7b' : (rc.status === 'not_configured' ? '#888' : '#ff5555');
+    }
     var relay = d.ollama_relay || {};
     relayEl.textContent = relay.status === 'ok'
       ? '✅ Relay :' + (relay.port || 11435)
