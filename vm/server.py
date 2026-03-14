@@ -10309,6 +10309,26 @@ def _research_build_html(title: str, body_text: str, sources: list, screenshot_u
     _theme = _rnd_html.choice(_THEMES)
     _accent, _accent2 = _theme[0], _theme[1]
 
+    # ── Layout variant (diversifies article structure each generation) ────
+    _LAYOUT_STYLES = ["hero", "magazine", "timeline", "cards", "default"]
+    _layout_style = _rnd_html.choice(_LAYOUT_STYLES)
+
+    # ── Topic-relevant fallback images – ensure 5–7 visuals per article ──
+    # Extract Latin keywords from title for loremflickr topic-image search
+    _img_kws_raw = re.sub(r'[^a-zA-Z0-9 ]', ' ', title).split()
+    _img_latin = [k.lower() for k in _img_kws_raw if re.match(r'^[a-zA-Z]{3,}$', k)][:4]
+    if not _img_latin:
+        _img_latin = ["technology", "science"]
+    _img_kw_joined = ','.join(_img_latin[:3])
+    _img_kw_enc = urllib.parse.quote_plus(_img_kw_joined)
+    _all_img_uris: list = list(screenshot_uris)
+    _target_img_count = _rnd_html.randint(5, 7)
+    for _fi in range(max(0, _target_img_count - len(_all_img_uris))):
+        _lock_val = (abs(hash(title + str(_fi))) % 99997) + 1
+        _all_img_uris.append(
+            f"https://loremflickr.com/800/500/{_img_kw_enc}?lock={_lock_val}"
+        )
+
     # ── Reading-time / stats ──────────────────────────────────────────────
     word_count = len(body_text.split())
     reading_min = max(1, word_count // 200)
@@ -10318,7 +10338,7 @@ def _research_build_html(title: str, body_text: str, sources: list, screenshot_u
         f'<span>⏱ Время чтения: <strong>~{reading_min} мин</strong></span>\n'
         f'<span>📝 Слов: <strong>{word_count}</strong></span>\n'
         f'<span>📚 Источников: <strong>{len(sources)}</strong></span>\n'
-        f'<span>📸 Иллюстраций: <strong>{len(screenshot_uris)}</strong></span>\n'
+        f'<span>📸 Иллюстраций: <strong>{len(_all_img_uris)}</strong></span>\n'
         '</div>\n'
     )
 
@@ -10336,18 +10356,37 @@ def _research_build_html(title: str, body_text: str, sources: list, screenshot_u
             '</nav>\n'
         )
 
-    # ── Photo gallery ─────────────────────────────────────────────────────
+    # ── Hero / featured image (first image, layout-dependent) ────────────
+    _hero_uri = _all_img_uris[0] if _all_img_uris else ""
+    _hero_alt = esc(title)
+    hero_html = ""
+    if _hero_uri and _layout_style in ("hero", "magazine"):
+        hero_html = (
+            f'<div class="hero-img-wrap">\n'
+            f'  <img src="{_hero_uri}" alt="{_hero_alt}" class="hero-img" loading="eager"/>\n'
+            f'</div>\n'
+        )
+
+    # ── Photo gallery (uses all images including loremflickr fallbacks) ───
     gallery_items = ""
-    for i, uri in enumerate(screenshot_uris):
+    # Skip the hero image (index 0) for hero/magazine layouts to avoid duplicate
+    _gallery_start = 1 if (_hero_uri and _layout_style in ("hero", "magazine")) else 0
+    for i, uri in enumerate(_all_img_uris[_gallery_start:], start=_gallery_start):
         src = sources[i] if i < len(sources) else {}
-        src_title = esc(src.get("title", f"Источник {i + 1}"))
+        src_title = esc(src.get("title", f"Иллюстрация {i + 1}"))
         src_url = esc(src.get("url", "#"))
+        # Fallback images link to source if available, or just the image
+        is_external_img = uri.startswith("http")
+        link_href = src_url if src.get("url") else uri
         gallery_items += (
             f'<figure class="gallery-item">'
-            f'<a href="{src_url}" target="_blank" rel="noopener">'
+            f'<a href="{link_href}" target="_blank" rel="noopener">'
             f'<img src="{uri}" alt="{src_title}" loading="lazy"/>'
             f'</a>'
-            f'<figcaption><a href="{src_url}" target="_blank" rel="noopener">🔗 {src_title}</a></figcaption>'
+            f'<figcaption>'
+            + (f'<a href="{src_url}" target="_blank" rel="noopener">🔗 {src_title}</a>'
+               if src.get("url") else f'📷 {src_title}')
+            + f'</figcaption>'
             f'</figure>\n'
         )
     gallery_html = ""
@@ -10360,7 +10399,7 @@ def _research_build_html(title: str, body_text: str, sources: list, screenshot_u
             "</div></section>\n"
         )
     elif sources:
-        # No screenshots available — show source cards with snippet preview
+        # No images at all (very rare) — show source cards with snippet preview
         _card_icons = ["🌐", "📖", "💬", "📰", "🔗", "📡", "🗞️", "📝"]
         _cards = ""
         for _ci, _src in enumerate(sources[:6]):
@@ -10446,6 +10485,17 @@ def _research_build_html(title: str, body_text: str, sources: list, screenshot_u
             current_para = []
             icon = _section_icons[_sec_idx % len(_section_icons)]
             anchor_id = f"section-{_sec_idx}"
+            # Interleave images: inject an inline image every 2nd h2 heading
+            # Use unique lock values (offset by 100000) so inline images differ from gallery
+            if _all_img_uris and _sec_idx > 0 and _sec_idx % 2 == 0:
+                _lock_inline = (abs(hash(title + "inline" + str(_sec_idx))) % 99997) + 100001
+                _iuri = f"https://loremflickr.com/800/500/{_img_kw_enc}?lock={_lock_inline}"
+                _ifloat = "inline-img-right" if _sec_idx % 4 == 0 else "inline-img-left"
+                sections_html += (
+                    f'<figure class="inline-img {_ifloat}">'
+                    f'<img src="{_iuri}" alt="{icon} {esc(line[3:60].strip())}" loading="lazy"/>'
+                    f'</figure>\n'
+                )
             _sec_idx += 1
             sections_html += f'<h2 id="{anchor_id}">{icon} {_inline_md(line[3:].strip())}</h2>\n'
         elif line.startswith("# "):
@@ -10786,6 +10836,40 @@ def _research_build_html(title: str, body_text: str, sources: list, screenshot_u
         "@media(max-width:600px){article{padding:18px}h1{font-size:1.5em}}"
         ".src-card-head{font-size:2.5em;text-align:center;padding:20px 0 10px;background:#f0f7ff}"
         ".src-card p{margin:6px 0 0;font-size:.82em;color:#555;line-height:1.5}"
+        # Hero image styles
+        ".hero-img-wrap{margin:-36px -36px 32px;border-radius:12px 12px 0 0;overflow:hidden;"
+        "max-height:420px;display:flex;align-items:center;justify-content:center;"
+        "background:#e8f0fe}"
+        ".hero-img{width:100%;height:420px;object-fit:cover;display:block;"
+        "animation:fadeInUp .6s ease both}"
+        # Inline floating images within article text
+        ".inline-img{max-width:340px;border-radius:10px;overflow:hidden;"
+        "box-shadow:0 4px 14px rgba(0,0,0,.12);margin:8px 16px 16px;"
+        "transition:transform .25s ease}"
+        ".inline-img:hover{transform:scale(1.02)}"
+        ".inline-img img{width:100%;height:220px;object-fit:cover;display:block}"
+        ".inline-img-right{float:right;clear:right}"
+        ".inline-img-left{float:left;clear:left}"
+        "@media(max-width:640px){.inline-img{float:none;max-width:100%;margin:12px 0}}"
+        # Layout-specific overrides for structural diversity
+        # Hero layout: darker header gradient, large accent strip
+        ".layout-hero h1{font-size:2.2em;margin-bottom:4px}"
+        ".layout-hero .article-stats{background:linear-gradient(135deg,#e0f0ff,#f5f0ff)}"
+        # Magazine layout: serif-like heading, pull-quote style
+        ".layout-magazine article{border-top:6px solid var(--accent)}"
+        ".layout-magazine h2{font-style:italic}"
+        ".layout-magazine .toc{float:right;width:260px;margin:0 0 20px 24px;"
+        "background:#fafafa;border-radius:8px;padding:14px;border:1px solid #e0e0e0}"
+        "@media(max-width:640px){.layout-magazine .toc{float:none;width:auto;margin:0 0 16px}}"
+        # Timeline layout: numbered steps on h2
+        ".layout-timeline h2::before{content:counter(sec) '. ';counter-increment:sec;"
+        "font-size:.8em;color:var(--accent2);margin-right:4px}"
+        ".layout-timeline .article-body{counter-reset:sec}"
+        # Cards layout: each section in a card-style box
+        ".layout-cards .article-body h2{background:var(--accent);color:#fff;"
+        "padding:10px 16px;border-radius:8px 8px 0 0;margin:28px 0 0}"
+        ".layout-cards .article-body p{border:1px solid #e8e8e8;border-top:none;"
+        "padding:14px 16px;border-radius:0 0 8px 8px;margin:0 0 4px}"
     )
 
     return (
@@ -10797,12 +10881,14 @@ def _research_build_html(title: str, body_text: str, sources: list, screenshot_u
         f"<style>{css}</style>\n"
         "</head>\n<body class=\"bg-light\">\n"
         "<div class=\"container py-4\">\n"
-        "<article class=\"card shadow-sm p-4 p-md-5 mb-4\">\n"
+        f"<article class=\"card shadow-sm p-4 p-md-5 mb-4 layout-{_layout_style}\">\n"
+        f"{hero_html}"
         f"<h1 class=\"display-6 fw-bold mb-3\" style=\"color:var(--accent)\">📰 {esc(title)}</h1>\n"
         f"{stats_html}"
         f"{buttons_html}"
         f"{toc_html}"
         f'<section class="article-body">\n{sections_html}</section>\n'
+        '<div style="clear:both"></div>\n'
         f"{gallery_html}"
         f"{video_html}"
         f"{chart_html}"
