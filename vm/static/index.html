@@ -3718,6 +3718,22 @@ async function loadModels() {
         curModel = sel.value; updateBadge();
       }
     } catch(e3) { /* Roo Code models optional */ }
+    // Also add Roo Code models to the research model selector
+    try {
+      var rooRes2 = await fetch('/roocode/models'); var rooData2 = await rooRes2.json();
+      var rooModels2 = (rooData2.models || []).map(function(m){ return 'roo:' + m; });
+      if (rooModels2.length) {
+        var rsel = document.getElementById('research-model');
+        if (rsel) {
+          var rg = document.createElement('optgroup'); rg.label = '🦘 Roo Code';
+          rooModels2.forEach(function(m) {
+            var o = document.createElement('option'); o.value = m; o.textContent = m;
+            rg.appendChild(o);
+          });
+          rsel.appendChild(rg);
+        }
+      }
+    } catch(e4) { /* Roo Code research models optional */ }
   } catch(e) {}
 }
 function updateBadge() {

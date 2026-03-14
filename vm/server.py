@@ -10285,8 +10285,29 @@ def _research_html_escape(text: str) -> str:
 
 
 def _research_build_html(title: str, body_text: str, sources: list, screenshot_uris: list, yt_video_id: str = "") -> str:
-    """Build a self-contained professional HTML research article with gallery, Chart.js, video, and action buttons."""
+    """Build a self-contained professional HTML research article with Bootstrap 5 CDN, gallery, Chart.js, video, and action buttons."""
+    import random as _rnd_html
     esc = _research_html_escape
+
+    # ── Bootstrap 5 CDN (no install required) ────────────────────────────
+    _BS_CDN = (
+        '<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" '
+        'integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous"/>\n'
+        '<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" '
+        'integrity="sha384-YvpcrYf0tY3lHB60NNkmXc4s9bIOgUxi8T/jzmCl6jc9LXJGU/d2h+lrEMGMIjY" crossorigin="anonymous"></script>\n'
+    )
+    # Randomise accent theme so each article looks unique
+    _THEMES = [
+        # (accent_hex, accent2_hex, bg_class, header_bg_class)
+        ("#0d6efd", "#198754", "bg-light", "bg-primary"),      # Bootstrap blue
+        ("#6610f2", "#0dcaf0", "bg-light", "bg-purple"),       # purple+cyan
+        ("#dc3545", "#fd7e14", "bg-light", "bg-danger"),       # red+orange
+        ("#20c997", "#0d6efd", "bg-white", "bg-success"),      # teal+blue
+        ("#ffc107", "#6610f2", "bg-light", "bg-warning"),      # yellow+purple
+        ("#0dcaf0", "#198754", "bg-light", "bg-info"),         # cyan+green
+    ]
+    _theme = _rnd_html.choice(_THEMES)
+    _accent, _accent2 = _theme[0], _theme[1]
 
     # ── Reading-time / stats ──────────────────────────────────────────────
     word_count = len(body_text.split())
@@ -10682,7 +10703,7 @@ def _research_build_html(title: str, body_text: str, sources: list, screenshot_u
         "@keyframes slideInLeft{from{opacity:0;transform:translateX(-30px)}to{opacity:1;transform:translateX(0)}}"
         "@keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}"
         "@keyframes barGrow{from{transform:scaleY(0);transform-origin:bottom}to{transform:scaleY(1);transform-origin:bottom}}"
-        ":root{--accent:#0e84d4;--accent2:#1aad5a;--bg:#f0f4f8;--card:#fff;--text:#1a1a2e}"
+        f":root{{--accent:{_accent};--accent2:{_accent2};--bg:#f0f4f8;--card:#fff;--text:#1a1a2e}}"
         "body{margin:0;padding:20px;font-family:'Segoe UI',system-ui,sans-serif;"
         "background:var(--bg);color:var(--text);line-height:1.7}"
         "article{background:var(--card);padding:36px;border-radius:12px;"
@@ -10772,9 +10793,12 @@ def _research_build_html(title: str, body_text: str, sources: list, screenshot_u
         '<meta charset="UTF-8"/>\n'
         '<meta name="viewport" content="width=device-width,initial-scale=1"/>\n'
         f"<title>{esc(title)}</title>\n"
+        f"{_BS_CDN}"
         f"<style>{css}</style>\n"
-        "</head>\n<body>\n<article>\n"
-        f"<h1>📰 {esc(title)}</h1>\n"
+        "</head>\n<body class=\"bg-light\">\n"
+        "<div class=\"container py-4\">\n"
+        "<article class=\"card shadow-sm p-4 p-md-5 mb-4\">\n"
+        f"<h1 class=\"display-6 fw-bold mb-3\" style=\"color:var(--accent)\">📰 {esc(title)}</h1>\n"
         f"{stats_html}"
         f"{buttons_html}"
         f"{toc_html}"
@@ -10784,7 +10808,7 @@ def _research_build_html(title: str, body_text: str, sources: list, screenshot_u
         f"{chart_html}"
         f"{svg_html}"
         f"{sources_html}"
-        "</article>\n</body>\n</html>"
+        "</article>\n</div>\n</body>\n</html>"
     )
 
 
@@ -11082,12 +11106,13 @@ def web_research():
         blocks += [f"Описание скриншота {i+1}: {d[:600]}" for i, d in enumerate(vis_descriptions)]
     aggregated = "\n\n".join(blocks)
 
-    # ── 7. Generate article text via Ollama or LM Studio ─────────────────
+    # ── 7. Generate article text via Ollama, LM Studio, TGWUI or Roo Code ──
     article_text = ""
-    is_lms_research = model.startswith(_LM_STUDIO_PREFIX) if model else False
+    is_lms_research  = model.startswith(_LM_STUDIO_PREFIX)  if model else False
+    is_roo_research  = model.startswith(_ROO_CODE_PREFIX)   if model else False
 
     if not model:
-        # Auto-detect: prefer LM Studio if configured, then Ollama
+        # Auto-detect: prefer LM Studio → Roo Code → Ollama
         if LM_STUDIO_BASE:
             try:
                 lms_mr = _http.get(f"{LM_STUDIO_BASE}/v1/models", timeout=5)
@@ -11096,6 +11121,16 @@ def web_research():
                     if lms_model_list:
                         model = f"{_LM_STUDIO_PREFIX}{lms_model_list[0]['id']}"
                         is_lms_research = True
+            except Exception:  # pylint: disable=broad-except
+                pass
+        if not model and ROO_CODE_BASE:
+            try:
+                roo_mr = _http.get(f"{ROO_CODE_BASE}/v1/models", timeout=5)
+                if roo_mr.status_code == 200:
+                    roo_model_list = roo_mr.json().get("data", [])
+                    if roo_model_list:
+                        model = f"{_ROO_CODE_PREFIX}{roo_model_list[0]['id']}"
+                        is_roo_research = True
             except Exception:  # pylint: disable=broad-except
                 pass
         if not model:
@@ -11192,6 +11227,7 @@ def web_research():
                     f"- НЕ ПИШИ вступлений типа 'Конечно, вот статья' — начни СРАЗУ с заголовка\n"
                 )
             is_tgwui_research = model.startswith(_TGWUI_PREFIX)
+            is_roo_research   = model.startswith(_ROO_CODE_PREFIX)
             if is_lms_research:
                 real_model = model[len(_LM_STUDIO_PREFIX):]
                 ar = _http.post(
@@ -11207,6 +11243,17 @@ def web_research():
                 real_model = model[len(_TGWUI_PREFIX):]
                 ar = _http.post(
                     f"{TGWUI_BASE}/v1/chat/completions",
+                    json={"model": real_model,
+                          "messages": [{"role": "user", "content": prompt}],
+                          "stream": False, "max_tokens": 4096},
+                    timeout=int(os.environ.get("OLLAMA_TIMEOUT", 180)),
+                )
+                ar.raise_for_status()
+                article_text = ar.json().get("choices", [{}])[0].get("message", {}).get("content", "")
+            elif is_roo_research:
+                real_model = model[len(_ROO_CODE_PREFIX):]
+                ar = _http.post(
+                    f"{ROO_CODE_BASE}/v1/chat/completions",
                     json={"model": real_model,
                           "messages": [{"role": "user", "content": prompt}],
                           "stream": False, "max_tokens": 4096},
@@ -11261,6 +11308,7 @@ def web_research():
                 "Примечание: статья создана на основе знаний AI (без интернет-поиска)."
             )
             is_tgwui_research = model.startswith(_TGWUI_PREFIX)
+            is_roo_research   = model.startswith(_ROO_CODE_PREFIX)
             if is_lms_research:
                 real_model = model[len(_LM_STUDIO_PREFIX):]
                 ar = _http.post(
@@ -11276,6 +11324,17 @@ def web_research():
                 real_model = model[len(_TGWUI_PREFIX):]
                 ar = _http.post(
                     f"{TGWUI_BASE}/v1/chat/completions",
+                    json={"model": real_model,
+                          "messages": [{"role": "user", "content": prompt}],
+                          "stream": False, "max_tokens": 4096},
+                    timeout=int(os.environ.get("OLLAMA_TIMEOUT", 180)),
+                )
+                ar.raise_for_status()
+                article_text = ar.json().get("choices", [{}])[0].get("message", {}).get("content", "")
+            elif is_roo_research:
+                real_model = model[len(_ROO_CODE_PREFIX):]
+                ar = _http.post(
+                    f"{ROO_CODE_BASE}/v1/chat/completions",
                     json={"model": real_model,
                           "messages": [{"role": "user", "content": prompt}],
                           "stream": False, "max_tokens": 4096},
