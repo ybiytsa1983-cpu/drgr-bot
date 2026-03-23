@@ -1,1 +1,1 @@
-worker: python drgr-bot.py
+worker: python bot.py
