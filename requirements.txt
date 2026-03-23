@@ -1,7 +1,19 @@
+# Telegram bot
 aiogram==3.0.0
-pillow
-moviepy
-requests
 python-dotenv
 aiofiles
+
+# Media processing
+pillow
+moviepy
+
+# HTTP / search
+requests
 duckduckgo-search>=6.0.0
+
+# DRGR VM server
+flask>=3.0.0
+werkzeug>=3.0.0
+
+# Hugging Face (optional)
+huggingface_hub
