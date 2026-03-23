@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>DRGR VM - Enhanced</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/editor/editor.main.min.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: Arial, sans-serif; display: flex; height: 100vh; background: #1e1e1e; color: #fff; }
+        #sidebar { width: 300px; background: #252526; padding: 20px; overflow-y: auto; }
+        #main { flex: 1; display: flex; flex-direction: column; }
+        #toolbar { background: #2d2d30; padding: 10px; display: flex; gap: 10px; align-items: center; }
+        #editor { flex: 1; }
+        button { padding: 8px 15px; background: #0e639c; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #1177bb; }
+        select { padding: 8px; background: #3c3c3c; color: #fff; border: 1px solid #555; border-radius: 4px; }
+        input[type="file"] { display: none; }
+        .file-upload-btn { background: #0a7d3e; }
+        .file-upload-btn:hover { background: #0d9248; }
+        h3 { margin-bottom: 15px; color: #4ec9b0; }
+        .vm-select { margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+    <div id="sidebar">
+        <h3>🔧 DRGR VM Control Panel</h3>
+        <div class="vm-select">
+            <label>Select VM:</label>
+            <select id="vmSelect">
+                <option value="local">Local VM</option>
+                <option value="colab">Google Colab</option>
+                <option value="cloud">Cloud VM</option>
+            </select>
+        </div>
+        <div style="margin-top: 20px;">
+            <h4 style="color: #ce9178;">Quick Actions</h4>
+            <button onclick="generateHTML()">Generate HTML</button>
+            <button onclick="run3DGen()">🎬 3D Generator</button>
+            <button onclick="runVideoGen()">🎥 Video Generator</button>
+            <button onclick="runGoose()">🦢 Goose AI</button>
+        </div>
+    </div>
+    <div id="main">
+        <div id="toolbar">
+            <label for="fileUpload" class="file-upload-btn" style="cursor: pointer; padding: 8px 15px; border-radius: 4px;">
+                📎 Upload File
+            </label>
+            <input type="file" id="fileUpload" onchange="uploadFile(event)">
+            <button onclick="saveProject()">Save Project</button>
+            <button onclick="loadProjects()">Load Projects</button>
+            <span style="margin-left: auto; color: #aaa;">Monaco Editor Active</span>
+        </div>
+        <div id="editor"></div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/loader.min.js"></script>
+    <script>
+        let editor;
+        require.config({ paths: { vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs' } });
+        require(['vs/editor/editor.main'], function() {
+            editor = monaco.editor.create(document.getElementById('editor'), {
+                value: '<!DOCTYPE html>\\n<html>\\n<head>\\n    <title>DRGR VM Ready</title>\\n</head>\\n<body>\\n    <h1>Welcome to DRGR VM</h1>\\n</body>\\n</html>',
+                language: 'html',
+                theme: 'vs-dark',
+                automaticLayout: true
+            });
+        });
+
+        function uploadFile(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                if (editor) editor.setValue(e.target.result);
+                alert('✅ File uploaded: ' + file.name);
+            };
+            reader.readAsText(file);
+        }
+
+        function saveProject() {
+            const content = editor ? editor.getValue() : '';
+            const filename = prompt('Enter filename:', 'project.html');
+            if (!filename) return;
+            fetch('/api/project', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filename, content })
+            }).then(r => r.json()).then(data => alert('✅ Project saved!'));
+        }
+
+        function loadProjects() {
+            fetch('/api/projects').then(r => r.json()).then(projects => {
+                const list = projects.map(p => p.name).join('\\n');
+                alert('Saved projects:\\n' + list);
+            });
+        }
+
+        function generateHTML() {
+            alert('🚀 HTML Generator activated!');
+        }
+
+        function run3DGen() {
+            fetch('/api/generate-3d', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt: 'Generate 3D model' })
+            }).then(r => r.json()).then(data => alert('🎬 3D Generator: ' + data.result));
+        }
+
+        function runVideoGen() {
+            fetch('/api/generate-video', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt: 'Generate video' })
+            }).then(r => r.json()).then(data => alert('🎥 Video Generator: ' + data.result));
+        }
+
+        function runGoose() {
+            fetch('/api/goose', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ query: 'Analyze code' })
+            }).then(r => r.json()).then(data => alert('🦢 Goose AI: ' + data.result));
+        }
+
+        document.getElementById('vmSelect').addEventListener('change', function(e) {
+            alert('🔄 Switched to: ' + e.target.options[e.target.selectedIndex].text);
+        });
+    </script>
+</body>
+</html>
