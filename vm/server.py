@@ -150,6 +150,9 @@ VIDEDITOR_BASE = os.environ.get("VIDEDITOR_URL", "").rstrip("/")
 # Remote VM URL — URL of an externally hosted VM (e.g. Google Colab via ngrok).
 # When set, the /remote/proxy endpoint forwards requests there.
 REMOTE_VM_URL = os.environ.get("REMOTE_VM_URL", "").rstrip("/")
+# Timestamp (time.time()) of the last successful POST /api/colab/register call.
+# 0.0 means never seen.
+REMOTE_VM_LAST_SEEN: float = 0.0
 
 # Vision VM URL — URL of a dedicated vision-capable Ollama instance (e.g. a
 # second Ollama with llava or minicpm-v loaded).  When set and online, all
@@ -632,6 +635,30 @@ def _start_ollama_cors_relay() -> None:
 
 
 threading.Thread(target=_start_ollama_cors_relay, daemon=True).start()
+
+
+# ---------------------------------------------------------------------------
+# Remote Colab VM heartbeat poller
+# ---------------------------------------------------------------------------
+_COLAB_POLL_INTERVAL = 30  # seconds between remote VM /api/status probes
+
+
+def _colab_vm_poller() -> None:
+    """Background thread: every 30 s ping the registered Colab VM /api/status.
+
+    This keeps the server aware of the remote VM's liveness even between
+    explicit /api/colab/register heartbeats from the Colab side.
+    """
+    while True:
+        time.sleep(_COLAB_POLL_INTERVAL)
+        if REMOTE_VM_URL:
+            try:
+                _http.get(f"{REMOTE_VM_URL}/api/status", timeout=5)
+            except Exception:  # pylint: disable=broad-except
+                pass
+
+
+threading.Thread(target=_colab_vm_poller, daemon=True).start()
 
 
 # server.py manages the lifecycle of bot.py so that saving a new token via
@@ -3820,6 +3847,68 @@ def colab_notebook_url():
         "colab_url": colab_url,
         "github_url": github_url,
         "notebook_file": notebook_rel,
+    })
+
+
+# ---------------------------------------------------------------------------
+# Colab VM registration and status — /api/colab/register + /api/colab/status
+# ---------------------------------------------------------------------------
+
+@app.route("/api/colab/register", methods=["POST"])
+def colab_register():
+    """Register (or refresh) the Colab VM URL.
+
+    Expects JSON: {"url": "https://xxxx.ngrok-free.app"}
+    Updates the global REMOTE_VM_URL and REMOTE_VM_LAST_SEEN, and persists
+    the URL to .env so it survives a server restart.
+    """
+    global REMOTE_VM_URL, REMOTE_VM_LAST_SEEN  # noqa: PLW0603
+    body = request.get_json(silent=True) or {}
+    url = body.get("url", "").strip().rstrip("/")
+    if not url:
+        return jsonify({"ok": False, "error": "url is required"}), 400
+    if not url.startswith(("http://", "https://")):
+        return jsonify({"ok": False, "error": "url must start with http:// or https://"}), 400
+
+    REMOTE_VM_URL = url
+    REMOTE_VM_LAST_SEEN = time.time()
+
+    # Persist to .env
+    env_path = os.path.join(os.path.dirname(__file__), "..", ".env")
+    try:
+        lines: list = []
+        if os.path.exists(env_path):
+            with open(env_path, encoding="utf-8") as f:
+                lines = f.readlines()
+        found = False
+        for i, line in enumerate(lines):
+            if line.startswith("REMOTE_VM_URL="):
+                lines[i] = f"REMOTE_VM_URL={url}\n"
+                found = True
+                break
+        if not found:
+            lines.append(f"REMOTE_VM_URL={url}\n")
+        with open(env_path, "w", encoding="utf-8") as f:
+            f.writelines(lines)
+    except Exception:  # pylint: disable=broad-except
+        pass
+
+    os.environ["REMOTE_VM_URL"] = url
+    return jsonify({"ok": True, "url": url, "last_seen": REMOTE_VM_LAST_SEEN})
+
+
+@app.route("/api/colab/status", methods=["GET"])
+def colab_status():
+    """Return the registration status of the Colab VM.
+
+    Response: {"url": "...", "online": bool, "last_seen": float}
+    "online" is True when a heartbeat was received within the last 90 seconds.
+    """
+    online = bool(REMOTE_VM_URL) and (time.time() - REMOTE_VM_LAST_SEEN) < 90
+    return jsonify({
+        "url": REMOTE_VM_URL,
+        "online": online,
+        "last_seen": REMOTE_VM_LAST_SEEN,
     })
 
 
