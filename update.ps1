@@ -80,10 +80,28 @@ Write-Host "`n============================================" -ForegroundColor Mag
 Write-Host "   drgr-bot — скрипт обновления (update.ps1)" -ForegroundColor Magenta
 Write-Host "============================================`n" -ForegroundColor Magenta
 
+# 0. Проверка: является ли папка git-репозиторием; если нет — клонировать
+Write-Step "Шаг 0: Проверка git-репозитория..."
+git -C $ScriptDir rev-parse --git-dir 2>&1 | Out-Null
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "  INFO  Папка не является git-репозиторием. Выполняется клонирование..." -ForegroundColor Yellow
+    $cloneOutput = git clone https://github.com/ybiytsa1983-cpu/drgr-bot $ScriptDir 2>&1
+    $cloneOutput | ForEach-Object { Write-Host "  $_" }
+    if ($LASTEXITCODE -ne 0) {
+        Write-Fail "git clone завершился с ошибкой."
+        exit 1
+    }
+    Write-Ok "Репозиторий склонирован успешно."
+    Set-Location $ScriptDir
+} else {
+    Write-Ok "Папка является git-репозиторием."
+}
+
 # 1. Сохранение текущего хеша (резервная копия)
 Write-Step "Шаг 1/4: Сохранение резервной копии (текущий коммит)..."
 try {
-    $backupHash = (git rev-parse HEAD 2>&1).Trim()
+    $rawHash = git rev-parse HEAD 2>&1
+    $backupHash = ($rawHash | Out-String).Trim()
     if ($backupHash -notmatch '^[0-9a-f]{40}$') {
         throw "Получен некорректный хеш: $backupHash"
     }
@@ -91,7 +109,7 @@ try {
     Write-Ok "Резервный хеш сохранён: $backupHash"
 } catch {
     Write-Fail "Не удалось получить текущий коммит. Убедитесь, что папка является git-репозиторием."
-    Write-Fail $_
+    Write-Fail "$_"
     exit 1
 }
 
@@ -124,7 +142,8 @@ if ($LASTEXITCODE -ne 0) {
 Write-Ok "Зависимости установлены."
 
 # 4. Получение нового хеша для информации
-$newHash = (git rev-parse HEAD 2>&1).Trim()
+$rawNewHash = git rev-parse HEAD 2>&1
+$newHash = ($rawNewHash | Out-String).Trim()
 Write-Host "`n  Предыдущий коммит : $backupHash" -ForegroundColor DarkGray
 Write-Host "  Новый коммит      : $newHash" -ForegroundColor DarkGray
 
