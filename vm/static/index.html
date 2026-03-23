@@ -1,929 +1,131 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>DRGR VM</title>
-
-  <!-- Monaco Editor (CDN) -->
-  <script>var require = { paths: { vs: "https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs" } };</script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs/loader.min.js"></script>
-
-  <!-- Three.js for 3D generator -->
-  <script src="https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.min.js"></script>
-
-  <style>
-    :root {
-      --bg: #1e1e2e;
-      --bg2: #181825;
-      --bg3: #313244;
-      --fg: #cdd6f4;
-      --accent: #89b4fa;
-      --accent2: #cba6f7;
-      --green: #a6e3a1;
-      --red: #f38ba8;
-      --yellow: #f9e2af;
-      --border: #45475a;
-      --radius: 8px;
-      --sidebar-w: 260px;
-    }
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body { height: 100%; font-family: "Segoe UI", system-ui, sans-serif; background: var(--bg); color: var(--fg); }
-
-    /* ---- Layout ---- */
-    #app { display: flex; height: 100vh; overflow: hidden; }
-
-    /* ---- Sidebar ---- */
-    #sidebar {
-      width: var(--sidebar-w); min-width: var(--sidebar-w);
-      background: var(--bg2); border-right: 1px solid var(--border);
-      display: flex; flex-direction: column; gap: 0;
-    }
-    #sidebar-header {
-      padding: 14px 16px; border-bottom: 1px solid var(--border);
-      display: flex; align-items: center; gap: 10px;
-    }
-    #sidebar-header .logo { font-size: 20px; font-weight: 700; color: var(--accent); letter-spacing: 1px; }
-    #sidebar-header .version { font-size: 11px; color: #6c7086; margin-left: auto; }
-
-    /* VM dropdown */
-    #vm-selector-wrap {
-      padding: 10px 12px; border-bottom: 1px solid var(--border);
-    }
-    #vm-selector-wrap label { font-size: 11px; color: #6c7086; display: block; margin-bottom: 4px; }
-    #vm-selector {
-      width: 100%; background: var(--bg3); color: var(--fg);
-      border: 1px solid var(--border); border-radius: var(--radius);
-      padding: 6px 8px; font-size: 13px; cursor: pointer;
-    }
-    #vm-selector:focus { outline: none; border-color: var(--accent); }
-
-    /* Nav items */
-    .nav-item {
-      display: flex; align-items: center; gap: 10px; padding: 10px 16px;
-      cursor: pointer; border-radius: 0; transition: background .15s;
-      font-size: 14px; border-bottom: 1px solid transparent;
-    }
-    .nav-item:hover { background: var(--bg3); }
-    .nav-item.active { background: var(--bg3); border-left: 3px solid var(--accent); color: var(--accent); }
-    .nav-item .nav-icon { font-size: 16px; width: 20px; text-align: center; }
-
-    /* Status bar */
-    #status-bar {
-      margin-top: auto; padding: 8px 12px; border-top: 1px solid var(--border);
-      font-size: 11px; color: #6c7086;
-    }
-    #status-bar .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--green); margin-right: 5px; }
-
-    /* ---- Main area ---- */
-    #main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-
-    /* Top toolbar */
-    #toolbar {
-      background: var(--bg2); border-bottom: 1px solid var(--border);
-      padding: 8px 16px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-    }
-    .pane-title { font-size: 14px; font-weight: 600; color: var(--fg); flex: 1; }
-    .btn {
-      background: var(--bg3); color: var(--fg); border: 1px solid var(--border);
-      border-radius: var(--radius); padding: 5px 12px; font-size: 13px; cursor: pointer;
-      display: flex; align-items: center; gap: 6px; transition: background .15s, border-color .15s;
-    }
-    .btn:hover { background: #414558; border-color: var(--accent); }
-    .btn.primary { background: var(--accent); color: var(--bg); border-color: var(--accent); font-weight: 600; }
-    .btn.primary:hover { background: #74aef0; }
-    .btn.danger { border-color: var(--red); color: var(--red); }
-    .btn.danger:hover { background: #3d2028; }
-
-    /* Language select in toolbar */
-    .lang-select {
-      background: var(--bg3); color: var(--fg); border: 1px solid var(--border);
-      border-radius: var(--radius); padding: 5px 8px; font-size: 13px; cursor: pointer;
-    }
-    .lang-select:focus { outline: none; border-color: var(--accent); }
-
-    /* Paperclip upload button */
-    #upload-btn-label {
-      background: var(--bg3); color: var(--fg); border: 1px solid var(--border);
-      border-radius: var(--radius); padding: 5px 10px; font-size: 16px; cursor: pointer;
-      transition: background .15s, border-color .15s; display: flex; align-items: center;
-    }
-    #upload-btn-label:hover { background: #414558; border-color: var(--accent); }
-    #upload-input { display: none; }
-
-    /* ---- Panes ---- */
-    .pane { flex: 1; overflow: auto; display: none; flex-direction: column; }
-    .pane.active { display: flex; }
-
-    /* Editor pane */
-    #editor-container { flex: 1; min-height: 0; }
-    #editor-output {
-      height: 160px; background: #0d0d1a; color: #a6e3a1; font-family: monospace; font-size: 13px;
-      padding: 10px; overflow-y: auto; border-top: 1px solid var(--border);
-      white-space: pre-wrap; word-break: break-all;
-    }
-
-    /* Search pane */
-    #search-pane { padding: 20px; gap: 16px; }
-    .search-bar { display: flex; gap: 8px; flex-wrap: wrap; }
-    .search-bar input {
-      flex: 1; min-width: 200px; background: var(--bg3); color: var(--fg);
-      border: 1px solid var(--border); border-radius: var(--radius);
-      padding: 8px 12px; font-size: 14px;
-    }
-    .search-bar input:focus { outline: none; border-color: var(--accent); }
-    .search-sources { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-    .source-chip {
-      display: flex; align-items: center; gap: 5px; background: var(--bg3);
-      border: 1px solid var(--border); border-radius: 20px;
-      padding: 4px 10px; font-size: 12px; cursor: pointer;
-    }
-    .source-chip input[type=checkbox] { accent-color: var(--accent); cursor: pointer; }
-    #search-results { overflow-y: auto; }
-    .result-card {
-      background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius);
-      padding: 12px 16px; margin-bottom: 10px;
-    }
-    .result-card .r-title { color: var(--accent); font-size: 15px; font-weight: 600; }
-    .result-card .r-title a { color: inherit; text-decoration: none; }
-    .result-card .r-title a:hover { text-decoration: underline; }
-    .result-card .r-source { font-size: 11px; color: #6c7086; margin: 2px 0; }
-    .result-card .r-snippet { font-size: 13px; color: #bac2de; margin-top: 6px; }
-    .result-card .r-score { float: right; font-size: 11px; color: #6c7086; }
-    #search-status { color: #6c7086; font-size: 13px; margin-top: 6px; }
-
-    /* Goose pane */
-    #goose-pane { padding: 20px; gap: 16px; }
-    .goose-input { display: flex; flex-direction: column; gap: 8px; }
-    .goose-input textarea {
-      background: var(--bg3); color: var(--fg); border: 1px solid var(--border);
-      border-radius: var(--radius); padding: 10px; font-size: 14px; resize: vertical;
-      min-height: 100px; font-family: inherit;
-    }
-    .goose-input textarea:focus { outline: none; border-color: var(--accent); }
-    #goose-model-select {
-      background: var(--bg3); color: var(--fg); border: 1px solid var(--border);
-      border-radius: var(--radius); padding: 6px 8px; font-size: 13px;
-    }
-    #goose-response {
-      flex: 1; background: var(--bg2); border: 1px solid var(--border);
-      border-radius: var(--radius); padding: 14px; font-size: 14px;
-      white-space: pre-wrap; overflow-y: auto; min-height: 200px;
-    }
-
-    /* 3D pane */
-    #gen3d-pane { padding: 20px; gap: 16px; }
-    #gen3d-canvas-wrap {
-      flex: 1; min-height: 300px; background: #0a0a18; border-radius: var(--radius);
-      border: 1px solid var(--border); position: relative; overflow: hidden;
-    }
-    #gen3d-canvas { width: 100% !important; height: 100% !important; display: block; }
-    #gen3d-desc {
-      background: var(--bg3); color: var(--fg); border: 1px solid var(--border);
-      border-radius: var(--radius); padding: 8px 12px; font-size: 14px;
-    }
-    #gen3d-desc:focus { outline: none; border-color: var(--accent); }
-
-    /* Video pane */
-    #video-pane { padding: 20px; gap: 16px; }
-    #video-drop-zone {
-      border: 2px dashed var(--border); border-radius: var(--radius);
-      padding: 40px 20px; text-align: center; color: #6c7086; cursor: pointer;
-      transition: border-color .2s, color .2s;
-    }
-    #video-drop-zone:hover, #video-drop-zone.drag-over {
-      border-color: var(--accent); color: var(--accent);
-    }
-    #video-preview { max-width: 100%; border-radius: var(--radius); display: none; }
-    #video-meta { font-size: 13px; color: #bac2de; }
-    #video-prompt-wrap { display: flex; flex-direction: column; gap: 8px; }
-    #video-prompt {
-      background: var(--bg3); color: var(--fg); border: 1px solid var(--border);
-      border-radius: var(--radius); padding: 8px 12px; font-size: 14px; resize: vertical; min-height: 80px;
-    }
-    #video-prompt:focus { outline: none; border-color: var(--accent); }
-
-    /* Uploads pane */
-    #uploads-pane { padding: 20px; gap: 14px; }
-    #uploads-list { display: flex; flex-wrap: wrap; gap: 12px; overflow-y: auto; }
-    .upload-card {
-      background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius);
-      padding: 10px 14px; display: flex; align-items: center; gap: 10px; min-width: 220px;
-    }
-    .upload-card .uc-icon { font-size: 22px; }
-    .upload-card .uc-info { flex: 1; overflow: hidden; }
-    .upload-card .uc-name { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .upload-card .uc-size { font-size: 11px; color: #6c7086; }
-    .upload-card a { color: var(--accent); font-size: 12px; }
-    .upload-card img { max-width: 60px; max-height: 60px; border-radius: 4px; object-fit: cover; }
-
-    /* Loading spinner */
-    .spinner {
-      width: 20px; height: 20px; border: 3px solid var(--border);
-      border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite;
-      display: inline-block; vertical-align: middle; margin-right: 6px;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
-
-    /* Notifications */
-    #notify-area { position: fixed; bottom: 20px; right: 20px; display: flex; flex-direction: column; gap: 8px; z-index: 9999; }
-    .notify {
-      background: var(--bg3); border: 1px solid var(--border); border-radius: var(--radius);
-      padding: 10px 16px; font-size: 13px; min-width: 220px; max-width: 340px;
-      box-shadow: 0 4px 16px #00000066; animation: slideIn .3s ease;
-    }
-    .notify.success { border-color: var(--green); color: var(--green); }
-    .notify.error   { border-color: var(--red);   color: var(--red); }
-    .notify.info    { border-color: var(--accent); color: var(--accent); }
-    @keyframes slideIn { from { opacity: 0; transform: translateX(40px); } to { opacity: 1; transform: translateX(0); } }
-
-    /* Responsive */
-    @media (max-width: 700px) {
-      #sidebar { width: 50px; min-width: 50px; }
-      #sidebar-header .logo { display: none; }
-      #sidebar-header .version { display: none; }
-      #vm-selector-wrap { display: none; }
-      .nav-item span.nav-label { display: none; }
-      .nav-item { justify-content: center; padding: 12px 0; }
-    }
-  </style>
+    <meta charset="UTF-8">
+    <title>DRGR VM - Enhanced</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/editor/editor.main.min.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: Arial, sans-serif; display: flex; height: 100vh; background: #1e1e1e; color: #fff; }
+        #sidebar { width: 300px; background: #252526; padding: 20px; overflow-y: auto; }
+        #main { flex: 1; display: flex; flex-direction: column; }
+        #toolbar { background: #2d2d30; padding: 10px; display: flex; gap: 10px; align-items: center; }
+        #editor { flex: 1; }
+        button { padding: 8px 15px; background: #0e639c; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #1177bb; }
+        select { padding: 8px; background: #3c3c3c; color: #fff; border: 1px solid #555; border-radius: 4px; }
+        input[type="file"] { display: none; }
+        .file-upload-btn { background: #0a7d3e; }
+        .file-upload-btn:hover { background: #0d9248; }
+        h3 { margin-bottom: 15px; color: #4ec9b0; }
+        .vm-select { margin-bottom: 20px; }
+    </style>
 </head>
 <body>
-<div id="app">
-
-  <!-- ===== Sidebar ===== -->
-  <nav id="sidebar">
-    <div id="sidebar-header">
-      <span class="logo">DRGR</span>
-      <span class="version">VM v2</span>
-    </div>
-
-    <!-- VM selection dropdown -->
-    <div id="vm-selector-wrap">
-      <label for="vm-selector">Среда выполнения</label>
-      <select id="vm-selector" onchange="onVmChange(this.value)">
-        <option value="">Загрузка…</option>
-      </select>
-    </div>
-
-    <!-- Navigation -->
-    <div class="nav-item active" data-pane="editor" onclick="setPane('editor')">
-      <span class="nav-icon">💻</span><span class="nav-label">Редактор</span>
-    </div>
-    <div class="nav-item" data-pane="search" onclick="setPane('search')">
-      <span class="nav-icon">🔍</span><span class="nav-label">Поиск</span>
-    </div>
-    <div class="nav-item" data-pane="goose" onclick="setPane('goose')">
-      <span class="nav-icon">🪿</span><span class="nav-label">Goose AI</span>
-    </div>
-    <div class="nav-item" data-pane="gen3d" onclick="setPane('gen3d')">
-      <span class="nav-icon">🧊</span><span class="nav-label">3D</span>
-    </div>
-    <div class="nav-item" data-pane="video" onclick="setPane('video')">
-      <span class="nav-icon">🎬</span><span class="nav-label">Видео</span>
-    </div>
-    <div class="nav-item" data-pane="uploads" onclick="setPane('uploads')">
-      <span class="nav-icon">📁</span><span class="nav-label">Файлы</span>
-    </div>
-
-    <div id="status-bar">
-      <span class="dot"></span>
-      <span id="status-text">Готов</span>
-    </div>
-  </nav>
-
-  <!-- ===== Main ===== -->
-  <div id="main">
-
-    <!-- Toolbar -->
-    <div id="toolbar">
-      <span class="pane-title" id="toolbar-title">Редактор кода</span>
-
-      <!-- Language selector (editor pane) -->
-      <select class="lang-select" id="lang-select" onchange="setEditorLang(this.value)">
-        <option value="python">Python</option>
-        <option value="javascript">JavaScript</option>
-        <option value="typescript">TypeScript</option>
-        <option value="html">HTML</option>
-        <option value="css">CSS</option>
-        <option value="json">JSON</option>
-        <option value="markdown">Markdown</option>
-        <option value="rust">Rust</option>
-        <option value="cpp">C++</option>
-        <option value="java">Java</option>
-        <option value="go">Go</option>
-        <option value="shell">Shell</option>
-        <option value="sql">SQL</option>
-        <option value="yaml">YAML</option>
-        <option value="xml">XML</option>
-      </select>
-
-      <!-- Paperclip upload -->
-      <label id="upload-btn-label" title="Загрузить файл (📎)">
-        📎
-        <input type="file" id="upload-input" multiple onchange="handleFileUpload(this.files)"/>
-      </label>
-
-      <button class="btn" onclick="editorFormat()" title="Форматировать">⚡ Формат</button>
-      <button class="btn primary" onclick="editorRun()" title="Запустить">▶ Run</button>
-      <button class="btn danger" onclick="editorClear()" title="Очистить вывод">🗑</button>
-    </div>
-
-    <!-- ===== Panes ===== -->
-
-    <!-- EDITOR -->
-    <div id="editor-pane" class="pane active">
-      <div id="editor-container"></div>
-      <div id="editor-output">// Вывод появится здесь после запуска...</div>
-    </div>
-
-    <!-- SEARCH -->
-    <div id="search-pane" class="pane">
-      <div class="search-bar">
-        <input type="text" id="search-input" placeholder="Введите запрос…" onkeydown="if(event.key==='Enter')doSearch()"/>
-        <button class="btn primary" onclick="doSearch()">🔍 Найти</button>
-      </div>
-      <div class="search-sources">
-        <span style="font-size:12px;color:#6c7086">Источники:</span>
-        <label class="source-chip"><input type="checkbox" id="src-ddg" checked/> DuckDuckGo</label>
-        <label class="source-chip"><input type="checkbox" id="src-wiki" checked/> Wikipedia</label>
-        <select id="search-lang" style="background:var(--bg3);color:var(--fg);border:1px solid var(--border);border-radius:var(--radius);padding:4px 8px;font-size:12px;">
-          <option value="ru">RU</option>
-          <option value="en">EN</option>
-        </select>
-      </div>
-      <div id="search-status"></div>
-      <div id="search-results"></div>
-    </div>
-
-    <!-- GOOSE AI -->
-    <div id="goose-pane" class="pane">
-      <div class="goose-input">
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <label style="font-size:13px;color:#6c7086">Модель:</label>
-          <select id="goose-model-select">
-            <option value="llama3">llama3</option>
-            <option value="mistral">mistral</option>
-            <option value="gemma2">gemma2</option>
-            <option value="phi3">phi3</option>
-            <option value="llama3.1">llama3.1</option>
-            <option value="codellama">codellama</option>
-          </select>
-          <button class="btn primary" onclick="gooseRun()">🪿 Отправить</button>
+    <div id="sidebar">
+        <h3>🔧 DRGR VM Control Panel</h3>
+        <div class="vm-select">
+            <label>Select VM:</label>
+            <select id="vmSelect">
+                <option value="local">Local VM</option>
+                <option value="colab">Google Colab</option>
+                <option value="cloud">Cloud VM</option>
+            </select>
         </div>
-        <textarea id="goose-prompt" placeholder="Введите запрос для Goose AI…"></textarea>
-      </div>
-      <div id="goose-response">// Ответ появится здесь…</div>
+        <div style="margin-top: 20px;">
+            <h4 style="color: #ce9178;">Quick Actions</h4>
+            <button onclick="generateHTML()">Generate HTML</button>
+            <button onclick="run3DGen()">🎬 3D Generator</button>
+            <button onclick="runVideoGen()">🎥 Video Generator</button>
+            <button onclick="runGoose()">🦢 Goose AI</button>
+        </div>
+    </div>
+    <div id="main">
+        <div id="toolbar">
+            <label for="fileUpload" class="file-upload-btn" style="cursor: pointer; padding: 8px 15px; border-radius: 4px;">
+                📎 Upload File
+            </label>
+            <input type="file" id="fileUpload" onchange="uploadFile(event)">
+            <button onclick="saveProject()">Save Project</button>
+            <button onclick="loadProjects()">Load Projects</button>
+            <span style="margin-left: auto; color: #aaa;">Monaco Editor Active</span>
+        </div>
+        <div id="editor"></div>
     </div>
 
-    <!-- 3D GENERATOR -->
-    <div id="gen3d-pane" class="pane">
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-        <input type="text" id="gen3d-desc" placeholder="Опишите объект (куб, сфера, тор…)" style="flex:1;min-width:200px"/>
-        <button class="btn primary" onclick="gen3dRun()">🧊 Создать</button>
-        <button class="btn" onclick="gen3dToggleWire()">⬡ Сетка</button>
-      </div>
-      <div id="gen3d-canvas-wrap">
-        <canvas id="gen3d-canvas"></canvas>
-      </div>
-    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/loader.min.js"></script>
+    <script>
+        let editor;
+        require.config({ paths: { vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs' } });
+        require(['vs/editor/editor.main'], function() {
+            editor = monaco.editor.create(document.getElementById('editor'), {
+                value: '\n\n\n DRGR VM Ready\n\n\n  Welcome to DRGR VM ==================  \n\n',
+                language: 'html',
+                theme: 'vs-dark',
+                automaticLayout: true
+            });
+        });
 
-    <!-- VIDEO GENERATOR -->
-    <div id="video-pane" class="pane">
-      <div id="video-drop-zone" onclick="document.getElementById('video-file-input').click()"
-           ondragover="event.preventDefault();this.classList.add('drag-over')"
-           ondragleave="this.classList.remove('drag-over')"
-           ondrop="handleVideoDrop(event)">
-        🎬 Перетащите видеофайл или кликните для выбора
-        <input type="file" id="video-file-input" accept="video/*" style="display:none" onchange="handleVideoFile(this.files[0])"/>
-      </div>
-      <video id="video-preview" controls></video>
-      <div id="video-meta"></div>
-      <div id="video-prompt-wrap">
-        <label style="font-size:13px;color:#6c7086">Или сгенерируйте видео по описанию:</label>
-        <textarea id="video-prompt" placeholder="Опишите сцену для генерации видео…"></textarea>
-        <button class="btn primary" style="align-self:flex-start" onclick="videoGenerate()">🎬 Генерировать</button>
-      </div>
-    </div>
-
-    <!-- UPLOADS -->
-    <div id="uploads-pane" class="pane">
-      <div style="display:flex;align-items:center;gap:10px">
-        <label class="btn" style="cursor:pointer">
-          📎 Загрузить файл
-          <input type="file" multiple style="display:none" onchange="handleFileUpload(this.files)"/>
-        </label>
-        <button class="btn" onclick="loadUploadsList()">🔄 Обновить</button>
-      </div>
-      <div id="uploads-list"></div>
-    </div>
-
-  </div><!-- /main -->
-</div><!-- /app -->
-
-<!-- Notifications -->
-<div id="notify-area"></div>
-
-<script>
-// =====================================================================
-// Utilities
-// =====================================================================
-function notify(msg, type = "info", duration = 3500) {
-  const el = document.createElement("div");
-  el.className = `notify ${type}`;
-  el.textContent = msg;
-  document.getElementById("notify-area").appendChild(el);
-  setTimeout(() => el.remove(), duration);
-}
-
-function setStatus(text) {
-  document.getElementById("status-text").textContent = text;
-}
-
-function fmtBytes(n) {
-  if (n < 1024) return n + " B";
-  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
-  return (n / 1024 / 1024).toFixed(2) + " MB";
-}
-
-function mimeIcon(mime = "") {
-  if (mime.startsWith("image/")) return "🖼️";
-  if (mime.startsWith("video/")) return "🎬";
-  if (mime.startsWith("text/"))  return "📄";
-  if (mime.includes("pdf"))      return "📕";
-  if (mime.includes("zip") || mime.includes("tar")) return "📦";
-  return "📎";
-}
-
-// =====================================================================
-// Pane switching
-// =====================================================================
-const PANE_TITLES = {
-  editor:  "Редактор кода",
-  search:  "Веб-поиск",
-  goose:   "Goose AI",
-  gen3d:   "3D Генератор",
-  video:   "Видео",
-  uploads: "Файлы",
-};
-
-function setPane(name) {
-  document.querySelectorAll(".pane").forEach(p => p.classList.remove("active"));
-  document.querySelectorAll(".nav-item").forEach(n => n.classList.remove("active"));
-  const pane = document.getElementById(name + "-pane");
-  if (pane) pane.classList.add("active");
-  const nav = document.querySelector(`[data-pane="${name}"]`);
-  if (nav) nav.classList.add("active");
-  document.getElementById("toolbar-title").textContent = PANE_TITLES[name] || name;
-
-  // Show/hide editor-specific controls
-  const editorCtls = ["lang-select", "upload-btn-label"];
-  editorCtls.forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.style.display = (name === "editor") ? "" : "none";
-  });
-
-  if (name === "gen3d") init3D();
-  if (name === "uploads") loadUploadsList();
-}
-
-// =====================================================================
-// VM Dropdown
-// =====================================================================
-async function loadVMs() {
-  try {
-    const resp = await fetch("/api/vm/list");
-    const data = await resp.json();
-    const sel = document.getElementById("vm-selector");
-    sel.innerHTML = "";
-    (data.vms || []).forEach(vm => {
-      const opt = document.createElement("option");
-      opt.value = vm.id;
-      opt.textContent = vm.name;
-      opt.title = vm.description || "";
-      sel.appendChild(opt);
-    });
-    notify(`Загружено ${data.vms.length} VM пресетов`, "success", 2000);
-  } catch (e) {
-    console.warn("Failed to load VMs:", e);
-  }
-}
-
-function onVmChange(id) {
-  notify(`Среда переключена: ${id}`, "info", 2000);
-  setStatus(`VM: ${id}`);
-  // In a real implementation, this would reconfigure the execution environment
-}
-
-// =====================================================================
-// Monaco Editor
-// =====================================================================
-let monacoEditor = null;
-
-function initEditor() {
-  require(["vs/editor/editor.main"], function () {
-    // Dark theme matching our CSS vars
-    monaco.editor.defineTheme("drgr-dark", {
-      base: "vs-dark",
-      inherit: true,
-      rules: [
-        { token: "comment",         foreground: "6c7086", fontStyle: "italic" },
-        { token: "keyword",         foreground: "cba6f7" },
-        { token: "string",          foreground: "a6e3a1" },
-        { token: "number",          foreground: "fab387" },
-        { token: "type",            foreground: "89dceb" },
-        { token: "function",        foreground: "89b4fa" },
-        { token: "variable",        foreground: "cdd6f4" },
-      ],
-      colors: {
-        "editor.background":           "#1e1e2e",
-        "editor.foreground":           "#cdd6f4",
-        "editor.lineHighlightBackground": "#313244",
-        "editor.selectionBackground":  "#45475a",
-        "editorLineNumber.foreground": "#45475a",
-        "editorLineNumber.activeForeground": "#cdd6f4",
-        "editorCursor.foreground":     "#f5c2e7",
-        "editorBracketMatch.background": "#45475a",
-        "editor.findMatchBackground":  "#f9e2af44",
-      },
-    });
-
-    monacoEditor = monaco.editor.create(document.getElementById("editor-container"), {
-      value: [
-        "# DRGR VM — редактор кода",
-        "# Выберите язык в выпадающем меню выше",
-        "",
-        "print('Hello, DRGR VM!')",
-      ].join("\n"),
-      language:        "python",
-      theme:           "drgr-dark",
-      fontSize:        14,
-      fontFamily:      "'Fira Code', 'JetBrains Mono', Consolas, monospace",
-      fontLigatures:   true,
-      minimap:         { enabled: true },
-      automaticLayout: true,
-      scrollBeyondLastLine: false,
-      wordWrap:        "off",
-      tabSize:         4,
-      renderWhitespace: "selection",
-      bracketPairColorization: { enabled: true },
-      suggestOnTriggerCharacters: true,
-    });
-
-    // Keyboard shortcut: Ctrl+Enter → Run
-    monacoEditor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, editorRun);
-
-    console.log("Monaco Editor initialized");
-  });
-}
-
-function setEditorLang(lang) {
-  if (!monacoEditor) return;
-  const model = monacoEditor.getModel();
-  if (model) monaco.editor.setModelLanguage(model, lang);
-}
-
-function editorFormat() {
-  if (!monacoEditor) return;
-  monacoEditor.getAction("editor.action.formatDocument").run();
-}
-
-function editorRun() {
-  if (!monacoEditor) return;
-  const code = monacoEditor.getValue();
-  const lang = document.getElementById("lang-select").value;
-  const out = document.getElementById("editor-output");
-  out.textContent = `[${lang}] Запуск (${new Date().toLocaleTimeString()})…\n\n`;
-
-  // For Python: try pyodide if available, else show stub
-  if (lang === "python") {
-    if (window.pyodide) {
-      try {
-        const result = window.pyodide.runPython(code);
-        out.textContent += result !== undefined ? String(result) : "(no output)";
-      } catch (e) {
-        out.textContent += "❌ " + e.message;
-      }
-    } else {
-      out.textContent += "ℹ️  Для запуска Python в браузере подключите Pyodide.\n";
-      out.textContent += "Код отправлен на сервер (заглушка).\n\n";
-      out.textContent += code.slice(0, 300);
-    }
-  } else {
-    out.textContent += `[${lang}] Запуск на сервере не реализован в этом демо.\n`;
-    out.textContent += "Скопируйте код и выполните локально.\n";
-  }
-  out.scrollTop = out.scrollHeight;
-}
-
-function editorClear() {
-  document.getElementById("editor-output").textContent = "// Вывод очищен";
-}
-
-// =====================================================================
-// File Upload (📎)
-// =====================================================================
-async function handleFileUpload(files) {
-  if (!files || !files.length) return;
-  for (const file of files) {
-    const fd = new FormData();
-    fd.append("file", file);
-    notify(`Загрузка: ${file.name}…`, "info", 2000);
-    setStatus(`Загрузка ${file.name}…`);
-    try {
-      const resp = await fetch("/api/upload", { method: "POST", body: fd });
-      const data = await resp.json();
-      if (data.success) {
-        notify(`✅ ${data.original_name} (${fmtBytes(data.size)})`, "success");
-        setStatus("Готов");
-
-        // If it's code, open in editor
-        const codeExts = ["py","js","ts","html","css","json","md","yaml","yml","sh","rs","go","java","cpp","sql","xml"];
-        const ext = data.original_name.split(".").pop().toLowerCase();
-        if (codeExts.includes(ext) && monacoEditor) {
-          try {
-            const r = await fetch(data.url);
-            const text = await r.text();
-            monacoEditor.setValue(text);
-            const langMap = { py:"python", js:"javascript", ts:"typescript", html:"html",
-              css:"css", json:"json", md:"markdown", yaml:"yaml", yml:"yaml",
-              sh:"shell", rs:"rust", go:"go", java:"java", cpp:"cpp", sql:"sql", xml:"xml" };
-            if (langMap[ext]) {
-              document.getElementById("lang-select").value = langMap[ext];
-              setEditorLang(langMap[ext]);
-            }
-            setPane("editor");
-            notify(`Файл открыт в редакторе: ${data.original_name}`, "success");
-          } catch (_) {}
+        function uploadFile(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                if (editor) editor.setValue(e.target.result);
+                alert('✅ File uploaded: ' + file.name);
+            };
+            reader.readAsText(file);
         }
-      } else {
-        notify(`❌ ${data.error || "Ошибка загрузки"}`, "error");
-        setStatus("Ошибка");
-      }
-    } catch (e) {
-      notify(`❌ Ошибка сети: ${e.message}`, "error");
-      setStatus("Ошибка");
-    }
-  }
-}
 
-// =====================================================================
-// Search
-// =====================================================================
-async function doSearch() {
-  const q = document.getElementById("search-input").value.trim();
-  if (!q) { notify("Введите запрос", "error"); return; }
+        function saveProject() {
+            const content = editor ? editor.getValue() : '';
+            const filename = prompt('Enter filename:', 'project.html');
+            if (!filename) return;
+            fetch('/api/project', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filename, content })
+            }).then(r => r.json()).then(data => alert('✅ Project saved!'));
+        }
 
-  const sources = [];
-  if (document.getElementById("src-ddg").checked)  sources.push("ddg");
-  if (document.getElementById("src-wiki").checked) sources.push("wikipedia");
-  const lang = document.getElementById("search-lang").value;
+        function loadProjects() {
+            fetch('/api/projects').then(r => r.json()).then(projects => {
+                const list = projects.map(p => p.name).join('\n');
+                alert('Saved projects:\n' + list);
+            });
+        }
 
-  const statusEl = document.getElementById("search-status");
-  const resultsEl = document.getElementById("search-results");
-  statusEl.innerHTML = `<span class="spinner"></span> Поиск: <em>${q}</em>…`;
-  resultsEl.innerHTML = "";
+        function generateHTML() {
+            alert('🚀 HTML Generator activated!');
+        }
 
-  try {
-    const resp = await fetch("/api/search", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query: q, sources, lang }),
-    });
-    const data = await resp.json();
-    statusEl.textContent = `Найдено: ${data.count} результатов`;
-    if (!data.results || !data.results.length) {
-      resultsEl.innerHTML = "<p style='color:#6c7086'>Ничего не найдено.</p>";
-      return;
-    }
-    resultsEl.innerHTML = data.results.map(r => `
-      <div class="result-card">
-        <span class="r-score">[${r.source}] ${(r.score * 100).toFixed(0)}%</span>
-        <div class="r-title"><a href="${r.url}" target="_blank" rel="noopener">${esc(r.title)}</a></div>
-        <div class="r-source">${esc(r.url)}</div>
-        <div class="r-snippet">${esc(r.snippet)}</div>
-      </div>
-    `).join("");
-  } catch (e) {
-    statusEl.textContent = "Ошибка поиска: " + e.message;
-    notify("Ошибка поиска: " + e.message, "error");
-  }
-}
+        function run3DGen() {
+            fetch('/api/generate-3d', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt: 'Generate 3D model' })
+            }).then(r => r.json()).then(data => alert('🎬 3D Generator: ' + data.result));
+        }
 
-function esc(s) {
-  return String(s || "")
-    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
+        function runVideoGen() {
+            fetch('/api/generate-video', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt: 'Generate video' })
+            }).then(r => r.json()).then(data => alert('🎥 Video Generator: ' + data.result));
+        }
 
-// =====================================================================
-// Goose AI
-// =====================================================================
-async function gooseRun() {
-  const prompt = document.getElementById("goose-prompt").value.trim();
-  if (!prompt) { notify("Введите запрос", "error"); return; }
-  const model = document.getElementById("goose-model-select").value;
-  const respEl = document.getElementById("goose-response");
-  respEl.innerHTML = `<span class="spinner"></span> Обрабатываю…`;
+        function runGoose() {
+            fetch('/api/goose', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ query: 'Analyze code' })
+            }).then(r => r.json()).then(data => alert('🦢 Goose AI: ' + data.result));
+        }
 
-  try {
-    const resp = await fetch("/api/goose", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt, model, max_tokens: 1024 }),
-    });
-    const data = await resp.json();
-    if (data.error) {
-      respEl.textContent = "❌ " + data.error;
-    } else {
-      respEl.textContent = data.response || "(пустой ответ)";
-      notify(`Ответ получен (${data.backend})`, "success", 2500);
-    }
-  } catch (e) {
-    respEl.textContent = "❌ Ошибка: " + e.message;
-    notify("Ошибка Goose: " + e.message, "error");
-  }
-}
-
-// =====================================================================
-// 3D Generator
-// =====================================================================
-let _3dScene = null, _3dRenderer = null, _3dCamera = null, _3dMesh = null, _3dAnimId = null;
-let _3dInited = false;
-let _3dWireframe = false;
-
-function init3D() {
-  if (_3dInited) return;
-  _3dInited = true;
-
-  const canvas = document.getElementById("gen3d-canvas");
-  const wrap   = document.getElementById("gen3d-canvas-wrap");
-
-  _3dRenderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
-  _3dRenderer.setPixelRatio(window.devicePixelRatio);
-  _3dRenderer.setClearColor(0x0a0a18, 1);
-
-  _3dScene = new THREE.Scene();
-
-  _3dCamera = new THREE.PerspectiveCamera(60, wrap.clientWidth / Math.max(wrap.clientHeight, 1), 0.1, 100);
-  _3dCamera.position.set(2, 2, 3);
-  _3dCamera.lookAt(0, 0, 0);
-
-  // Lights
-  _3dScene.add(new THREE.AmbientLight(0xffffff, 0.6));
-  const dl = new THREE.DirectionalLight(0xffffff, 1.0);
-  dl.position.set(5, 5, 5);
-  _3dScene.add(dl);
-
-  // Default cube
-  _addMesh({ type: "BoxGeometry", args: [1, 1, 1] }, { color: 0x4fc3f7 });
-
-  function resize() {
-    const w = wrap.clientWidth, h = Math.max(wrap.clientHeight, 200);
-    _3dRenderer.setSize(w, h, false);
-    _3dCamera.aspect = w / h;
-    _3dCamera.updateProjectionMatrix();
-  }
-  resize();
-  new ResizeObserver(resize).observe(wrap);
-
-  (function animate() {
-    _3dAnimId = requestAnimationFrame(animate);
-    if (_3dMesh) _3dMesh.rotation.y += (_3dMesh.userData.rotateY || 0.005);
-    _3dRenderer.render(_3dScene, _3dCamera);
-  })();
-}
-
-function _addMesh(geomDef, matDef) {
-  if (_3dMesh) { _3dScene.remove(_3dMesh); _3dMesh.geometry.dispose(); _3dMesh.material.dispose(); }
-  let geom;
-  switch (geomDef.type) {
-    case "SphereGeometry":   geom = new THREE.SphereGeometry(...geomDef.args); break;
-    case "TorusGeometry":    geom = new THREE.TorusGeometry(...geomDef.args);  break;
-    case "CylinderGeometry": geom = new THREE.CylinderGeometry(...geomDef.args); break;
-    default:                 geom = new THREE.BoxGeometry(...geomDef.args);
-  }
-  const mat = new THREE.MeshStandardMaterial({
-    color: matDef.color || 0x4fc3f7,
-    metalness: matDef.metalness || 0.3,
-    roughness: matDef.roughness || 0.5,
-    wireframe: _3dWireframe,
-  });
-  _3dMesh = new THREE.Mesh(geom, mat);
-  _3dScene.add(_3dMesh);
-}
-
-async function gen3dRun() {
-  const desc = document.getElementById("gen3d-desc").value.trim() || "cube";
-  try {
-    const resp = await fetch("/api/3d", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ description: desc }),
-    });
-    const scene = await resp.json();
-    init3D();
-    const colorHex = parseInt((scene.material.color || "#4fc3f7").replace("#", ""), 16);
-    _addMesh(scene.geometry, { color: colorHex, metalness: scene.material.metalness, roughness: scene.material.roughness });
-    if (_3dMesh) {
-      _3dMesh.material.wireframe = _3dWireframe;
-      const animY = (scene.animate || {}).rotate_y || 0.005;
-      // Store for animate loop
-      _3dMesh.userData.rotateY = animY;
-    }
-    notify(`3D объект создан: ${scene.geometry.type}`, "success");
-  } catch (e) {
-    notify("Ошибка 3D: " + e.message, "error");
-  }
-}
-
-function gen3dToggleWire() {
-  _3dWireframe = !_3dWireframe;
-  if (_3dMesh) _3dMesh.material.wireframe = _3dWireframe;
-  notify(_3dWireframe ? "Сетка включена" : "Сетка выключена", "info", 1500);
-}
-
-// =====================================================================
-// Video
-// =====================================================================
-function handleVideoDrop(e) {
-  e.preventDefault();
-  document.getElementById("video-drop-zone").classList.remove("drag-over");
-  const file = e.dataTransfer.files[0];
-  if (file) handleVideoFile(file);
-}
-
-async function handleVideoFile(file) {
-  if (!file) return;
-  notify(`Загрузка видео: ${file.name}…`, "info");
-  const fd = new FormData();
-  fd.append("file", file);
-  try {
-    const resp = await fetch("/api/video", { method: "POST", body: fd });
-    const data = await resp.json();
-    if (data.success) {
-      const preview = document.getElementById("video-preview");
-      preview.src = data.url;
-      preview.style.display = "block";
-      document.getElementById("video-meta").innerHTML =
-        `<b>${file.name}</b> · ${fmtBytes(data.size)}` +
-        (data.duration ? ` · ${data.duration.toFixed(1)}с` : "") +
-        `<br>Доступные операции: ${(data.operations || []).join(", ")}`;
-      notify("Видео загружено", "success");
-    } else {
-      notify("Ошибка: " + (data.error || "неизвестно"), "error");
-    }
-  } catch (e) {
-    notify("Ошибка загрузки видео: " + e.message, "error");
-  }
-}
-
-async function videoGenerate() {
-  const prompt = document.getElementById("video-prompt").value.trim();
-  if (!prompt) { notify("Введите описание", "error"); return; }
-  notify("Генерация видео поставлена в очередь…", "info");
-  try {
-    const resp = await fetch("/api/video", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt }),
-    });
-    const data = await resp.json();
-    notify(data.message || "Готово", "success");
-  } catch (e) {
-    notify("Ошибка: " + e.message, "error");
-  }
-}
-
-// =====================================================================
-// Uploads list
-// =====================================================================
-async function loadUploadsList() {
-  // We don't have a dedicated list endpoint, so show uploaded files from session storage
-  const listEl = document.getElementById("uploads-list");
-  listEl.innerHTML = "<span style='color:#6c7086;font-size:13px'>Список загрузок доступен после загрузки файлов через 📎</span>";
-}
-
-// =====================================================================
-// Init
-// =====================================================================
-window.addEventListener("DOMContentLoaded", () => {
-  initEditor();
-  loadVMs();
-
-  // Hide editor-specific toolbar items when not on editor pane
-  // (they are visible by default since editor is active pane)
-
-  // Search on Enter in search input
-  document.getElementById("search-input").addEventListener("keydown", e => {
-    if (e.key === "Enter") doSearch();
-  });
-
-  // Goose prompt on Ctrl+Enter
-  document.getElementById("goose-prompt").addEventListener("keydown", e => {
-    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) gooseRun();
-  });
-});
-</script>
+        document.getElementById('vmSelect').addEventListener('change', function(e) {
+            alert('🔄 Switched to: ' + e.target.options[e.target.selectedIndex].text);
+        });
+    </script>
 </body>
 </html>
