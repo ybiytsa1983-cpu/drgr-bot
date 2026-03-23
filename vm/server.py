@@ -84,15 +84,30 @@ def _ddg_search(query: str, max_results: int = 8) -> List[Dict[str, Any]]:
         return []
 
 
+_WIKI_ALLOWED_LANGS = frozenset([
+    "ru", "en", "de", "fr", "es", "it", "pt", "ja", "zh", "pl",
+    "nl", "sv", "uk", "vi", "ar", "ko", "fi", "no", "da", "cs",
+])
+
+
 def _wiki_search(query: str, lang: str = "en", limit: int = 5) -> List[Dict[str, Any]]:
     """Search Wikipedia API (sync)."""
+    # Validate lang against an allowlist to prevent SSRF via host injection
+    if lang not in _WIKI_ALLOWED_LANGS:
+        lang = "en"
+    # Build URL with fixed host; only query params come from user input
+    wiki_api_base = f"https://{lang}.wikipedia.org/w/api.php"
+    params = urllib.parse.urlencode({
+        "action": "query",
+        "list": "search",
+        "srsearch": query,
+        "srlimit": str(limit),
+        "format": "json",
+        "utf8": "1",
+    })
+    api_url = f"{wiki_api_base}?{params}"
     try:
-        url = (
-            f"https://{lang}.wikipedia.org/w/api.php"
-            f"?action=query&list=search&srsearch={urllib.parse.quote(query)}"
-            f"&srlimit={limit}&format=json&utf8=1"
-        )
-        data = json.loads(urllib.request.urlopen(url, timeout=8).read().decode())
+        data = json.loads(urllib.request.urlopen(api_url, timeout=8).read().decode())
         hits = data.get("query", {}).get("search", [])
         results = []
         for h in hits:
@@ -316,9 +331,9 @@ def api_3d():
 
     if scene_type == "auto":
         desc_lower = description.lower()
-        if any(w in desc_lower for w in ["sphere", "ball", "шар"]):
+        if any(w in desc_lower for w in ["sphere", "ball", "шар", "сфера"]):
             scene_type = "sphere"
-        elif any(w in desc_lower for w in ["torus", "ring", "кольцо", "бублик"]):
+        elif any(w in desc_lower for w in ["torus", "ring", "кольцо", "бублик", "тор"]):
             scene_type = "torus"
         elif any(w in desc_lower for w in ["cylinder", "цилиндр"]):
             scene_type = "cylinder"
