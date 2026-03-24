@@ -65,6 +65,6 @@ echo.
 echo ✅ Бот и VM запущены в отдельных окнах!
 echo.
 echo 📌 Для остановки закройте окна "DRGR VM Server" и "DRGR Telegram Bot"
-echo 🌐 Веб-интерфейс VM: http://localhost:5000
+echo 🌐 Веб-интерфейс VM: http://localhost:5001
 echo.
 pause
