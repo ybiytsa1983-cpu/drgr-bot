@@ -60,6 +60,14 @@ echo ║  Новый коммит  : %NEW_HASH:~0,12%...
 echo ╚══════════════════════════════════════════════╝
 echo.
 
+:: ── Пересоздаём ярлыки на рабочем столе (на случай если исчезли) ─────
+echo  Обновление ярлыков на Рабочем столе...
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%create_shortcuts.ps1" -BotDir "%SCRIPT_DIR:~0,-1%"
+if errorlevel 1 (
+    echo  [ПРЕДУПРЕЖДЕНИЕ] Ярлыки не обновлены. Запускайте bat-файлы из папки %SCRIPT_DIR%
+)
+echo.
+
 :: ── Спрашиваем пользователя ──────────────────────────────────────────
 :ASK
 set "CHOICE="

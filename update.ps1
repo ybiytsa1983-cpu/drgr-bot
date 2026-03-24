@@ -142,6 +142,16 @@ Write-Host "`n============================================" -ForegroundColor Gre
 Write-Host "   Обновление завершено успешно!" -ForegroundColor Green
 Write-Host "============================================`n" -ForegroundColor Green
 
+# Recreate Desktop shortcuts so they survive git reset --hard
+$shortcutsScript = Join-Path $ScriptDir 'create_shortcuts.ps1'
+if (Test-Path $shortcutsScript) {
+    try {
+        & $shortcutsScript -BotDir $ScriptDir
+    } catch {
+        Write-Host "  INFO  Не удалось обновить ярлыки на рабочем столе: $_" -ForegroundColor Yellow
+    }
+}
+
 # 5. Перезапуск bot.py
 if (-not $SkipRestart) {
     Write-Step "Шаг 4/4: Перезапуск bot.py..."
