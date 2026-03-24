@@ -217,6 +217,51 @@
     .upload-card a { color: var(--accent); font-size: 12px; }
     .upload-card img { max-width: 60px; max-height: 60px; border-radius: 4px; object-fit: cover; }
 
+    /* Settings pane */
+    #settings-pane { padding: 20px; gap: 20px; overflow-y: auto; }
+    .settings-section {
+      background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 16px 20px; display: flex; flex-direction: column; gap: 12px;
+    }
+    .settings-section h3 {
+      font-size: 14px; font-weight: 700; color: var(--accent); margin: 0;
+      border-bottom: 1px solid var(--border); padding-bottom: 8px;
+    }
+    .settings-row {
+      display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    }
+    .settings-row label {
+      min-width: 160px; font-size: 13px; color: #bac2de; flex-shrink: 0;
+    }
+    .settings-row input[type=text],
+    .settings-row input[type=password],
+    .settings-row input[type=url],
+    .settings-row select {
+      flex: 1; min-width: 180px; background: var(--bg3); color: var(--fg);
+      border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 6px 10px; font-size: 13px;
+    }
+    .settings-row input:focus, .settings-row select:focus {
+      outline: none; border-color: var(--accent);
+    }
+    .radio-group { display: flex; gap: 16px; flex-wrap: wrap; }
+    .radio-group label {
+      min-width: unset; display: flex; align-items: center; gap: 6px;
+      cursor: pointer; font-size: 13px; color: var(--fg);
+    }
+    .radio-group input[type=radio] { accent-color: var(--accent); cursor: pointer; }
+    .backend-section {
+      padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius);
+      background: var(--bg3); display: none; flex-direction: column; gap: 10px;
+    }
+    .backend-section.visible { display: flex; }
+    .status-badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 12px; padding: 3px 10px; border-radius: 20px; border: 1px solid;
+    }
+    .status-badge.running { border-color: var(--green); color: var(--green); }
+    .status-badge.stopped { border-color: var(--red); color: var(--red); }
+    .status-badge.unknown { border-color: #6c7086; color: #6c7086; }
     /* Loading spinner */
     .spinner {
       width: 20px; height: 20px; border: 3px solid var(--border);
@@ -284,6 +329,9 @@
     </div>
     <div class="nav-item" data-pane="uploads" onclick="setPane('uploads')">
       <span class="nav-icon">📁</span><span class="nav-label">Файлы</span>
+    </div>
+    <div class="nav-item" data-pane="settings" onclick="setPane('settings')">
+      <span class="nav-icon">⚙️</span><span class="nav-label">Настройки</span>
     </div>
 
     <div id="status-bar">
@@ -418,6 +466,139 @@
       <div id="uploads-list"></div>
     </div>
 
+    <!-- SETTINGS -->
+    <div id="settings-pane" class="pane">
+
+      <!-- Bot status block -->
+      <div class="settings-section">
+        <h3>🤖 Telegram Бот — Статус</h3>
+        <div class="settings-row" style="flex-wrap:wrap;gap:10px">
+          <span id="bot-status-badge" class="status-badge unknown">● Неизвестно</span>
+          <button class="btn primary" onclick="botStart()">▶ Запустить</button>
+          <button class="btn" onclick="botStop()">⏹ Остановить</button>
+          <button class="btn" onclick="botRestart()">🔄 Перезапустить</button>
+          <button class="btn" onclick="loadBotStatus()" title="Обновить статус">↺</button>
+        </div>
+      </div>
+
+      <!-- Bot token -->
+      <div class="settings-section">
+        <h3>🔑 Токен Telegram-бота</h3>
+        <div class="settings-row">
+          <label for="s-bot-token">Bot Token</label>
+          <input type="password" id="s-bot-token" placeholder="123456:ABC-DEF…" autocomplete="off"/>
+          <button class="btn" onclick="togglePass('s-bot-token')" title="Показать/скрыть">👁</button>
+        </div>
+        <div style="font-size:12px;color:#6c7086">
+          Получить токен: <a href="https://t.me/BotFather" target="_blank" style="color:var(--accent)">@BotFather</a>
+        </div>
+      </div>
+
+      <!-- Bot mode -->
+      <div class="settings-section">
+        <h3>📡 Режим работы бота</h3>
+        <div class="radio-group">
+          <label><input type="radio" name="bot-mode" value="polling" onchange="onBotModeChange('polling')"/> Polling (рекомендуется)</label>
+          <label><input type="radio" name="bot-mode" value="webhook" onchange="onBotModeChange('webhook')"/> Webhook</label>
+        </div>
+        <div id="webhook-url-row" class="settings-row" style="display:none">
+          <label for="s-webhook-url">Webhook URL</label>
+          <input type="url" id="s-webhook-url" placeholder="https://your.server/webhook"/>
+        </div>
+        <div style="font-size:12px;color:#6c7086">
+          Polling — бот сам опрашивает Telegram. Webhook — Telegram отправляет обновления на ваш сервер.
+        </div>
+      </div>
+
+      <!-- AI Backend -->
+      <div class="settings-section">
+        <h3>🧠 AI Движок (бекенд)</h3>
+        <div class="radio-group">
+          <label><input type="radio" name="ai-backend" value="ollama" onchange="onBackendChange('ollama')"/> Ollama</label>
+          <label><input type="radio" name="ai-backend" value="lmstudio" onchange="onBackendChange('lmstudio')"/> LM Studio</label>
+          <label><input type="radio" name="ai-backend" value="qwen" onchange="onBackendChange('qwen')"/> Qwen Cloud ☁️</label>
+          <label><input type="radio" name="ai-backend" value="huggingface" onchange="onBackendChange('huggingface')"/> HuggingFace</label>
+        </div>
+
+        <!-- Ollama -->
+        <div id="backend-ollama" class="backend-section">
+          <div class="settings-row">
+            <label for="s-ollama-url">Ollama URL</label>
+            <input type="url" id="s-ollama-url" placeholder="http://localhost:11434"/>
+          </div>
+          <div class="settings-row">
+            <label for="s-ollama-model">Модель</label>
+            <input type="text" id="s-ollama-model" placeholder="llama3, mistral, gemma2…"/>
+          </div>
+          <div style="font-size:12px;color:#6c7086">
+            Убедитесь, что Ollama запущена: <code>ollama serve</code>
+          </div>
+        </div>
+
+        <!-- LM Studio -->
+        <div id="backend-lmstudio" class="backend-section">
+          <div class="settings-row">
+            <label for="s-lms-url">LM Studio URL</label>
+            <input type="url" id="s-lms-url" placeholder="http://localhost:1234"/>
+          </div>
+          <div class="settings-row">
+            <label for="s-lms-model">Модель (необязательно)</label>
+            <input type="text" id="s-lms-model" placeholder="оставьте пустым для автовыбора"/>
+          </div>
+          <div style="font-size:12px;color:#6c7086">
+            Включите «Local Server» в LM Studio и загрузите модель.
+          </div>
+        </div>
+
+        <!-- Qwen Cloud -->
+        <div id="backend-qwen" class="backend-section">
+          <div class="settings-row">
+            <label for="s-qwen-key">API Key</label>
+            <input type="password" id="s-qwen-key" placeholder="sk-…" autocomplete="off"/>
+            <button class="btn" onclick="togglePass('s-qwen-key')" title="Показать/скрыть">👁</button>
+          </div>
+          <div class="settings-row">
+            <label for="s-qwen-model">Модель</label>
+            <select id="s-qwen-model">
+              <option value="qwen-plus">qwen-plus</option>
+              <option value="qwen-turbo">qwen-turbo</option>
+              <option value="qwen-max">qwen-max</option>
+              <option value="qwen-long">qwen-long</option>
+              <option value="qwen2.5-72b-instruct">qwen2.5-72b-instruct</option>
+              <option value="qwen2.5-7b-instruct">qwen2.5-7b-instruct</option>
+            </select>
+          </div>
+          <div style="font-size:12px;color:#6c7086">
+            Получить ключ: <a href="https://dashscope.aliyuncs.com/" target="_blank" style="color:var(--accent)">DashScope / Alibaba Cloud</a>
+          </div>
+        </div>
+
+        <!-- HuggingFace -->
+        <div id="backend-huggingface" class="backend-section">
+          <div class="settings-row">
+            <label for="s-hf-key">HuggingFace API Key</label>
+            <input type="password" id="s-hf-key" placeholder="hf_…" autocomplete="off"/>
+            <button class="btn" onclick="togglePass('s-hf-key')" title="Показать/скрыть">👁</button>
+          </div>
+          <div class="settings-row">
+            <label for="s-hf-model">Модель</label>
+            <input type="text" id="s-hf-model" placeholder="HuggingFaceH4/zephyr-7b-beta"/>
+          </div>
+          <div style="font-size:12px;color:#6c7086">
+            Получить ключ: <a href="https://huggingface.co/settings/tokens" target="_blank" style="color:var(--accent)">huggingface.co/settings/tokens</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- Save -->
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <button class="btn primary" style="font-size:14px;padding:8px 22px" onclick="saveSettings()">💾 Сохранить настройки</button>
+        <button class="btn" onclick="loadSettings()">↺ Сбросить к сохранённым</button>
+        <span id="settings-save-msg" style="font-size:13px;color:var(--green)"></span>
+      </div>
+
+    </div><!-- /settings-pane -->
+
   </div><!-- /main -->
 </div><!-- /app -->
 
@@ -459,12 +640,13 @@ function mimeIcon(mime = "") {
 // Pane switching
 // =====================================================================
 const PANE_TITLES = {
-  editor:  "Редактор кода",
-  search:  "Веб-поиск",
-  goose:   "Goose AI",
-  gen3d:   "3D Генератор",
-  video:   "Видео",
-  uploads: "Файлы",
+  editor:   "Редактор кода",
+  search:   "Веб-поиск",
+  goose:    "Goose AI",
+  gen3d:    "3D Генератор",
+  video:    "Видео",
+  uploads:  "Файлы",
+  settings: "Настройки",
 };
 
 function setPane(name) {
@@ -485,6 +667,7 @@ function setPane(name) {
 
   if (name === "gen3d") init3D();
   if (name === "uploads") loadUploadsList();
+  if (name === "settings") loadSettings();
 }
 
 // =====================================================================
@@ -499,20 +682,26 @@ async function loadVMs() {
     (data.vms || []).forEach(vm => {
       const opt = document.createElement("option");
       opt.value = vm.id;
-      opt.textContent = vm.name;
+      opt.textContent = vm.name + (vm.active ? " ✓" : "");
       opt.title = vm.description || "";
+      opt.selected = vm.active;
       sel.appendChild(opt);
     });
-    notify(`Загружено ${(data.vms || []).length} VM пресетов`, "success", 2000);
   } catch (e) {
     console.warn("Failed to load VMs:", e);
   }
 }
 
 function onVmChange(id) {
-  notify(`Среда переключена: ${id}`, "info", 2000);
-  setStatus(`VM: ${id}`);
-  // In a real implementation, this would reconfigure the execution environment
+  // Quick-switch backend via the sidebar dropdown → jump to Settings pane
+  if (id) {
+    document.querySelectorAll('input[name="ai-backend"]').forEach(r => {
+      r.checked = r.value === id;
+    });
+    onBackendChange(id, false);
+    notify(`AI движок: ${id}`, "info", 2000);
+    setStatus(`VM: ${id}`);
+  }
 }
 
 // =====================================================================
@@ -902,6 +1091,175 @@ async function loadUploadsList() {
   // We don't have a dedicated list endpoint, so show uploaded files from session storage
   const listEl = document.getElementById("uploads-list");
   listEl.innerHTML = "<span style='color:#6c7086;font-size:13px'>Список загрузок доступен после загрузки файлов через 📎</span>";
+}
+
+// =====================================================================
+// Settings
+// =====================================================================
+let _currentSettings = {};
+
+async function loadSettings() {
+  try {
+    const resp = await fetch('/api/settings');
+    const s = await resp.json();
+    _currentSettings = s;
+
+    // Bot token
+    const tokenEl = document.getElementById('s-bot-token');
+    tokenEl.value = '';
+    tokenEl.placeholder = s.bot_token_masked ? `Сохранён (${s.bot_token_masked})` : 'Токен не задан';
+
+    // Bot mode
+    document.querySelectorAll('input[name="bot-mode"]').forEach(r => {
+      r.checked = r.value === (s.bot_mode || 'polling');
+    });
+    onBotModeChange(s.bot_mode || 'polling', false);
+
+    // Webhook URL
+    const wh = document.getElementById('s-webhook-url');
+    if (wh) wh.value = s.webhook_url || '';
+
+    // AI backend
+    document.querySelectorAll('input[name="ai-backend"]').forEach(r => {
+      r.checked = r.value === (s.ai_backend || 'huggingface');
+    });
+    onBackendChange(s.ai_backend || 'huggingface', false);
+
+    // Ollama
+    _setVal('s-ollama-url', s.ollama_url || '');
+    _setVal('s-ollama-model', s.ollama_model || '');
+    // LM Studio
+    _setVal('s-lms-url', s.lmstudio_url || '');
+    _setVal('s-lms-model', s.lmstudio_model || '');
+    // Qwen
+    _setVal('s-qwen-key', '');
+    document.getElementById('s-qwen-key').placeholder =
+      s.qwen_api_key_masked ? `Сохранён (${s.qwen_api_key_masked})` : 'sk-…';
+    _setVal('s-qwen-model', s.qwen_model || 'qwen-plus');
+    // HuggingFace
+    _setVal('s-hf-key', '');
+    document.getElementById('s-hf-key').placeholder =
+      s.huggingface_api_key_masked ? `Сохранён (${s.huggingface_api_key_masked})` : 'hf_…';
+    _setVal('s-hf-model', s.huggingface_model || '');
+
+    await loadBotStatus();
+    await loadVMs();
+  } catch (e) {
+    notify('Ошибка загрузки настроек: ' + e.message, 'error');
+  }
+}
+
+function _setVal(id, v) {
+  const el = document.getElementById(id);
+  if (el) el.value = v;
+}
+
+async function saveSettings() {
+  const btn = document.querySelector('#settings-pane .btn.primary');
+  const msgEl = document.getElementById('settings-save-msg');
+  if (btn) btn.disabled = true;
+  msgEl.textContent = '';
+
+  const data = {
+    ai_backend: document.querySelector('input[name="ai-backend"]:checked')?.value || 'huggingface',
+    bot_mode: document.querySelector('input[name="bot-mode"]:checked')?.value || 'polling',
+    webhook_url: document.getElementById('s-webhook-url')?.value?.trim() || '',
+    ollama_url: document.getElementById('s-ollama-url')?.value?.trim() || '',
+    ollama_model: document.getElementById('s-ollama-model')?.value?.trim() || '',
+    lmstudio_url: document.getElementById('s-lms-url')?.value?.trim() || '',
+    lmstudio_model: document.getElementById('s-lms-model')?.value?.trim() || '',
+    qwen_model: document.getElementById('s-qwen-model')?.value || 'qwen-plus',
+    huggingface_model: document.getElementById('s-hf-model')?.value?.trim() || '',
+  };
+  // Only include secret fields if user typed something new
+  const tokenVal = document.getElementById('s-bot-token').value.trim();
+  if (tokenVal) data.bot_token = tokenVal;
+  const qwenKey = document.getElementById('s-qwen-key').value.trim();
+  if (qwenKey) data.qwen_api_key = qwenKey;
+  const hfKey = document.getElementById('s-hf-key').value.trim();
+  if (hfKey) data.huggingface_api_key = hfKey;
+
+  try {
+    const resp = await fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    const result = await resp.json();
+    if (result.ok) {
+      notify('✅ Настройки сохранены', 'success');
+      msgEl.textContent = '✅ Сохранено';
+      setTimeout(() => msgEl.textContent = '', 3000);
+      await loadSettings();  // reload to refresh masks
+      await loadVMs();
+    } else {
+      notify('Ошибка сохранения', 'error');
+    }
+  } catch (e) {
+    notify('Ошибка: ' + e.message, 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function onBotModeChange(mode, _notify = true) {
+  const webhookRow = document.getElementById('webhook-url-row');
+  if (webhookRow) webhookRow.style.display = mode === 'webhook' ? 'flex' : 'none';
+  if (_notify) notify(`Режим: ${mode === 'polling' ? 'Polling' : 'Webhook'}`, 'info', 1500);
+}
+
+function onBackendChange(backend, _notify = true) {
+  ['ollama', 'lmstudio', 'qwen', 'huggingface'].forEach(b => {
+    const el = document.getElementById('backend-' + b);
+    if (el) el.classList.toggle('visible', b === backend);
+  });
+  if (_notify) notify(`AI движок: ${backend}`, 'info', 1500);
+}
+
+function togglePass(id) {
+  const el = document.getElementById(id);
+  if (el) el.type = el.type === 'password' ? 'text' : 'password';
+}
+
+// ── Bot control ───────────────────────────────────────────────────────────────
+async function loadBotStatus() {
+  try {
+    const resp = await fetch('/api/bot/status');
+    const s = await resp.json();
+    const badge = document.getElementById('bot-status-badge');
+    if (!badge) return;
+    if (s.running) {
+      badge.className = 'status-badge running';
+      badge.textContent = `● Запущен · ${s.mode} · ${s.backend}`;
+    } else {
+      badge.className = 'status-badge stopped';
+      badge.textContent = s.has_token ? '● Остановлен' : '● Нет токена';
+    }
+  } catch (e) {
+    const badge = document.getElementById('bot-status-badge');
+    if (badge) { badge.className = 'status-badge unknown'; badge.textContent = '● Сервер недоступен'; }
+  }
+}
+
+async function botStart() {
+  notify('Запуск бота…', 'info', 2000);
+  const r = await fetch('/api/bot/start', { method: 'POST' });
+  const d = await r.json();
+  notify(d.ok ? '✅ ' + d.message : '❌ ' + d.message, d.ok ? 'success' : 'error');
+  setTimeout(loadBotStatus, 1500);
+}
+async function botStop() {
+  const r = await fetch('/api/bot/stop', { method: 'POST' });
+  const d = await r.json();
+  notify(d.ok ? '⏹ ' + d.message : '❌ ' + d.message, 'info');
+  setTimeout(loadBotStatus, 1000);
+}
+async function botRestart() {
+  notify('Перезапуск бота…', 'info', 2000);
+  const r = await fetch('/api/bot/restart', { method: 'POST' });
+  const d = await r.json();
+  notify(d.ok ? '🔄 ' + d.message : '❌ ' + d.message, d.ok ? 'success' : 'error');
+  setTimeout(loadBotStatus, 2000);
 }
 
 // =====================================================================

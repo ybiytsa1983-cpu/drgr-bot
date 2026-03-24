@@ -1,0 +1,14 @@
+{
+  "bot_token": "",
+  "bot_mode": "polling",
+  "webhook_url": "",
+  "ai_backend": "qwen",
+  "ollama_url": "http://localhost:11434",
+  "ollama_model": "llama3",
+  "lmstudio_url": "http://localhost:1234",
+  "lmstudio_model": "",
+  "qwen_api_key": "sk-test1234567890abcd",
+  "qwen_model": "qwen-max",
+  "huggingface_api_key": "",
+  "huggingface_model": "HuggingFaceH4/zephyr-7b-beta"
+}
