@@ -511,7 +511,8 @@ async def cmd_start(message: types.Message):
         "/chat &lt;сообщение&gt; — поговорить с AI\n"
         "/search &lt;запрос&gt; — поиск в интернете\n"
         "/status — статус подключения к AI\n"
-        "/update — скачать обновление\n"
+        "/install — 📦 установить бота (PowerShell)\n"
+        "/update — 🔄 обновить бота (PowerShell)\n"
         "/help — справка\n\n"
         "Или просто напишите мне что-нибудь!",
         parse_mode="HTML",
@@ -578,29 +579,52 @@ async def handle_text(message: types.Message):
     await message.reply(result, parse_mode="HTML", disable_web_page_preview=True)
 
 
-_UPDATE_TEXT = (
-    "🔄 <b>Команда для обновления бота</b>\n\n"
-    "Откройте <b>PowerShell</b> (Win+X → Windows PowerShell) и вставьте:\n\n"
-    "<code>Set-ExecutionPolicy -Scope Process Bypass; "
-    '&amp; "$env:USERPROFILE\\Desktop\\drgr-bot\\update.ps1"</code>\n\n'
-    "Или дважды кликните ярлык <b>«DRGR Bot — Obnovit»</b> на Рабочем столе.\n\n"
-    "⚠️ Если папки нет на Рабочем столе, используйте команду установки "
-    "(она же обновит):\n\n"
-    "<code>Set-ExecutionPolicy -Scope Process Bypass; "
+_INSTALL_PS_CMD = (
+    "Set-ExecutionPolicy -Scope Process Bypass; "
     "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; "
     "$f=\"$env:TEMP\\install_drgr.ps1\"; "
-    "Invoke-WebRequest -Uri \"https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/"
-    "main/install.ps1\" "
-    "-OutFile $f -UseBasicParsing; if (Test-Path $f) { &amp; $f } "
-    "else { Write-Host 'Ошибка: файл не скачался' -ForegroundColor Red }</code>"
+    "Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/"
+    "main/install.ps1' "
+    "-OutFile $f -UseBasicParsing; "
+    "if (Test-Path $f) { &amp; $f } "
+    "else { Write-Host 'Ошибка: файл не скачался' -ForegroundColor Red }"
+)
+
+_INSTALL_TEXT = (
+    "📦 <b>Установка DRGR-бота (первый раз)</b>\n\n"
+    "Откройте <b>PowerShell</b> (Win+X → Windows PowerShell) и вставьте:\n\n"
+    f"<code>{_INSTALL_PS_CMD}</code>\n\n"
+    "Скрипт сам:\n"
+    "• проверит Python и Git\n"
+    "• скачает репозиторий на Рабочий стол\n"
+    "• установит зависимости\n"
+    "• создаст файл .env с токеном\n"
+    "• создаст ярлыки на Рабочем столе\n\n"
+    "Или дважды кликните <b>УСТАНОВИТЬ.bat</b> из папки репозитория."
+)
+
+_UPDATE_TEXT = (
+    "🔄 <b>Обновление бота</b>\n\n"
+    "Если бот уже установлен — откройте <b>PowerShell</b> и вставьте:\n\n"
+    "<code>Set-ExecutionPolicy -Scope Process Bypass; "
+    '&amp; "$env:USERPROFILE\\Desktop\\drgr-bot\\update.ps1"</code>\n\n'
+    "Или дважды кликните ярлык <b>«DRGR Bot — Обновить»</b> на Рабочем столе.\n\n"
+    "⚠️ Если бот ещё не установлен — используйте команду /install"
 )
 
 
 @dp.message(Command("update"))
 @dp.message(Command("обновить"))
 async def cmd_update(message: types.Message):
-    """Показать команду для скачивания и запуска обновления."""
+    """Показать команду для обновления бота."""
     await message.reply(_UPDATE_TEXT, parse_mode="HTML", disable_web_page_preview=True)
+
+
+@dp.message(Command("install"))
+@dp.message(Command("установить"))
+async def cmd_install(message: types.Message):
+    """Показать команду для первичной установки бота через PowerShell."""
+    await message.reply(_INSTALL_TEXT, parse_mode="HTML", disable_web_page_preview=True)
 
 
 @dp.message(Command("help"))
@@ -610,7 +634,9 @@ async def cmd_help(message: types.Message):
         "/chat &lt;сообщение&gt; — 🤖 поговорить с AI\n"
         "/search &lt;запрос&gt; — 🔍 поиск в интернете\n"
         "/status — 📡 статус подключения к AI\n"
-        "/update — 🔄 скачать и запустить обновление\n"
+        "/install — 📦 установить бота (PowerShell)\n"
+        "/установить — то же самое (по-русски)\n"
+        "/update — 🔄 обновить бота (PowerShell)\n"
         "/обновить — то же самое (по-русски)\n"
         "/help — показать эту подсказку\n\n"
         "Или просто напишите что-нибудь — бот ответит через AI.",
