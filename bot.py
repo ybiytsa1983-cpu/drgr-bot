@@ -1,5 +1,6 @@
 import os
 import re
+import json
 import asyncio
 import logging
 import aiofiles
@@ -23,17 +24,42 @@ from huggingface_hub import InferenceClient
 # DuckDuckGo поиск
 from ddgs import DDGS
 
-# Загрузка переменных окружения
+# ── Загрузка настроек ────────────────────────────────────────────────────────
+# Priority: vm/settings.json > .env > defaults
+
 load_dotenv()
 
+def _load_vm_settings() -> dict:
+    """Load vm/settings.json if it exists, return {} otherwise."""
+    settings_path = os.path.join(os.path.dirname(__file__), "vm", "settings.json")
+    if os.path.exists(settings_path):
+        try:
+            with open(settings_path, encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {}
+
+_vm = _load_vm_settings()
+
+def _setting(key: str, env_key: str, default: str = "") -> str:
+    """Return value from vm/settings.json, then .env, then default."""
+    v = _vm.get(key, "")
+    if v:
+        return v
+    return os.getenv(env_key, default)
+
 # Получение токенов и настроек
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-HUGGINGFACE_API_KEY = os.getenv("HUGGINGFACE_API_KEY")
+BOT_TOKEN = _setting("bot_token", "BOT_TOKEN")
+HUGGINGFACE_API_KEY = _setting("huggingface_api_key", "HUGGINGFACE_API_KEY")
+BOT_MODE = _setting("bot_mode", "BOT_MODE", "polling")          # "polling" | "webhook"
+WEBHOOK_URL = _setting("webhook_url", "WEBHOOK_URL", "")
+AI_BACKEND = _setting("ai_backend", "AI_BACKEND", "huggingface")
 
 if not BOT_TOKEN:
-    raise ValueError("Добавьте BOT_TOKEN в .env файл.")
+    raise ValueError("Добавьте BOT_TOKEN в .env файл или в настройки (vm/settings.json).")
 if not HUGGINGFACE_API_KEY:
-    raise ValueError("Добавьте HUGGINGFACE_API_KEY в .env файл.")
+    raise ValueError("Добавьте HUGGINGFACE_API_KEY в .env файл или в настройки (vm/settings.json).")
 
 # Директории
 PHOTOS_DIR = os.getenv("PHOTOS_DIR", "photos")
@@ -379,8 +405,34 @@ async def cmd_help(message: types.Message):
 
 
 async def main() -> None:
-    logging.info("Starting drgr-bot...")
-    await dp.start_polling(bot)
+    logging.info("Starting drgr-bot (mode=%s, backend=%s)...", BOT_MODE, AI_BACKEND)
+
+    if BOT_MODE == "webhook" and WEBHOOK_URL:
+        from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
+        from aiohttp import web
+
+        webhook_path = "/webhook"
+        full_url = WEBHOOK_URL.rstrip("/") + webhook_path
+
+        await bot.set_webhook(full_url)
+        logging.info("Webhook set: %s", full_url)
+
+        app = web.Application()
+        SimpleRequestHandler(dispatcher=dp, bot=bot).register(app, path=webhook_path)
+        setup_application(app, dp, bot=bot)
+
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, host="0.0.0.0", port=int(os.getenv("WEBHOOK_PORT", 8080)))
+        await site.start()
+        logging.info("Webhook server listening on port %s", os.getenv("WEBHOOK_PORT", 8080))
+
+        # Run forever
+        await asyncio.Event().wait()
+    else:
+        # Default: polling
+        await bot.delete_webhook(drop_pending_updates=True)
+        await dp.start_polling(bot)
 
 
 if __name__ == "__main__":
