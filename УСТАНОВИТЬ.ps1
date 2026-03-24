@@ -6,7 +6,7 @@
     Скачайте этот файл и запустите в PowerShell:
 
         Set-ExecutionPolicy -Scope Process Bypass
-        .\УСТАНОВИТЬ.ps1
+        .\install.ps1
 
     Скрипт выполнит:
       1. Проверку Python и Git
@@ -17,8 +17,9 @@
       6. Предложит сразу запустить бота
 #>
 
-Set-StrictMode -Version Latest
-$ErrorActionPreference = 'Stop'
+# НЕ используем StrictMode и Stop — git/pip пишут в stderr,
+# что с 'Stop' вызывает мгновенное закрытие окна.
+$ErrorActionPreference = 'Continue'
 
 $DEST = Join-Path $env:USERPROFILE 'Desktop\drgr-bot'
 $REPO = 'https://github.com/ybiytsa1983-cpu/drgr-bot.git'
@@ -41,6 +42,16 @@ function Write-Info([string]$msg) {
     Write-Host "  INFO  $msg" -ForegroundColor Yellow
 }
 
+function Pause-Exit([int]$code = 1) {
+    Write-Host ""
+    Read-Host "  Нажмите Enter для выхода"
+    exit $code
+}
+
+# ── Глобальный try/finally: окно не закроется без Enter ──────────────────
+
+try {
+
 # ── шапка ─────────────────────────────────────────────────────────────────
 
 Write-Host "`n+----------------------------------------------+" -ForegroundColor Magenta
@@ -50,33 +61,29 @@ Write-Host "+----------------------------------------------+`n" -ForegroundColor
 # ── 1. Проверка Python ────────────────────────────────────────────────────
 
 Write-Step "[1/5] Проверка Python..."
-try {
-    $pyVer = python --version 2>&1
-    Write-Ok "Найден: $pyVer"
-} catch {
+$pyVer = python --version 2>&1
+if ($LASTEXITCODE -ne 0 -or $pyVer -match 'не является|not recognized|найти|No such') {
     Write-Fail "Python не найден!"
     Write-Host ""
     Write-Host "  Установите Python 3.10 или новее:" -ForegroundColor Yellow
     Write-Host "    https://www.python.org/downloads/" -ForegroundColor Yellow
     Write-Host "  Убедитесь, что при установке отмечена галочка 'Add Python to PATH'." -ForegroundColor Yellow
-    Read-Host "`n  Нажмите Enter для выхода"
-    exit 1
+    Pause-Exit
 }
+Write-Ok "Найден: $pyVer"
 
 # ── 2. Проверка Git ───────────────────────────────────────────────────────
 
 Write-Step "[2/5] Проверка Git..."
-try {
-    $gitVer = git --version 2>&1
-    Write-Ok "Найден: $gitVer"
-} catch {
+$gitVer = git --version 2>&1
+if ($LASTEXITCODE -ne 0 -or $gitVer -match 'не является|not recognized|найти|No such') {
     Write-Fail "Git не найден!"
     Write-Host ""
     Write-Host "  Установите Git for Windows:" -ForegroundColor Yellow
     Write-Host "    https://git-scm.com/download/win" -ForegroundColor Yellow
-    Read-Host "`n  Нажмите Enter для выхода"
-    exit 1
+    Pause-Exit
 }
+Write-Ok "Найден: $gitVer"
 
 # ── 3. Клонирование / обновление репозитория ─────────────────────────────
 
@@ -85,27 +92,25 @@ Write-Step "[3/5] Подготовка репозитория в $DEST..."
 if (Test-Path (Join-Path $DEST '.git')) {
     Write-Info "Папка уже существует. Обновляем..."
     Set-Location $DEST
-    git fetch origin main 2>&1 | Out-Null
-    $resetOut = git reset --hard origin/main 2>&1
-    $resetOut | ForEach-Object { Write-Host "  $_" }
+    Write-Host "  Получение изменений из GitHub..." -ForegroundColor Gray
+    git fetch origin main
+    Write-Host "  Применение изменений..." -ForegroundColor Gray
+    git reset --hard origin/main
     if ($LASTEXITCODE -ne 0) {
         Write-Fail "Не удалось обновить репозиторий."
-        Read-Host "  Нажмите Enter для выхода"
-        exit 1
+        Pause-Exit
     }
     Write-Ok "Репозиторий обновлён."
 } elseif (Test-Path $DEST) {
     Write-Fail "Папка '$DEST' уже существует, но не является git-репозиторием."
     Write-Host "  Переименуйте или удалите её вручную и запустите снова." -ForegroundColor Yellow
-    Read-Host "  Нажмите Enter для выхода"
-    exit 1
+    Pause-Exit
 } else {
-    $cloneOut = git clone $REPO $DEST 2>&1
-    $cloneOut | ForEach-Object { Write-Host "  $_" }
+    Write-Host "  Клонирование репозитория (может занять минуту)..." -ForegroundColor Gray
+    git clone $REPO $DEST
     if ($LASTEXITCODE -ne 0) {
         Write-Fail "Не удалось клонировать репозиторий. Проверьте подключение к интернету."
-        Read-Host "  Нажмите Enter для выхода"
-        exit 1
+        Pause-Exit
     }
     Write-Ok "Репозиторий успешно склонирован."
 }
@@ -115,8 +120,8 @@ Set-Location $DEST
 # ── 4. Зависимости Python ─────────────────────────────────────────────────
 
 Write-Step "[4/5] Установка зависимостей Python..."
-$pipOut = pip install --upgrade -r requirements.txt 2>&1
-$pipOut | ForEach-Object { Write-Host "  $_" }
+Write-Host "  (Это может занять несколько минут...)" -ForegroundColor Gray
+pip install --upgrade -r requirements.txt
 if ($LASTEXITCODE -ne 0) {
     Write-Info "Некоторые зависимости не установились. Попробуйте позже вручную: pip install -r requirements.txt"
 } else {
@@ -146,8 +151,7 @@ if (Test-Path $envFile) {
         Write-Fail "Токен не введён. Создайте файл .env вручную:"
         Write-Host "    Откройте Блокнот, напишите: BOT_TOKEN=ваш_токен" -ForegroundColor Yellow
         Write-Host "    Сохраните как: $envFile" -ForegroundColor Yellow
-        Read-Host "`n  Нажмите Enter для выхода"
-        exit 1
+        Pause-Exit
     }
 
     "BOT_TOKEN=$botToken" | Set-Content -Encoding UTF8 $envFile
@@ -185,23 +189,33 @@ Write-Host ""
 
 # ── Предлагаем запустить бота ─────────────────────────────────────────────
 
+$launch = ''
 do {
     $launch = Read-Host "  Запустить бота прямо сейчас? (да/нет)"
+    if ($null -eq $launch) { $launch = '' }
     $launch = $launch.Trim().ToLower()
-} while ($launch -notin @('да','д','yes','y','нет','н','no','n'))
+} while ($launch -notin @('да','д','yes','y','нет','н','no','n',''))
 
 if ($launch -in @('да','д','yes','y')) {
     Write-Host ""
     Write-Host "  Запуск VM-сервера и Telegram-бота..." -ForegroundColor Cyan
     $launchBat = Join-Path $DEST 'ЗАПУСТИТЬ_БОТА.bat'
     if (Test-Path $launchBat) {
-        Start-Process -FilePath $launchBat -WorkingDirectory $DEST
+        Start-Process -FilePath 'cmd.exe' -ArgumentList "/c `"$launchBat`"" -WorkingDirectory $DEST
     } else {
         Write-Info "ЗАПУСТИТЬ_БОТА.bat не найден. Запустите вручную из $DEST"
     }
 } else {
     Write-Host ""
     Write-Host '  Готово! Дважды кликните ярлык "DRGR Bot.lnk" на Рабочем столе для запуска.' -ForegroundColor Cyan
+    Write-Host ""
+}
+
+} catch {
+    # Перехватываем любую неожиданную ошибку — окно не закроется без Enter
+    Write-Host ""
+    Write-Host "  [ОШИБКА] Произошла непредвиденная ошибка:" -ForegroundColor Red
+    Write-Host "  $_" -ForegroundColor Red
     Write-Host ""
 }
 

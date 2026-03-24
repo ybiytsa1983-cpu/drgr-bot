@@ -68,7 +68,7 @@ function Invoke-Rollback {
     if ($LASTEXITCODE -eq 0) {
         Write-Ok "Откат выполнен успешно."
     } else {
-        Write-Fail "Не удалось выполнить откат."
+        Write-Fail "Не удалось выполнить откат (код: $LASTEXITCODE). Попробуйте вручную: git reset --hard $PreviousHash"
     }
 }
 
