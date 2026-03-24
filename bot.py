@@ -353,7 +353,7 @@ _UPDATE_TEXT = (
     "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; "
     "$f=\"$env:TEMP\\install_drgr.ps1\"; "
     "Invoke-WebRequest -Uri \"https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/"
-    "copilot/check-original-interface-and-bot-launch/install.ps1\" "
+    "main/install.ps1\" "
     "-OutFile $f -UseBasicParsing; if (Test-Path $f) { &amp; $f } "
     "else { Write-Host 'Ошибка: файл не скачался' -ForegroundColor Red }</code>"
 )
