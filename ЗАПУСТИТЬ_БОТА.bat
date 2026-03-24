@@ -18,25 +18,6 @@ if errorlevel 1 (
 echo ✅ Python найден
 echo.
 
-REM Создание виртуального окружения venv_bot (если отсутствует)
-if not exist "%~dp0venv_bot\Scripts\python.exe" (
-    echo 🐍 Создание виртуального окружения venv_bot...
-    python -m venv "%~dp0venv_bot"
-    if errorlevel 1 (
-        echo ❌ Не удалось создать виртуальное окружение!
-        pause
-        exit /b 1
-    )
-    echo ✅ venv_bot создан
-    echo.
-)
-
-REM Активация виртуального окружения venv_bot
-echo 🔄 Активация venv_bot...
-call "%~dp0venv_bot\Scripts\activate.bat"
-echo ✅ venv_bot активирован
-echo.
-
 REM Обновление из GitHub
 echo 📥 Обновление из GitHub...
 git pull origin main
@@ -45,8 +26,8 @@ if errorlevel 1 (
 )
 echo.
 
-REM Установка зависимостей в виртуальное окружение
-echo 📦 Установка зависимостей в venv_bot...
+REM Установка зависимостей
+echo 📦 Установка зависимостей...
 pip install --upgrade -r requirements.txt
 if errorlevel 1 (
     echo ⚠️ Некоторые зависимости не установились
@@ -66,13 +47,13 @@ echo.
 
 REM Запуск бота и VM в разных окнах
 echo 🟢 Запуск VM сервера...
-start "DRGR VM Server" cmd /k "cd /d %CD% && call venv_bot\Scripts\activate.bat && python vm/server.py"
+start "DRGR VM Server" cmd /k "cd /d %CD% && python vm/server.py"
 
 REM Задержка 3 секунды для запуска VM
 timeout /t 3 /nobreak > nul
 
 echo 🤖 Запуск Telegram бота...
-start "DRGR Telegram Bot" cmd /k "cd /d %CD% && call venv_bot\Scripts\activate.bat && python bot.py"
+start "DRGR Telegram Bot" cmd /k "cd /d %CD% && python bot.py"
 
 echo.
 echo ✅ Бот и VM запущены в отдельных окнах!
