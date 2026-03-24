@@ -271,7 +271,36 @@ async def search_duckduckgo(
         )
     except Exception as e:
         logger.error(f"DuckDuckGo search error for '{query}': {e}")
-        return f"<b>Ошибка поиска:</b> {e}"
+                
+        # FALLBACK: Try Wikipedia as backup
+        logger.info(f"Trying Wikipedia fallback for: {query}")
+        try:
+            from urllib.parse import quote_plus
+            wiki_url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{quote_plus(query)}"
+            async with aiohttp.ClientSession() as session:
+                async with session.get(wiki_url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        raw = [{
+                            "title": f"Wikipedia: {data.get('title', query)}",
+                            "href": data.get("content_urls", {}).get("desktop", {}).get("page", ""),
+                            "body": data.get("extract", ""),
+                            "_score": 0.9
+                        }]
+                        filtered = raw
+                    else:
+                        raise Exception(f"Wikipedia returned {resp.status}")
+        except Exception as fallback_err:
+            logger.error(f"Fallback search also failed: {fallback_err}")
+                        return (
+                f"<b>⚠️ Не удалось выполнить поиск</b>\n\n"
+                f"DuckDuckGo: {str(e)[:100]}\n"
+                f"Fallback: {str(fallback_err)[:100]}\n\n"
+                f"Проверьте:\n"
+                f"• Установлена ли библиотека: pip install duckduckgo-search\n"
+                f"• Есть ли подключение к интернету\n"
+                f"• Настроен ли токен в .env"
+            )
 
     # 1. Фильтрация чёрного списка
     filtered = [
