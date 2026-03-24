@@ -14,8 +14,7 @@ param(
     [string]$BotDir = $PSScriptRoot
 )
 
-Set-StrictMode -Version Latest
-$ErrorActionPreference = 'Stop'
+$ErrorActionPreference = 'Continue'
 
 try {
     $desktop = [System.Environment]::GetFolderPath('Desktop')
