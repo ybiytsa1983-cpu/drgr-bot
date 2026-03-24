@@ -20,10 +20,16 @@ echo.
 
 REM Обновление из GitHub
 echo 📥 Обновление из GitHub...
-git pull origin main
+git fetch origin main
 if errorlevel 1 (
-    echo ⚠️ Не удалось обновить. Продолжаю с текущей версией...
+    echo ⚠️ Не удалось получить обновления. Продолжаю с текущей версией...
+    goto :SKIP_RESET
 )
+git reset --hard origin/main
+if errorlevel 1 (
+    echo ⚠️ Не удалось применить обновления. Продолжаю с текущей версией...
+)
+:SKIP_RESET
 echo.
 
 REM Установка зависимостей
