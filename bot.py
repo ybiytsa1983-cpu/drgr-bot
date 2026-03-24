@@ -21,7 +21,7 @@ from aiogram.fsm.state import State, StatesGroup
 from huggingface_hub import InferenceClient
 
 # DuckDuckGo поиск
-from ddgs import DDGS
+from duckduckgo_search import DDGS
 
 # Загрузка переменных окружения
 load_dotenv()
