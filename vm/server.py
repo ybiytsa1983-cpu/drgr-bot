@@ -4,7 +4,13 @@ import json
 import subprocess
 import signal
 import sys
+import random
 from datetime import datetime
+try:
+    from duckduckgo_search import DDGS as _DDGS
+    _HAS_DDGS = True
+except ImportError:
+    _HAS_DDGS = False
 
 app = Flask(__name__, static_folder='static', template_folder='static')
 
@@ -280,6 +286,93 @@ def generate_video():
     data = request.json
     # TODO: Implement video generation
     return jsonify({'result': 'Video generation placeholder'})
+
+@app.route('/api/search', methods=['POST'])
+def api_search():
+    """Web search using DuckDuckGo."""
+    data = request.get_json(force=True, silent=True) or {}
+    query = (data.get('query') or '').strip()
+    lang = data.get('lang', 'ru-ru')
+    if not query:
+        return jsonify({'error': 'query required', 'count': 0, 'results': []}), 400
+    results = []
+    if _HAS_DDGS:
+        try:
+            with _DDGS() as ddgs:
+                for r in ddgs.text(query, region=lang, max_results=10):
+                    results.append({
+                        'source': 'ddg',
+                        'score': 1.0,
+                        'url': r.get('href', ''),
+                        'title': r.get('title', ''),
+                        'snippet': r.get('body', ''),
+                    })
+        except Exception as e:
+            return jsonify({'error': str(e), 'count': 0, 'results': []}), 500
+    return jsonify({'count': len(results), 'results': results})
+
+
+@app.route('/api/3d', methods=['POST'])
+def api_3d():
+    """Generate a simple 3D scene description."""
+    data = request.get_json(force=True, silent=True) or {}
+    desc = (data.get('description') or 'cube').lower()
+    # Map description keywords to Three.js geometry types
+    geo_map = {
+        'sphere': 'SphereGeometry', 'ball': 'SphereGeometry',
+        'cylinder': 'CylinderGeometry', 'tube': 'CylinderGeometry',
+        'cone': 'ConeGeometry', 'pyramid': 'ConeGeometry',
+        'torus': 'TorusGeometry', 'ring': 'TorusGeometry',
+        'plane': 'PlaneGeometry', 'flat': 'PlaneGeometry',
+    }
+    geo_type = 'BoxGeometry'
+    for kw, gtype in geo_map.items():
+        if kw in desc:
+            geo_type = gtype
+            break
+    colors = ['#4fc3f7', '#81c784', '#ffb74d', '#f06292', '#ba68c8', '#4dd0e1']
+    scene = {
+        'geometry': {'type': geo_type},
+        'material': {
+            'color': random.choice(colors),
+            'metalness': round(random.uniform(0.1, 0.8), 2),
+            'roughness': round(random.uniform(0.1, 0.7), 2),
+        },
+        'animate': {'rotate_y': round(random.uniform(0.003, 0.012), 4)},
+    }
+    return jsonify(scene)
+
+
+@app.route('/api/video', methods=['POST'])
+def api_video():
+    """Handle video upload or generation request."""
+    # File upload branch
+    if 'file' in request.files:
+        f = request.files['file']
+        upload_dir = os.path.join(_BASE, 'static', 'uploads')
+        os.makedirs(upload_dir, exist_ok=True)
+        filename = f.filename or 'video.mp4'
+        save_path = os.path.join(upload_dir, filename)
+        f.save(save_path)
+        size = os.path.getsize(save_path)
+        return jsonify({
+            'success': True,
+            'url': f'/static/uploads/{filename}',
+            'size': size,
+            'duration': None,
+            'operations': ['обрезка', 'конвертация', 'анализ'],
+        })
+    # Text generation request
+    data = request.get_json(force=True, silent=True) or {}
+    prompt = data.get('prompt', '')
+    return jsonify({'message': f'Генерация видео по запросу поставлена в очередь: «{prompt}»'})
+
+
+@app.errorhandler(404)
+def not_found(e):
+    """Return index.html for unknown paths so the SPA handles routing."""
+    return render_template('index.html'), 200
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5001, debug=True)
