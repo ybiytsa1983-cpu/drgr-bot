@@ -271,36 +271,7 @@ async def search_duckduckgo(
         )
     except Exception as e:
         logger.error(f"DuckDuckGo search error for '{query}': {e}")
-                
-        # FALLBACK: Try Wikipedia as backup
-        logger.info(f"Trying Wikipedia fallback for: {query}")
-        try:
-            from urllib.parse import quote_plus
-            wiki_url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{quote_plus(query)}"
-            async with aiohttp.ClientSession() as session:
-                async with session.get(wiki_url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        raw = [{
-                            "title": f"Wikipedia: {data.get('title', query)}",
-                            "href": data.get("content_urls", {}).get("desktop", {}).get("page", ""),
-                            "body": data.get("extract", ""),
-                            "_score": 0.9
-                        }]
-                        filtered = raw
-                    else:
-                        raise Exception(f"Wikipedia returned {resp.status}")
-        except Exception as fallback_err:
-            logger.error(f"Fallback search also failed: {fallback_err}")
-                        return (
-                f"<b>⚠️ Не удалось выполнить поиск</b>\n\n"
-                f"DuckDuckGo: {str(e)[:100]}\n"
-                f"Fallback: {str(fallback_err)[:100]}\n\n"
-                f"Проверьте:\n"
-                f"• Установлена ли библиотека: pip install duckduckgo-search\n"
-                f"• Есть ли подключение к интернету\n"
-                f"• Настроен ли токен в .env"
-            )
+        return f"<b>Ошибка поиска:</b> {e}"
 
     # 1. Фильтрация чёрного списка
     filtered = [
@@ -397,7 +368,7 @@ bot = Bot(token=BOT_TOKEN) router = Router()
 Состояния для FSM
 class MediaStates(StatesGroup): waiting_for_frame = State() waiting_for_collage_photos = State() waiting_for_video_trim_params = State() waiting_for_video_file = State() waiting_for_ai_request = State()
 Функция для запроса к Hugging Face API (текстовая модель)
-async def query_huggingface(prompt: str, model: str = “mistralai/Mistral-7B-Instruct-v0.3”) -> str: try: api_url = f”https://api-inference.huggingface.co/models/{model}” headers = {“Authorization”: f”Bearer {HUGGINGFACE_TOKEN}“} payload = {“inputs”: prompt, “parameters”: {“max_length”: 200}} response = await asyncio.to_thread(requests.post, api_url, headers=headers, json=payload) if response.status_code == 200: result = response.json() return result[0].get(“generated_text”, “Не удалось сгенерировать ответ.”) else: logger.error(f”Hugging Face API error: {response.status_code} - {response.text}“) return “Ошибка при обращении к ИИ. Попробуйте позже.” except Exception as e: logger.error(f”Error querying Hugging Face: {e}“) return f”Ошибка: {str(e)}”
+async def query_huggingface(prompt: str, model: str = “mistralai/Mistral-7B-Instruct-v0.3”) -> str: try: api_url = f”https://api-inference.huggingface.co/models/{model}” headers = {“Authorization”: f”Bearer {HUGGINGFACE_TOKEN}“} payload = {“inputs”: prompt, “parameters”: {“max_length”: 200}} response = await asyncio.to_thread(requests.post, api_url, headers=headers, json=payload) if response.status_code == 200: result = response.json() return result[0].get(“generated_text”, “Не удалось сгенерировать ответ.”) else: logger.error(f”Hugging Face API error: {response.status_code} - {response.text}“) return “Ошибка при обращении к ИИ. Попробуйте позже.” except Exception as e: logger.error(f”Error querying Hugging Face: {e}“) return f”Ошибка: {str(e)}”
 Команда /start
 @router.message(CommandStart()) async def cmd_start(message: Message): await message.answer( “Привет! Отправляйте фото/видео. Используйте команды:\n” “/frame - применить рамку к последнему фото\n” “/collage - создать коллаж (последовательная загрузка фото)\n” “/video_trim - обрезать видео (загрузка + ввод параметров)\n” “/ai - задать вопрос ИИ-ассистенту\n” “/help - помощь” )
 Команда /help
