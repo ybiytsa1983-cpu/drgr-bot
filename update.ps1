@@ -95,16 +95,26 @@ try {
     exit 1
 }
 
-# 2. git pull origin main
-Write-Step "Шаг 2/4: Получение обновлений (git pull origin main)..."
-$pullOutput = git pull origin main 2>&1
-$pullOutput | ForEach-Object { Write-Host "  $_" }
+# 2. git fetch + reset --hard origin/main
+Write-Step "Шаг 2/4: Получение обновлений (git fetch origin main)..."
+$fetchOutput = git fetch origin main 2>&1
+$fetchOutput | ForEach-Object { Write-Host "  $_" }
 if ($LASTEXITCODE -ne 0) {
-    Write-Fail "git pull завершился с ошибкой."
+    Write-Fail "git fetch завершился с ошибкой."
     Invoke-Rollback $backupHash
     exit 2
 }
-Write-Ok "git pull выполнен успешно."
+Write-Ok "git fetch выполнен успешно."
+
+Write-Step "Применение обновлений (git reset --hard origin/main)..."
+$resetOutput = git reset --hard origin/main 2>&1
+$resetOutput | ForEach-Object { Write-Host "  $_" }
+if ($LASTEXITCODE -ne 0) {
+    Write-Fail "git reset --hard origin/main завершился с ошибкой."
+    Invoke-Rollback $backupHash
+    exit 2
+}
+Write-Ok "Локальные файлы синхронизированы с origin/main."
 
 # 3. pip install -r requirements.txt
 Write-Step "Шаг 3/4: Установка зависимостей (pip install -r requirements.txt)..."
