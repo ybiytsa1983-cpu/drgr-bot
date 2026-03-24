@@ -195,7 +195,7 @@ if ($launch -in @('да','д','yes','y')) {
     Write-Host "  Запуск VM-сервера и Telegram-бота..." -ForegroundColor Cyan
     $launchBat = Join-Path $DEST 'ЗАПУСТИТЬ_БОТА.bat'
     if (Test-Path $launchBat) {
-        Start-Process 'cmd.exe' -ArgumentList "/c `"$launchBat`"" -WorkingDirectory $DEST
+        Start-Process -FilePath $launchBat -WorkingDirectory $DEST
     } else {
         Write-Info "ЗАПУСТИТЬ_БОТА.bat не найден. Запустите вручную из $DEST"
     }
