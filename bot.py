@@ -18,9 +18,6 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
-# Библиотека Hugging Face
-from huggingface_hub import InferenceClient
-
 # DuckDuckGo поиск
 from ddgs import DDGS
 
@@ -51,7 +48,7 @@ def _setting(key: str, env_key: str, default: str = "") -> str:
 
 # Получение токенов и настроек
 BOT_TOKEN = _setting("bot_token", "BOT_TOKEN")
-HUGGINGFACE_API_KEY = _setting("huggingface_api_key", "HUGGINGFACE_API_KEY")
+HUGGINGFACE_API_KEY = _setting("huggingface_api_key", "HUGGINGFACE_API_KEY")  # optional
 BOT_MODE = _setting("bot_mode", "BOT_MODE", "polling")          # "polling" | "webhook"
 WEBHOOK_URL = _setting("webhook_url", "WEBHOOK_URL", "")
 # Default: try cloud VM first, then fall back to lmstudio, then huggingface
@@ -65,9 +62,9 @@ OLLAMA_MODEL = _setting("ollama_model", "OLLAMA_MODEL", "llama3")
 if not BOT_TOKEN:
     raise ValueError("Добавьте BOT_TOKEN в .env файл или в настройки (vm/settings.json).")
 
-# HuggingFace key is optional when cloud VM or LM Studio is in use
+# HuggingFace key is optional — only required when ai_backend == "huggingface"
 if not HUGGINGFACE_API_KEY and AI_BACKEND == "huggingface":
-    raise ValueError("Добавьте HUGGINGFACE_API_KEY в .env файл или в настройки (vm/settings.json).")
+    logging.warning("HUGGINGFACE_API_KEY не задан, huggingface backend будет недоступен.")
 
 # ── AI backend resolution ─────────────────────────────────────────────────────
 import urllib.request
@@ -104,7 +101,7 @@ def _resolve_llm_backend() -> str:
       1. cloud_vm  — if CLOUD_VM_URL is set and the server responds
       2. lmstudio  — if LM Studio is running on LMSTUDIO_URL
       3. ollama    — if Ollama is running on OLLAMA_URL
-      4. huggingface (always available when API key is set)
+      4. huggingface — only when HUGGINGFACE_API_KEY is set
 
     When AI_BACKEND is explicitly set to a non-cloud_vm value in settings,
     that value is honoured directly (no auto-fallback).
@@ -122,8 +119,11 @@ def _resolve_llm_backend() -> str:
         if _ollama_health_check(OLLAMA_URL):
             logging.info("AI backend: ollama (fallback, %s)", OLLAMA_URL)
             return "ollama"
-        logging.warning("ollama не доступен — используем huggingface")
-        return "huggingface"
+        if HUGGINGFACE_API_KEY:
+            logging.warning("ollama не доступен — используем huggingface")
+            return "huggingface"
+        logging.warning("Нет доступного AI-бэкенда. Бот запустится без генерации текста.")
+        return "none"
     return backend
 
 # Resolve at startup (synchronous probes are fast / tiny)
@@ -146,9 +146,101 @@ MAX_COMMENTS = int(os.getenv("MAX_COMMENTS", 20))
 for d in [PHOTOS_DIR, VIDEOS_DIR, GALLERY_DIR, FRAME_DIR, COLLAGE_DIR, FRAME_OVERLAY_DIR]:
     os.makedirs(d, exist_ok=True)
 
-# Инициализация клиента Hugging Face (используется только когда ACTIVE_BACKEND == "huggingface")
-_hf_key = HUGGINGFACE_API_KEY or "dummy"
-client = InferenceClient(api_key=_hf_key)
+# ── AI chat helper ─────────────────────────────────────────────────────────────
+import urllib.error
+
+async def ai_chat(prompt: str, system: str = "Ты умный помощник. Отвечай на русском языке.") -> str:
+    """
+    Send *prompt* to the active AI backend and return the reply text.
+    Routes to: cloud_vm → lmstudio → ollama.
+    Falls back gracefully with a human-readable error message.
+    """
+    backend = ACTIVE_BACKEND
+
+    # ── Cloud VM (/generate endpoint of vm/server.py style) ──────────────────
+    if backend == "cloud_vm" and CLOUD_VM_URL:
+        try:
+            payload = json.dumps({
+                "prompt": prompt,
+                "system": system,
+                "max_tokens": 512,
+            }).encode()
+            req = urllib.request.Request(
+                f"{CLOUD_VM_URL}/api/generate",
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                data = json.loads(resp.read().decode())
+                return data.get("text") or data.get("response") or str(data)
+        except Exception as e:
+            return f"⚠️ Cloud VM недоступен: {e}"
+
+    # ── LM Studio (OpenAI-compatible) ─────────────────────────────────────────
+    if backend == "lmstudio":
+        try:
+            messages = [
+                {"role": "system", "content": system},
+                {"role": "user", "content": prompt},
+            ]
+            payload = json.dumps({
+                "model": LMSTUDIO_MODEL or "local-model",
+                "messages": messages,
+                "max_tokens": 512,
+                "temperature": 0.7,
+            }).encode()
+            req = urllib.request.Request(
+                f"{LMSTUDIO_URL}/v1/chat/completions",
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                data = json.loads(resp.read().decode())
+                return data["choices"][0]["message"]["content"].strip()
+        except Exception as e:
+            return f"⚠️ LM Studio недоступен: {e}"
+
+    # ── Ollama ────────────────────────────────────────────────────────────────
+    if backend == "ollama":
+        try:
+            payload = json.dumps({
+                "model": OLLAMA_MODEL,
+                "prompt": f"{system}\n\n{prompt}",
+                "stream": False,
+            }).encode()
+            req = urllib.request.Request(
+                f"{OLLAMA_URL}/api/generate",
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=90) as resp:
+                data = json.loads(resp.read().decode())
+                return data.get("response", "").strip()
+        except Exception as e:
+            return f"⚠️ Ollama недоступен: {e}"
+
+    # ── HuggingFace (optional) ────────────────────────────────────────────────
+    if backend == "huggingface" and HUGGINGFACE_API_KEY:
+        try:
+            from huggingface_hub import InferenceClient as _HFClient
+            hf = _HFClient(api_key=HUGGINGFACE_API_KEY)
+            model = _setting("huggingface_model", "HUGGINGFACE_MODEL",
+                             "HuggingFaceH4/zephyr-7b-beta")
+            result = await asyncio.to_thread(
+                lambda: hf.text_generation(
+                    f"{system}\n\n{prompt}",
+                    model=model,
+                    max_new_tokens=512,
+                )
+            )
+            return result.strip()
+        except Exception as e:
+            return f"⚠️ HuggingFace ошибка: {e}"
+
+    return "⚠️ Нет доступного AI-бэкенда. Настройте cloud_vm_url или запустите LM Studio / Ollama."
 
 # Логирование
 logging.basicConfig(
@@ -414,13 +506,63 @@ dp = Dispatcher(bot)
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     await message.reply(
-        "Привет! Используйте команды:\n"
-        "/search <запрос> — поиск в интернете\n"
-        "/update — скачать и запустить обновление\n"
-        "/help — справка"
+        "Привет! Я DRGR-бот 🤖\n\n"
+        "Доступные команды:\n"
+        "/chat &lt;сообщение&gt; — поговорить с AI\n"
+        "/search &lt;запрос&gt; — поиск в интернете\n"
+        "/status — статус подключения к AI\n"
+        "/update — скачать обновление\n"
+        "/help — справка\n\n"
+        "Или просто напишите мне что-нибудь!",
+        parse_mode="HTML",
     )
-@dp.message(Command("search"))
-async def cmd_search(message: types.Message):
+@dp.message(Command("status"))
+async def cmd_status(message: types.Message):
+    """Показать текущий статус подключения к AI-бэкенду."""
+    backend_names = {
+        "cloud_vm": f"☁️ Облачная ВМ ({CLOUD_VM_URL or 'URL не задан'})",
+        "lmstudio": f"🖥 LM Studio ({LMSTUDIO_URL})",
+        "ollama": f"🦙 Ollama ({OLLAMA_URL}, модель: {OLLAMA_MODEL})",
+        "huggingface": "🤗 HuggingFace Inference",
+        "none": "❌ Нет доступного бэкенда",
+    }
+    name = backend_names.get(ACTIVE_BACKEND, ACTIVE_BACKEND)
+    await message.reply(
+        f"📡 <b>Активный AI-бэкенд:</b> {name}\n"
+        f"⚙️ <b>Настроен:</b> {AI_BACKEND}",
+        parse_mode="HTML",
+    )
+
+
+@dp.message(Command("chat"))
+async def cmd_chat(message: types.Message):
+    """Поговорить с AI. Использование: /chat <сообщение>"""
+    args = message.text.split(maxsplit=1)
+    if len(args) < 2 or not args[1].strip():
+        await message.reply(
+            "Использование: <code>/chat ваш вопрос</code>\n"
+            "Или просто напишите сообщение без команды.",
+            parse_mode="HTML",
+        )
+        return
+    prompt = args[1].strip()
+    await message.reply("⏳ Думаю…")
+    reply = await ai_chat(prompt)
+    await message.reply(reply, parse_mode="HTML")
+
+
+@dp.message(F.text & ~F.text.startswith("/"))
+async def handle_text(message: types.Message):
+    """Обрабатывает произвольный текст как запрос к AI."""
+    prompt = message.text.strip()
+    if not prompt:
+        return
+    await message.reply("⏳ Думаю…")
+    reply = await ai_chat(prompt)
+    await message.reply(reply, parse_mode="HTML")
+
+
+
     """Поиск в интернете через DuckDuckGo. Использование: /search <запрос>"""
     args = message.text.split(maxsplit=1)
     if len(args) < 2 or not args[1].strip():
@@ -465,17 +607,22 @@ async def cmd_update(message: types.Message):
 async def cmd_help(message: types.Message):
     await message.reply(
         "📋 <b>Справка по командам:</b>\n\n"
-        "/search &lt;запрос&gt; — поиск в интернете\n"
+        "/chat &lt;сообщение&gt; — 🤖 поговорить с AI\n"
+        "/search &lt;запрос&gt; — 🔍 поиск в интернете\n"
+        "/status — 📡 статус подключения к AI\n"
         "/update — 🔄 скачать и запустить обновление\n"
         "/обновить — то же самое (по-русски)\n"
-        "/help — показать эту подсказку",
+        "/help — показать эту подсказку\n\n"
+        "Или просто напишите что-нибудь — бот ответит через AI.",
         parse_mode="HTML",
     )
 
 
 async def main() -> None:
-    logging.info("Starting drgr-bot (mode=%s, configured_backend=%s, active_backend=%s)...",
-                 BOT_MODE, AI_BACKEND, ACTIVE_BACKEND)
+    logging.info(
+        "Starting drgr-bot (mode=%s, configured_backend=%s, active_backend=%s)…",
+        BOT_MODE, AI_BACKEND, ACTIVE_BACKEND,
+    )
 
     if BOT_MODE == "webhook" and WEBHOOK_URL:
         from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
@@ -496,12 +643,11 @@ async def main() -> None:
         site = web.TCPSite(runner, host="0.0.0.0", port=int(os.getenv("WEBHOOK_PORT", 8080)))
         await site.start()
         logging.info("Webhook server listening on port %s", os.getenv("WEBHOOK_PORT", 8080))
-
-        # Run forever
         await asyncio.Event().wait()
     else:
-        # Default: polling
+        # Default: long-polling (works without any external URL or API keys)
         await bot.delete_webhook(drop_pending_updates=True)
+        logging.info("Starting polling…")
         await dp.start_polling(bot)
 
 
