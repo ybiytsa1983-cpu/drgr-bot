@@ -24,8 +24,14 @@ Start-Process "$env:USERPROFILE\Desktop\drgr-bot\ЗАПУСТИТЬ_БОТА.bat
 
 ### 🔄 Обновить бота
 
+**Если папка `drgr-bot` уже есть на Рабочем столе:**
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass; & "$env:USERPROFILE\Desktop\drgr-bot\update.ps1"
+```
+
+**Если папки нет или ярлыки пропали — используйте ту же команду что и при установке** (скрипт сам обновит):
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass; [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; $f="$env:TEMP\install_drgr.ps1"; Invoke-WebRequest -Uri "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/copilot/check-original-interface-and-bot-launch/install.ps1" -OutFile $f -UseBasicParsing; if (Test-Path $f) { & $f } else { Write-Host "Ошибка: файл не скачался. Проверьте интернет." -ForegroundColor Red }
 ```
 
 ### 🔗 Восстановить ярлыки на Рабочем столе

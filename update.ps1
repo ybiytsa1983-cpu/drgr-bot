@@ -14,8 +14,9 @@ param(
     [switch]$SkipRestart
 )
 
-Set-StrictMode -Version Latest
-$ErrorActionPreference = 'Stop'
+# НЕ используем StrictMode и Stop — git/pip пишут в stderr,
+# что с 'Stop' вызывает мгновенное закрытие окна.
+$ErrorActionPreference = 'Continue'
 
 # ── вспомогательные функции ────────────────────────────────────────────────
 
@@ -63,11 +64,11 @@ function Start-Bot {
 function Invoke-Rollback {
     param([string]$PreviousHash)
     Write-Step "Выполняется откат к коммиту $PreviousHash ..."
-    try {
-        git reset --hard $PreviousHash 2>&1 | ForEach-Object { Write-Host "  $_" }
+    git reset --hard $PreviousHash
+    if ($LASTEXITCODE -eq 0) {
         Write-Ok "Откат выполнен успешно."
-    } catch {
-        Write-Fail "Не удалось выполнить откат: $_"
+    } else {
+        Write-Fail "Не удалось выполнить откат."
     }
 }
 
@@ -80,84 +81,87 @@ Write-Host "`n============================================" -ForegroundColor Mag
 Write-Host "   drgr-bot — скрипт обновления (update.ps1)" -ForegroundColor Magenta
 Write-Host "============================================`n" -ForegroundColor Magenta
 
+try {
+
 # 1. Сохранение текущего хеша (резервная копия)
 Write-Step "Шаг 1/4: Сохранение резервной копии (текущий коммит)..."
-try {
-    $backupHash = (git rev-parse HEAD 2>&1).Trim()
-    if ($backupHash -notmatch '^[0-9a-f]{40}$') {
-        throw "Получен некорректный хеш: $backupHash"
-    }
+$backupHash = (git rev-parse HEAD 2>&1).Trim()
+if ($backupHash -notmatch '^[0-9a-f]{40}$') {
+    Write-Fail "Не удалось получить текущий коммит. Убедитесь, что папка является git-репозиторием."
+    Write-Fail "Получено: $backupHash"
+} else {
     $backupHash | Out-File -FilePath (Join-Path $ScriptDir '.update_backup_hash') -Encoding UTF8 -NoNewline
     Write-Ok "Резервный хеш сохранён: $backupHash"
-} catch {
-    Write-Fail "Не удалось получить текущий коммит. Убедитесь, что папка является git-репозиторием."
-    Write-Fail $_
-    exit 1
-}
 
-# 2. git fetch + reset --hard origin/main
-Write-Step "Шаг 2/4: Получение обновлений (git fetch origin main)..."
-$fetchOutput = git fetch origin main 2>&1
-$fetchOutput | ForEach-Object { Write-Host "  $_" }
-if ($LASTEXITCODE -ne 0) {
-    Write-Fail "git fetch завершился с ошибкой."
-    Invoke-Rollback $backupHash
-    exit 2
-}
-Write-Ok "git fetch выполнен успешно."
+    # 2. git fetch + reset --hard origin/main
+    Write-Step "Шаг 2/4: Получение обновлений (git fetch origin main)..."
+    git fetch origin main
+    if ($LASTEXITCODE -ne 0) {
+        Write-Fail "git fetch завершился с ошибкой."
+        Invoke-Rollback $backupHash
+    } else {
+        Write-Ok "git fetch выполнен успешно."
 
-Write-Step "Применение обновлений (git reset --hard origin/main)..."
-$resetOutput = git reset --hard origin/main 2>&1
-$resetOutput | ForEach-Object { Write-Host "  $_" }
-if ($LASTEXITCODE -ne 0) {
-    Write-Fail "git reset --hard origin/main завершился с ошибкой."
-    Invoke-Rollback $backupHash
-    exit 2
-}
-Write-Ok "Локальные файлы синхронизированы с origin/main."
+        Write-Step "Применение обновлений (git reset --hard origin/main)..."
+        git reset --hard origin/main
+        if ($LASTEXITCODE -ne 0) {
+            Write-Fail "git reset --hard origin/main завершился с ошибкой."
+            Invoke-Rollback $backupHash
+        } else {
+            Write-Ok "Локальные файлы синхронизированы с origin/main."
 
-# 3. pip install -r requirements.txt
-Write-Step "Шаг 3/4: Установка зависимостей (pip install -r requirements.txt)..."
-$reqFile = Join-Path $ScriptDir 'requirements.txt'
-if (-not (Test-Path $reqFile)) {
-    Write-Fail "Файл requirements.txt не найден."
-    Invoke-Rollback $backupHash
-    exit 3
-}
-$pipOutput = pip install -r $reqFile 2>&1
-$pipOutput | ForEach-Object { Write-Host "  $_" }
-if ($LASTEXITCODE -ne 0) {
-    Write-Fail "pip install завершился с ошибкой."
-    Invoke-Rollback $backupHash
-    exit 3
-}
-Write-Ok "Зависимости установлены."
+            # 3. pip install -r requirements.txt
+            Write-Step "Шаг 3/4: Установка зависимостей (pip install -r requirements.txt)..."
+            $reqFile = Join-Path $ScriptDir 'requirements.txt'
+            if (-not (Test-Path $reqFile)) {
+                Write-Fail "Файл requirements.txt не найден."
+                Invoke-Rollback $backupHash
+            } else {
+                pip install -r $reqFile
+                if ($LASTEXITCODE -ne 0) {
+                    Write-Fail "pip install завершился с ошибкой."
+                    Invoke-Rollback $backupHash
+                } else {
+                    Write-Ok "Зависимости установлены."
 
-# 4. Получение нового хеша для информации
-$newHash = (git rev-parse HEAD 2>&1).Trim()
-Write-Host "`n  Предыдущий коммит : $backupHash" -ForegroundColor DarkGray
-Write-Host "  Новый коммит      : $newHash" -ForegroundColor DarkGray
+                    # 4. Получение нового хеша для информации
+                    $newHash = (git rev-parse HEAD 2>&1).Trim()
+                    Write-Host "`n  Предыдущий коммит : $backupHash" -ForegroundColor DarkGray
+                    Write-Host "  Новый коммит      : $newHash" -ForegroundColor DarkGray
 
-Write-Host "`n============================================" -ForegroundColor Green
-Write-Host "   Обновление завершено успешно!" -ForegroundColor Green
-Write-Host "============================================`n" -ForegroundColor Green
+                    Write-Host "`n============================================" -ForegroundColor Green
+                    Write-Host "   Обновление завершено успешно!" -ForegroundColor Green
+                    Write-Host "============================================`n" -ForegroundColor Green
 
-# Recreate Desktop shortcuts so they survive git reset --hard
-$shortcutsScript = Join-Path $ScriptDir 'create_shortcuts.ps1'
-if (Test-Path $shortcutsScript) {
-    try {
-        & $shortcutsScript -BotDir $ScriptDir
-    } catch {
-        Write-Host "  INFO  Не удалось обновить ярлыки на рабочем столе: $_" -ForegroundColor Yellow
+                    # Recreate Desktop shortcuts so they survive git reset --hard
+                    $shortcutsScript = Join-Path $ScriptDir 'create_shortcuts.ps1'
+                    if (Test-Path $shortcutsScript) {
+                        try {
+                            & $shortcutsScript -BotDir $ScriptDir
+                        } catch {
+                            Write-Host "  INFO  Не удалось обновить ярлыки на рабочем столе: $_" -ForegroundColor Yellow
+                        }
+                    }
+
+                    # 5. Перезапуск bot.py
+                    if (-not $SkipRestart) {
+                        Write-Step "Шаг 4/4: Перезапуск bot.py..."
+                        Stop-BotProcess
+                        Start-Sleep -Seconds 2
+                        Start-Bot
+                    }
+                }
+            }
+        }
     }
 }
 
-# 5. Перезапуск bot.py
-if (-not $SkipRestart) {
-    Write-Step "Шаг 4/4: Перезапуск bot.py..."
-    Stop-BotProcess
-    Start-Sleep -Seconds 2
-    Start-Bot
+} catch {
+    # Перехватываем любую неожиданную ошибку — окно не закроется без Enter
+    Write-Host ""
+    Write-Host "  [ОШИБКА] Произошла непредвиденная ошибка:" -ForegroundColor Red
+    Write-Host "  $_" -ForegroundColor Red
+    Write-Host ""
 }
 
-exit 0
+Read-Host "`n  Нажмите Enter для закрытия"
