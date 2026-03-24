@@ -54,12 +54,80 @@ BOT_TOKEN = _setting("bot_token", "BOT_TOKEN")
 HUGGINGFACE_API_KEY = _setting("huggingface_api_key", "HUGGINGFACE_API_KEY")
 BOT_MODE = _setting("bot_mode", "BOT_MODE", "polling")          # "polling" | "webhook"
 WEBHOOK_URL = _setting("webhook_url", "WEBHOOK_URL", "")
-AI_BACKEND = _setting("ai_backend", "AI_BACKEND", "huggingface")
+# Default: try cloud VM first, then fall back to lmstudio, then huggingface
+AI_BACKEND = _setting("ai_backend", "AI_BACKEND", "cloud_vm")
+CLOUD_VM_URL = _setting("cloud_vm_url", "CLOUD_VM_URL", "").rstrip("/")
+LMSTUDIO_URL = _setting("lmstudio_url", "LMSTUDIO_URL", "http://localhost:1234").rstrip("/")
+LMSTUDIO_MODEL = _setting("lmstudio_model", "LMSTUDIO_MODEL", "")
+OLLAMA_URL = _setting("ollama_url", "OLLAMA_URL", "http://localhost:11434").rstrip("/")
+OLLAMA_MODEL = _setting("ollama_model", "OLLAMA_MODEL", "llama3")
 
 if not BOT_TOKEN:
     raise ValueError("Добавьте BOT_TOKEN в .env файл или в настройки (vm/settings.json).")
-if not HUGGINGFACE_API_KEY:
+
+# HuggingFace key is optional when cloud VM or LM Studio is in use
+if not HUGGINGFACE_API_KEY and AI_BACKEND == "huggingface":
     raise ValueError("Добавьте HUGGINGFACE_API_KEY в .env файл или в настройки (vm/settings.json).")
+
+# ── AI backend resolution ─────────────────────────────────────────────────────
+import urllib.request
+
+def _vm_health_check(url: str, timeout: int = 4) -> bool:
+    """Return True if the VM server at *url* responds to /api/bot/status."""
+    try:
+        req = urllib.request.urlopen(f"{url}/api/bot/status", timeout=timeout)
+        return req.status == 200
+    except Exception:
+        return False
+
+def _lms_health_check(url: str, timeout: int = 3) -> bool:
+    """Return True if an OpenAI-compatible server at *url* is reachable."""
+    try:
+        req = urllib.request.urlopen(f"{url}/v1/models", timeout=timeout)
+        return req.status == 200
+    except Exception:
+        return False
+
+def _ollama_health_check(url: str, timeout: int = 3) -> bool:
+    """Return True if Ollama at *url* is reachable."""
+    try:
+        req = urllib.request.urlopen(f"{url}/api/tags", timeout=timeout)
+        return req.status == 200
+    except Exception:
+        return False
+
+def _resolve_llm_backend() -> str:
+    """
+    Determine which backend to actually use at startup.
+
+    Priority (auto-fallback):
+      1. cloud_vm  — if CLOUD_VM_URL is set and the server responds
+      2. lmstudio  — if LM Studio is running on LMSTUDIO_URL
+      3. ollama    — if Ollama is running on OLLAMA_URL
+      4. huggingface (always available when API key is set)
+
+    When AI_BACKEND is explicitly set to a non-cloud_vm value in settings,
+    that value is honoured directly (no auto-fallback).
+    """
+    backend = AI_BACKEND
+    if backend == "cloud_vm":
+        if CLOUD_VM_URL and _vm_health_check(CLOUD_VM_URL):
+            logging.info("AI backend: cloud_vm (%s)", CLOUD_VM_URL)
+            return "cloud_vm"
+        logging.warning("cloud_vm не доступен — пробуем lmstudio…")
+        if _lms_health_check(LMSTUDIO_URL):
+            logging.info("AI backend: lmstudio (fallback, %s)", LMSTUDIO_URL)
+            return "lmstudio"
+        logging.warning("lmstudio не доступен — пробуем ollama…")
+        if _ollama_health_check(OLLAMA_URL):
+            logging.info("AI backend: ollama (fallback, %s)", OLLAMA_URL)
+            return "ollama"
+        logging.warning("ollama не доступен — используем huggingface")
+        return "huggingface"
+    return backend
+
+# Resolve at startup (synchronous probes are fast / tiny)
+ACTIVE_BACKEND = _resolve_llm_backend()
 
 # Директории
 PHOTOS_DIR = os.getenv("PHOTOS_DIR", "photos")
@@ -78,8 +146,9 @@ MAX_COMMENTS = int(os.getenv("MAX_COMMENTS", 20))
 for d in [PHOTOS_DIR, VIDEOS_DIR, GALLERY_DIR, FRAME_DIR, COLLAGE_DIR, FRAME_OVERLAY_DIR]:
     os.makedirs(d, exist_ok=True)
 
-# Инициализация клиента Hugging Face
-client = InferenceClient(api_key=HUGGINGFACE_API_KEY)
+# Инициализация клиента Hugging Face (используется только когда ACTIVE_BACKEND == "huggingface")
+_hf_key = HUGGINGFACE_API_KEY or "dummy"
+client = InferenceClient(api_key=_hf_key)
 
 # Логирование
 logging.basicConfig(
@@ -405,7 +474,8 @@ async def cmd_help(message: types.Message):
 
 
 async def main() -> None:
-    logging.info("Starting drgr-bot (mode=%s, backend=%s)...", BOT_MODE, AI_BACKEND)
+    logging.info("Starting drgr-bot (mode=%s, configured_backend=%s, active_backend=%s)...",
+                 BOT_MODE, AI_BACKEND, ACTIVE_BACKEND)
 
     if BOT_MODE == "webhook" and WEBHOOK_URL:
         from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application

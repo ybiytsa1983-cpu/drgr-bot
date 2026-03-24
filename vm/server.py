@@ -20,7 +20,9 @@ _DEFAULTS = {
     "bot_token": "",
     "bot_mode": "polling",          # "polling" | "webhook"
     "webhook_url": "",
-    "ai_backend": "huggingface",    # "ollama" | "lmstudio" | "qwen" | "huggingface"
+    # AI backend priority: cloud_vm → lmstudio → ollama → qwen → huggingface
+    "ai_backend": "cloud_vm",       # "cloud_vm" | "ollama" | "lmstudio" | "qwen" | "huggingface"
+    "cloud_vm_url": "",             # URL of the cloud VM running vm/server.py, e.g. https://xxx.ngrok.io
     "ollama_url": "http://localhost:11434",
     "ollama_model": "llama3",
     "lmstudio_url": "http://localhost:1234",
@@ -148,6 +150,12 @@ def settings_post():
 def vm_list():
     s = _load_settings()
     vms = [
+        {
+            'id': 'cloud_vm',
+            'name': '☁️ Облачная ВМ',
+            'description': f"URL: {s['cloud_vm_url'] or '(не задан)'}",
+            'active': s['ai_backend'] == 'cloud_vm',
+        },
         {
             'id': 'ollama',
             'name': 'Ollama (локальный)',
