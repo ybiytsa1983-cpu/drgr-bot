@@ -24,13 +24,13 @@ try {
     $s1 = $ws.CreateShortcut("$desktop\DRGR Bot.lnk")
     $s1.TargetPath       = Join-Path $BotDir 'ЗАПУСТИТЬ_БОТА.bat'
     $s1.WorkingDirectory = $BotDir
-    $s1.Description      = 'Zapustit DRGR Bot'
+    $s1.Description      = 'Запустить DRGR Bot'
     $s1.Save()
 
     $s2 = $ws.CreateShortcut("$desktop\DRGR Bot - Obnovit.lnk")
     $s2.TargetPath       = Join-Path $BotDir 'ОБНОВИТЬ.bat'
     $s2.WorkingDirectory = $BotDir
-    $s2.Description      = 'Obnovit DRGR Bot'
+    $s2.Description      = 'Обновить DRGR Bot'
     $s2.Save()
 
     Write-Host "  OK  Ярлыки созданы на Рабочем столе: 'DRGR Bot.lnk' и 'DRGR Bot - Obnovit.lnk'" -ForegroundColor Green
