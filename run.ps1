@@ -50,7 +50,7 @@ Write-OK "Найден: $pyver"
 Write-Step "Подтягивание обновлений из GitHub..."
 if (Get-Command git -ErrorAction SilentlyContinue) {
     git fetch origin main 2>&1 | Out-Null
-    git reset --hard origin/main 2>&1 | Out-Null
+    $resetOut = git reset --hard origin/main 2>&1
     if ($LASTEXITCODE -eq 0) {
         Write-OK "Обновление применено."
     } else {
