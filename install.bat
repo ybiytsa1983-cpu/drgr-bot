@@ -3,12 +3,12 @@ chcp 65001 >nul
 setlocal EnableDelayedExpansion
 
 :: ═══════════════════════════════════════════════════════════════════
-::  УСТАНОВИТЬ.bat  —  Первоначальная установка drgr-bot на Windows
+::  install.bat  —  Первоначальная установка drgr-bot на Windows
 ::  Запустить ОДИН РАЗ на чистом компьютере.
-::  Повторные обновления — через ОБНОВИТЬ.bat
+::  Повторные обновления — через update.bat
 :: ═══════════════════════════════════════════════════════════════════
 
-title drgr-bot — Установка
+title drgr-bot - Install
 
 echo.
 echo ╔══════════════════════════════════════════════╗
@@ -125,11 +125,14 @@ if exist "%SCRIPT_DIR%bot.py" (
     :: ── Создаём ярлык на Рабочем столе ──────────────────────────────────
     echo.
     echo  Создание ярлыка на Рабочем столе...
-    :: Предпочитаем start.bat (ASCII, работает всегда), иначе ЗАПУСТИТЬ.bat
+    :: install.bat — это ASCII-файл, start.bat тоже всегда есть в том же наборе.
+    :: На случай нестандартного layout: если start.bat нет, пробуем ЗАПУСТИТЬ.bat.
     if exist "%SCRIPT_DIR%start.bat" (
         set "LAUNCH_BAT=%SCRIPT_DIR%start.bat"
-    ) else (
+    ) else if exist "%SCRIPT_DIR%ЗАПУСТИТЬ.bat" (
         set "LAUNCH_BAT=%SCRIPT_DIR%ЗАПУСТИТЬ.bat"
+    ) else (
+        set "LAUNCH_BAT=%SCRIPT_DIR%bot.py"
     )
     set "SHORTCUT=%USERPROFILE%\Desktop\drgr-bot.lnk"
     powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
@@ -145,8 +148,8 @@ if exist "%SCRIPT_DIR%bot.py" (
     echo ║      Установка завершена! Бот запущен.       ║
     echo ╠══════════════════════════════════════════════╣
     echo ║  Ярлык "drgr-bot" добавлен на Рабочий стол  ║
-    echo ║  Для запуска: start.bat  или  ЗАПУСТИТЬ.bat  ║
-    echo ║  Для обновления: update.bat или ОБНОВИТЬ.bat ║
+    echo ║  Для запуска используйте start.bat       ║
+    echo ║  Для обновления используйте update.bat     ║
     echo ╚══════════════════════════════════════════════╝
 ) else (
     echo  [ОШИБКА] bot.py не найден в %SCRIPT_DIR%
