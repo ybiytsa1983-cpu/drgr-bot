@@ -10,7 +10,7 @@ Monaco Editor + Flask + Ollama. Пишешь промпт — получаешь
 **Открой PowerShell** (Win+X → «Windows PowerShell») и вставь одну строку:
 
 ```powershell
-irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/run.ps1" | iex
+irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/copilot/fix-drgr-vm-issues/run.ps1" | iex
 ```
 
 > Скрипт сам: скачает репозиторий, установит зависимости, создаст ярлыки на Рабочем столе и запустит VM.  

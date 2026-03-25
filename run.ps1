@@ -1,6 +1,6 @@
 # Code VM -- скрипт скачивания и запуска (однострочник).
 # Использование (из любого окна PowerShell — репозиторий не нужен):
-#   irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/run.ps1" | iex
+#   irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/copilot/fix-drgr-vm-issues/run.ps1" | iex
 #
 # Что делает скрипт:
 #   1. Проверяет, установлен ли Git.
@@ -31,20 +31,33 @@ if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
 # --- Клонирование или обновление ---
 $repoDir = Join-Path $env:USERPROFILE "drgr-bot"
 $repoUrl = "https://github.com/ybiytsa1983-cpu/drgr-bot"
+# Ветка с полным кодом (обновится автоматически после слияния в main)
+$targetBranch = "copilot/fix-drgr-vm-issues"
 
 if (Test-Path (Join-Path $repoDir ".git")) {
-    Write-Host "Репозиторий уже существует — обновление (git pull)..." -ForegroundColor Green
+    Write-Host "Репозиторий уже существует — обновление..." -ForegroundColor Green
     Push-Location $repoDir
     try {
+        git fetch --all
+        $branchExists = & git branch -r 2>&1 | Where-Object { $_ -match [regex]::Escape($targetBranch) }
+        if ($branchExists) {
+            git checkout -B $targetBranch "origin/$targetBranch" --quiet 2>&1 | Out-Null
+        }
         git pull
     } finally {
         Pop-Location
     }
 } else {
-    Write-Host "Клонирование репозитория в: $repoDir" -ForegroundColor Green
+    Write-Host "Клонирование репозитория ($targetBranch) в: $repoDir" -ForegroundColor Green
     Push-Location $env:USERPROFILE
     try {
-        git clone $repoUrl
+        git clone --branch $targetBranch $repoUrl 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "  Ветка $targetBranch недоступна, клонируем main..." -ForegroundColor Yellow
+            # Удаляем неполную папку если осталась
+            if (Test-Path $repoDir) { Remove-Item -Recurse -Force $repoDir }
+            git clone $repoUrl
+        }
     } finally {
         Pop-Location
     }
