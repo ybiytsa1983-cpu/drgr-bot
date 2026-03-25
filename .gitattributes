@@ -1,0 +1,22 @@
+# Normalize line endings: CRLF on Windows checkout, LF in the repo
+* text=auto
+
+# Force CRLF for Windows scripts
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+*.cmd text eol=crlf
+
+# Force LF for Python and other sources
+*.py  text eol=lf
+*.md  text eol=lf
+*.txt text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf
+
+# Binary files — no conversion
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary

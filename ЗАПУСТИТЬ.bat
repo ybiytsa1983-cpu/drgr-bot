@@ -48,6 +48,7 @@ if not exist "%SCRIPT_DIR%bot.py" (
 
 echo  Запуск bot.py...
 echo  Чтобы остановить бота - закройте это окно.
+echo  (Альтернатива для PowerShell: откройте PowerShell в этой папке и выполните  .\run.ps1)
 echo.
 python "%SCRIPT_DIR%bot.py"
 
