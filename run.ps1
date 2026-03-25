@@ -36,30 +36,19 @@ $targetBranch = "copilot/fix-drgr-vm-issues"
 
 if (Test-Path (Join-Path $repoDir ".git")) {
     Write-Host "Репозиторий уже существует — обновление..." -ForegroundColor Green
-    Push-Location $repoDir
-    try {
-        git fetch --all
-        $branchExists = & git branch -r 2>&1 | Where-Object { $_ -match [regex]::Escape($targetBranch) }
-        if ($branchExists) {
-            git checkout -B $targetBranch "origin/$targetBranch" --quiet 2>&1 | Out-Null
-        }
-        git pull
-    } finally {
-        Pop-Location
+    git -C $repoDir fetch --all
+    $branchExists = git -C $repoDir branch -r 2>&1 | Where-Object { $_ -match [regex]::Escape($targetBranch) }
+    if ($branchExists) {
+        git -C $repoDir checkout -B $targetBranch "origin/$targetBranch" --quiet 2>&1 | Out-Null
     }
+    git -C $repoDir pull
 } else {
     Write-Host "Клонирование репозитория ($targetBranch) в: $repoDir" -ForegroundColor Green
-    Push-Location $env:USERPROFILE
-    try {
-        git clone --branch $targetBranch $repoUrl 2>&1
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "  Ветка $targetBranch недоступна, клонируем main..." -ForegroundColor Yellow
-            # Удаляем неполную папку если осталась
-            if (Test-Path $repoDir) { Remove-Item -Recurse -Force $repoDir }
-            git clone $repoUrl
-        }
-    } finally {
-        Pop-Location
+    git clone --branch $targetBranch $repoUrl $repoDir 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "  Ветка $targetBranch недоступна, клонируем main..." -ForegroundColor Yellow
+        if (Test-Path $repoDir) { Remove-Item -Recurse -Force $repoDir }
+        git clone $repoUrl $repoDir
     }
 }
 
@@ -70,36 +59,28 @@ $installScript = Join-Path $repoDir "install.ps1"
 if (-not (Test-Path $installScript)) {
     Write-Host ""
     Write-Host "  Ветка main выглядит неполной — ищу полный код во всех ветках..." -ForegroundColor Yellow
-    Push-Location $repoDir
-    try {
-        # Загружаем все удалённые ветки (ошибки некритичны)
-        $fetchOutput = & git fetch --all 2>&1
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "  Предупреждение: git fetch завершился с ошибкой — пробую локальные ветки." -ForegroundColor Yellow
+    # Загружаем все удалённые ветки (ошибки некритичны)
+    git -C $repoDir fetch --all 2>&1 | Out-Null
+    $remoteBranches = git -C $repoDir branch -r 2>&1 |
+        Where-Object { $_ -notmatch 'HEAD' } |
+        ForEach-Object { $_.Trim() -replace '^origin/', '' }
+    $found = $false
+    foreach ($branch in $remoteBranches) {
+        if ($branch -eq 'main') { continue }   # main уже проверен
+        git -C $repoDir checkout -B $branch "origin/$branch" --quiet 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) { continue }   # ветка недоступна — пробуем следующую
+        if (Test-Path $installScript) {
+            Write-Host "  Полный код найден в ветке: $branch" -ForegroundColor Green
+            $found = $true
+            break
         }
-        $remoteBranches = & git branch -r 2>&1 |
-            Where-Object { $_ -notmatch 'HEAD' } |
-            ForEach-Object { $_.Trim() -replace '^origin/', '' }
-        $found = $false
-        foreach ($branch in $remoteBranches) {
-            if ($branch -eq 'main') { continue }   # main уже проверен
-            $checkoutOutput = & git checkout -B $branch "origin/$branch" --quiet 2>&1
-            if ($LASTEXITCODE -ne 0) { continue }   # ветка недоступна — пробуем следующую
-            if (Test-Path $installScript) {
-                Write-Host "  Полный код найден в ветке: $branch" -ForegroundColor Green
-                $found = $true
-                break
-            }
-        }
-        if (-not $found) {
-            Write-Host ""
-            Write-Host "  ОШИБКА: Не удалось найти install.ps1 ни в одной ветке." -ForegroundColor Red
-            Write-Host "  Попробуй ещё раз через несколько минут или зайди на:" -ForegroundColor Yellow
-            Write-Host "    https://github.com/ybiytsa1983-cpu/drgr-bot" -ForegroundColor Cyan
-            exit 1
-        }
-    } finally {
-        Pop-Location
+    }
+    if (-not $found) {
+        Write-Host ""
+        Write-Host "  ОШИБКА: Не удалось найти install.ps1 ни в одной ветке." -ForegroundColor Red
+        Write-Host "  Попробуй ещё раз через несколько минут или зайди на:" -ForegroundColor Yellow
+        Write-Host "    https://github.com/ybiytsa1983-cpu/drgr-bot" -ForegroundColor Cyan
+        exit 1
     }
 }
 
