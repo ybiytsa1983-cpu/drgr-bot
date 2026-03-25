@@ -81,12 +81,20 @@ HUGGINGFACE_API_KEY=hf_...
 
 ### Через PowerShell вручную
 
+Если вы уже **в PowerShell** (терминал открыт в папке бота):
+
 ```powershell
 # Запустить скрипт обновления (с автоматическим перезапуском бота)
-powershell -ExecutionPolicy Bypass -File update.ps1
+.\update.ps1
 
 # Запустить скрипт обновления БЕЗ перезапуска бота
-powershell -ExecutionPolicy Bypass -File update.ps1 -SkipRestart
+.\update.ps1 -SkipRestart
+```
+
+Если запускаете из **cmd.exe** или «Выполнить» (Win+R):
+
+```cmd
+powershell -ExecutionPolicy Bypass -File ".\update.ps1"
 ```
 
 > Если PowerShell не разрешает запуск скриптов, выполните один раз:
@@ -98,10 +106,10 @@ powershell -ExecutionPolicy Bypass -File update.ps1 -SkipRestart
 
 ## ▶️ Запуск бота
 
-Используйте ярлык **`drgr-bot`** на Рабочем столе (создаётся автоматически при установке), **или** дважды щёлкните **`ЗАПУСТИТЬ.bat`** в папке с ботом, **или** запустите PowerShell-скрипт:
+Используйте ярлык **`drgr-bot`** на Рабочем столе (создаётся автоматически при установке), **или** дважды щёлкните **`ЗАПУСТИТЬ.bat`** в папке с ботом, **или** выполните в PowerShell (открытом **в папке бота**):
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File ЗАПУСТИТЬ.ps1
+.\ЗАПУСТИТЬ.ps1
 ```
 
 Или просто:
@@ -150,5 +158,6 @@ drgr-bot/
 | `git` не найден | Установите git с https://git-scm.com/download/win |
 | `BOT_TOKEN` ошибка | Заполните `.env` — токен от @BotFather |
 | `HUGGINGFACE_API_KEY` ошибка | Заполните `.env` — ключ с huggingface.co/settings/tokens |
-| Скрипт .ps1 не запускается | Выполните: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` |
+| Скрипт .ps1 не запускается | Выполните один раз: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` |
+| `.ps1` не найден (`-File` ошибка) | Используйте `.\ЗАПУСТИТЬ.ps1` (с `.\`) когда уже в PowerShell |
 | Бот уже запущен (порт занят) | Закройте старое окно бота или перезагрузите компьютер |
