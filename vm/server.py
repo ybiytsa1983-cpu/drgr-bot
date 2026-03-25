@@ -354,21 +354,55 @@ def _autodiscover_ollama() -> None:
             return
         _OLLAMA_SCANNED = True
         _default_base = _OLLAMA_DEFAULT_BASE
+
+        def _accept(url: str) -> None:
+            """Mark url as the live Ollama endpoint."""
+            global OLLAMA_BASE, _OLLAMA_ALIVE  # noqa: PLW0603
+            prev = OLLAMA_BASE
+            OLLAMA_BASE = url
+            with _OLLAMA_ALIVE_LOCK:
+                _OLLAMA_ALIVE = True  # type: ignore[assignment]
+            if url != prev:
+                print(f"[Code VM] Ollama обнаружена на {url} (было: {prev})", flush=True)
+            elif url != _default_base:
+                print(
+                    f"[Code VM] Ollama найдена по адресу {url} "
+                    f"(нестандартный порт — сохраните в настройках: OLLAMA_HOST={url})",
+                    flush=True,
+                )
+
         # 1. Try the already-configured base URL first.
         try:
             r = _http.get(f"{OLLAMA_BASE}/api/tags", timeout=1)
             if r.status_code == 200:
-                with _OLLAMA_ALIVE_LOCK:
-                    _OLLAMA_ALIVE = True
-                if OLLAMA_BASE != _default_base:
-                    print(
-                        f"[Code VM] Ollama найдена по адресу {OLLAMA_BASE} "
-                        f"(нестандартный порт — сохраните в настройках: OLLAMA_HOST={OLLAMA_BASE})",
-                        flush=True,
-                    )
+                _accept(OLLAMA_BASE)
                 return  # configured URL is reachable — done
         except Exception:  # pylint: disable=broad-except
             pass
+
+        # 1b. On Windows, 'localhost' may resolve to ::1 (IPv6) while Ollama
+        #     listens on 127.0.0.1 only — or vice versa.  Try the IPv4/name
+        #     equivalent of the configured URL immediately so the very first
+        #     /health call after startup already sees Ollama as available.
+        if "localhost" in OLLAMA_BASE:
+            _alt = OLLAMA_BASE.replace("localhost", "127.0.0.1")
+            try:
+                r = _http.get(f"{_alt}/api/tags", timeout=1)
+                if r.status_code == 200:
+                    _accept(_alt)
+                    return
+            except Exception:  # pylint: disable=broad-except
+                pass
+        elif "127.0.0.1" in OLLAMA_BASE:
+            _alt = OLLAMA_BASE.replace("127.0.0.1", "localhost")
+            try:
+                r = _http.get(f"{_alt}/api/tags", timeout=1)
+                if r.status_code == 200:
+                    _accept(_alt)
+                    return
+            except Exception:  # pylint: disable=broad-except
+                pass
+
         # 2. Fall back: scan 127.0.0.1 first (avoids IPv6 issues on Windows),
         #    then localhost, on ports 11434-11444.
         #    Skip _OLLAMA_RELAY_PORT to avoid mistaking our own CORS relay for
@@ -381,16 +415,7 @@ def _autodiscover_ollama() -> None:
                 try:
                     r = _http.get(f"{url}/api/tags", timeout=1)
                     if r.status_code == 200:
-                        prev = OLLAMA_BASE
-                        OLLAMA_BASE = url   # update global for all subsequent requests
-                        with _OLLAMA_ALIVE_LOCK:
-                            _OLLAMA_ALIVE = True
-                        print(
-                            f"[Code VM] Ollama обнаружена на {url}"
-                            + (" (нестандартный порт)" if port != 11434 else "")
-                            + (f" — было: {prev}" if prev != url else ""),
-                            flush=True,
-                        )
+                        _accept(url)
                         return
                 except Exception:  # pylint: disable=broad-except
                     continue

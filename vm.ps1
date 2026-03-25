@@ -257,26 +257,52 @@ Start-Process -FilePath $python `
     -RedirectStandardError  $errPath `
     -NoNewWindow
 
-# -- Wait until server responds (up to 20 s) -----------------------------------
+# -- Wait until server responds (up to 30 s) -----------------------------------
 Write-Host "[Code VM] Waiting for server to be ready..." -ForegroundColor Cyan
 $ready = $false
 $pingScheme = if ($useHttps) { "https" } else { "http" }
-# Disable SSL certificate validation ONCE before the poll loop.
-# A bare scriptblock { $true } is not a valid RemoteCertificateValidationCallback
-# delegate in Windows PowerShell 5.1 — use the properly-typed cast instead.
+# Disable SSL certificate validation for self-signed cert health check.
+# PS6+ (PowerShell Core / PS7): Invoke-WebRequest has -SkipCertificateCheck.
+# PS5.1 (.NET Framework): use ICertificatePolicy via Add-Type (more reliable
+#   than the RemoteCertificateValidationCallback scriptblock cast).
 if ($useHttps) {
-    try {
-        [System.Net.ServicePointManager]::ServerCertificateValidationCallback =
-            [System.Net.Security.RemoteCertificateValidationCallback]{ param($s,$c,$ch,$e) $true }
-    } catch { }
+    if ($PSVersionTable.PSVersion.Major -lt 6) {
+        # PS5.1 path — Add-Type class is idempotent (ignored if already defined)
+        try {
+            Add-Type -TypeDefinition @"
+using System.Net;
+using System.Security.Cryptography.X509Certificates;
+public class _DrgrTrustAll : ICertificatePolicy {
+    public bool CheckValidationResult(ServicePoint sp, X509Certificate cert,
+        WebRequest req, int prob) { return true; }
 }
-for ($i = 0; $i -lt 20; $i++) {
+"@ -ErrorAction SilentlyContinue
+            [System.Net.ServicePointManager]::CertificatePolicy = New-Object _DrgrTrustAll
+        } catch { }
+        try {
+            [System.Net.ServicePointManager]::ServerCertificateValidationCallback =
+                [System.Net.Security.RemoteCertificateValidationCallback]{ param($s,$c,$ch,$e) $true }
+        } catch { }
+    }
+    # PS7 path: -SkipCertificateCheck is added per-request in the loop below.
+}
+for ($i = 0; $i -lt 30; $i++) {
     Start-Sleep -Seconds 1
     try {
         # Use /ping (instant, no Ollama query) so the check never races against
         # the 3-second Ollama timeout inside /health.
         # Use 127.0.0.1 (not localhost) to avoid IPv6 resolution on Windows.
-        $null = Invoke-WebRequest -Uri "${pingScheme}://127.0.0.1:$Port/ping" -UseBasicParsing -TimeoutSec 10
+        $iwrParams = @{
+            Uri            = "${pingScheme}://127.0.0.1:$Port/ping"
+            UseBasicParsing = $true
+            TimeoutSec     = 10
+        }
+        # PS6+ supports -SkipCertificateCheck natively (ServicePointManager
+        # is ignored by the HttpClient-based Invoke-WebRequest in PS7+).
+        if ($useHttps -and $PSVersionTable.PSVersion.Major -ge 6) {
+            $iwrParams['SkipCertificateCheck'] = $true
+        }
+        $null = Invoke-WebRequest @iwrParams
         $ready = $true
         break
     } catch [System.Net.WebException] {
@@ -288,11 +314,22 @@ for ($i = 0; $i -lt 20; $i++) {
             $wStatus -eq [System.Net.WebExceptionStatus]::SecureChannelFailure) {
             $ready = $true; break
         }
-    } catch { }
+    } catch {
+        # For non-WebException SSL/auth errors (e.g. AuthenticationException in PS7
+        # when -SkipCertificateCheck is not supported), fall back to a raw TCP
+        # port check so a running server is never incorrectly reported as failed.
+        try {
+            $tcp = New-Object System.Net.Sockets.TcpClient
+            $tcp.Connect('127.0.0.1', $Port)
+            if ($tcp.Connected) { $ready = $true }
+            $tcp.Close()
+            if ($ready) { break }
+        } catch { }
+    }
 }
 if (-not $ready) {
     Write-Host ""
-    Write-Host "[Code VM] ERROR: server did not start after 20 seconds!" -ForegroundColor Red
+    Write-Host "[Code VM] ERROR: server did not start after 30 seconds!" -ForegroundColor Red
     Write-Host ""
     # Show combined log and error output
     $combined = @()
@@ -382,9 +419,16 @@ $scheme = if ($useHttps) { "https" } else { "http" }
 $lanReachable = $false
 if ($localIP) {
     try {
-        if ($useHttps) { [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true } }
-        $r = Invoke-WebRequest -Uri "${scheme}://${localIP}:${Port}/ping" `
-                -UseBasicParsing -TimeoutSec 3 -ErrorAction SilentlyContinue
+        $lanIwrParams = @{
+            Uri            = "${scheme}://${localIP}:${Port}/ping"
+            UseBasicParsing = $true
+            TimeoutSec     = 3
+            ErrorAction    = 'SilentlyContinue'
+        }
+        if ($useHttps -and $PSVersionTable.PSVersion.Major -ge 6) {
+            $lanIwrParams['SkipCertificateCheck'] = $true
+        }
+        $r = Invoke-WebRequest @lanIwrParams
         if ($r -and $r.StatusCode -eq 200) { $lanReachable = $true }
     } catch [System.Net.WebException] {
         if ($_.Exception.Response -ne $null) { $lanReachable = $true }
