@@ -125,6 +125,10 @@ def _bot_start() -> bool:
 def index():
     return render_template('index.html')
 
+@app.route('/health', methods=['GET'])
+def health():
+    return jsonify({'status': 'ok', 'version': '1.0'})
+
 # ── Settings ───────────────────────────────────────────────────────────────────
 @app.route('/api/settings', methods=['GET'])
 def settings_get():
