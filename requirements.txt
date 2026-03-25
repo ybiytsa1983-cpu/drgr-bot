@@ -1,19 +1,22 @@
-# Telegram bot
-aiogram==3.0.0
-python-dotenv
-aiofiles
-
-# Media processing
-pillow
-moviepy
-
-# HTTP / search
-requests
+# Core bot framework
+aiogram==3.7.0
+# HTTP (async + sync)
+aiohttp>=3.9.0
+requests>=2.31.0
+# Async file I/O
+aiofiles>=23.0.0
+# Environment variables
+python-dotenv>=1.0.0
+# Web search — ddgs is the actively maintained package (v7+ API); duckduckgo-search is the legacy name
+ddgs>=7.0.0
 duckduckgo-search>=6.0.0
-
-# DRGR VM server
-flask>=3.0.0
-werkzeug>=3.0.0
-
-# Hugging Face (optional)
-huggingface_hub
+# Browser automation & screenshots
+playwright>=1.44.0
+# Image processing (Pillow kept for future image effects)
+pillow>=10.0.0
+# Flask VM server
+flask>=2.3.0
+# HTTPS self-signed cert generation (used by vm.ps1 for LAN access)
+pyopenssl>=23.0.0
+# BeautifulSoup for HTML parsing (used by scraper challenge)
+beautifulsoup4>=4.12.0

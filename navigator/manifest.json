@@ -1,0 +1,23 @@
+{
+  "name": "DRGRNav — Навигатор",
+  "short_name": "DRGRNav",
+  "description": "Навигатор на базе OpenStreetMap с поддержкой офлайн-режима и GPS",
+  "start_url": "/navigator/",
+  "display": "fullscreen",
+  "orientation": "portrait",
+  "background_color": "#1a1a2e",
+  "theme_color": "#0f3460",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' fill='%230f3460'/%3E%3Ctext x='50%25' y='55%25' text-anchor='middle' dominant-baseline='middle' font-size='120' fill='%2300d4ff'%3E%F0%9F%A7%AD%3C/text%3E%3C/svg%3E",
+      "sizes": "192x192",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' fill='%230f3460'/%3E%3Ctext x='50%25' y='55%25' text-anchor='middle' dominant-baseline='middle' font-size='320' fill='%2300d4ff'%3E%F0%9F%A7%AD%3C/text%3E%3C/svg%3E",
+      "sizes": "512x512",
+      "type": "image/svg+xml"
+    }
+  ],
+  "categories": ["navigation", "travel", "utilities"]
+}

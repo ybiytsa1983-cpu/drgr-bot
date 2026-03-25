@@ -1,132 +1,107 @@
+<# 2>nul
 @echo off
-chcp 65001 >nul
-setlocal EnableDelayedExpansion
-
-:: ═══════════════════════════════════════════════════════════════════
-::  ОБНОВИТЬ.bat  —  Запускает update.ps1, спрашивает подтверждение,
-::                    при отказе откатывает, при согласии перезапускает бот.
-:: ═══════════════════════════════════════════════════════════════════
-
-title drgr-bot — Обновление
-
+title ОБНОВИТЬ - скачать новые файлы
 echo.
-echo ╔══════════════════════════════════════════════╗
-echo ║      drgr-bot  —  Мастер обновления          ║
-echo ╚══════════════════════════════════════════════╝
+echo  =====================================================
+echo   ОБНОВИТЬ - скачать и установить новые файлы
+echo  =====================================================
 echo.
 
-:: ── Определяем папку скрипта ────────────────────────────────────────
-set "SCRIPT_DIR=%~dp0"
-cd /d "%SCRIPT_DIR%"
+REM Определяем директорию скрипта
+set "REPO=%~dp0"
+if "%REPO:~-1%"=="\" set "REPO=%REPO:~0,-1%"
 
-:: ── Сохраняем текущий хеш ДО обновления ─────────────────────────────
-for /f "delims=" %%H in ('git rev-parse HEAD 2^>nul') do set "OLD_HASH=%%H"
-if "%OLD_HASH%"=="" (
-    echo  [ОШИБКА] Не удалось получить текущий коммит.
-    echo           Убедитесь, что git установлен и папка является репозиторием.
-    pause
-    exit /b 1
-)
-echo  Текущий коммит: %OLD_HASH%
-echo.
-
-:: ── Запускаем update.ps1 (без автоперезапуска — мы сделаем его сами) ──
-echo  Запуск update.ps1 — показ прогресса обновления...
-echo  ─────────────────────────────────────────────────
-powershell.exe -ExecutionPolicy Bypass -NoProfile ^
-    -File "%SCRIPT_DIR%update.ps1" -SkipRestart
-
-set "UPDATE_EXIT=%errorlevel%"
-echo  ─────────────────────────────────────────────────
-
-if %UPDATE_EXIT% NEQ 0 (
-    echo.
-    echo  [ОШИБКА] Обновление завершилось с кодом %UPDATE_EXIT%.
-    echo           Откат был выполнен автоматически скриптом update.ps1.
-    echo.
-    pause
-    exit /b %UPDATE_EXIT%
+REM Проверяем наличие update.ps1 рядом со скриптом
+if exist "%REPO%\update.ps1" (
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%REPO%\update.ps1"
+    exit /b
 )
 
-:: ── Получаем новый хеш ───────────────────────────────────────────────
-for /f "delims=" %%H in ('git rev-parse HEAD 2^>nul') do set "NEW_HASH=%%H"
-
-echo.
-echo ╔══════════════════════════════════════════════╗
-echo ║        Обновление выполнено успешно!         ║
-echo ╠══════════════════════════════════════════════╣
-echo ║  Старый коммит : %OLD_HASH:~0,12%...
-echo ║  Новый коммит  : %NEW_HASH:~0,12%...
-echo ╚══════════════════════════════════════════════╝
-echo.
-
-:: ── Спрашиваем пользователя ──────────────────────────────────────────
-:ASK
-set "CHOICE="
-set /p "CHOICE= Вам нравится обновление? (да/нет): "
-
-if /i "!CHOICE!"=="да"  goto :ACCEPT
-if /i "!CHOICE!"=="yes" goto :ACCEPT
-if /i "!CHOICE!"=="д"   goto :ACCEPT
-if /i "!CHOICE!"=="y"   goto :ACCEPT
-if /i "!CHOICE!"=="нет" goto :REJECT
-if /i "!CHOICE!"=="no"  goto :REJECT
-if /i "!CHOICE!"=="н"   goto :REJECT
-if /i "!CHOICE!"=="n"   goto :REJECT
-
-echo  Пожалуйста, введите "да" или "нет".
-goto :ASK
-
-:: ── Пользователь доволен — запускаем бот ─────────────────────────────
-:ACCEPT
-echo.
-echo  Отлично! Запускаем bot.py...
-call :STOP_BOT
-timeout /t 2 /nobreak >nul
-call :START_BOT
-echo.
-echo  Бот запущен. Окно закроется через 5 секунд.
-timeout /t 5 /nobreak >nul
-exit /b 0
-
-:: ── Пользователь недоволен — откат и перезапуск ──────────────────────
-:REJECT
-echo.
-echo  Выполняется откат к предыдущей версии (%OLD_HASH:~0,12%)...
-git reset --hard %OLD_HASH%
-if %errorlevel% NEQ 0 (
-    echo  [ОШИБКА] Откат не удался!
-    pause
-    exit /b 1
+REM update.ps1 не рядом — ищем в стандартных папках репозитория
+for %%D in (
+    "%USERPROFILE%\drgr-bot"
+    "%USERPROFILE%\Documents\drgr-bot"
+    "%USERPROFILE%\Desktop\drgr-bot"
+    "%USERPROFILE%\Downloads\drgr-bot"
+    "%USERPROFILE%\projects\drgr-bot"
+    "%USERPROFILE%\Projects\drgr-bot"
+    "%USERPROFILE%\code\drgr-bot"
+    "%USERPROFILE%\Code\drgr-bot"
+    "%USERPROFILE%\repos\drgr-bot"
+    "%USERPROFILE%\Repos\drgr-bot"
+    "C:\drgr-bot"
+    "C:\projects\drgr-bot"
+    "C:\Projects\drgr-bot"
+    "C:\code\drgr-bot"
+    "C:\Code\drgr-bot"
+    "D:\drgr-bot"
+    "D:\projects\drgr-bot"
+    "D:\Projects\drgr-bot"
+    "D:\code\drgr-bot"
+    "D:\Code\drgr-bot"
+) do (
+    if exist "%%~D\update.ps1" (
+        powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%%~D\update.ps1"
+        exit /b
+    )
 )
-echo  Откат выполнен.
-echo.
-echo  Восстанавливаем зависимости...
-pip install -r requirements.txt
-if %errorlevel% NEQ 0 (
-    echo  [ПРЕДУПРЕЖДЕНИЕ] pip install завершился с ошибкой при откате.
-)
-echo.
-echo  Запускаем bot.py с предыдущей версией...
-call :STOP_BOT
-timeout /t 2 /nobreak >nul
-call :START_BOT
-echo.
-echo  Бот запущен с предыдущей версией. Окно закроется через 5 секунд.
-timeout /t 5 /nobreak >nul
-exit /b 0
 
-:: ── Подпрограмма: остановить bot.py ─────────────────────────────────
-:STOP_BOT
-powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
-    "Get-CimInstance Win32_Process -Filter 'Name LIKE ''python%%''' | Where-Object { $_.CommandLine -match 'bot\.py' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }" >nul 2>&1
-goto :EOF
-
-:: ── Подпрограмма: запустить bot.py ──────────────────────────────────
-:START_BOT
-if exist "%SCRIPT_DIR%bot.py" (
-    start "drgr-bot" python "%SCRIPT_DIR%bot.py"
-) else (
-    echo  [ПРЕДУПРЕЖДЕНИЕ] bot.py не найден в %SCRIPT_DIR%
-)
-goto :EOF
+REM update.ps1 не найден — запускаем онлайн через irm
+REM Пробуем main ветку, если 404 — используем PR ветку
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "try { irm 'https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/update.ps1' | iex } catch { irm 'https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/copilot/create-monaco-code-generator/update.ps1' | iex }"
+exit /b
+#>
+# PowerShell path — runs when the .bat is executed via PowerShell directly
+$repoDir = if ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
+$updatePs1 = Join-Path $repoDir 'update.ps1'
+if (Test-Path $updatePs1) {
+    & $updatePs1
+} else {
+    # Search common repo locations
+    $found = $false
+    foreach ($d in @(
+        "$env:USERPROFILE\drgr-bot",
+        "$env:USERPROFILE\Documents\drgr-bot",
+        "$env:USERPROFILE\Desktop\drgr-bot",
+        "$env:USERPROFILE\Downloads\drgr-bot",
+        "$env:USERPROFILE\projects\drgr-bot",
+        "$env:USERPROFILE\Projects\drgr-bot",
+        "$env:USERPROFILE\code\drgr-bot",
+        "$env:USERPROFILE\Code\drgr-bot",
+        "$env:USERPROFILE\repos\drgr-bot",
+        "$env:USERPROFILE\Repos\drgr-bot",
+        "C:\drgr-bot",
+        "C:\projects\drgr-bot",
+        "C:\Projects\drgr-bot",
+        "C:\code\drgr-bot",
+        "C:\Code\drgr-bot",
+        "D:\drgr-bot",
+        "D:\projects\drgr-bot",
+        "D:\Projects\drgr-bot",
+        "D:\code\drgr-bot",
+        "D:\Code\drgr-bot"
+    )) {
+        $p = Join-Path $d 'update.ps1'
+        if (Test-Path $p) { & $p; $found = $true; break }
+    }
+    if (-not $found) {
+        # Scan C: and D: as last resort before going online (depth limited for speed)
+        foreach ($root in @('C:\', 'D:\')) {
+            Get-ChildItem $root -Filter 'drgr-bot' -Directory -Recurse -Depth 5 -ErrorAction SilentlyContinue | ForEach-Object {
+                if (-not $found) {
+                    $p = Join-Path $_.FullName 'update.ps1'
+                    if (Test-Path $p) { & $p; $found = $true }
+                }
+            }
+            if ($found) { break }
+        }
+    }
+    if (-not $found) {
+        # Fall back to online version — try main branch, then PR branch
+        try {
+            irm 'https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/update.ps1' | iex
+        } catch {
+            irm 'https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/copilot/create-monaco-code-generator/update.ps1' | iex
+        }
+    }
+}

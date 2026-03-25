@@ -1,22 +1,18 @@
-# Normalize line endings: CRLF on Windows checkout, LF in the repo
-* text=auto
-
-# Force CRLF for Windows scripts
+# Ensure Windows batch files always use CRLF line endings
 *.bat text eol=crlf
-*.ps1 text eol=crlf
 *.cmd text eol=crlf
 
-# Force LF for Python and other sources
-*.py  text eol=lf
-*.md  text eol=lf
-*.txt text eol=lf
-*.yml text eol=lf
-*.yaml text eol=lf
-*.json text eol=lf
+# PowerShell scripts: UTF-8 with BOM, CRLF (handled by editors; keep as-is)
+*.ps1 text eol=crlf
 
-# Binary files — no conversion
-*.png  binary
-*.jpg  binary
-*.jpeg binary
-*.gif  binary
-*.ico  binary
+# Shell scripts: LF
+*.sh text eol=lf
+
+# Python / other text files: auto
+*.py text=auto
+*.txt text=auto
+*.md text=auto
+*.json text=auto
+*.html text=auto
+*.css text=auto
+*.js text=auto

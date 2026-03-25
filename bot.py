@@ -1,720 +1,3979 @@
+"""
+AI Research Agent — Telegram bot that autonomously searches the web,
+takes screenshots, analyzes content with Ollama AI, replies with full
+articles (text + screenshots + HTML + sources), and logs every action
+to the VM self-learning store so the VM can constantly improve itself.
+"""
+
+import asyncio
+import base64
+import hashlib
+import io
+import json
+import logging
 import os
 import re
-import asyncio
-import logging
+import time
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+from urllib.parse import quote_plus
+
 import aiofiles
-from typing import List, Dict, Optional
-from collections import defaultdict, deque
-import urllib.request
-import urllib.parse
-from urllib.parse import urlparse
+import aiohttp
 from dotenv import load_dotenv
-from PIL import Image, ImageFilter, ImageEnhance, ImageSequence
-from moviepy.editor import VideoFileClip
 
-# Библиотеки aiogram
-from aiogram import Bot, Dispatcher, types, F
-from aiogram.filters import Command
-from aiogram.utils.keyboard import InlineKeyboardBuilder
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
+from aiogram import Bot, Dispatcher, F, Router
+from aiogram.filters import Command, CommandStart
+from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.types import BotCommand, FSInputFile, Message
 
-# Библиотека Hugging Face
-from huggingface_hub import InferenceClient
+try:
+    from playwright.async_api import async_playwright
+    from playwright.async_api import TimeoutError as PlaywrightTimeout
+    PLAYWRIGHT_AVAILABLE = True
+except ImportError:
+    PLAYWRIGHT_AVAILABLE = False
 
-# DuckDuckGo поиск
-from duckduckgo_search import DDGS
+try:
+    # Try the new package name first, fall back to the old compatibility shim
+    try:
+        from ddgs import DDGS
+    except ImportError:
+        from duckduckgo_search import DDGS  # type: ignore[no-redef]
+    DDG_AVAILABLE = True
+except ImportError:
+    DDG_AVAILABLE = False
 
-# Загрузка переменных окружения
 load_dotenv()
 
-# Получение токенов и настроек
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-HUGGINGFACE_API_KEY = os.getenv("HUGGINGFACE_API_KEY")
-
 if not BOT_TOKEN:
-    raise ValueError("Добавьте BOT_TOKEN в .env файл.")
-if not HUGGINGFACE_API_KEY:
-    raise ValueError("Добавьте HUGGINGFACE_API_KEY в .env файл.")
+    raise SystemExit(
+        "BOT_TOKEN не задан. Укажи токен в .env файле или через настройки VM на http://localhost:5000/"
+    )
 
-# Директории
-PHOTOS_DIR = os.getenv("PHOTOS_DIR", "photos")
-VIDEOS_DIR = os.getenv("VIDEOS_DIR", "videos")
-GALLERY_DIR = os.getenv("GALLERY_DIR", "gallery")
-FRAME_DIR = os.getenv("FRAME_DIR", "frames")
-COLLAGE_DIR = os.getenv("COLLAGE_DIR", "collages")
-FRAME_OVERLAY_DIR = os.getenv("FRAME_OVERLAY_DIR", "frame_overlays")
-LOG_FILE = os.getenv("LOG_FILE", "actions.log")
+OLLAMA_BASE        = os.getenv("OLLAMA_HOST",        "http://localhost:11434")
+VM_BASE            = os.getenv("VM_BASE",            "http://localhost:5000")
+OLLAMA_MODEL       = os.getenv("OLLAMA_MODEL",       "llama2")
+MAX_SEARCH_RESULTS = int(os.getenv("MAX_SEARCH_RESULTS", "5"))
+MAX_SCREENSHOTS    = int(os.getenv("MAX_SCREENSHOTS",    "2"))
 
-# Числовые настройки
-MAX_SIZE_MB = int(os.getenv("MAX_SIZE_MB", 15))
-MAX_COMMENTS = int(os.getenv("MAX_COMMENTS", 20))
+SCREENSHOTS_DIR = Path(os.getenv("SCREENSHOTS_DIR", "screenshots"))
+ARTICLES_DIR    = Path(os.getenv("ARTICLES_DIR",    "articles"))
+LOG_FILE        = os.getenv("LOG_FILE", "bot.log")
 
-# Создание директорий
-for d in [PHOTOS_DIR, VIDEOS_DIR, GALLERY_DIR, FRAME_DIR, COLLAGE_DIR, FRAME_OVERLAY_DIR]:
-    os.makedirs(d, exist_ok=True)
+SCREENSHOTS_DIR.mkdir(exist_ok=True)
+ARTICLES_DIR.mkdir(exist_ok=True)
 
-# Инициализация клиента Hugging Face
-client = InferenceClient(api_key=HUGGINGFACE_API_KEY)
+# ---------------------------------------------------------------------------
+# Reusable MarkdownV2 fragments
+# ---------------------------------------------------------------------------
 
-# Логирование
+_MD_INSTALL_CMD = (
+    "*Установка и запуск VM \\(PowerShell, Win\\+X → Windows PowerShell\\):*\n"
+    "`irm \"https://raw.githubusercontent.com/ybiytsa1983\\-cpu/drgr\\-bot/main/run\\.ps1\" | iex`"
+)
+
+# Raw PowerShell one-liner for the update command (no label, no MarkdownV2 escaping).
+_UPDATE_PS1_CMD = (
+    "irm 'https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/update.ps1' | iex"
+)
+
+_MD_UPDATE_CMD = (
+    "*⬇ Обновить \\(PowerShell, Win\\+X → Windows PowerShell\\):*\n"
+    f"`{_UPDATE_PS1_CMD}`"
+)
+
+_MD_START_CMD = (
+    "*▶️ Запуск VM:*\n"
+    "`powershell \\-ExecutionPolicy Bypass \\-File "
+    "\"$env:USERPROFILE\\\\drgr\\-bot\\\\start\\.ps1\"`"
+)
+
+# Plain-text versions (no MarkdownV2 escaping) for fallback messages
+_TXT_INSTALL_CMD = (
+    "🚀 Установка (PowerShell, Win+X → Windows PowerShell):\n"
+    'irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/run.ps1" | iex'
+)
+_TXT_UPDATE_CMD = (
+    "⬇ Обновить (PowerShell, Win+X → Windows PowerShell):\n"
+    + _UPDATE_PS1_CMD
+)
+_TXT_START_CMD = (
+    "▶ Запуск VM:\n"
+    'powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\\drgr-bot\\start.ps1"'
+)
+
+_MD_WEB_URL = f"`{VM_BASE}/`"
+
 logging.basicConfig(
     level=logging.INFO,
-    filename=LOG_FILE,
-    filemode="a",
     format="%(asctime)s | %(levelname)s | %(message)s",
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler(LOG_FILE, encoding="utf-8"),
+    ],
 )
-logger = logging.getLogger("FSMMediaBot")
+logger = logging.getLogger("AIResearchBot")
 
-# Базовые данные
-EFFECTS = ["blur", "sharpen", "bw", "brightness", "contrast", "pixelate", "glitch", "sepia"]
-gallery_db: Dict[str, Dict] = defaultdict(lambda: {"likes": 0, "comments": deque(maxlen=MAX_COMMENTS)})
-user_last_media: Dict[int, str] = {}
+# ---------------------------------------------------------------------------
+# Bot & dispatcher
+# ---------------------------------------------------------------------------
 
-# FSM состояния
-class MediaStates(StatesGroup):
-    waiting_for_frame = State()
-    waiting_for_collage_photos = State()
-    waiting_for_video_trim_params = State()
-    waiting_for_video_file = State()
-
-# --- ФУНКЦИИ ОБРАБОТКИ ИЗОБРАЖЕНИЙ ---
-def is_valid_file_size(file_size: int) -> bool:
-    return file_size <= MAX_SIZE_MB * 1024 * 1024
-
-def apply_effect(image: Image.Image, effect: str) -> Image.Image:
-    if effect == "blur":
-        return image.filter(ImageFilter.BLUR)
-    if effect == "sharpen":
-        enhancer = ImageEnhance.Sharpness(image)
-        return enhancer.enhance(2.0)
-    if effect == "bw":
-        return image.convert("L").convert("RGB")
-    if effect == "brightness":
-        enhancer = ImageEnhance.Brightness(image)
-        return enhancer.enhance(1.5)
-    if effect == "contrast":
-        enhancer = ImageEnhance.Contrast(image)
-        return enhancer.enhance(1.5)
-    if effect == "pixelate":
-        w, h = image.size
-        small = image.resize((max(1, w // 16), max(1, h // 16)), Image.NEAREST)
-        return small.resize((w, h), Image.NEAREST)
-    if effect == "glitch":
-        data = list(image.getdata())
-        import random
-        random.shuffle(data)
-        img = Image.new(image.mode, image.size)
-        img.putdata(data)
-        return img
-    if effect == "sepia":
-        width, height = image.size
-        img = image.copy()
-        pixels = img.load()
-        for x in range(width):
-            for y in range(height):
-                r, g, b = pixels[x, y]
-                nr = min(int(r * 0.393 + g * 0.769 + b * 0.189), 255)
-                ng = min(int(r * 0.349 + g * 0.686 + b * 0.168), 255)
-                nb = min(int(r * 0.272 + g * 0.534 + b * 0.131), 255)
-                pixels[x, y] = (nr, ng, nb)
-        return img
-    raise ValueError(f"Unknown effect: {effect}")
-
-def add_frame_to_photo(base_path: str, frame_path: str, output_path: str) -> None:
-    base = Image.open(base_path).convert("RGBA")
-    frame = Image.open(frame_path).convert("RGBA").resize(base.size)
-    combined = Image.alpha_composite(base, frame)
-    combined.convert("RGB").save(output_path)
-
-def create_collage_from_paths(paths: List[str], output_path: str, cols: int = 2, thumb_size: tuple = None) -> None:
-    images = [Image.open(p).convert("RGBA") for p in paths]
-    if not images:
-        raise ValueError("No images for collage")
-    if thumb_size is None:
-        thumb_size = images[0].size
-    w, h = thumb_size
-    cols = min(cols, max(1, len(images)))
-    rows = (len(images) + cols - 1) // cols
-    collage_w = cols * w
-    collage_h = rows * h
-    collage = Image.new("RGBA", (collage_w, collage_h), (255, 255, 255, 0))
-    for idx, im in enumerate(images):
-        im = im.resize((w, h))
-        x = (idx % cols) * w
-        y = (idx // cols) * h
-        collage.paste(im, (x, y))
-    collage.convert("RGB").save(output_path)
-
-# --- DuckDuckGo ПОИСК ---
-
-# Домены с низким качеством/нерелевантным контентом, которые фильтруются
-_DDG_BLACKLIST_DOMAINS: List[str] = [
-    "mk.ru", "aif.ru", "kp.ru", "life.ru",
-    "tvzvezda.ru", "ren.tv", "ntv.ru", "1tv.ru",
-    "vesti.ru", "riafan.ru", "tsargrad.tv",
-]
-
-# Предпочтительные домены: Википедия, официальные сайты, технические ресурсы
-_DDG_PREFERRED_DOMAINS: List[str] = [
-    "wikipedia.org", "stackoverflow.com", "github.com",
-    "docs.python.org", "developer.mozilla.org", "arxiv.org",
-    "habr.com", "medium.com", "dev.to", "geeksforgeeks.org",
-    "docs.microsoft.com", "learn.microsoft.com",
-    "docs.aws.amazon.com", "cloud.google.com",
-    "pytorch.org", "tensorflow.org", "scikit-learn.org",
-]
-
-_DDG_MAX_FETCH = 20       # Сколько результатов запрашивать у DDG
-_DDG_MAX_PER_DOMAIN = 2   # Максимум результатов с одного домена
-_DDG_FINAL_COUNT = 8      # Итоговое количество результатов
+bot    = Bot(token=BOT_TOKEN)
+dp     = Dispatcher(storage=MemoryStorage())
+router = Router()
+dp.include_router(router)
 
 
-def _ddg_domain(url: str) -> str:
-    """Извлечь корневой домен из URL."""
-    try:
-        host = urlparse(url).netloc.lower()
-        if host.startswith("www."):
-            host = host[4:]
-        return host
-    except Exception:
-        return ""
+# ===========================================================================
+# ACTION LOGGER
+# Every significant agent action is shipped to POST /agent/log on the VM so
+# server.py can persist it and use it for self-improvement / retraining.
+# ===========================================================================
 
+class ActionLogger:
+    """Sends structured action records to the VM self-learning store."""
 
-def _ddg_relevance_score(query: str, title: str, body: str) -> float:
-    """
-    Вычислить оценку тематической релевантности результата поиска.
-    Возвращает число от 0.0 до 1.0.
-    """
-    query_tokens = set(re.findall(r"\w+", query.lower()))
-    if not query_tokens:
-        return 0.0
-    text_tokens = set(re.findall(r"\w+", (title + " " + body).lower()))
-    matched = query_tokens & text_tokens
-    return len(matched) / len(query_tokens)
+    def __init__(self, vm_base: str) -> None:
+        self._base = vm_base.rstrip("/")
 
+    async def log(
+        self,
+        action_type: str,
+        input_data: Dict[str, Any],
+        output_data: Dict[str, Any],
+        success: bool,
+        duration_ms: int = 0,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        record = {
+            "timestamp":   time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "action_type": action_type,
+            "input":       input_data,
+            "output":      output_data,
+            "success":     success,
+            "duration_ms": duration_ms,
+            "metadata":    metadata or {},
+        }
+        try:
+            async with aiohttp.ClientSession() as session:
+                await session.post(
+                    f"{self._base}/agent/log",
+                    json=record,
+                    timeout=aiohttp.ClientTimeout(total=5),
+                )
+        except Exception as exc:
+            logger.debug("ActionLogger.log skipped: %s", exc)
 
-def _ddg_format_html(query: str, results: List[Dict]) -> str:
-    """Сформировать HTML-таблицу результатов поиска."""
-    if not results:
-        return "<b>Ничего не найдено.</b>"
-
-    rows = ""
-    for i, r in enumerate(results, 1):
-        title = r.get("title", "—")
-        url = r.get("href", "#")
-        body = r.get("body", "")
-        domain = _ddg_domain(url)
-        score = r.get("_score", 0.0)
-        stars = "★" * round(score * 5) + "☆" * (5 - round(score * 5))
-
-        safe_title = title.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-        safe_body = body[:160].replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-        if len(body) > 160:
-            safe_body += "…"
-
-        rows += (
-            f"<tr>"
-            f"<td><b>{i}</b></td>"
-            f"<td><a href='{url}'>{safe_title}</a><br/><small>{safe_body}</small></td>"
-            f"<td><small>{domain}</small></td>"
-            f"<td><small>{stars}</small></td>"
-            f"</tr>\n"
+    async def log_search(self, query: str, sources: List[Dict], duration_ms: int) -> None:
+        await self.log(
+            "search",
+            {"query": query},
+            {"source_count": len(sources), "titles": [s.get("title", "") for s in sources[:5]]},
+            success=len(sources) > 0,
+            duration_ms=duration_ms,
         )
+
+    async def log_screenshot(self, url: str, path: str, success: bool, duration_ms: int) -> None:
+        await self.log(
+            "screenshot",
+            {"url": url},
+            {"path": path, "saved": success},
+            success=success,
+            duration_ms=duration_ms,
+        )
+
+    async def log_article(
+        self,
+        query: str,
+        title: str,
+        model: str,
+        source_count: int,
+        screenshot_count: int,
+        duration_ms: int,
+    ) -> None:
+        await self.log(
+            "article",
+            {"query": query, "model": model},
+            {
+                "title": title,
+                "source_count": source_count,
+                "screenshot_count": screenshot_count,
+            },
+            success=True,
+            duration_ms=duration_ms,
+        )
+
+    async def log_image_description(
+        self, image_path: str, description: str, success: bool, duration_ms: int
+    ) -> None:
+        await self.log(
+            "describe_image",
+            {"image_path": image_path},
+            {"description": description[:300]},
+            success=success,
+            duration_ms=duration_ms,
+        )
+
+
+action_logger = ActionLogger(VM_BASE)
+
+
+def _push_tg_message_to_vm(
+    from_name: str,
+    text: str,
+    chat_title: str = "",
+    has_photo: bool = False,
+    has_document: bool = False,
+    file_name: str = "",
+) -> None:
+    """Fire-and-forget: push a TG message to the VM chat panel via /chat/push."""
+    import threading
+    import urllib.request as _ureq
+
+    def _do():
+        try:
+            data: dict = {"from_name": from_name, "text": text}
+            if chat_title:
+                data["chat_title"] = chat_title
+            if has_photo:
+                data["has_photo"] = True
+            if has_document:
+                data["has_document"] = True
+                data["file_name"] = file_name
+            payload = json.dumps(data).encode()
+            req = _ureq.Request(
+                f"{VM_BASE}/chat/push",
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with _ureq.urlopen(req, timeout=3):
+                pass
+        except Exception as exc:
+            logger.debug("_push_tg_message_to_vm: %s", exc)
+
+    threading.Thread(target=_do, daemon=True).start()
+
+
+# ===========================================================================
+# PER-USER CHAT HISTORY  (used by chat_via_vm)
+# ===========================================================================
+
+_chat_history: Dict[int, List[Dict[str, str]]] = {}  # user_id -> [{role, text}, ...]
+_MAX_CHAT_TURNS = 20  # keep last N turns in context (mirrors _MAX_CHAT_HISTORY_TURNS in server.py)
+
+# Regex matching http/https URLs in plain text (compiled once at module level)
+_URL_IN_TEXT_RE = re.compile(r'https?://[^\s<>"\']+', re.IGNORECASE)
+
+# Russian keywords that signal a web-search intent
+_SEARCH_KEYWORDS_RU = (
+    "найди", "поищи", "погугли", "загугли",
+    "расскажи о ", "расскажи про ",
+    "что такое ", "кто такой ", "кто такая ",
+    "что нового", "последние новости",
+    "новости о ", "новости про ",
+)
+
+
+def _extract_article_topic(text: str) -> str:
+    """If ``text`` looks like an existing article, return its inferred topic/title.
+
+    Returns empty string when the text is not an article (short query, etc.).
+    An existing article is detected when the text is long (>400 chars) and
+    has at least one Markdown-style heading (## …) or multiple paragraphs.
+    The topic is taken from the first heading, or the first non-empty line.
+    """
+    if len(text) < 400:
+        return ""
+    lines = [l.strip() for l in text.splitlines() if l.strip()]
+    if not lines:
+        return ""
+    # Must have several lines (i.e. it is not just a short paragraph)
+    if len(lines) < 4:
+        return ""
+    # Check for markdown heading markers
+    has_heading = any(l.startswith("##") or l.startswith("# ") for l in lines)
+    # Or many paragraphs / bullet points
+    paragraph_count = sum(1 for l in lines if len(l) > 60)
+    if not has_heading and paragraph_count < 3:
+        return ""
+    # Prefer the first non-heading, non-empty line as the article title
+    # (in typical article format: title comes before ## sections)
+    for l in lines:
+        if not l.startswith("#"):
+            stripped = re.sub(r'^[\U0001F300-\U0001F9FF\u2000-\u2FFF\s*]+', '', l).strip()
+            if stripped and len(stripped) > 3:
+                return stripped[:120]
+    # Fallback: use first ## heading text
+    for l in lines:
+        if l.startswith("## ") or l.startswith("# "):
+            return re.sub(r'^#+\s*[\U0001F300-\U0001F9FF\u2000-\u2FFF\s]*', '', l).strip()[:120]
+    return lines[0][:120]
+
+
+def _clean_url(raw: str) -> str:
+    """Strip trailing punctuation from a URL, but preserve balanced parentheses.
+
+    For example:
+      'https://example.com.'        → 'https://example.com'
+      'https://example.com/path)'   → 'https://example.com/path'
+      'https://en.wikipedia.org/wiki/Python_(language)' → unchanged (parens balanced)
+    """
+    # Strip simple trailing punctuation (not parentheses yet)
+    _simple_punct = frozenset(".,:;!?>")
+    while raw and raw[-1] in _simple_punct:
+        raw = raw[:-1]
+    # Handle trailing ')': strip only if unbalanced (more ')' than '(' in URL)
+    while raw and raw[-1] == ")":
+        if raw.count("(") < raw.count(")"):
+            raw = raw[:-1]
+        else:
+            break
+    return raw
+
+
+# ===========================================================================
+# OLLAMA HELPERS
+# ===========================================================================
+
+async def get_ollama_models() -> List[str]:
+    """Return list of available Ollama model names.
+
+    Tries the VM /ollama/models endpoint first (auto-discovered Ollama port)
+    and falls back to querying Ollama directly.
+    """
+    # 1. Try VM endpoint (preferred — uses auto-discovered Ollama port)
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{VM_BASE}/ollama/models",
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    names = [m["name"] for m in data.get("models", [])]
+                    if names:
+                        return names
+    except Exception as exc:
+        logger.debug("VM /ollama/models: %s", exc)
+
+    # 2. Fallback: query Ollama directly
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{OLLAMA_BASE}/api/tags",
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    return [m["name"] for m in data.get("models", [])]
+    except Exception as exc:
+        logger.warning("Cannot list Ollama models: %s", exc)
+    return []
+
+
+async def get_best_model() -> str:
+    """Return the best available model: Ollama first, then LM Studio, then TGWUI.
+
+    Returns the model name with prefix for non-Ollama models (e.g. "lmstudio:X").
+    """
+    models = await get_ollama_models()
+    if models:
+        return models[0]
+    # Fallback: try LM Studio models via VM
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{VM_BASE}/lmstudio/models",
+                timeout=aiohttp.ClientTimeout(total=5),
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    lms_models = [m.get("id", "") for m in data.get("data", []) if m.get("id")]
+                    if lms_models:
+                        return f"lmstudio:{lms_models[0]}"
+    except Exception as exc:
+        logger.debug("VM /lmstudio/models: %s", exc)
+    # Fallback: try TGWUI models via VM
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{VM_BASE}/tgwui/models",
+                timeout=aiohttp.ClientTimeout(total=5),
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    tgwui_models = [m.get("id", "") for m in data.get("data", []) if m.get("id")]
+                    if tgwui_models:
+                        return f"tgwui:{tgwui_models[0]}"
+    except Exception as exc:
+        logger.debug("VM /tgwui/models: %s", exc)
+    return OLLAMA_MODEL
+
+
+async def chat_via_vm(user_id: int, text: str, message: Message) -> bool:
+    """Send a conversational message to the VM /chat/stream endpoint (SSE).
+
+    Maintains per-user history (up to _MAX_CHAT_TURNS turns).
+    Injects a system context so the model knows it is connected to the VM
+    and can explain/suggest use of its capabilities.
+    Returns True if the VM responded successfully, False otherwise
+    (caller should fall back to research_and_reply).
+    """
+    model = await get_best_model()
+    history = _chat_history.get(user_id, [])
+
+    # Build a VM-awareness system prefix (injected as the first turn context)
+    _VM_SYSTEM = (
+        "Ты — AI-агент DRGR VM, подключённый к локальной Code VM по адресу "
+        f"{VM_BASE}. "
+        "Отвечай на русском языке, кратко и по делу.\n\n"
+        "Возможности пользователя (команды Telegram-бота):\n"
+        "• /visor <url> или /browse <url> — 🖥 ВИЗОР: скриншот страницы + AI анализ vision-моделью\n"
+        "• /visor watch <url> — слежение за изменениями на странице\n"
+        "• /agent <задание> — автономный браузер-агент (Playwright + vision): кликает, заполняет формы\n"
+        "• /research <запрос> — текстовый веб-агент: ищет в интернете, читает страницы\n"
+        "• /search <тема> — исследование с полной статьёй и скриншотами\n"
+        "• /code <задача> — написать и выполнить код (Python, JS, HTML)\n"
+        "• /generate <описание> — сгенерировать HTML-страницу\n"
+        "• /convert — конвертер файлов\n"
+        "• Пришли URL в чат → бот автоматически сделает скриншот + AI анализ\n"
+        "• Пришли файл .py/.js/.sh → VM выполнит и вернёт результат\n"
+        "• Пришли ФОТО → бот опишет содержимое vision-моделью\n"
+        "• Пришли ВИДЕО → бот извлечёт кадр и опишет содержимое vision-моделью\n"
+        "• Ответь на фото/видео текстом — бот проанализирует медиа с учётом вопроса\n\n"
+        "ВАЖНО: Ты НЕ можешь самостоятельно открыть браузер или сделать поиск прямо сейчас. "
+        "Когда пользователь просит найти что-то в интернете — скажи ему использовать "
+        "/research или /agent. Когда просит открыть URL — скажи прислать URL в чат или "
+        "использовать /visor. Когда просит описать фото/видео — скажи прислать фото/видео "
+        "прямо в чат (не ссылку). Не выдумывай информацию из интернета — ты не подключён к нему.\n"
+    )
+
+    full_response = ""
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{VM_BASE}/chat/stream",
+                json={
+                    "message":    text,
+                    "model":      model,
+                    "history":    history,
+                    "system":     _VM_SYSTEM,
+                },
+                timeout=aiohttp.ClientTimeout(total=180),
+            ) as resp:
+                if resp.status != 200:
+                    return False
+                async for raw_line in resp.content:
+                    line = raw_line.decode("utf-8", errors="replace").strip()
+                    if not line.startswith("data: "):
+                        continue
+                    payload = line[6:]
+                    if payload == "[DONE]":
+                        break
+                    try:
+                        chunk = json.loads(payload)
+                    except ValueError:
+                        continue
+                    if "error" in chunk:
+                        logger.debug("VM chat/stream error: %s", chunk["error"])
+                        return False
+                    full_response += chunk.get("token", "")
+    except Exception as exc:
+        logger.debug("VM chat/stream unreachable: %s", exc)
+        return False
+
+    if not full_response.strip():
+        return False
+
+    # Persist updated history
+    history = history + [
+        {"role": "user", "text": text},
+        {"role": "assistant", "text": full_response},
+    ]
+    _chat_history[user_id] = history[-_MAX_CHAT_TURNS * 2:]
+
+    # Log the chat action to VM for self-learning
+    await action_logger.log(
+        "chat",
+        {"user_id": user_id, "message": text[:200]},
+        {"length": len(full_response)},
+        True,
+    )
+
+    # Split long replies into chunks to respect Telegram 4096-char limit
+    for chunk in _split_text(full_response, 4000):
+        try:
+            await message.answer(chunk)
+        except Exception:
+            await message.answer(chunk, parse_mode=None)
+    return True
+
+
+async def ask_ollama(prompt: str, model: Optional[str] = None) -> str:
+    """Generate text with Ollama.
+
+    Tries the VM /ollama/ask endpoint first (uses VM's auto-discovered Ollama
+    port), then falls back to querying Ollama directly.
+    Returns empty string on failure.
+    """
+    model = model or OLLAMA_MODEL
+    # 1. Try VM endpoint (preferred — uses auto-discovered Ollama port)
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{VM_BASE}/ollama/ask",
+                json={"model": model, "prompt": prompt},
+                timeout=aiohttp.ClientTimeout(total=120),
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    text = data.get("response", "")
+                    if text:
+                        return text
+    except Exception as exc:
+        logger.debug("VM /ollama/ask: %s", exc)
+    # 2. Fallback: query Ollama directly
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{OLLAMA_BASE}/api/generate",
+                json={"model": model, "prompt": prompt, "stream": False},
+                timeout=aiohttp.ClientTimeout(total=120),
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    return data.get("response", "")
+                err = await resp.text()
+                logger.error("Ollama %s: %s", resp.status, err[:200])
+    except Exception as exc:
+        logger.error("ask_ollama failed: %s", exc)
+    return ""
+
+
+async def describe_image_ollama(image_path: str, model: Optional[str] = None) -> str:
+    """
+    Describe an image using Ollama vision endpoint or the VM /agent/describe_image.
+    Prefers qwen3-vl:8b as the vision model.
+    Result is logged to the VM for self-improvement training.
+    """
+    if not os.path.exists(image_path):
+        return ""
+    t0 = time.monotonic()
+    description = ""
+
+    # 1. Try VM dedicated endpoint (auto-selects best vision model — qwen3-vl:8b first)
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{VM_BASE}/agent/describe_image",
+                json={"image_path": os.path.abspath(image_path)},
+                timeout=aiohttp.ClientTimeout(total=90),
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    description = data.get("description", "")
+    except Exception as exc:
+        logger.debug("VM describe_image: %s", exc)
+
+    # 2. Fallback: call Ollama directly with base64-encoded image
+    if not description:
+        try:
+            with open(image_path, "rb") as fh:
+                img_b64 = base64.b64encode(fh.read()).decode()
+            # Prefer qwen3-vl, fall back to llava
+            vis_model = model or "qwen3-vl:8b"
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{OLLAMA_BASE}/api/generate",
+                    json={
+                        "model": vis_model,
+                        "prompt": (
+                            "Describe this image in detail in Russian. "
+                            "Include all visible text, objects, and context."
+                        ),
+                        "images": [img_b64],
+                        "stream": False,
+                    },
+                    timeout=aiohttp.ClientTimeout(total=90),
+                ) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        description = data.get("response", "")
+        except Exception as exc:
+            logger.debug("Ollama vision fallback: %s", exc)
+
+    dur = int((time.monotonic() - t0) * 1000)
+    await action_logger.log_image_description(image_path, description, bool(description), dur)
+    return description
+
+
+# ===========================================================================
+# WEB SEARCH
+# ===========================================================================
+
+async def search_duckduckgo(query: str, max_results: int = 5) -> List[Dict[str, str]]:
+    """Search DuckDuckGo via library or fall back to VM /search endpoint.
+
+    Returns items with BOTH ``href``/``url`` and ``body``/``snippet`` keys so
+    callers that use either naming convention work correctly.
+    """
+    t0 = time.monotonic()
+
+    def _normalize(items: List[Dict[str, str]]) -> List[Dict[str, str]]:
+        """Ensure each result exposes both href/url and body/snippet aliases."""
+        out = []
+        for r in items:
+            href = r.get("href", "") or r.get("url", "")
+            body = r.get("body", "") or r.get("snippet", "")
+            out.append({
+                "title":   r.get("title", ""),
+                "href":    href,   # used by research_and_reply
+                "url":     href,   # used by cmd_research
+                "body":    body,   # used by research_and_reply aggregation
+                "snippet": body,   # used by cmd_research snippet fallback
+            })
+        return out
+
+    # Try library first
+    if DDG_AVAILABLE:
+        try:
+            def _sync() -> List[Dict[str, str]]:
+                # Support both old (context-manager) and new (direct call) API styles
+                try:
+                    with DDGS() as ddgs_inst:
+                        raw = ddgs_inst.text(query, max_results=max_results)
+                except TypeError:
+                    # Newer ddgs may not support context-manager style
+                    raw = DDGS().text(query, max_results=max_results)
+                return _normalize(list(raw or []))
+            results = await asyncio.to_thread(_sync)
+            if results:
+                await action_logger.log_search(f"ddg:{query}", results, int((time.monotonic()-t0)*1000))
+                return results
+        except Exception as exc:
+            logger.warning("DuckDuckGo library: %s", exc)
+
+    # Fall back to VM /search endpoint (works without duckduckgo-search library)
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{VM_BASE}/search",
+                json={"query": query, "max_results": max_results},
+                # 20s: server-side search may need to try ddgs + HTML scraping in sequence
+                timeout=aiohttp.ClientTimeout(total=20),
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    if data.get("success") and data.get("results"):
+                        results = _normalize(data["results"])
+                        await action_logger.log_search(f"vm:{query}", results, int((time.monotonic()-t0)*1000))
+                        return results
+    except Exception as exc:
+        logger.warning("VM /search fallback: %s", exc)
+        await action_logger.log("search", {"query": f"ddg:{query}"}, {"error": str(exc)}, False)
+    return []
+
+
+async def search_wikipedia(query: str) -> Dict[str, str]:
+    """Fetch Wikipedia summary; log action to VM."""
+    t0 = time.monotonic()
+    try:
+        url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{quote_plus(query)}"
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    result = {
+                        "title": f"Wikipedia: {data.get('title', query)}",
+                        "href":  data.get("content_urls",{}).get("desktop",{}).get("page",""),
+                        "body":  data.get("extract",""),
+                    }
+                    await action_logger.log_search(
+                        f"wiki:{query}", [result], int((time.monotonic()-t0)*1000)
+                    )
+                    return result
+    except Exception as exc:
+        logger.warning("Wikipedia: %s", exc)
+    return {}
+
+
+async def search_reddit(query: str, max_results: int = 3) -> List[Dict[str, str]]:
+    """Search Reddit posts via Reddit JSON API (no auth required)."""
+    t0 = time.monotonic()
+    results: List[Dict[str, str]] = []
+    try:
+        url = (
+            f"https://www.reddit.com/search.json"
+            f"?q={quote_plus(query)}&sort=relevance&limit={max_results}&type=link"
+        )
+        headers = {"User-Agent": "drgr-bot/1.0 (+https://github.com/ybiytsa1983-cpu/drgr-bot)"}
+        async with aiohttp.ClientSession(headers=headers) as session:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    for child in data.get("data", {}).get("children", [])[:max_results]:
+                        post = child.get("data", {})
+                        title = post.get("title", "")
+                        permalink = post.get("permalink", "")
+                        href = f"https://www.reddit.com{permalink}" if permalink else ""
+                        selftext = (post.get("selftext") or post.get("url_overridden_by_dest") or "")[:400]
+                        body = post.get("selftext_html") or selftext
+                        if title and href:
+                            results.append({
+                                "title": f"Reddit: {title}",
+                                "href":  href,
+                                "body":  body,
+                            })
+        if results:
+            await action_logger.log_search(f"reddit:{query}", results, int((time.monotonic()-t0)*1000))
+    except Exception as exc:
+        logger.warning("Reddit search: %s", exc)
+    return results
+
+
+async def search_hackernews(query: str, max_results: int = 3) -> List[Dict[str, str]]:
+    """Search Hacker News via Algolia API (no auth required)."""
+    t0 = time.monotonic()
+    results: List[Dict[str, str]] = []
+    try:
+        url = (
+            f"https://hn.algolia.com/api/v1/search"
+            f"?query={quote_plus(query)}&hitsPerPage={max_results}&tags=story"
+        )
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    for hit in data.get("hits", [])[:max_results]:
+                        title = hit.get("title", "")
+                        story_url = hit.get("url", "")
+                        hn_url = f"https://news.ycombinator.com/item?id={hit.get('objectID','')}"
+                        href = story_url or hn_url
+                        body = (hit.get("story_text") or "")[:400]
+                        if title and href:
+                            results.append({
+                                "title": f"HackerNews: {title}",
+                                "href":  href,
+                                "body":  body,
+                            })
+        if results:
+            await action_logger.log_search(f"hn:{query}", results, int((time.monotonic()-t0)*1000))
+    except Exception as exc:
+        logger.warning("HackerNews search: %s", exc)
+    return results
+
+
+# ===========================================================================
+# PLAYWRIGHT BROWSER
+# ===========================================================================
+
+async def take_screenshot(url: str, output_path: str) -> bool:
+    """Capture a screenshot via local Playwright or VM /browse/screenshot endpoint."""
+    t0 = time.monotonic()
+    success = False
+    # Try local Playwright first
+    if PLAYWRIGHT_AVAILABLE:
+        try:
+            async with async_playwright() as pw:
+                browser = await pw.chromium.launch(headless=True)
+                page = await browser.new_page(viewport={"width": 1280, "height": 800})
+                try:
+                    await page.goto(url, wait_until="domcontentloaded", timeout=15_000)
+                    await page.wait_for_timeout(800)
+                    await page.screenshot(path=output_path, full_page=False)
+                    success = True
+                except PlaywrightTimeout:
+                    logger.warning("Screenshot timeout: %s", url)
+                finally:
+                    await browser.close()
+        except Exception as exc:
+            logger.warning("take_screenshot local (%s): %s — trying VM", url, exc)
+
+    # Fall back to VM /browse/screenshot endpoint
+    if not success:
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{VM_BASE}/browse/screenshot",
+                    json={"url": url},
+                    timeout=aiohttp.ClientTimeout(total=30),
+                ) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        img_b64 = data.get("screenshot_base64") or data.get("screenshot") or data.get("image") or ""
+                        if img_b64:
+                            img_bytes = base64.b64decode(img_b64)
+                            with open(output_path, "wb") as fh:
+                                fh.write(img_bytes)
+                            success = True
+        except Exception as exc:
+            logger.warning("take_screenshot VM (%s): %s", url, exc)
+
+    dur = int((time.monotonic() - t0) * 1000)
+    await action_logger.log_screenshot(url, output_path, success, dur)
+    return success
+
+
+async def screenshot_html_article(html_path: str, output_path: str) -> bool:
+    """Render a local HTML file and capture a viewport screenshot of the rendered article.
+
+    The screenshot is viewport-only (not full-page) so it serves as a quick above-the-fold
+    visual preview showing the article title and opening.
+    """
+    if not PLAYWRIGHT_AVAILABLE:
+        return False
+    # Ensure the path stays within ARTICLES_DIR to prevent unintended file access
+    try:
+        resolved = os.path.realpath(html_path)
+        articles_dir = str(ARTICLES_DIR.resolve())
+        if not resolved.startswith(articles_dir + os.sep) and resolved != articles_dir:
+            logger.warning("screenshot_html_article: path outside ARTICLES_DIR: %s", html_path)
+            return False
+    except Exception:
+        return False
+    try:
+        file_url = "file://" + resolved
+        async with async_playwright() as pw:
+            browser = await pw.chromium.launch(headless=True)
+            page = await browser.new_page(viewport={"width": 1280, "height": 900})
+            try:
+                await page.goto(file_url, wait_until="domcontentloaded", timeout=15_000)
+                await page.wait_for_timeout(600)
+                await page.screenshot(path=output_path, full_page=False)
+                return True
+            except PlaywrightTimeout:
+                logger.warning("screenshot_html_article timeout: %s", html_path)
+                return False
+            finally:
+                await browser.close()
+    except Exception as exc:
+        logger.warning("screenshot_html_article: %s", exc)
+        return False
+
+
+async def extract_page_text(url: str, max_chars: int = 3000) -> str:
+    """Extract visible text from a page via local Playwright or VM /browse/page."""
+    # Try local Playwright first
+    if PLAYWRIGHT_AVAILABLE:
+        try:
+            async with async_playwright() as pw:
+                browser = await pw.chromium.launch(headless=True)
+                page = await browser.new_page()
+                try:
+                    await page.goto(url, wait_until="domcontentloaded", timeout=15_000)
+                    text: str = await page.evaluate(
+                        "() => {"
+                        "document.querySelectorAll('script,style,nav,footer,header,aside').forEach(e=>e.remove());"
+                        "return (document.body||{}).innerText||'';"
+                        "}"
+                    )
+                    if text:
+                        return text[:max_chars]
+                except Exception:
+                    pass
+                finally:
+                    await browser.close()
+        except Exception as exc:
+            logger.warning("extract_page_text local (%s): %s — trying VM", url, exc)
+
+    # Fall back to VM /browse/page endpoint
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{VM_BASE}/browse/page",
+                json={"url": url, "max_chars": max_chars},
+                timeout=aiohttp.ClientTimeout(total=20),
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    if data.get("success"):
+                        return data.get("text", "")
+    except Exception as exc:
+        logger.error("extract_page_text VM (%s): %s", url, exc)
+    return ""
+
+
+# ===========================================================================
+# HTML ARTICLE BUILDER
+# ===========================================================================
+
+def _to_data_uri(path: str) -> str:
+    with open(path, "rb") as fh:
+        return "data:image/png;base64," + base64.b64encode(fh.read()).decode()
+
+
+def _safe_href(url: str) -> str:
+    """Return url only if it starts with http(s), otherwise '#'."""
+    return url if re.match(r"^https?://", url or "") else "#"
+
+
+def _build_source_chart_js(sources: List[Dict[str, str]]) -> str:
+    """Return a Chart.js bar chart showing word count per source (inline script)."""
+    import html as _html
+    labels = []
+    values = []
+    for s in sources[:8]:
+        label = _html.escape(s.get("title", "")[:30] or "—")
+        word_count = len((s.get("body") or "").split())
+        labels.append(label)
+        values.append(word_count)
+    if not any(v > 0 for v in values):
+        return ""
+    labels_js  = ", ".join(f'"{l}"' for l in labels)
+    values_js  = ", ".join(str(v) for v in values)
+    return (
+        '<div class="chart-wrap">'
+        '<h2>\U0001f4ca Объём данных по источникам</h2>'
+        '<canvas id="srcChart" height="120"></canvas>'
+        "</div>\n"
+        '<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>\n'
+        "<script>\n"
+        "(function(){\n"
+        "  var ctx=document.getElementById('srcChart').getContext('2d');\n"
+        "  new Chart(ctx,{\n"
+        "    type:'bar',\n"
+        "    data:{\n"
+        f"      labels:[{labels_js}],\n"
+        f"      datasets:[{{label:'Слов в источнике',data:[{values_js}],"
+        "backgroundColor:'rgba(14,132,212,0.6)',borderColor:'rgba(14,132,212,1)',"
+        "borderWidth:1}}]\n"
+        "    },\n"
+        "    options:{responsive:true,plugins:{legend:{display:false}},"
+        "scales:{y:{beginAtZero:true,ticks:{stepSize:10}}}}\n"
+        "  });\n"
+        "})();\n"
+        "</script>\n"
+    )
+
+
+def _build_svg_diagram(title: str) -> str:
+    """Return a simple SVG diagram representing the research pipeline."""
+    import html as _html
+    t = _html.escape(title[:40])
+    return (
+        '<div class="svg-wrap">'
+        '<h2>\U0001f5fa Структура статьи</h2>'
+        '<svg viewBox="0 0 600 90" xmlns="http://www.w3.org/2000/svg" '
+        'style="width:100%;max-width:600px;font-family:sans-serif;font-size:12px">\n'
+        '  <rect x="10"  y="20" width="110" height="50" rx="8" fill="#0e84d4" opacity=".85"/>\n'
+        '  <text x="65"  y="49" text-anchor="middle" fill="#fff">Поиск</text>\n'
+        '  <rect x="160" y="20" width="110" height="50" rx="8" fill="#1aad5a" opacity=".85"/>\n'
+        '  <text x="215" y="49" text-anchor="middle" fill="#fff">Скриншоты</text>\n'
+        '  <rect x="310" y="20" width="110" height="50" rx="8" fill="#e94560" opacity=".85"/>\n'
+        '  <text x="365" y="49" text-anchor="middle" fill="#fff">AI-анализ</text>\n'
+        '  <rect x="460" y="20" width="110" height="50" rx="8" fill="#7b3f9e" opacity=".85"/>\n'
+        f' <text x="515" y="43" text-anchor="middle" fill="#fff">{t}</text>\n'
+        '  <text x="515" y="58" text-anchor="middle" fill="#fff" font-size="10">статья</text>\n'
+        '  <line x1="120" y1="45" x2="160" y2="45" stroke="#555" stroke-width="2" marker-end="url(#arr)"/>\n'
+        '  <line x1="270" y1="45" x2="310" y2="45" stroke="#555" stroke-width="2" marker-end="url(#arr)"/>\n'
+        '  <line x1="420" y1="45" x2="460" y2="45" stroke="#555" stroke-width="2" marker-end="url(#arr)"/>\n'
+        '  <defs><marker id="arr" markerWidth="6" markerHeight="6" refX="6" refY="3" orient="auto">'
+        '<path d="M0,0 L6,3 L0,6 Z" fill="#555"/></marker></defs>\n'
+        "</svg>\n"
+        "</div>\n"
+    )
+
+
+def build_html_article(
+    title: str,
+    body: str,
+    sources: List[Dict[str, str]],
+    screenshot_paths: List[str],
+    image_descriptions: Optional[Dict[str, str]] = None,
+) -> str:
+    """Return a self-contained professional HTML article with CSS-grid gallery, Chart.js, video and action buttons."""
+    import html as _html
+    image_descriptions = image_descriptions or {}
+
+    # ── Reading-time / stats ──────────────────────────────────────────────
+    word_count = len(body.split())
+    reading_min = max(1, word_count // 200)
+    h2_headings = [re.sub(r"^##\s+", "", l).strip() for l in body.splitlines() if re.match(r"^##\s+", l)]
+    stats_html = (
+        '<div class="article-stats">'
+        f'<span>⏱ Время чтения: <strong>~{reading_min} мин</strong></span>'
+        f'<span>📝 Слов: <strong>{word_count}</strong></span>'
+        f'<span>📚 Источников: <strong>{len(sources)}</strong></span>'
+        f'<span>📸 Иллюстраций: <strong>{len(screenshot_paths)}</strong></span>'
+        '</div>\n'
+    )
+
+    # ── Table of contents ─────────────────────────────────────────────────
+    toc_html = ""
+    if h2_headings:
+        toc_items = "".join(
+            f'<li><a href="#section-{i}">{_html.escape(h)}</a></li>\n'
+            for i, h in enumerate(h2_headings)
+        )
+        toc_html = (
+            '<nav class="toc">'
+            '<h3>📋 Содержание</h3>'
+            f'<ol>{toc_items}</ol>'
+            '</nav>\n'
+        )
+
+    # ── Photo gallery (CSS grid) ──────────────────────────────────────────
+    gallery_items = ""
+    valid_screenshots: List[str] = []
+    for i, path in enumerate(screenshot_paths[:6]):
+        if not os.path.exists(path):
+            continue
+        uri  = _to_data_uri(path)
+        desc = image_descriptions.get(path, "")
+        cap  = _html.escape(desc[:120] if desc else f"Рисунок {i + 1}")
+        src_href = ""
+        if i < len(sources):
+            src_href = _safe_href(sources[i].get("href", ""))
+        link_open  = f'<a href="{src_href}" target="_blank" rel="noopener noreferrer">' if src_href else ""
+        link_close = "</a>" if src_href else ""
+        gallery_items += (
+            '<figure class="gallery-item">'
+            f"{link_open}"
+            f'<img src="{uri}" alt="{cap}" loading="lazy"/>'
+            f"{link_close}"
+            f"<figcaption>🔗 {cap}</figcaption>"
+            "</figure>\n"
+        )
+        valid_screenshots.append(path)
+
+    gallery_html = ""
+    if gallery_items:
+        gallery_html = (
+            '<section class="gallery">\n'
+            '<h2>📸 Галерея материалов</h2>\n'
+            '<div class="gallery-grid">\n'
+            f"{gallery_items}"
+            "</div>\n</section>\n"
+        )
+
+    # ── Body: split on markdown-style headings ────────────────────────────
+    sections_html = ""
+    current_section_lines: List[str] = []
+    _sec_icons = ["🔍", "📌", "💡", "🌐", "🏆", "⚙️", "📊", "✅", "🔬", "📝"]
+    _sec_idx = 0
+
+    def _flush_section(lines: List[str]) -> str:
+        if not lines:
+            return ""
+        text = "\n".join(lines).strip()
+        if not text:
+            return ""
+        para = re.sub(r"\n{2,}", "</p><p>", _html.escape(text))
+        para = para.replace("\n", "<br>")
+        return f'<div class="section-body"><p>{para}</p></div>\n'
+
+    for raw_line in body.splitlines():
+        line = raw_line.strip()
+        if re.match(r"^#{1,3}\s+", line):
+            sections_html += _flush_section(current_section_lines)
+            current_section_lines = []
+            heading_text = re.sub(r"^#{1,3}\s+", "", line)
+            anchor_id = f"section-{_sec_idx}"
+            # Add section icon if not already present (no emoji in first 2 chars)
+            if heading_text and not any(0x1F000 <= ord(c) <= 0x1FFFF for c in heading_text[:3]):
+                icon = _sec_icons[_sec_idx % len(_sec_icons)]
+                _sec_idx += 1
+                heading_text = f"{icon} {heading_text}"
+            else:
+                _sec_idx += 1
+            sections_html += f'<h2 id="{anchor_id}">{_html.escape(heading_text)}</h2>\n'
+        else:
+            current_section_lines.append(raw_line)
+    sections_html += _flush_section(current_section_lines)
+
+    # ── Video embed section ───────────────────────────────────────────────
+    import urllib.parse as _up
+    yt_query = _up.quote_plus(title[:80])
+    video_html = (
+        '<section class="video-section">\n'
+        '<h2>🎬 Видео по теме</h2>\n'
+        '<div class="video-grid">\n'
+        '<div class="video-embed-wrap">'
+        f'<iframe src="https://www.youtube.com/embed?listType=search&list={yt_query}" '
+        f'title="YouTube — {_html.escape(title)}" frameborder="0" allowfullscreen '
+        'allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" '
+        'loading="lazy"></iframe>'
+        '</div>\n'
+        '<div class="video-link-box">'
+        f'<p>🔎 Смотрите видео по теме <strong>{_html.escape(title)}</strong> на YouTube:</p>'
+        f'<a class="btn-video" href="https://www.youtube.com/results?search_query={yt_query}" '
+        'target="_blank" rel="noopener">▶ Открыть YouTube-поиск</a>'
+        '</div>\n'
+        '</div></section>\n'
+    )
+
+    # ── Sources list ──────────────────────────────────────────────────────
+    sources_items = "".join(
+        f'<li><a href="{_safe_href(s.get("href",""))}" target="_blank" rel="noopener noreferrer">'
+        f'🔗 {_html.escape(s.get("title", f"Источник {i+1}"))}</a></li>\n'
+        for i, s in enumerate(sources)
+    )
+
+    # ── Chart.js + SVG ───────────────────────────────────────────────────
+    chart_html = _build_source_chart_js(sources)
+    svg_html   = _build_svg_diagram(title)
+
+    # ── Action buttons bar ────────────────────────────────────────────────
+    buttons_html = (
+        '<div class="action-bar">\n'
+        '<button class="btn-action" onclick="window.print()">🖨️ Печать</button>\n'
+        '<button class="btn-action" onclick="copyArticle()">📋 Копировать текст</button>\n'
+        '<button class="btn-action" onclick="shareArticle()">🔗 Поделиться</button>\n'
+        '<button class="btn-action btn-scroll" onclick="window.scrollTo({top:0,behavior:\'smooth\'})">⬆️ Наверх</button>\n'
+        '</div>\n'
+        '<script>\n'
+        'function copyArticle(){\n'
+        '  var t=document.querySelector(".article-body");'
+        '  if(!t){return;}'
+        '  navigator.clipboard.writeText(t.innerText).then(function(){'
+        '    alert("Текст скопирован!");'
+        '  }).catch(function(){alert("Не удалось скопировать.");});\n'
+        '}\n'
+        'function shareArticle(){\n'
+        '  if(navigator.share){\n'
+        f'    navigator.share({{title:"{_html.escape(title)}",url:window.location.href}});\n'
+        '  } else {\n'
+        '    navigator.clipboard.writeText(window.location.href).then(function(){'
+        '      alert("Ссылка скопирована!");'
+        '    });\n'
+        '  }\n'
+        '}\n'
+        '</script>\n'
+    )
+
+    # ── CSS ───────────────────────────────────────────────────────────────
+    css = (
+        ":root{--accent:#0e84d4;--accent2:#1aad5a;--bg:#f0f4f8;--card:#fff;--text:#1a1a2e}"
+        "body{font-family:'Segoe UI',Georgia,serif;max-width:960px;margin:0 auto;padding:24px;"
+        "background:var(--bg);color:var(--text);line-height:1.7}"
+        "h1{color:var(--accent);border-bottom:3px solid var(--accent2);padding-bottom:10px;"
+        "margin-bottom:16px;font-size:2em}"
+        "h2{color:var(--accent2);margin-top:28px;margin-bottom:10px;display:flex;align-items:center;"
+        "gap:6px;scroll-margin-top:80px}"
+        "article{background:var(--card);padding:36px;border-radius:12px;"
+        "box-shadow:0 4px 20px rgba(0,0,0,.10)}"
+        ".section-body p{line-height:1.8;margin:0 0 14px;color:#333}"
+        "blockquote{border-left:3px solid var(--accent);margin:10px 0;padding-left:15px;"
+        "color:#555;font-style:italic}"
+        ".article-stats{display:flex;gap:16px;flex-wrap:wrap;padding:10px 16px;margin:12px 0 20px;"
+        "background:#e8f4fd;border-radius:8px;font-size:.9em;color:#444;border:1px solid #c5ddf0}"
+        ".article-stats span{white-space:nowrap}"
+        ".toc{background:#f8f9ff;border:1px solid #dde4f5;border-radius:8px;padding:14px 20px;"
+        "margin:16px 0 28px;display:inline-block;min-width:200px}"
+        ".toc h3{margin:0 0 8px;font-size:1em;color:var(--accent)}"
+        ".toc ol{margin:0;padding-left:1.4em}"
+        ".toc li{margin:3px 0;font-size:.92em}"
+        "a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}"
+        ".gallery{margin:32px 0}"
+        ".gallery-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));"
+        "gap:16px;margin-top:12px}"
+        ".gallery-item{background:#f9f9f9;border-radius:10px;overflow:hidden;"
+        "box-shadow:0 2px 8px rgba(0,0,0,.08);transition:transform .2s}"
+        ".gallery-item:hover{transform:translateY(-4px);box-shadow:0 6px 16px rgba(0,0,0,.15)}"
+        ".gallery-item img{width:100%;display:block;border-bottom:1px solid #ddd}"
+        ".gallery-item figcaption{padding:8px 10px;font-size:.82em;color:#555;font-style:italic}"
+        ".gallery-item a{display:block}"
+        ".chart-wrap{margin:32px 0;background:#f9f9f9;border-radius:10px;padding:20px;"
+        "border:1px solid #e0e0e0}"
+        ".svg-wrap{margin:32px 0}"
+        ".sources{background:#f0f7ff;border-left:4px solid var(--accent);padding:16px 20px;"
+        "margin-top:32px;border-radius:0 8px 8px 0}"
+        ".sources h3{color:var(--accent);margin-top:0}"
+        ".sources a{color:#0f3460;word-break:break-all}"
+        ".sources ol{padding-left:20px}"
+        ".sources li{margin-bottom:6px;line-height:1.5}"
+        ".video-section{margin:32px 0}"
+        ".video-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start}"
+        "@media(max-width:640px){.video-grid{grid-template-columns:1fr}}"
+        ".video-embed-wrap{position:relative;padding-bottom:56.25%;height:0;overflow:hidden;"
+        "border-radius:10px;box-shadow:0 4px 12px rgba(0,0,0,.15)}"
+        ".video-embed-wrap iframe{position:absolute;top:0;left:0;width:100%;height:100%;border:0}"
+        ".video-link-box{background:#fff3e0;border-radius:10px;padding:16px;border:1px solid #ffcc80}"
+        ".btn-video{display:inline-block;margin-top:10px;padding:10px 20px;background:#ff0000;"
+        "color:#fff;border-radius:8px;text-decoration:none;font-weight:600;font-size:.9em}"
+        ".btn-video:hover{background:#cc0000;text-decoration:none}"
+        ".action-bar{display:flex;gap:10px;flex-wrap:wrap;margin:24px 0;padding:16px;"
+        "background:#f9f9f9;border-radius:10px;border:1px solid #e0e0e0}"
+        ".btn-action{padding:8px 16px;background:var(--accent);color:#fff;border:none;"
+        "border-radius:6px;cursor:pointer;font-size:.88em;font-weight:600;transition:background .2s}"
+        ".btn-action:hover{background:#0a6aab}"
+        ".btn-scroll{background:var(--accent2)}.btn-scroll:hover{background:#148a48}"
+        "@media print{.action-bar,.video-section{display:none}}"
+    )
 
     return (
-        f"<b>🔍 Результаты поиска: {query}</b>\n\n"
-        f"<table border='1' cellpadding='4'>\n"
-        f"<thead><tr><th>#</th><th>Заголовок / Описание</th>"
-        f"<th>Домен</th><th>Релевантность</th></tr></thead>\n"
-        f"<tbody>\n{rows}</tbody>\n"
-        f"</table>"
+        '<!DOCTYPE html>\n<html lang="ru">\n<head>\n'
+        '<meta charset="UTF-8">\n'
+        '<meta name="viewport" content="width=device-width,initial-scale=1">\n'
+        f"<title>{_html.escape(title)}</title>\n"
+        f"<style>{css}</style>\n"
+        f"</head>\n<body>\n<article>\n<h1>📰 {_html.escape(title)}</h1>\n"
+        f"{stats_html}"
+        f"{buttons_html}"
+        f"{toc_html}"
+        f"{svg_html}"
+        f"{gallery_html}"
+        f'<section class="article-body">\n{sections_html}</section>\n'
+        f"{video_html}"
+        f"{chart_html}"
+        '<div class="sources">\n<h3>📚 Источники</h3>\n'
+        f"<ol>{sources_items}</ol>\n</div>\n"
+        "</article>\n</body>\n</html>"
     )
 
 
-def _ddg_format_telegram(query: str, results: List[Dict]) -> str:
-    """Сформировать текстовое сообщение для Telegram с результатами поиска."""
-    if not results:
-        return "🔍 Ничего не найдено по запросу: " + query
+# ===========================================================================
+# RESEARCH PIPELINE
+# ===========================================================================
 
-    lines = [f"🔍 <b>Результаты поиска:</b> {query}\n"]
-    for i, r in enumerate(results, 1):
-        title = r.get("title", "—")
-        url = r.get("href", "#")
-        body = r.get("body", "")
-        score = r.get("_score", 0.0)
-        stars = "★" * round(score * 5) + "☆" * (5 - round(score * 5))
-        snippet = body[:120] + "…" if len(body) > 120 else body
-        lines.append(
-            f"{i}. <b>{title}</b> [{stars}]\n"
-            f"   <a href='{url}'>{_ddg_domain(url)}</a>\n"
-            f"   <i>{snippet}</i>\n"
-        )
-    return "\n".join(lines)
+async def _enrich_article_via_research(topic: str, existing_article: str, message: Message) -> None:
+    """Enrich an existing article: search fresh sources, verify facts, generate improved version.
 
-
-async def search_duckduckgo(
-    query: str,
-    max_results: int = _DDG_FINAL_COUNT,
-    html: bool = False,
-) -> str:
+    Uses the VM /research endpoint with existing_article context so the LLM enriches
+    (not replaces) the uploaded content.
     """
-    Поиск через DuckDuckGo с:
-    - фильтрацией нерелевантных доменов (чёрный список),
-    - предпочтением Википедии, официальных и технических сайтов,
-    - оценкой тематической релевантности (пересечение ключевых слов),
-    - диверсификацией источников (не более _DDG_MAX_PER_DOMAIN на домен).
-
-    Если html=True — возвращает HTML-таблицу, иначе — текст для Telegram.
-    """
+    t0 = time.monotonic()
+    status = await message.answer(
+        f"\U0001f4f0 Обогащаю статью по теме: *{_esc(topic[:80])}*\n"
+        "\U0001f310 Ищу актуальные источники и скриншоты\u2026",
+        parse_mode="MarkdownV2",
+    )
+    model = await get_best_model()
     try:
-        raw: List[Dict] = await asyncio.to_thread(
-            lambda: list(DDGS().text(query, max_results=_DDG_MAX_FETCH))
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{VM_BASE}/research",
+                json={
+                    "query": topic,
+                    "max_results": 8,
+                    "screenshots": True,
+                    "model": model,
+                    "existing_article": existing_article,
+                },
+                timeout=aiohttp.ClientTimeout(total=300),
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    if data.get("success"):
+                        html_article = data.get("html", "")
+                        title        = data.get("title", topic)
+                        sources      = data.get("sources", [])
+
+                        # Save HTML article
+                        ts = int(time.time())
+                        article_path = str(ARTICLES_DIR / f"enriched_{ts}.html")
+                        async with aiofiles.open(article_path, "w", encoding="utf-8") as fh:
+                            await fh.write(html_article)
+
+                        # Take preview screenshot
+                        preview_path = str(SCREENSHOTS_DIR / f"enriched_preview_{ts}.png")
+                        preview_ok = await screenshot_html_article(article_path, preview_path)
+
+                        dur = int((time.monotonic() - t0) * 1000)
+                        await action_logger.log(
+                            "article_enrich",
+                            {"topic": topic, "existing_len": len(existing_article)},
+                            {"title": title, "sources": len(sources)},
+                            True,
+                            dur,
+                            {"model": model},
+                        )
+
+                        try:
+                            await status.delete()
+                        except Exception:
+                            pass
+
+                        if preview_ok and os.path.exists(preview_path):
+                            try:
+                                await message.answer_photo(
+                                    FSInputFile(preview_path),
+                                    caption=f"\U0001f4f0 Обогащённая статья: {title[:80]}",
+                                )
+                            except Exception as exc:
+                                logger.warning("enriched article preview: %s", exc)
+
+                        await message.answer(
+                            f"\u2705 *Статья обогащена новыми данными*\n\n"
+                            f"\U0001f4f0 *{_esc(title[:100])}*\n\n"
+                            f"\U0001f4da Источников использовано: {len(sources)}\n"
+                            f"\u23f1 Время генерации: {dur // 1000} сек",
+                            parse_mode="MarkdownV2",
+                        )
+
+                        # Send sources
+                        if sources:
+                            src_lines = ["\U0001f4da *Источники для обогащения:*"]
+                            for i, src in enumerate(sources[:10], 1):
+                                href = src.get("url", "#") or "#"
+                                ttl  = src.get("title", f"Источник {i}")
+                                src_lines.append(f"{i}\\. [{_esc(ttl)}]({href})")
+                            try:
+                                await message.answer(
+                                    "\n".join(src_lines),
+                                    parse_mode="MarkdownV2",
+                                    disable_web_page_preview=True,
+                                )
+                            except Exception:
+                                pass
+
+                        # Send HTML file
+                        try:
+                            await message.answer_document(
+                                FSInputFile(article_path, filename="enriched_article.html"),
+                                caption="\U0001f4c4 Полная обогащённая HTML-статья",
+                            )
+                        except Exception as exc:
+                            logger.warning("enriched HTML send: %s", exc)
+                        return
+
+                    err = data.get("error", "Нет данных")
+                    await status.edit_text(f"\u274c {err[:300]}")
+                    return
+
+                text_err = await resp.text()
+                await status.edit_text(f"\u274c VM вернула {resp.status}: {text_err[:200]}")
+                return
+    except Exception as exc:
+        logger.error("_enrich_article_via_research: %s", exc)
+        try:
+            await status.edit_text(
+                "\u274c Ошибка обогащения статьи\\. Убедитесь, что VM запущена \\(/vm\\)\\.",
+                parse_mode="MarkdownV2",
+            )
+        except Exception:
+            pass
+
+
+async def research_and_reply(query: str, message: Message) -> None:
+    """
+    Full autonomous research pipeline:
+      1. Search DuckDuckGo + Wikipedia + Reddit + HackerNews (parallel)
+      2. Take screenshots of top pages
+      3. Describe screenshots with Ollama vision (background)
+      4. Generate article with Ollama text model
+      5. Reply: text + screenshots + HTML (CSS grid gallery, Chart.js, SVG) + sources
+      6. All actions logged to VM for self-improvement
+    """
+    t0     = time.monotonic()
+    status = await message.answer("\U0001f50d Ищу информацию\u2026")
+
+    # 1. Search all sources in parallel
+    ddg_task     = asyncio.create_task(search_duckduckgo(query, MAX_SEARCH_RESULTS))
+    wiki_task    = asyncio.create_task(search_wikipedia(query))
+    reddit_task  = asyncio.create_task(search_reddit(query, max_results=3))
+    hn_task      = asyncio.create_task(search_hackernews(query, max_results=3))
+    ddg_results, wiki_result, reddit_results, hn_results = await asyncio.gather(
+        ddg_task, wiki_task, reddit_task, hn_task
+    )
+
+    all_sources: List[Dict[str, str]] = []
+    if wiki_result.get("body"):
+        all_sources.append(wiki_result)
+    all_sources.extend(ddg_results)
+    all_sources.extend(reddit_results)
+    all_sources.extend(hn_results)
+
+    if not all_sources:
+        await status.edit_text(
+            "❌ Ничего не найдено по запросу\\. Попробуйте другой запрос\\.",
+            parse_mode="MarkdownV2",
         )
-    except Exception as e:
-        logger.error(f"DuckDuckGo search error for '{query}': {e}")
-        return f"<b>Ошибка поиска:</b> {e}"
+        await action_logger.log(
+            "research", {"query": query}, {"error": "no sources"}, False,
+            int((time.monotonic() - t0) * 1000),
+        )
+        return
 
-    # 1. Фильтрация чёрного списка
-    filtered = [
-        r for r in raw
-        if _ddg_domain(r.get("href", "")) not in _DDG_BLACKLIST_DOMAINS
-    ]
+    await status.edit_text(
+        f"\U0001f4d6 Найдено {len(all_sources)} источников "
+        f"(DDG, Wikipedia, Reddit, HackerNews). Делаю скриншоты\u2026"
+    )
 
-    # 2. Оценка релевантности + бонус за предпочтительный домен
-    for r in filtered:
-        base_score = _ddg_relevance_score(query, r.get("title", ""), r.get("body", ""))
-        domain = _ddg_domain(r.get("href", ""))
-        preferred_bonus = 0.3 if any(
-            domain == d or domain.endswith("." + d) for d in _DDG_PREFERRED_DOMAINS
-        ) else 0.0
-        r["_score"] = min(1.0, base_score + preferred_bonus)
+    # 2. Screenshots
+    screenshot_paths: List[str] = []
+    image_descriptions: Dict[str, str] = {}
 
-    # 3. Сортировка по релевантности (убывание)
-    filtered.sort(key=lambda r: r["_score"], reverse=True)
-
-    # 4. Диверсификация: не более _DDG_MAX_PER_DOMAIN результатов с одного домена
-    diversified: List[Dict] = []
-    domain_counts: Dict[str, int] = defaultdict(int)
-    for r in filtered:
-        domain = _ddg_domain(r.get("href", ""))
-        if domain_counts[domain] < _DDG_MAX_PER_DOMAIN:
-            diversified.append(r)
-            domain_counts[domain] += 1
-        if len(diversified) >= max_results:
+    for src in all_sources[:MAX_SCREENSHOTS + 2]:
+        url = src.get("href", "")
+        if not url.startswith("http"):
+            continue
+        slug = hashlib.md5(url.encode()).hexdigest()[:8]
+        out  = str(SCREENSHOTS_DIR / f"ss_{slug}_{int(time.time())}.png")
+        if await take_screenshot(url, out):
+            screenshot_paths.append(out)
+            image_descriptions[out] = ""
+        if len(screenshot_paths) >= MAX_SCREENSHOTS:
             break
 
-    logger.info(
-        f"DDG '{query}': {len(raw)} raw → {len(filtered)} filtered → "
-        f"{len(diversified)} diversified"
+    # 3. Aggregate text for AI (use more sources with multi-source pipeline)
+    blocks = [
+        f"[{s['title']}]: {s.get('body','')[:600]}"
+        for s in all_sources[:10]
+        if s.get("body")
+    ]
+    aggregated = "\n\n".join(blocks)
+
+    await status.edit_text("\U0001f916 Генерирую статью\u2026")
+
+    # 4. Ollama article — use a variation seed so articles are never identical
+    import random as _random
+    import datetime as _dt_bot
+    model  = await get_best_model()
+    _variation_styles = [
+        "глубокий аналитический обзор с историческим контекстом",
+        "практическое руководство с конкретными примерами и советами",
+        "журналистское расследование с цитатами экспертов и статистикой",
+        "научно-популярный рассказ с интересными деталями и открытиями",
+        "репортаж с акцентом на последние события и тренды",
+        "сравнительный анализ разных подходов и точек зрения",
+    ]
+    _style = _random.choice(_variation_styles)
+    _cur_year = _dt_bot.date.today().year
+
+    prompt = (
+        f'Ты — профессиональный AI-журналист. Напиши УНИКАЛЬНУЮ ПОЛНОЦЕННУЮ статью СТРОГО по теме: "{query}".\n\n'
+        f"Стиль этой статьи: {_style}.\n\n"
+        f"КРИТИЧЕСКИ ВАЖНО:\n"
+        f"- Статья ТОЛЬКО И ИСКЛЮЧИТЕЛЬНО о теме '{query}'\n"
+        f"- НЕ смешивай разные темы из источников\n"
+        f"- НЕ КОПИРУЙ тексты — используй источники КАК СПРАВОЧНЫЙ МАТЕРИАЛ\n"
+        f"- Пиши СВОИМИ словами, статья должна быть уникальной\n"
+        f"- Включи конкретные факты, цифры, даты из источников\n\n"
+        f"Справочные данные:\n{aggregated}\n\n"
+        f"СТРУКТУРА СТАТЬИ (обязательная, не менее 7 разделов):\n"
+        f"Строка 1: Оригинальный заголовок о теме '{query}' (без # или *)\n\n"
+        f"## 🔍 Введение\nЧто такое '{query}', почему это актуально сегодня.\n\n"
+        f"## 📌 Основные аспекты\nКлючевые характеристики и особенности темы.\n\n"
+        f"## 💡 Важные факты и цифры\nКонкретные данные, статистика, цитаты.\n\n"
+        f"## 🌍 Применение и примеры\nРеальные случаи, практическое применение.\n\n"
+        f"## 🌟 Интересные подробности\nМалоизвестные факты, детали, нюансы по теме '{query}'.\n\n"
+        f"## 📈 Актуальные тренды\nПоследние тенденции и развитие темы в {_cur_year} году.\n\n"
+        f"## ✅ Заключение\nИтоговые выводы и перспективы по теме '{query}'.\n\n"
+        f"Требования: минимум 700 слов, только русский язык, ТОЛЬКО о теме '{query}', "
+        f"заголовки кликабельны, включи ссылки на источники.\n"
+    )
+    article_text = await ask_ollama(prompt, model)
+    if not article_text:
+        # Fallback: structured article from source snippets (better than raw dump)
+        good_snippets = [s for s in all_sources if len(s.get("body", "")) >= 50]
+        if good_snippets:
+            parts = [f"## 📌 {s['title'][:80]}\n{s.get('body','')[:500]}" for s in good_snippets[:5]]
+            article_text = (
+                f"{query}\n\n"
+                f"По запросу найдена следующая информация из открытых источников.\n\n"
+                + "\n\n".join(parts)
+                + f"\n\n## ✅ Заключение\nДанные получены из открытых источников по теме '{query}'."
+            )
+        else:
+            article_text = f"{query}\n\nИнформация по данной теме не найдена."
+
+    # 5. Build and save HTML
+    lines = article_text.strip().splitlines()
+    title = lines[0].lstrip("#* ").strip() if lines else query
+    html  = build_html_article(title, article_text, all_sources, screenshot_paths, image_descriptions)
+    ts    = int(time.time())
+    article_path = str(ARTICLES_DIR / f"article_{ts}.html")
+    async with aiofiles.open(article_path, "w", encoding="utf-8") as fh:
+        await fh.write(html)
+
+    # 6. Log the full article event to VM
+    total_dur = int((time.monotonic() - t0) * 1000)
+    await action_logger.log_article(
+        query, title, model, len(all_sources), len(screenshot_paths), total_dur
     )
 
-    if html:
-        return _ddg_format_html(query, diversified)
-    return _ddg_format_telegram(query, diversified)
+    # 7. Describe screenshots in background (enriches training data)
+    for path in screenshot_paths:
+        asyncio.create_task(describe_image_ollama(path))
 
+    # 8. Take a screenshot of the generated article HTML for a visual preview
+    article_preview_path = str(SCREENSHOTS_DIR / f"article_preview_{ts}.png")
+    article_preview_ok = await screenshot_html_article(article_path, article_preview_path)
 
-# --- ОБРАБОТЧИКИ КОМАНД ---
-bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher(bot)
-
-@dp.message(Command("start"))
-async def cmd_start(message: types.Message):
-    await message.reply(
-        "👋 <b>DRGR Bot</b>\n\n"
-        "/search &lt;запрос&gt; — поиск DuckDuckGo\n"
-        "/msearch &lt;запрос&gt; — мультиисточниковый поиск\n"
-        "/wiki &lt;запрос&gt; — поиск в Википедии\n"
-        "/upload — загрузка файлов 📎\n"
-        "/video — обработка видео\n"
-        "/frame — рамка для фото\n"
-        "/collage — коллаж из фото\n"
-        "/help — справка",
-        parse_mode="HTML",
-    )
-@dp.message(Command("search"))
-async def cmd_search(message: types.Message):
-    """Поиск в интернете через DuckDuckGo. Использование: /search <запрос>"""
-    args = message.text.split(maxsplit=1)
-    if len(args) < 2 or not args[1].strip():
-        await message.reply(
-            "Использование: <code>/search запрос</code>\n"
-            "Например: <code>/search Python asyncio tutorial</code>",
-            parse_mode="HTML",
-        )
-        return
-    query = args[1].strip()
-    await message.reply("🔍 Ищу, подождите…")
-    result = await search_duckduckgo(query)
-    await message.reply(result, parse_mode="HTML", disable_web_page_preview=True)
-
-
-# --- WIKIPEDIA ПОИСК ---
-
-async def search_wikipedia(query: str, lang: str = "ru") -> str:
-    """Поиск через Wikipedia API."""
-    import json
-    url = (
-        f"https://{lang}.wikipedia.org/w/api.php"
-        f"?action=query&list=search&srsearch={urllib.parse.quote(query)}"
-        f"&srlimit=5&format=json&utf8=1"
-    )
+    # 9. Send to Telegram
     try:
-        data = await asyncio.to_thread(
-            lambda: json.loads(urllib.request.urlopen(url, timeout=8).read().decode())
-        )
-        hits = data.get("query", {}).get("search", [])
-        if not hits:
-            return ""
-        lines = [f"📖 <b>Wikipedia:</b> {query}\n"]
-        for i, h in enumerate(hits[:5], 1):
-            title = h.get("title", "—")
-            snippet = re.sub(r"<[^>]+>", "", h.get("snippet", ""))
-            wiki_url = f"https://{lang}.wikipedia.org/wiki/{urllib.parse.quote(title.replace(' ', '_'), safe='_:')}"
-            lines.append(f"{i}. <a href='{wiki_url}'><b>{title}</b></a>\n   <i>{snippet[:120]}…</i>\n")
-        return "\n".join(lines)
-    except Exception as e:
-        logger.warning(f"Wikipedia search error: {e}")
-        return ""
-
-
-async def search_multi(query: str) -> str:
-    """
-    Мультиисточниковый поиск: DuckDuckGo + Wikipedia.
-    Возвращает объединённый результат.
-    """
-    ddg_task = asyncio.create_task(search_duckduckgo(query))
-    wiki_task = asyncio.create_task(search_wikipedia(query))
-
-    ddg_result, wiki_result = await asyncio.gather(ddg_task, wiki_task, return_exceptions=True)
-
-    parts: List[str] = []
-    if isinstance(ddg_result, str) and ddg_result:
-        parts.append(ddg_result)
-    if isinstance(wiki_result, str) and wiki_result:
-        parts.append(wiki_result)
-
-    if not parts:
-        return f"🔍 Ничего не найдено по запросу: <b>{query}</b>"
-    return "\n\n".join(parts)
-
-
-# --- ОБРАБОТЧИКИ ДОПОЛНИТЕЛЬНЫХ КОМАНД ---
-
-@dp.message(Command("help"))
-async def cmd_help(message: types.Message):
-    await message.reply(
-        "📖 <b>Список команд:</b>\n\n"
-        "/search <запрос> — поиск DuckDuckGo\n"
-        "/msearch <запрос> — поиск сразу в нескольких источниках\n"
-        "/wiki <запрос> — поиск в Википедии\n"
-        "/upload — подсказка по загрузке файлов\n"
-        "/video — обработка видео\n"
-        "/frame — применить рамку к фото\n"
-        "/collage — создать коллаж\n",
-        parse_mode="HTML",
-    )
-
-@dp.message(Command("msearch"))
-async def cmd_msearch(message: types.Message):
-    """Мультиисточниковый поиск."""
-    args = message.text.split(maxsplit=1)
-    if len(args) < 2 or not args[1].strip():
-        await message.reply(
-            "Использование: <code>/msearch запрос</code>",
-            parse_mode="HTML",
-        )
-        return
-    query = args[1].strip()
-    await message.reply("🔍 Ищу в нескольких источниках…")
-    result = await search_multi(query)
-    await message.reply(result, parse_mode="HTML", disable_web_page_preview=True)
-
-@dp.message(Command("wiki"))
-async def cmd_wiki(message: types.Message):
-    """Поиск в Википедии."""
-    args = message.text.split(maxsplit=1)
-    if len(args) < 2 or not args[1].strip():
-        await message.reply(
-            "Использование: <code>/wiki запрос</code>",
-            parse_mode="HTML",
-        )
-        return
-    query = args[1].strip()
-    await message.reply("📖 Ищу в Википедии…")
-    result = await search_wikipedia(query)
-    if not result:
-        result = f"📖 Ничего не найдено в Википедии по запросу: <b>{query}</b>"
-    await message.reply(result, parse_mode="HTML", disable_web_page_preview=True)
-
-@dp.message(Command("upload"))
-async def cmd_upload(message: types.Message):
-    """Подсказка по загрузке файлов."""
-    await message.reply(
-        "📎 <b>Загрузка файлов</b>\n\n"
-        "Просто отправьте файл (фото, видео, документ) в этот чат.\n"
-        "• Фото — обработка эффектами, рамки, коллажи\n"
-        "• Видео — обрезка\n"
-        "• Документ — сохранение\n",
-        parse_mode="HTML",
-    )
-
-
-# --- ОБРАБОТЧИКИ МЕДИА ---
-
-@dp.message(F.photo)
-async def handle_photo(message: types.Message):
-    """Обработка фото — сохранение и предложение эффектов."""
-    photo = message.photo[-1]
-    if not is_valid_file_size(photo.file_size or 0):
-        await message.reply(f"Файл слишком большой (лимит {MAX_SIZE_MB} МБ).")
-        return
-
-    file = await message.bot.get_file(photo.file_id)
-    file_bytes = await message.bot.download_file(file.file_path)
-    user_id = message.from_user.id
-    save_path = os.path.join(PHOTOS_DIR, f"{user_id}_{photo.file_unique_id}.jpg")
-
-    async with aiofiles.open(save_path, "wb") as f:
-        await f.write(file_bytes.getvalue())
-    user_last_media[user_id] = save_path
-    logger.info(f"Photo saved for user {user_id}: {save_path}")
-
-    builder = InlineKeyboardBuilder()
-    for effect in EFFECTS:
-        builder.button(text=effect, callback_data=f"effect:{effect}:{photo.file_unique_id}")
-    builder.adjust(4)
-    await message.reply(
-        "✅ Фото сохранено! Выберите эффект:",
-        reply_markup=builder.as_markup(),
-    )
-
-
-@dp.callback_query(F.data.startswith("effect:"))
-async def handle_effect_callback(callback: types.CallbackQuery):
-    """Применение эффекта к фото."""
-    _, effect, file_uid = callback.data.split(":", 2)
-    user_id = callback.from_user.id
-    base_path = user_last_media.get(user_id)
-    if not base_path or not os.path.exists(base_path):
-        await callback.answer("Сначала отправьте фото.", show_alert=True)
-        return
-
-    try:
-        img = Image.open(base_path)
-        result_img = apply_effect(img, effect)
-        out_path = os.path.join(PHOTOS_DIR, f"{user_id}_effect_{effect}.jpg")
-        result_img.save(out_path)
-        await callback.message.reply_photo(
-            types.FSInputFile(out_path),
-            caption=f"Эффект «{effect}» применён",
-        )
-        await callback.answer()
-        logger.info(f"User {user_id} applied effect {effect}")
-    except Exception as e:
-        logger.error(f"Effect error {effect}: {e}")
-        await callback.answer(f"Ошибка: {e}", show_alert=True)
-
-
-@dp.message(F.document)
-async def handle_document(message: types.Message):
-    """Приём загруженных документов (📎 файлов)."""
-    doc = message.document
-    if not is_valid_file_size(doc.file_size or 0):
-        await message.reply(f"Файл слишком большой (лимит {MAX_SIZE_MB} МБ).")
-        return
-
-    file = await message.bot.get_file(doc.file_id)
-    file_bytes = await message.bot.download_file(file.file_path)
-
-    save_dir = os.path.join(PHOTOS_DIR, "uploads")
-    os.makedirs(save_dir, exist_ok=True)
-    filename = doc.file_name or f"file_{doc.file_unique_id}"
-    save_path = os.path.join(save_dir, f"{message.from_user.id}_{filename}")
-
-    async with aiofiles.open(save_path, "wb") as f:
-        await f.write(file_bytes.getvalue())
-    logger.info(f"Document saved for user {message.from_user.id}: {save_path}")
-    await message.reply(f"📎 Файл <b>{filename}</b> получен и сохранён.", parse_mode="HTML")
-
-
-@dp.message(F.video)
-async def handle_video(message: types.Message, state: FSMContext):
-    """Приём видеофайлов с предложением обрезки."""
-    video = message.video
-    if not is_valid_file_size(video.file_size or 0):
-        await message.reply(f"Видео слишком большое (лимит {MAX_SIZE_MB} МБ).")
-        return
-
-    file = await message.bot.get_file(video.file_id)
-    file_bytes = await message.bot.download_file(file.file_path)
-    user_id = message.from_user.id
-    save_path = os.path.join(VIDEOS_DIR, f"{user_id}_{video.file_unique_id}.mp4")
-
-    async with aiofiles.open(save_path, "wb") as f:
-        await f.write(file_bytes.getvalue())
-    user_last_media[user_id] = save_path
-    logger.info(f"Video saved for user {user_id}: {save_path}")
-
-    await state.update_data(video_path=save_path)
-    await message.reply(
-        f"🎬 Видео получено! Продолжительность: {video.duration}с.\n"
-        "Отправьте /video_trim для обрезки, либо /help для других команд.",
-    )
-
-
-@dp.message(Command("video"))
-async def cmd_video(message: types.Message):
-    await message.reply(
-        "🎬 <b>Обработка видео</b>\n\n"
-        "Отправьте видео в чат, затем используйте /video_trim для обрезки.\n"
-        "Параметры обрезки: <code>начало конец</code> (в секундах)\n"
-        "Например: <code>10 30</code>",
-        parse_mode="HTML",
-    )
-
-
-@dp.message(Command("video_trim"))
-async def cmd_video_trim(message: types.Message, state: FSMContext):
-    data = await state.get_data()
-    if not data.get("video_path") and not user_last_media.get(message.from_user.id):
-        await message.reply("Сначала отправьте видео.")
-        return
-    await message.reply("Введите начало и конец обрезки в секундах (например: <code>5 30</code>)", parse_mode="HTML")
-    await MediaStates.waiting_for_video_trim_params.set()
-
-
-@dp.message(MediaStates.waiting_for_video_trim_params)
-async def handle_video_trim_params(message: types.Message, state: FSMContext):
-    """Обрезка видео по введённым параметрам."""
-    try:
-        parts = message.text.strip().split()
-        if len(parts) < 2:
-            raise ValueError("Нужно два числа")
-        start_t = float(parts[0])
-        end_t = float(parts[1])
+        await status.delete()
     except Exception:
-        await message.reply("Неверный формат. Введите два числа: <code>начало конец</code>", parse_mode="HTML")
-        return
+        pass  # message may have been deleted already
 
-    user_id = message.from_user.id
-    data = await state.get_data()
-    video_path = data.get("video_path") or user_last_media.get(user_id)
-    if not video_path or not os.path.exists(video_path):
-        await message.reply("Видеофайл не найден. Отправьте видео заново.")
-        await state.clear()
-        return
+    # Send article preview screenshot first (visual preview of the rendered article)
+    if article_preview_ok and os.path.exists(article_preview_path):
+        try:
+            await message.answer_photo(
+                FSInputFile(article_preview_path),
+                caption=f"\U0001f4f0 Статья: {title[:80]}",
+            )
+        except Exception as exc:
+            logger.warning("article preview screenshot send: %s", exc)
 
-    await message.reply("✂️ Обрезаю видео…")
-    out_path = os.path.join(VIDEOS_DIR, f"{user_id}_trimmed.mp4")
+    header = f"\U0001f4f0 *{_esc(title)}*\n\n"
+    chunks = _split_text(article_text, 4000)
+    first  = True
+    for chunk in chunks[:4]:
+        if not chunk.strip():
+            continue
+        prefix = header if first else ""
+        first  = False
+        try:
+            await message.answer(prefix + _esc(chunk), parse_mode="MarkdownV2")
+        except Exception:
+            plain = _unescape_md(prefix + chunk)
+            try:
+                await message.answer(plain[:4096])
+            except Exception:
+                pass
+
+    for i, path in enumerate(screenshot_paths):
+        if os.path.exists(path):
+            try:
+                src_title = all_sources[i].get("title", "") if i < len(all_sources) else ""
+                cap = f"\U0001f4f8 Скриншот {i+1} — {src_title[:60]}"
+                await message.answer_photo(FSInputFile(path), caption=cap)
+            except Exception as exc:
+                logger.warning("screenshot send: %s", exc)
+
+    src_lines = ["\U0001f4da *Источники:*"]
+    for i, src in enumerate(all_sources[:10], 1):
+        href = src.get("href", "#") or "#"
+        ttl  = src.get("title", f"Источник {i}")
+        src_lines.append(f"{i}\\. [{_esc(ttl)}]({href})")
     try:
-        clip = await asyncio.to_thread(VideoFileClip, video_path)
-        sub = clip.subclip(start_t, min(end_t, clip.duration))
-        await asyncio.to_thread(sub.write_videofile, out_path, codec="libx264", audio_codec="aac", logger=None)
-        clip.close()
-        await message.reply_video(types.FSInputFile(out_path), caption=f"✅ Обрезано: {start_t}с — {end_t}с")
-        logger.info(f"Video trimmed for user {user_id}: {start_t}-{end_t}s")
-    except Exception as e:
-        logger.error(f"Video trim error: {e}")
-        await message.reply(f"Ошибка обрезки: {e}")
-    finally:
-        await state.clear()
+        await message.answer(
+            "\n".join(src_lines),
+            parse_mode="MarkdownV2",
+            disable_web_page_preview=True,
+        )
+    except Exception:
+        plain = "\U0001f4da Источники:\n" + "\n".join(
+            f"{i}. {s.get('title','')} — {s.get('href','')}"
+            for i, s in enumerate(all_sources[:10], 1)
+        )
+        await message.answer(plain[:4096])
 
-
-@dp.message(Command("frame"))
-async def cmd_frame(message: types.Message, state: FSMContext):
-    frames = [f for f in os.listdir(FRAME_DIR) if f.lower().endswith((".png", ".jpg", ".webp"))]
-    if not frames:
-        await message.reply("Нет доступных рамок. Добавьте изображения в папку frames/")
-        return
-    builder = InlineKeyboardBuilder()
-    for f in frames[:12]:
-        builder.button(text=f, callback_data=f"frame_select:{f}")
-    builder.adjust(2)
-    await message.reply("Выберите рамку:", reply_markup=builder.as_markup())
-    await MediaStates.waiting_for_frame.set()
-
-
-@dp.callback_query(F.data.startswith("frame_select:"))
-async def handle_frame_select(callback: types.CallbackQuery, state: FSMContext):
-    frame_name = callback.data.split(":", 1)[1]
-    user_id = callback.from_user.id
-    base_path = user_last_media.get(user_id)
-    if not base_path or not os.path.exists(base_path):
-        await callback.answer("Сначала отправьте фото.", show_alert=True)
-        await state.clear()
-        return
-    frame_path = os.path.join(FRAME_DIR, frame_name)
-    if not os.path.exists(frame_path):
-        await callback.answer("Рамка не найдена.", show_alert=True)
-        await state.clear()
-        return
-    out_path = os.path.join(PHOTOS_DIR, f"{user_id}_framed_{frame_name}")
     try:
-        add_frame_to_photo(base_path, frame_path, out_path)
-        await callback.message.reply_photo(types.FSInputFile(out_path), caption=f"Рамка «{frame_name}» применена")
-        await callback.answer()
-        logger.info(f"User {user_id} applied frame {frame_name}")
-    except Exception as e:
-        logger.error(f"Frame error: {e}")
-        await callback.answer(f"Ошибка: {e}", show_alert=True)
-    finally:
-        await state.clear()
+        await message.answer_document(
+            FSInputFile(article_path, filename="article.html"),
+            caption="\U0001f4c4 Полная HTML-версия статьи",
+        )
+    except Exception as exc:
+        logger.warning("HTML send: %s", exc)
 
 
-@dp.message(Command("collage"))
-async def cmd_collage_start(message: types.Message, state: FSMContext):
-    await state.update_data(collage_photos=[])
-    await message.reply("Отправьте фото для коллажа (2–6 штук). Когда закончите — /done")
-    await MediaStates.waiting_for_collage_photos.set()
+# ===========================================================================
+# UTILITY
+# ===========================================================================
+
+_ESC_CHARS = r"\_*[]()~`>#+-=|{}.!"
 
 
-@dp.message(MediaStates.waiting_for_collage_photos, F.photo)
-async def collage_photo_receive(message: types.Message, state: FSMContext):
-    photo = message.photo[-1]
-    if not is_valid_file_size(photo.file_size or 0):
-        await message.reply(f"Файл слишком большой (лимит {MAX_SIZE_MB} МБ).")
-        return
-    file = await message.bot.get_file(photo.file_id)
-    file_bytes = await message.bot.download_file(file.file_path)
-    user_id = message.from_user.id
-    save_path = os.path.join(PHOTOS_DIR, f"collage_{user_id}_{photo.file_unique_id}.jpg")
-    async with aiofiles.open(save_path, "wb") as f:
-        await f.write(file_bytes.getvalue())
-    data = await state.get_data()
-    photos = data.get("collage_photos", [])
-    if len(photos) >= 6:
-        await message.reply("Максимум 6 фото. Введите /done для создания коллажа.")
-        return
-    photos.append(save_path)
-    await state.update_data(collage_photos=photos)
-    await message.reply(f"Фото {len(photos)}/6 добавлено. Ещё или /done.")
+def _esc(text: str) -> str:
+    """Escape special characters for Telegram MarkdownV2."""
+    return re.sub(r"([" + re.escape(_ESC_CHARS) + r"])", r"\\\1", text)
 
 
-@dp.message(Command("done"))
-async def collage_done(message: types.Message, state: FSMContext):
-    data = await state.get_data()
-    photos = data.get("collage_photos", [])
-    if len(photos) < 2:
-        await message.reply("Нужно минимум 2 фото для коллажа.")
-        return
-    user_id = message.from_user.id
-    output_path = os.path.join(COLLAGE_DIR, f"collage_{user_id}.jpg")
+def _unescape_md(text: str) -> str:
+    """Remove MarkdownV2 escape backslashes to produce clean plain text."""
+    return re.sub(r"\\([_*\[\]()~`>#+\-=|{}.!])", r"\1", text)
+
+
+def _split_text(text: str, max_len: int) -> List[str]:
+    """Split text into chunks no longer than max_len on newline boundaries."""
+    chunks, current = [], ""
+    for line in text.splitlines(keepends=True):
+        if len(current) + len(line) > max_len:
+            chunks.append(current)
+            current = line
+        else:
+            current += line
+    if current:
+        chunks.append(current)
+    return chunks
+
+
+# ===========================================================================
+# TELEGRAM HANDLERS
+# ===========================================================================
+
+@router.message(CommandStart())
+async def cmd_start(message: Message) -> None:
+    await message.answer(
+        "\U0001f916 *AI Research Agent \\+ Code VM*\n\n"
+        "Я автономный агент для исследования, генерации кода и HTML\\.\n\n"
+        f"\U0001f5a5 *Веб\\-интерфейс VM \\(откройте в браузере\\):* {_MD_WEB_URL}\n\n"
+        "*Главные команды:*\n"
+        "/search `<запрос>` — \U0001f50d искать в интернете, написать статью \\+ скриншоты\n"
+        "/research `<задание>` — \U0001f50e читать страницы, обобщать, отвечать\n"
+        "/generate `<описание>` — \U0001f310 сгенерировать HTML\\-страницу \\(файл\\)\n"
+        "/code `[python|js|...]` `<задача>` — написать, запустить, исправить код\n\n"
+        "*Браузер и скриншоты:*\n"
+        "/agent `<задание>` — \U0001f916 автономный браузер\\-агент: Playwright \\+ vision\n"
+        "/browse `<url>` — скриншот страницы \\+ AI анализ\n"
+        "/visor `<url>` — 🖥 ВИЗОР: скриншот \\+ AI анализ \\(qwen3\\-vl\\)\n"
+        "/screenshot `<url>` — быстрый скриншот страницы\n\n"
+        "*Файлы и конвертация:*\n"
+        "/execute `<код>` — выполнить код в VM sandbox\n"
+        "/download `<url>` — \U0001f4e5 скачать файл по URL\n"
+        "/convert — форматы конвертера; отправьте фото или файл \\(json/csv/md/html\\)\n\n"
+        "*VM и настройки:*\n"
+        "/vm — статус VM, URL и команда запуска\n"
+        "/models — доступные AI\\-модели\n"
+        "/stats — статистика самообучения\n"
+        "/retrain — запустить цикл самообучения VM\n"
+        "/update — скачать и установить новые файлы\n"
+        "/settoken — сохранить новый токен бота\n"
+        "/web — ссылка на веб\\-интерфейс\n"
+        "/help — полная справка\n\n"
+        "_Отправьте фото — AI опишет его \\(или с подписью `jpeg`/`png` — конвертирует\\)_\n"
+        "_Отправьте \\.py/\\.js/\\.sh файл — VM выполнит его и вернёт вывод_\n\n"
+        "*Или просто напишите запрос* — агент исследует тему и создаст статью\\.\n\n"
+        f"\U0001f4bb {_MD_INSTALL_CMD}\n\n"
+        f"{_MD_UPDATE_CMD}\n\n"
+        "\U0001f5a5 После установки: ярлык *«Code VM»* и *«ЗАПУСТИТЬ ВМ»* на Рабочем столе",
+        parse_mode="MarkdownV2",
+    )
+
+
+@router.message(Command("web", "open"))
+async def cmd_web(message: Message) -> None:
+    """Show the URL to the Code VM web interface (the extension page)."""
+    await message.answer(
+        "\U0001f5a5 *Code VM — веб\\-интерфейс*\n\n"
+        "Откройте в браузере на компьютере, где запущена VM:\n\n"
+        f"\U0001f517 {_MD_WEB_URL}\n\n"
+        "*Что доступно в веб\\-интерфейсе:*\n"
+        "• 🧑‍💻 Monaco редактор кода\n"
+        "• 🌐 HTML\\-генератор \\(вкладка **HTML**\\)\n"
+        "• 💬 Чат с AI \\(вкладка 💬 **Чат**\\)\n"
+        f"• 🌐 Чат\\-зал \\(онлайн\\-чат\\): `{_esc(VM_BASE)}/chatroom/page`\n"
+        "• 🖥 ВИЗОР — браузер\\-инспектор \\(скриншоты\\+AI анализ\\)\n"
+        "• 🔍 Поиск\\+Статья — поиск в интернете \\+ HTML отчёт\n"
+        "• 🔧 Visor VM — управление моделями Ollama\n"
+        "• ⚙️ Настройки — токен бота, модель, LM Studio URL, промпт\n\n"
+        f"*Если VM не запущена —* {_MD_INSTALL_CMD}\n\n"
+        "После установки — двойной клик на ярлыке *«Code VM»* на Рабочем столе\\.",
+        parse_mode="MarkdownV2",
+    )
+
+
+@router.message(Command("help"))
+async def cmd_help(message: Message) -> None:
+    await message.answer(
+        "\U0001f4d6 *Помощь — все команды*\n\n"
+        f"\U0001f5a5 *Веб\\-интерфейс:* {_MD_WEB_URL} \\| /web\n\n"
+        "*Автономный агент и браузер:*\n"
+        "• `/agent <задание>` — \U0001f916 автономный браузер\\-агент: Playwright \\+ vision модель\n"
+        "• `/research <задание>` — \U0001f50e текстовый агент: ищет в интернете, читает страницы, отвечает\n"
+        "• `/search <тема>` — полное исследование, статья \\+ скриншоты \\+ HTML\n"
+        "• `/visor <url>` — 🖥 ВИЗОР: скриншот \\+ AI анализ \\(qwen3\\-vl:8b\\)\n"
+        "• `/visor watch <url>` — слежение за изменениями на странице \\(3 снимка\\)\n"
+        "• `/browse <url>` — скриншот страницы \\+ AI анализ \\(qwen3\\-vl:8b\\)\n"
+        "• `/screenshot <url>` — быстрый скриншот с описанием\n\n"
+        "*Генерация и выполнение кода:*\n"
+        "• `/code <задача>` — написать код, запустить, исправить ошибки, прислать файл\n"
+        "• `/code python|js|html|go|... <задача>` — выбрать язык\n"
+        "• `/execute <код>` — выполнить код в VM sandbox\n"
+        "• `/generate <описание>` — HTML\\-страница \\(файл `.html`\\)\n"
+        "• _Отправьте \\.py, \\.js, \\.sh файл_ — VM выполнит и вернёт результат\n\n"
+        "*Файлы:*\n"
+        "• `/download <url>` — \U0001f4e5 скачать файл по URL через VM\n"
+        "• _Отправьте любой код\\-файл_ — VM выполнит его\n"
+        "• _Отправьте \\.json/\\.csv/\\.html/\\.md_ — конвертация формата\n\n"
+        "*VM и самообучение:*\n"
+        "• `/web` — ссылка на веб\\-интерфейс Code VM\n"
+        "• `/models` — список AI\\-моделей \\(включая drgr\\-visor\\)\n"
+        "• `/stats` — что VM узнала из своих действий\n"
+        "• `/retrain` — запустить цикл самообучения VM вручную\n"
+        "• `/vm` — статус VM и команды запуска\n"
+        "• `/update` — команда для скачивания и установки новых файлов\n"
+        "• `/settoken <токен>` — сохранить новый токен бота \\(@BotFather\\)\n\n"
+        "*Конвертер файлов и фото \\(через VM\\):*\n"
+        "• `/convert` — список всех доступных конвертаций\n"
+        "• Отправьте фото — AI опишет содержимое \\(vision\\-модель\\)\n"
+        "• Отправьте фото с подписью `jpeg`, `png`, `webp` или `bmp` — конвертация изображения\n"
+        "• Отправьте файл `.json`, `.csv`, `.html` или `.md` — конвертация текстового формата\n\n"
+        f"{_MD_INSTALL_CMD}\n\n"
+        "Примеры: `/agent https://github\\.com` или `/research цена Bitcoin сегодня`\n"
+        "Просто пришлите URL — ВИЗОР сделает скриншот и AI анализ автоматически\\.",
+        parse_mode="MarkdownV2",
+    )
+
+
+@router.message(Command("models"))
+async def cmd_models(message: Message) -> None:
+    models = await get_ollama_models()
+    if models:
+        lines = ["\U0001f916 *Доступные модели Ollama:*"] + [f"• {_esc(m)}" for m in models]
+        await message.answer("\n".join(lines), parse_mode="MarkdownV2")
+    else:
+        await message.answer(
+            "\u26a0\ufe0f Ollama не запущена или нет доступных моделей\\.\n\n"
+            "Запустите Ollama: `ollama serve`\n"
+            f"Потом скачайте модель: `ollama pull {_esc(OLLAMA_MODEL)}`\n\n"
+            f"_Если недавно было обновление — попробуйте_ /update _чтобы скачать новые файлы_",
+            parse_mode="MarkdownV2",
+        )
+
+
+@router.message(Command("stats"))
+async def cmd_stats(message: Message) -> None:
+    """Show VM self-learning statistics."""
     try:
-        create_collage_from_paths(photos, output_path, cols=3)
-        await message.reply_photo(types.FSInputFile(output_path), caption="🖼 Коллаж готов!")
-        logger.info(f"Collage created for user {user_id} from {len(photos)} photos")
-    except Exception as e:
-        logger.error(f"Collage error: {e}")
-        await message.reply(f"Ошибка создания коллажа: {e}")
-    finally:
-        await state.clear()
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{VM_BASE}/agent/stats",
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                if resp.status == 200:
+                    data  = await resp.json()
+                    aa    = data.get("agent_actions", {})
+                    inst  = data.get("training_instructions", [])
+                    text  = (
+                        "\U0001f9e0 *Статистика самообучения VM*\n\n"
+                        f"\U0001f50d Поисков: *{_esc(str(aa.get('total_searches', 0)))}*\n"
+                        f"\U0001f4f8 Скриншотов: *{_esc(str(aa.get('total_screenshots', 0)))}*\n"
+                        f"\U0001f4f0 Статей: *{_esc(str(aa.get('total_articles', 0)))}*\n"
+                        f"\U0001f5bc Описаний картинок: *{_esc(str(aa.get('total_image_descriptions', 0)))}*\n"
+                        f"\U0001f504 Циклов обучения: *{_esc(str(aa.get('retrain_cycles', 0)))}*\n"
+                        f"\U0001f4cb Правил сейчас: *{_esc(str(len(inst)))}*\n\n"
+                        "Последние правила:\n"
+                        + "\n".join(f"• {_esc(r[:80])}" for r in inst[-3:])
+                    )
+                    await message.answer(text, parse_mode="MarkdownV2")
+                    return
+    except Exception as exc:
+        logger.warning("stats endpoint: %s", exc)
+    await message.answer(
+        "\u26a0\ufe0f VM не отвечает\\. Убедитесь, что vm/server\\.py запущен\\.",
+        parse_mode="MarkdownV2",
+    )
 
 
-# --- ЗАПУСК ---
+@router.message(Command("retrain"))
+async def cmd_retrain(message: Message) -> None:
+    """Trigger a VM self-improvement cycle via POST /retrain."""
+    status = await message.answer("\U0001f504 Запускаю цикл самообучения VM\u2026")
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{VM_BASE}/retrain",
+                timeout=aiohttp.ClientTimeout(total=30),
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    if data.get("success"):
+                        inst  = data.get("training_instructions", [])
+                        aa    = data.get("agent_actions", {})
+                        stats = data.get("statistics", {})
+                        text  = (
+                            "\U0001f9e0 *Самообучение завершено\\!*\n\n"
+                            f"\U0001f504 Циклов всего: *{_esc(str(aa.get('retrain_cycles', 0)))}*\n"
+                            f"\u2705 Успешных запусков: *{_esc(str(stats.get('successful_runs', 0)))}*\n"
+                            f"\u274c Ошибок: *{_esc(str(stats.get('failed_runs', 0)))}*\n"
+                            f"\U0001f4cb Правил сейчас: *{_esc(str(len(inst)))}*\n\n"
+                            "Последние правила:\n"
+                            + "\n".join(f"\u2022 {_esc(r[:80])}" for r in inst[-3:])
+                        )
+                        await status.delete()
+                        await message.answer(text, parse_mode="MarkdownV2")
+                        return
+                    error = data.get("error", "Неизвестная ошибка")
+                    await status.edit_text(f"\u274c {error[:300]}")
+                    return
+    except Exception as exc:
+        logger.warning("cmd_retrain: %s", exc)
+    await status.edit_text(
+        "\u26a0\ufe0f VM не отвечает\\. Убедитесь, что vm/server\\.py запущен\\.",
+        parse_mode="MarkdownV2",
+    )
 
-async def main():
-    await dp.start_polling(bot)
+
+@router.message(Command("screenshot"))
+async def cmd_screenshot(message: Message) -> None:
+    parts = (message.text or "").split(maxsplit=1)
+    if len(parts) < 2:
+        await message.answer("Использование: `/screenshot <url>`", parse_mode="MarkdownV2")
+        return
+    url = parts[1].strip()
+    if not url.startswith("http"):
+        url = "https://" + url
+    status = await message.answer("📸 Делаю скриншот…")
+    out = str(SCREENSHOTS_DIR / f"manual_{int(time.time())}.png")
+    ok  = await take_screenshot(url, out)
+    await status.delete()
+    if ok and os.path.exists(out):
+        desc    = await describe_image_ollama(out)
+        caption = f"\U0001f310 {url[:200]}"
+        if desc:
+            caption += f"\n\n\U0001f5bc {desc[:200]}"
+        await message.answer_photo(FSInputFile(out), caption=caption[:1024])
+    else:
+        await message.answer(
+            "\u274c Не удалось сделать скриншот\\. Проверьте URL\\.",
+            parse_mode="MarkdownV2",
+        )
+
+
+@router.message(Command("browse"))
+async def cmd_browse(message: Message) -> None:
+    """Screenshot a URL and analyse it with qwen3-vl:8b vision AI.
+
+    Usage: /browse <url>
+    Uses the VM /browse/screenshot endpoint which runs Playwright headless and
+    describes the result with the best available vision model (qwen3-vl:8b).
+    """
+    parts = (message.text or "").split(maxsplit=1)
+    if len(parts) < 2:
+        await message.answer(
+            "🌐 *Браузер + AI анализ страницы*\n\n"
+            "Использование: `/browse <url>`\n\n"
+            "Примеры:\n"
+            "• `/browse https://google.com`\n"
+            "• `/browse github.com`\n\n"
+            "Делает скриншот страницы и анализирует её с помощью qwen3\\-vl:8b",
+            parse_mode="MarkdownV2",
+        )
+        return
+
+    url = parts[1].strip()
+    if not url.startswith("http"):
+        url = "https://" + url
+
+    status = await message.answer(f"🌐 Делаю скриншот и анализирую `{url[:80]}`\u2026", parse_mode="MarkdownV2")
+    t0 = time.monotonic()
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{VM_BASE}/browse/screenshot",
+                json={"url": url},
+                timeout=aiohttp.ClientTimeout(total=60),
+            ) as resp:
+                if resp.status != 200:
+                    await status.edit_text(f"\u274c VM вернула ошибку {resp.status}")
+                    return
+                data = await resp.json()
+    except Exception as exc:
+        await status.edit_text(f"\u274c Ошибка: {str(exc)[:200]}")
+        return
+
+    dur = int((time.monotonic() - t0) * 1000)
+    screenshot_b64 = data.get("screenshot_base64", "")
+    description    = data.get("description", "")
+    model_used     = data.get("model", "")
+    success        = data.get("success", False)
+
+    await status.delete()
+
+    await action_logger.log(
+        "browse_screenshot",
+        {"url": url},
+        {"has_screenshot": bool(screenshot_b64), "description": description[:200]},
+        success,
+        dur,
+        {"model": model_used},
+    )
+
+    if screenshot_b64:
+        import base64 as _b64
+        img_bytes = _b64.b64decode(screenshot_b64)
+        ts = int(time.time())
+        shot_path = str(SCREENSHOTS_DIR / f"browse_{ts}.png")
+        with open(shot_path, "wb") as fh:
+            fh.write(img_bytes)
+
+        caption = f"🌐 {url[:100]}"
+        if model_used:
+            caption += f"\n🧠 Модель: {model_used}"
+        if description:
+            caption += f"\n\n{description[:800]}"
+
+        try:
+            await message.answer_photo(FSInputFile(shot_path), caption=caption[:1024])
+        except Exception:
+            # If photo too large send as document
+            try:
+                await message.answer_document(
+                    FSInputFile(shot_path, filename="screenshot.png"),
+                    caption=caption[:1024],
+                )
+            except Exception as exc:
+                await message.answer(caption[:4096])
+        return
+
+    # No screenshot — text fallback
+    text_fb = data.get("text_fallback", False)
+    fallback_desc = description or data.get("error", "Нет данных")
+    prefix = "⚠ Скриншот недоступен.\n\n" if text_fb else "❌ "
+    await message.answer(prefix + fallback_desc[:3000])
+
+
+@router.message(Command("visor"))
+async def cmd_visor(message: Message) -> None:
+    """Analyse current page in ВИЗОР using qwen3-vl vision AI.
+
+    Usage: /visor <url>     — screenshot + detailed AI analysis
+           /visor watch <url> — start watching for page changes (3 snapshots)
+    """
+    parts = (message.text or "").split(maxsplit=2)
+    if len(parts) < 2:
+        await message.answer(
+            "🖥 *ВИЗОР — браузер\\-инспектор*\n\n"
+            "Команды:\n"
+            "• `/visor <url>` — скриншот \\+ AI анализ страницы\n"
+            "• `/visor watch <url>` — слежение за изменениями \\(3 снимка\\)\n\n"
+            "Примеры:\n"
+            "• `/visor https://google\\.com`\n"
+            "• `/visor watch https://news\\.ycombinator\\.com`\n\n"
+            "Использует qwen3\\-vl:8b или drgr\\-visor \\(переученная модель\\)",
+            parse_mode="MarkdownV2",
+        )
+        return
+
+    # /visor watch <url>
+    if parts[1].lower() == "watch" and len(parts) >= 3:
+        watch_url = parts[2].strip()
+        if not watch_url.startswith("http"):
+            watch_url = "https://" + watch_url
+
+        status = await message.answer(
+            f"👁 Слежу за изменениями на `{watch_url[:80]}`\\.\\.\\. (3 снимка с интервалом 10 сек)",
+            parse_mode="MarkdownV2",
+        )
+        t0 = time.monotonic()
+        results = []
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{VM_BASE}/visor/watch",
+                    json={"url": watch_url, "interval": 10, "max_snapshots": 3},
+                    timeout=aiohttp.ClientTimeout(total=120),
+                ) as resp:
+                    async for raw_line in resp.content:
+                        line = raw_line.decode("utf-8", errors="replace").strip()
+                        if not line.startswith("data: "):
+                            continue
+                        payload = line[6:]
+                        if payload == "[DONE]":
+                            break
+                        try:
+                            snap = json.loads(payload)
+                            if snap.get("description"):
+                                results.append(snap)
+                        except ValueError:
+                            continue
+        except Exception as exc:
+            await status.edit_text(f"❌ Ошибка: {str(exc)[:200]}")
+            return
+
+        await status.delete()
+        dur = int((time.monotonic() - t0) * 1000)
+
+        if not results:
+            await message.answer("❌ Не удалось получить снимки. Проверьте URL и наличие Playwright.")
+            return
+
+        report = f"👁 *Наблюдение за страницей* — {watch_url[:60]}\n\n"
+        for snap in results:
+            n = snap.get("snapshot", "?")
+            desc = snap.get("description", "")[:500]
+            change = snap.get("change", "")
+            report += f"*Снимок {n}:* {desc}\n"
+            if change:
+                report += f"🔄 {change}\n"
+            report += "\n"
+        report += f"⏱ {dur // 1000} сек | модель: {results[0].get('model', '?') if results else '?'}"
+
+        try:
+            await message.answer(report[:4096])
+        except Exception:
+            await message.answer(report[:4096], parse_mode=None)
+        return
+
+    # /visor <url> — same as /browse but with explicit ВИЗОР framing
+    url = parts[1].strip()
+    if not url.startswith("http"):
+        url = "https://" + url
+
+    status = await message.answer(
+        f"🖥 ВИЗОР анализирует `{url[:80]}`\\.\\.\\.",
+        parse_mode="MarkdownV2",
+    )
+    t0 = time.monotonic()
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{VM_BASE}/browse/screenshot",
+                json={"url": url},
+                timeout=aiohttp.ClientTimeout(total=60),
+            ) as resp:
+                if resp.status != 200:
+                    await status.edit_text(f"❌ VM вернула ошибку {resp.status}")
+                    return
+                data = await resp.json()
+    except Exception as exc:
+        await status.edit_text(f"❌ Ошибка: {str(exc)[:200]}")
+        return
+
+    dur = int((time.monotonic() - t0) * 1000)
+    screenshot_b64 = data.get("screenshot_base64", "")
+    description    = data.get("description", "")
+    model_used     = data.get("model", "")
+
+    await status.delete()
+
+    if screenshot_b64:
+        import base64 as _b64
+        img_bytes = _b64.b64decode(screenshot_b64)
+        ts = int(time.time())
+        shot_path = str(SCREENSHOTS_DIR / f"visor_{ts}.png")
+        with open(shot_path, "wb") as fh:
+            fh.write(img_bytes)
+
+        caption = f"🖥 ВИЗОР: {url[:80]}"
+        if model_used:
+            caption += f"\n🧠 {model_used}"
+        if description:
+            caption += f"\n\n{description[:800]}"
+
+        try:
+            await message.answer_photo(FSInputFile(shot_path), caption=caption[:1024])
+        except Exception:
+            await message.answer(caption[:4096])
+    else:
+        desc = description or data.get("error", "Нет данных")
+        await message.answer(f"🖥 ВИЗОР: {url}\n\n{desc[:3000]}")
+
+
+@router.message(Command("generate"))
+async def cmd_generate(message: Message) -> None:
+    """Generate an HTML page via Ollama and send it as a downloadable file.
+
+    Usage: /generate <description>
+    The VM streams HTML from the AI model and sends the result as a .html file.
+    """
+    parts = (message.text or "").split(maxsplit=1)
+    if len(parts) < 2:
+        await message.answer(
+            "\U0001f310 *Генератор HTML\\-страниц*\n\n"
+            "Использование: `/generate <описание>`\n\n"
+            "Примеры:\n"
+            "• `/generate лендинг для кофейни с меню и формой заказа`\n"
+            "• `/generate красивое резюме программиста`\n"
+            "• `/generate интерактивный калькулятор ипотеки`\n\n"
+            "AI сгенерирует полноценный HTML\\-файл и отправит вам для скачивания\\.\n\n"
+            "❗ Для работы требуется запущенная VM и Ollama\\. Статус: /vm",
+            parse_mode="MarkdownV2",
+        )
+        return
+    prompt = parts[1].strip()
+    status = await message.answer(
+        "\U0001f528 Генерирую HTML\\-страницу через VM\u2026", parse_mode="MarkdownV2"
+    )
+    try:
+        model = await get_best_model()
+        full_html = ""
+
+        # Use the streaming endpoint so the bot stays responsive during generation
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{VM_BASE}/generate/html/stream",
+                json={"prompt": prompt, "model": model},
+                timeout=aiohttp.ClientTimeout(total=180),
+            ) as resp:
+                if resp.status == 200:
+                    async for raw_line in resp.content:
+                        line = raw_line.decode("utf-8", errors="replace").strip()
+                        if not line.startswith("data: "):
+                            continue
+                        payload = line[6:]
+                        if payload == "[DONE]":
+                            break
+                        try:
+                            chunk = json.loads(payload)
+                        except ValueError:
+                            continue
+                        if "error" in chunk:
+                            await status.edit_text(f"\u274c {chunk['error'][:300]}")
+                            return
+                        full_html += chunk.get("token", "")
+
+        if full_html.strip():
+            ts   = int(time.time())
+            path = str(ARTICLES_DIR / f"gen_{ts}.html")
+            async with aiofiles.open(path, "w", encoding="utf-8") as fh:
+                await fh.write(full_html)
+            await status.delete()
+            await action_logger.log(
+                "generate_html",
+                {"prompt": prompt, "model": model},
+                {"path": path, "length": len(full_html)},
+                True,
+            )
+            await message.answer_document(
+                FSInputFile(path, filename=f"page_{ts}.html"),
+                caption=f"\U0001f4c4 HTML по запросу: {prompt[:100]}",
+            )
+            return
+
+        await status.edit_text(
+            "\u274c VM не вернула HTML\\.\n\n"
+            f"Убедитесь, что VM и Ollama запущены\\. {_MD_WEB_URL}\n\n"
+            f"Для обновления файлов: /update\n\n"
+            "Подробности: /vm",
+            parse_mode="MarkdownV2",
+        )
+    except Exception as exc:
+        logger.error("generate failed: %s", exc)
+        await action_logger.log(
+            "generate_html", {"prompt": prompt}, {"error": str(exc)}, False
+        )
+        await status.edit_text(
+            "\u274c VM не запущена или недоступна\\.\n\n"
+            f"\U0001f4bb {_MD_INSTALL_CMD}\n\n"
+            f"{_MD_UPDATE_CMD}\n\n"
+            f"После запуска откройте: {_MD_WEB_URL}\n"
+            "Или используйте /vm для подробностей\\.",
+            parse_mode="MarkdownV2",
+        )
+
+
+@router.message(Command("search"))
+async def cmd_search(message: Message) -> None:
+    """Search the internet, generate a full article with screenshots and HTML.
+
+    Usage: /search <query>
+    This command:
+      1. Searches DuckDuckGo, Wikipedia, Reddit, HackerNews
+      2. Takes screenshots of top pages
+      3. Generates a full article with Ollama AI
+      4. Replies with article text, screenshots, source list, and downloadable HTML file
+    """
+    parts = (message.text or "").split(maxsplit=1)
+    if len(parts) < 2:
+        await message.answer(
+            "\U0001f50d *Поиск в интернете \\+ статья*\n\n"
+            "Использование: `/search <запрос>`\n\n"
+            "Что делает команда:\n"
+            "1\\. Ищет в DuckDuckGo, Wikipedia, Reddit, HackerNews\n"
+            "2\\. Делает скриншоты топ\\-страниц\n"
+            "3\\. Генерирует статью с помощью AI\n"
+            "4\\. Присылает текст, скриншоты, источники и HTML\\-файл\n\n"
+            "Примеры:\n"
+            "• `/search квантовые компьютеры`\n"
+            "• `/search цена биткоина 2025`\n"
+            "• `/search как работает ChatGPT`\n\n"
+            "Для быстрого поиска без скриншотов используйте `/research <запрос>`",
+            parse_mode="MarkdownV2",
+        )
+        return
+    await research_and_reply(parts[1].strip(), message)
+
+
+# ---------------------------------------------------------------------------
+# /code command — generate code and send as downloadable file
+# ---------------------------------------------------------------------------
+
+_LANG_ALIASES: Dict[str, str] = {
+    "python": "python", "py": "python",
+    "javascript": "javascript", "js": "javascript",
+    "typescript": "typescript", "ts": "typescript",
+    "go": "go", "golang": "go",
+    "rust": "rust", "rs": "rust",
+    "cpp": "cpp", "c++": "cpp",
+    "c": "c",
+    "java": "java",
+    "bash": "bash", "sh": "bash",
+    "php": "php",
+    "ruby": "ruby", "rb": "ruby",
+    "swift": "swift",
+    "kotlin": "kotlin", "kt": "kotlin",
+    "html": "html",
+    "css": "css",
+    "sql": "sql",
+}
+
+_LANG_EXT: Dict[str, str] = {
+    "python": "py", "javascript": "js", "typescript": "ts",
+    "go": "go", "rust": "rs", "cpp": "cpp", "c": "c",
+    "java": "java", "bash": "sh", "php": "php",
+    "ruby": "rb", "swift": "swift", "kotlin": "kt",
+    "html": "html", "css": "css", "sql": "sql",
+}
+
+
+@router.message(Command("code"))
+async def cmd_code(message: Message) -> None:
+    """Generate code, execute it, auto-fix errors, and send the verified file.
+
+    Uses POST /generate/auto/complete which iterates up to 3 times:
+      1. Generate code with Ollama
+      2. Execute it in the VM sandbox
+      3. If it fails: re-prompt with the error and try again
+
+    Usage:
+      /code <task description>            — auto-detect language
+      /code python <task description>
+      /code js <task description>
+      /code html <task description>
+    """
+    parts = (message.text or "").split(maxsplit=2)
+
+    if len(parts) < 2:
+        await message.answer(
+            "\U0001f4bb *Генерация и проверка кода*\n\n"
+            "Использование:\n"
+            "`/code <задача>` — автовыбор языка\n"
+            "`/code python|js|html|go|rust|cpp|... <задача>`\n\n"
+            "VM автоматически:\n"
+            "1\\. Пишет код\n"
+            "2\\. Запускает его\n"
+            "3\\. Исправляет ошибки \\(до 3 попыток\\)\n"
+            "4\\. Отправляет проверенный рабочий файл\n\n"
+            "Примеры:\n"
+            "• `/code python скрипт для парсинга JSON файла`\n"
+            "• `/code js анимированный счётчик`\n"
+            "• `/code html лендинг для кофейни`",
+            parse_mode="MarkdownV2",
+        )
+        return
+
+    # Determine language and prompt
+    lang   = ""
+    prompt = ""
+    if len(parts) >= 3 and parts[1].lower() in _LANG_ALIASES:
+        lang   = _LANG_ALIASES[parts[1].lower()]
+        prompt = parts[2]
+    else:
+        prompt = " ".join(parts[1:])
+
+    if not prompt.strip():
+        await message.answer("Укажите описание задачи после команды.")
+        return
+
+    ext    = _LANG_EXT.get(lang, lang or "py")
+    lang_label = f" {lang}" if lang else ""
+    status = await message.answer(
+        f"\u2699\ufe0f Пишу{_esc(lang_label)} код\\, запускаю\\, проверяю\u2026",
+        parse_mode="MarkdownV2",
+    )
+
+    try:
+        model  = await get_best_model()
+
+        # Use auto-complete endpoint: generates + executes + auto-fixes
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{VM_BASE}/generate/auto/complete",
+                json={"model": model, "prompt": prompt, "max_attempts": 3},
+                timeout=aiohttp.ClientTimeout(total=300),
+            ) as resp:
+                if resp.status == 200:
+                    data     = await resp.json()
+                    code     = data.get("code", "")
+                    output   = data.get("output", "")
+                    lang_det = data.get("language", lang or "python")
+                    success  = data.get("success", False)
+                    attempts = data.get("attempts", 1)
+                    err_msg  = data.get("error", "")
+
+                    if code:
+                        ts   = int(time.time())
+                        ext  = _LANG_EXT.get(lang_det, lang_det)
+                        path = str(ARTICLES_DIR / f"code_{ts}.{ext}")
+                        async with aiofiles.open(path, "w", encoding="utf-8") as fh:
+                            await fh.write(code)
+                        await status.delete()
+                        await action_logger.log(
+                            "generate_code",
+                            {"prompt": prompt, "language": lang_det, "model": model},
+                            {
+                                "path": path, "length": len(code),
+                                "attempts": attempts, "success": success,
+                            },
+                            success,
+                        )
+                        # Build caption
+                        status_icon = "\u2705" if success else "\u26a0\ufe0f"
+                        attempt_str = f"{attempts} попытк{'а' if attempts == 1 else 'и' if attempts < 5 else 'ок'}"
+                        caption = (
+                            f"{status_icon} *{_esc(lang_det.title())}* "
+                            f"\\({_esc(attempt_str)}\\) по запросу:\n"
+                            f"{_esc(prompt[:200])}"
+                        )
+                        if output:
+                            caption += f"\n\n📤 Вывод:\n`{_esc(output[:300])}`"
+                        if not success and err_msg:
+                            caption += (
+                                f"\n\n⚠ Не удалось исправить за {attempts} попытки\\. "
+                                f"Последняя ошибка:\n`{_esc(err_msg[:200])}`"
+                            )
+                        if lang_det == "html":
+                            caption += (
+                                f"\n\n🌐 Откройте файл в браузере \\(двойной клик\\) "
+                                f"или загрузите в VM → редактор → кнопка *🖥 Визор*"
+                            )
+                        # For HTML: render a screenshot preview
+                        if lang_det == "html":
+                            html_preview_path = str(ARTICLES_DIR / f"code_preview_{ts}.png")
+                            preview_ok = await screenshot_html_article(path, html_preview_path)
+                            if preview_ok and os.path.exists(html_preview_path):
+                                try:
+                                    await message.answer_photo(
+                                        FSInputFile(html_preview_path),
+                                        caption=f"🖥 Превью HTML: {prompt[:80]}",
+                                    )
+                                except Exception as _pe:
+                                    logger.warning("html code preview send: %s", _pe)
+                        try:
+                            await message.answer_document(
+                                FSInputFile(path, filename=f"code_{ts}.{ext}"),
+                                caption=caption[:1024],
+                                parse_mode="MarkdownV2",
+                            )
+                        except Exception:
+                            await message.answer_document(
+                                FSInputFile(path, filename=f"code_{ts}.{ext}"),
+                                caption=f"Код готов ({lang_det}, {attempt_str})",
+                            )
+                        return
+
+                    error_text = data.get("error", "Пустой ответ от модели")
+                    await status.edit_text(f"\u274c {error_text[:300]}")
+                    return
+
+                text_err = await resp.text()
+                await status.edit_text(f"\u274c VM вернула {resp.status}: {text_err[:200]}")
+                return
+
+    except Exception as exc:
+        logger.error("cmd_code failed: %s", exc)
+        await action_logger.log(
+            "generate_code",
+            {"prompt": prompt, "language": lang},
+            {"error": str(exc)},
+            False,
+        )
+    await status.edit_text(
+        "\u274c Ошибка генерации\\. Убедитесь, что VM и Ollama запущены\\.",
+        parse_mode="MarkdownV2",
+    )
+
+
+# ---------------------------------------------------------------------------
+# /execute (/run) command — run code in the VM sandbox
+# ---------------------------------------------------------------------------
+
+
+@router.message(Command("execute", "run"))
+async def cmd_execute(message: Message) -> None:
+    """Execute code in the VM sandbox via POST /execute.
+
+    Usage:
+      /execute <code>                — Python by default
+      /execute python|js <code>
+      /run <code>
+    """
+    parts = (message.text or "").split(maxsplit=2)
+    if len(parts) < 2:
+        await message.answer(
+            "\U0001f4bb *Выполнение кода в VM*\n\n"
+            "Использование:\n"
+            "`/execute <код>` — Python \\(по умолчанию\\)\n"
+            "`/execute python|js <код>` — выбрать язык\n\n"
+            "Примеры:\n"
+            "• `/execute print\\('Hello, World\\!'\\)`\n"
+            "• `/execute js console\\.log\\('test'\\)`",
+            parse_mode="MarkdownV2",
+        )
+        return
+
+    lang = "python"
+    code = ""
+    if len(parts) >= 3 and parts[1].lower() in ("python", "py", "js", "javascript"):
+        lang = "python" if parts[1].lower() in ("python", "py") else "javascript"
+        code = parts[2]
+    else:
+        code = " ".join(parts[1:])
+
+    if not code.strip():
+        await message.answer("Укажите код для выполнения.")
+        return
+
+    status = await message.answer(f"\u2699\ufe0f Выполняю {lang} код в VM\u2026")
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{VM_BASE}/execute",
+                json={"code": code, "language": lang},
+                timeout=aiohttp.ClientTimeout(total=30),
+            ) as resp:
+                if resp.status == 200:
+                    data    = await resp.json()
+                    output  = data.get("output", "")
+                    error   = data.get("error", "")
+                    success = data.get("success", False)
+                    await action_logger.log(
+                        "execute_code",
+                        {"code": code[:200], "language": lang},
+                        {"output": output[:200], "success": success},
+                        success,
+                    )
+                    if success:
+                        result = (
+                            f"\u2705 *{_esc(lang.title())} \u2014 результат:*\n\n"
+                            f"```\n{output[:3000] or '(нет вывода)'}\n```"
+                        )
+                    else:
+                        result = (
+                            f"\u274c *{_esc(lang.title())} \u2014 ошибка:*\n\n"
+                            f"```\n{error[:3000]}\n```"
+                        )
+                    await status.delete()
+                    try:
+                        await message.answer(result, parse_mode="MarkdownV2")
+                    except Exception:
+                        await message.answer(result[:4096], parse_mode=None)
+                    return
+                text = await resp.text()
+                await status.edit_text(f"\u274c VM вернула {resp.status}: {text[:200]}")
+                return
+    except Exception as exc:
+        logger.error("cmd_execute: %s", exc)
+        await action_logger.log(
+            "execute_code", {"code": code[:200], "language": lang}, {"error": str(exc)}, False
+        )
+    await status.edit_text(
+        f"\u274c Ошибка\\. Убедитесь, что VM запущена \\({_esc(VM_BASE)}/\\)\\.",
+        parse_mode="MarkdownV2",
+    )
+
+
+# ---------------------------------------------------------------------------
+# /convert command — show file converter capabilities
+# ---------------------------------------------------------------------------
+
+
+@router.message(Command("convert"))
+async def cmd_convert(message: Message) -> None:
+    """Show file converter capabilities available in the VM."""
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{VM_BASE}/convert/formats",
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                if resp.status == 200:
+                    data      = await resp.json()
+                    img_info  = data.get("image", {})
+                    text_info = data.get("text", {}).get("conversions", [])
+
+                    lines = ["\U0001f504 *Конвертер файлов VM*\n"]
+                    lines.append("*\U0001f5bc Изображения \\(Pillow\\):*")
+                    to_fmts = ", ".join(f.upper() for f in img_info.get("to", []))
+                    from_fmts = ", ".join(f.upper() for f in img_info.get("from", []))
+                    lines.append(f"  Из: `{_esc(from_fmts)}`")
+                    lines.append(f"  В:  `{_esc(to_fmts)}`")
+                    lines.append(f"  _{_esc(img_info.get('note', ''))}_")
+
+                    lines.append("\n*\U0001f4dd Текстовые форматы:*")
+                    for conv in text_info:
+                        lines.append(
+                            f"  `{_esc(conv['from'])}` → `{_esc(conv['to'])}` — "
+                            f"{_esc(conv['description'])}"
+                        )
+
+                    lines.append(
+                        f"\n*API VM:*\n"
+                        f"`POST {_esc(VM_BASE)}/convert/image`\n"
+                        f"`POST {_esc(VM_BASE)}/convert/text`\n"
+                        f"`GET  {_esc(VM_BASE)}/convert/formats`"
+                    )
+                    await message.answer("\n".join(lines), parse_mode="MarkdownV2")
+                    return
+    except Exception as exc:
+        logger.warning("convert formats: %s", exc)
+    await message.answer(
+        "\U0001f504 *Конвертер файлов VM*\n\n"
+        "\u26a0\ufe0f VM не отвечает\\. Убедитесь, что vm/server\\.py запущен\\.",
+        parse_mode="MarkdownV2",
+    )
+
+
+# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# /download command — download a file from a URL via VM /files/download
+# ---------------------------------------------------------------------------
+
+
+@router.message(Command("download"))
+async def cmd_download(message: Message) -> None:
+    """Download a file from a URL via VM /files/download and send it back.
+
+    Usage: /download <url>
+    """
+    parts = (message.text or "").split(maxsplit=1)
+    if len(parts) < 2:
+        await message.answer(
+            "\U0001f4e5 *Скачать файл по URL*\n\n"
+            "Использование: `/download <url>`\n\n"
+            "Примеры:\n"
+            "• `/download https://example.com/script.py`\n"
+            "• `/download https://raw.githubusercontent.com/user/repo/main/file.js`\n\n"
+            "Файл скачивается через VM и отправляется вам как документ\\.",
+            parse_mode="MarkdownV2",
+        )
+        return
+
+    url = parts[1].strip()
+    if not url.startswith(("http://", "https://")):
+        url = "https://" + url
+
+    status = await message.answer(
+        f"\U0001f4e5 Скачиваю `{_esc(url[:80])}{'...' if len(url) > 80 else ''}`\u2026",
+        parse_mode="MarkdownV2",
+    )
+    t0 = time.monotonic()
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{VM_BASE}/files/download",
+                json={"url": url, "save": True},
+                timeout=aiohttp.ClientTimeout(total=60),
+            ) as resp:
+                if resp.status != 200:
+                    err = await resp.text()
+                    await status.edit_text(f"\u274c VM вернула {resp.status}: {err[:200]}")
+                    return
+                data = await resp.json()
+    except Exception as exc:
+        await status.edit_text(f"\u274c Ошибка: {str(exc)[:200]}")
+        return
+
+    dur = int((time.monotonic() - t0) * 1000)
+
+    if not data.get("success"):
+        await status.edit_text(f"\u274c {data.get('error', 'Ошибка скачивания')[:300]}")
+        return
+
+    await action_logger.log(
+        "download_file",
+        {"url": url},
+        {"filename": data.get("filename", ""), "size": data.get("size", 0)},
+        True,
+        dur,
+    )
+
+    # If file was saved on the VM, serve it back
+    saved_path = data.get("path", "")
+    # Sanitize filename to prevent path traversal
+    raw_name   = data.get("filename") or url.rsplit("/", 1)[-1] or "downloaded_file"
+    filename   = re.sub(r"[^\w.\-]", "_", raw_name)[:120] or "downloaded_file"
+
+    if saved_path and os.path.exists(saved_path):
+        await status.delete()
+        size_kb = os.path.getsize(saved_path) // 1024
+        await message.answer_document(
+            FSInputFile(saved_path, filename=filename),
+            caption=f"\u2705 Скачано: `{_esc(filename)}` \\({size_kb} КБ\\)\n\U0001f517 {_esc(url[:200])}",
+            parse_mode="MarkdownV2",
+        )
+        return
+
+    # If only content returned (not saved to disk), write a temp file
+    content = data.get("content", "")
+    if content:
+        ts   = int(time.time())
+        path = str(ARTICLES_DIR / f"download_{ts}_{filename}")
+        async with aiofiles.open(path, "w", encoding="utf-8") as fh:
+            await fh.write(content)
+        await status.delete()
+        await message.answer_document(
+            FSInputFile(path, filename=filename),
+            caption=f"\u2705 Скачано: `{_esc(filename)}`\n\U0001f517 {_esc(url[:200])}",
+            parse_mode="MarkdownV2",
+        )
+        return
+
+    await status.edit_text(f"\u274c Файл не получен от VM для URL: {url[:100]}")
+
+
+# ---------------------------------------------------------------------------
+# /agent command — autonomous browsing agent: search + read pages + summarise
+# ---------------------------------------------------------------------------
+
+
+@router.message(Command("research"))
+async def cmd_research(message: Message) -> None:
+    """Text-based web research agent: searches the web, reads pages, summarises results.
+
+    Usage: /research <task>
+    The agent will:
+      1. Search DuckDuckGo for the task
+      2. Open top pages and extract text via VM /browse/page
+      3. Ask Ollama to synthesise the findings
+      4. Reply with a detailed answer
+    """
+    parts = (message.text or "").split(maxsplit=1)
+    if len(parts) < 2:
+        await message.answer(
+            "\U0001f916 *Текстовый веб\\-агент*\n\n"
+            "Использование: `/research <задание>`\n\n"
+            "Агент автономно:\n"
+            "1\\. Ищет информацию в интернете\n"
+            "2\\. Открывает страницы и читает их\n"
+            "3\\. Анализирует и обобщает найденное\n"
+            "4\\. Отвечает подробным отчётом\n\n"
+            "Примеры:\n"
+            "• `/research последние новости о Python 3.13`\n"
+            "• `/research цена Bitcoin сегодня`\n"
+            "• `/research как установить Docker на Windows`\n\n"
+            "Для автономного браузер\\-агента используйте `/agent`",
+            parse_mode="MarkdownV2",
+        )
+        return
+
+    task   = parts[1].strip()
+    status = await message.answer(
+        f"\U0001f916 Исследую: _{_esc(task[:120])}_\u2026",
+        parse_mode="MarkdownV2",
+    )
+    t0 = time.monotonic()
+
+    collected_texts: List[str] = []
+    sources_used: List[str]    = []
+
+    try:
+        # Step 1: Search via VM /search
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{VM_BASE}/search",
+                json={"query": task, "max_results": 5},
+                timeout=aiohttp.ClientTimeout(total=20),
+            ) as resp:
+                search_data = await resp.json() if resp.status == 200 else {}
+
+        results = search_data.get("results", [])
+
+        if not results:
+            # Fall back to local search helper
+            results = await search_duckduckgo(task, max_results=5)
+
+        await status.edit_text(
+            f"\U0001f916 Нашёл {len(results)} источников, читаю страницы\u2026"
+        )
+
+        # Step 2: Fetch text from top pages (15 s per page, skip if too slow)
+        async with aiohttp.ClientSession() as session:
+            for item in results[:4]:
+                url = item.get("url", "")
+                if not url or not url.startswith("http"):
+                    continue
+                sources_used.append(url)
+                try:
+                    async with session.post(
+                        f"{VM_BASE}/browse/page",
+                        json={"url": url, "max_chars": 2000},
+                        timeout=aiohttp.ClientTimeout(total=15),
+                    ) as page_resp:
+                        if page_resp.status == 200:
+                            pdata = await page_resp.json()
+                            page_text = pdata.get("text", "").strip()
+                            if page_text:
+                                collected_texts.append(
+                                    f"[{item.get('title', url[:60])}]\n{page_text[:1500]}"
+                                )
+                        else:
+                            # Fallback: extract text directly
+                            page_text = await extract_page_text(url, max_chars=1500)
+                            if page_text:
+                                collected_texts.append(
+                                    f"[{item.get('title', url[:60])}]\n{page_text}"
+                                )
+                except Exception as page_exc:
+                    logger.debug("agent browse_page failed for %s: %s", url, page_exc)
+                    page_text = await extract_page_text(url, max_chars=1500)
+                    if page_text:
+                        collected_texts.append(
+                            f"[{item.get('title', url[:60])}]\n{page_text}"
+                        )
+
+        if not collected_texts and results:
+            # Use snippets if no full text available (check both 'snippet' and 'body' keys)
+            for item in results:
+                snippet = (item.get("snippet") or item.get("body") or "").strip()
+                if snippet:
+                    collected_texts.append(f"[{item.get('title', '')}]\n{snippet}")
+
+        await status.edit_text("\U0001f916 Анализирую найденную информацию\u2026")
+
+        # Step 3: Synthesise with Ollama
+        context = "\n\n---\n\n".join(collected_texts[:6])
+        prompt  = (
+            f"Задание: {task}\n\n"
+            f"Информация из интернета:\n{context[:4000]}\n\n"
+            "На основе найденной информации дай подробный, структурированный ответ на задание. "
+            "Отвечай на русском языке. Упомяни важные факты и детали."
+        )
+        answer = await ask_ollama(prompt)
+
+    except Exception as exc:
+        logger.error("cmd_agent error: %s", exc)
+        try:
+            await status.edit_text(f"\u274c Ошибка агента: {str(exc)[:200]}")
+        except Exception:
+            try:
+                await message.answer(f"❌ Ошибка агента: {str(exc)[:200]}")
+            except Exception:
+                pass
+        return
+
+    dur = int((time.monotonic() - t0) * 1000)
+    await action_logger.log(
+        "agent_browse",
+        {"task": task},
+        {"sources": len(sources_used), "texts_fetched": len(collected_texts)},
+        bool(answer),
+        dur,
+    )
+
+    try:
+        await status.delete()
+    except Exception:
+        pass  # message may have been deleted already
+
+    # Format response — body MUST be escaped for MarkdownV2
+    header   = f"\U0001f916 *Агент: {_esc(task[:100])}*\n\n"
+    body_raw = answer or "Не удалось получить ответ от AI."
+    body_md  = _esc(body_raw)
+    footer   = ""
+    if sources_used:
+        src_lines = ["\n\n\U0001f517 *Источники:*"]
+        for i, u in enumerate(sources_used[:5], 1):
+            src_lines.append(f"{i}\\. {_esc(u[:100])}")
+        footer = "\n".join(src_lines)
+
+    full_md = header + body_md + footer
+    for chunk in _split_text(full_md, 4000):
+        try:
+            await message.answer(chunk, parse_mode="MarkdownV2")
+        except Exception:
+            # Strip MarkdownV2 formatting — send clean plain text
+            plain = _unescape_md(chunk)
+            try:
+                await message.answer(plain[:4096])
+            except Exception:
+                pass
+
+
+# /update command — show the PowerShell command to download and install new files
+# ---------------------------------------------------------------------------
+
+
+@router.message(Command("update"))
+async def cmd_update(message: Message) -> None:
+    """Show the PowerShell one-liner to check for updates and install new files."""
+    text_md = (
+        "\u2b07\ufe0f *Скачать и установить новые файлы*\n\n"
+        "🖱 *Способ 1 — двойной клик:*\n"
+        "Найди файл `ОБНОВИТЬ\\.bat` на Рабочем столе \\(или в папке `drgr\\-bot`\\) и дважды кликни по нему\\.\n\n"
+        "⌨️ *Способ 2 — через PowerShell* \\(Win\\+X → Windows PowerShell\\):\n\n"
+        f"{_MD_UPDATE_CMD}\n\n"
+        "Скрипт автоматически:\n"
+        "1\\. Проверяет наличие обновлений\n"
+        "2\\. Показывает список изменённых файлов\n"
+        "3\\. Скачивает и устанавливает новые версии\n\n"
+        "После завершения запусти VM:\n"
+        f"{_MD_START_CMD}\n\n"
+        "_Если папки `drgr\\-bot` нет — используй_ /vm _для полной установки с нуля_"
+    )
+    try:
+        await message.answer(text_md, parse_mode="MarkdownV2")
+    except Exception:
+        await message.answer(
+            "⬇ Скачать и установить новые файлы\n\n"
+            "🖱 Способ 1 — двойной клик:\n"
+            "Найди файл ОБНОВИТЬ.bat на Рабочем столе (или в папке drgr-bot) и дважды кликни.\n\n"
+            "⌨ Способ 2 — через PowerShell (Win+X → Windows PowerShell):\n\n"
+            f"{_TXT_UPDATE_CMD}\n\n"
+            "Скрипт автоматически:\n"
+            "1. Проверяет наличие обновлений\n"
+            "2. Показывает список изменённых файлов\n"
+            "3. Скачивает и устанавливает новые версии\n\n"
+            "После завершения запусти VM:\n"
+            f"{_TXT_START_CMD}\n\n"
+            "Если папки drgr-bot нет — используй /vm для полной установки с нуля"
+        )
+
+
+# /settoken command — save a new Telegram bot token via VM /settings API
+# ---------------------------------------------------------------------------
+
+
+@router.message(Command("settoken"))
+async def cmd_settoken(message: Message) -> None:
+    """Save a new Telegram bot token.  Usage: /settoken <token>"""
+    args = (message.text or "").split(maxsplit=1)
+    if len(args) < 2 or not args[1].strip():
+        await message.answer(
+            "ℹ️ Использование: /settoken <токен>\n\n"
+            "Пример:\n"
+            "/settoken 1234567890:ABCdefGHIjklMNOpqrSTUvwxyz\n\n"
+            "Токен можно получить у @BotFather.\n"
+            "После сохранения бот автоматически перезапустится с новым токеном."
+        )
+        return
+
+    new_token = args[1].strip()
+    if not re.match(r"^\d{8,}:[A-Za-z0-9_-]{35,}$", new_token):
+        await message.answer(
+            "❌ Неверный формат токена.\n"
+            "Токен должен иметь вид: 1234567890:ABCdefGHIjklMNOpqrSTUvwxyz\n\n"
+            "Получи токен у @BotFather командой /newbot или /token."
+        )
+        return
+
+    saved = False
+    # First try via VM /settings API (VM will restart the bot automatically)
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{VM_BASE}/settings",
+                json={"bot_token": new_token},
+                timeout=aiohttp.ClientTimeout(total=8),
+            ) as resp:
+                data = await resp.json()
+                if data.get("ok"):
+                    saved = True
+    except Exception as exc:
+        logger.warning("cmd_settoken: VM /settings unreachable (%s), falling back to .env write", exc)
+
+    if not saved:
+        # Fallback: write directly to .env in repo root
+        try:
+            env_path = Path(__file__).resolve().parent / ".env"
+            lines: list[str] = []
+            if env_path.exists():
+                lines = env_path.read_text(encoding="utf-8").splitlines(keepends=True)
+            token_found = False
+            for i, line in enumerate(lines):
+                if line.startswith("BOT_TOKEN="):
+                    lines[i] = f"BOT_TOKEN={new_token}\n"
+                    token_found = True
+                    break
+            if not token_found:
+                lines.append(f"BOT_TOKEN={new_token}\n")
+            env_path.write_text("".join(lines), encoding="utf-8")
+            saved = True
+        except Exception as exc:
+            await message.answer(f"❌ Не удалось сохранить токен: {exc}")
+            return
+
+    try:
+        await message.answer(
+            "✅ *Токен сохранён\\!*\n\n"
+            "Бот перезапускается с новым токеном\\.\n"
+            "Если бот не отвечает через 10 секунд — запусти заново:\n\n"
+            f"{_MD_INSTALL_CMD}\n\n"
+            f"{_MD_START_CMD}",
+            parse_mode="MarkdownV2",
+        )
+    except Exception:
+        await message.answer(
+            "✅ Токен сохранён!\n\n"
+            "Бот перезапускается с новым токеном.\n"
+            "Если бот не отвечает через 10 секунд — запусти заново:\n\n"
+            f"{_TXT_INSTALL_CMD}\n\n"
+            f"{_TXT_START_CMD}"
+        )
+
+
+# /vm command — show VM status, URL and PowerShell launch command
+# ---------------------------------------------------------------------------
+
+
+@router.message(Command("vm"))
+async def cmd_vm(message: Message) -> None:
+    """Show VM status and how to launch it."""
+    vm_ok    = False
+    ollama_ok = False
+    lms_ok   = False
+    lms_url  = ""
+    lms_cfg  = False
+    vvm_ok   = False
+    vvm_url  = ""
+    vvm_cfg  = False
+    models: List[str] = []
+    lms_models: List[str] = []
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{VM_BASE}/health",
+                timeout=aiohttp.ClientTimeout(total=5),
+            ) as resp:
+                if resp.status == 200:
+                    hdata       = await resp.json()
+                    vm_ok       = hdata.get("vm", {}).get("status") == "ok"
+                    ollama_ok   = hdata.get("ollama", {}).get("status") == "ok"
+                    models      = hdata.get("ollama", {}).get("models", [])
+                    lms_data    = hdata.get("lm_studio", {})
+                    lms_ok      = lms_data.get("status") == "ok"
+                    lms_cfg     = lms_data.get("status") != "not_configured"
+                    lms_url     = lms_data.get("url", "") or ""
+                    lms_models  = lms_data.get("models", [])
+                    vvm_data    = hdata.get("vision_vm", {})
+                    vvm_ok      = vvm_data.get("status") == "ok"
+                    vvm_cfg     = vvm_data.get("status") != "not_configured"
+                    vvm_url     = vvm_data.get("url", "") or ""
+    except Exception:
+        pass
+
+    vm_icon     = "\u2705" if vm_ok     else "\u274c"
+    ollama_icon = "\u2705" if ollama_ok else "\u274c"
+    lms_icon    = "\u2705" if lms_ok    else ("\u26a0\ufe0f" if lms_cfg else "\u2796")
+    vvm_icon    = "\u2705" if vvm_ok    else ("\u26a0\ufe0f" if vvm_cfg else "\u2796")
+    all_models  = (models + lms_models)[:5]
+    models_str  = ", ".join(all_models) if all_models else "нет"
+
+    lms_status_str = "подключен" if lms_ok else ("недоступен" if lms_cfg else "не настроен")
+    lms_url_str    = f" \\(`{_esc(lms_url)}`\\)" if lms_url else ""
+    vvm_status_str = "подключена" if vvm_ok else ("недоступна" if vvm_cfg else "не настроена")
+    vvm_url_str    = f" \\(`{_esc(vvm_url)}`\\)" if vvm_url else ""
+
+    text_md = (
+        "\U0001f5a5 *Статус VM*\n\n"
+        f"{vm_icon} VM \\(`{_esc(VM_BASE)}`\\): {'работает' if vm_ok else 'не запущена'}\n"
+        f"{ollama_icon} Ollama: {'подключена' if ollama_ok else 'не подключена'}\n"
+        f"{lms_icon} LM Studio: {_esc(lms_status_str)}{lms_url_str}\n"
+        f"{vvm_icon} Vision VM: {_esc(vvm_status_str)}{vvm_url_str}\n"
+        f"\U0001f9e0 Модели: `{_esc(models_str)}`\n\n"
+        f"\U0001f680 {_MD_INSTALL_CMD}\n\n"
+        f"{_MD_UPDATE_CMD}\n\n"
+        f"{_MD_START_CMD}\n\n"
+        f"*\U0001f5a5 Адрес VM в браузере:* {_MD_WEB_URL}\n"
+        f"*🌐 Онлайн чат\\-зал:* `{_esc(VM_BASE)}/chatroom/page`\n\n"
+        "_Или дважды кликни ярлык «Code VM» на Рабочем столе_\n"
+        "_Для подключения LM Studio: откройте настройки \\(☰\\) в VM → введите URL LM Studio_\n"
+        "_Vision VM: отдельный Ollama с llava/minicpm\\-v — добавьте URL в настройках \\(☰\\) → Vision VM_\n"
+        "_Пример: `http://localhost:11436` \\(второй экземпляр Ollama с vision\\-моделью\\)_"
+    )
+    try:
+        await message.answer(text_md, parse_mode="MarkdownV2")
+    except Exception:
+        await message.answer(
+            f"🖥 Статус VM\n\n"
+            f"{vm_icon} VM ({VM_BASE}): {'работает' if vm_ok else 'не запущена'}\n"
+            f"{ollama_icon} Ollama: {'подключена' if ollama_ok else 'не подключена'}\n"
+            f"{lms_icon} LM Studio: {lms_status_str}{(' (' + lms_url + ')') if lms_url else ''}\n"
+            f"{vvm_icon} Vision VM: {vvm_status_str}{(' (' + vvm_url + ')') if vvm_url else ''}\n"
+            f"🧠 Модели: {models_str}\n\n"
+            "🚀 Установка и запуск VM (PowerShell, Win+X → Windows PowerShell):\n"
+            f'irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/run.ps1" | iex\n\n'
+            "⬇ Обновить (скачать новые файлы):\n"
+            f"{_UPDATE_PS1_CMD}\n\n"
+            "▶ Запуск VM:\n"
+            f'powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\\drgr-bot\\start.ps1"\n\n'
+            f"🖥 Адрес VM в браузере: {VM_BASE}\n"
+            f"🌐 Онлайн чат-зал: {VM_BASE}/chatroom/page\n\n"
+            "Для подключения LM Studio: откройте настройки (☰) в VM → введите URL LM Studio\n"
+            "Vision VM: добавьте URL второго Ollama с vision-моделью в настройках (☰) → Vision VM\n"
+            "Пример Vision VM: http://localhost:11436 (llava, minicpm-v, moondream2)"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Photo handler — convert image via VM /convert/image
+# Send a photo with a caption like "jpeg", "png", "webp", or "bmp"
+# ---------------------------------------------------------------------------
+
+_IMAGE_FMT_ALIASES = {"jpg": "jpeg", "jpeg": "jpeg", "png": "png", "webp": "webp", "bmp": "bmp"}
+
+
+@router.message(F.photo)
+async def handle_photo_convert(message: Message) -> None:
+    """Analyze photo with AI or convert to another format via VM.
+
+    - Caption contains a format (jpeg/png/webp/bmp) → convert image
+    - Any other caption or no caption → analyze photo with AI vision model
+    """
+    caption = (message.caption or "").strip()
+    caption_lower = caption.lower()
+
+    # Look for a target format anywhere in the caption
+    target_format = None
+    for word in caption_lower.split():
+        if word in _IMAGE_FMT_ALIASES:
+            target_format = _IMAGE_FMT_ALIASES[word]
+            break
+    if not target_format:
+        for alias, fmt in _IMAGE_FMT_ALIASES.items():
+            if alias in caption_lower:
+                target_format = fmt
+                break
+
+    if not target_format:
+        # No format specified — analyze the photo with AI vision model
+        # Forward photo notification to VM chat panel
+        _push_tg_message_to_vm(
+            from_name=(message.from_user.full_name if message.from_user else "TG"),
+            text=caption or "(без подписи)",
+            chat_title=getattr(message.chat, "title", "") or "",
+            has_photo=True,
+        )
+        status = await message.answer("\U0001f50d Анализирую фото\u2026")
+        try:
+            photo     = message.photo[-1]  # highest resolution
+            file_info = await bot.get_file(photo.file_id)
+            buf       = io.BytesIO()
+            await bot.download_file(file_info.file_path, buf)
+            img_b64   = base64.b64encode(buf.getvalue()).decode()
+
+            # Build prompt: use caption as user question if provided
+            # Sanitize caption before passing to vision model
+            safe_caption = re.sub(r'[\x00-\x08\x0b-\x1f\x7f]', '', caption)[:500] if caption else ""
+            vision_prompt = (
+                f"Вопрос пользователя: {safe_caption}"
+                if safe_caption else
+                "Опиши это фото подробно на русском языке. Укажи все детали: объекты, "
+                "текст, цвета, контекст и что происходит на изображении."
+            )
+
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{VM_BASE}/agent/describe_image",
+                    json={"image_base64": img_b64, "filename": "photo.jpg",
+                          "prompt": vision_prompt},
+                    timeout=aiohttp.ClientTimeout(total=90),
+                ) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        description = data.get("description", "").strip()
+                        model_used  = data.get("model", "")
+                        if description:
+                            reply = f"\U0001f5bc {description}"
+                            await status.delete()
+                            # Split long descriptions
+                            for chunk in _split_text(reply, 4000):
+                                await message.answer(chunk)
+                            if model_used:
+                                await message.answer(
+                                    f"_Модель: {_esc(model_used)}_",
+                                    parse_mode="MarkdownV2",
+                                )
+                            return
+                        err = data.get("error", "")
+                        if "No vision model" in err or "pulling" in data:
+                            pulling = data.get("pulling", "")
+                            if pulling:
+                                await status.edit_text(
+                                    f"\u26a0\ufe0f Нет vision\\-модели\\. "
+                                    f"Автоматически устанавливаю лёгкую модель `{_esc(pulling)}`\\.\n\n"
+                                    "Подождите 1\\-2 минуты и повторите отправку фото\\.",
+                                    parse_mode="MarkdownV2",
+                                )
+                            else:
+                                # Trigger light vision check which auto-pulls moondream
+                                try:
+                                    async with aiohttp.ClientSession() as _vs:
+                                        await _vs.get(
+                                            f"{VM_BASE}/vision/light/check?pull_if_absent=1",
+                                            timeout=aiohttp.ClientTimeout(total=5),
+                                        )
+                                except Exception:
+                                    pass
+                                await status.edit_text(
+                                    "\u26a0\ufe0f Нет vision\\-модели\\. "
+                                    "Автоматически устанавливаю лёгкую модель `moondream`\\.\n\n"
+                                    "Подождите 1\\-2 минуты и повторите отправку фото\\.\n\n"
+                                    "Или вручную: `ollama pull moondream`",
+                                    parse_mode="MarkdownV2",
+                                )
+                            return
+                        if err:
+                            await status.edit_text(f"\u274c {_esc(err[:300])}", parse_mode="MarkdownV2")
+                        else:
+                            await status.edit_text(
+                                "\u274c Vision\\-модель не смогла проанализировать изображение\\. "
+                                "Попробуйте снова или установите vision\\-модель: `ollama pull moondream`",
+                                parse_mode="MarkdownV2",
+                            )
+                        return
+                    await status.edit_text(f"\u274c VM: HTTP {resp.status}")
+                    return
+        except Exception as exc:
+            logger.error("photo_analyze: %s", exc)
+        await status.edit_text(
+            "\u274c VM недоступна\\. Убедитесь, что VM запущена \\(/vm\\)\\.\n\n"
+            "Для конвертации фото отправьте с подписью: `jpeg`, `png`, `webp`, `bmp`\n\n"
+            f"_Для обновления файлов используйте_ /update",
+            parse_mode="MarkdownV2",
+        )
+        return
+
+    status = await message.answer(f"\U0001f504 Конвертирую в {target_format.upper()}\u2026")
+    try:
+        photo     = message.photo[-1]  # highest resolution
+        file_info = await bot.get_file(photo.file_id)
+        buf       = io.BytesIO()
+        await bot.download_file(file_info.file_path, buf)
+        img_b64   = base64.b64encode(buf.getvalue()).decode()
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{VM_BASE}/convert/image",
+                json={"image_base64": img_b64, "to_format": target_format},
+                timeout=aiohttp.ClientTimeout(total=30),
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    if data.get("success"):
+                        result_bytes = base64.b64decode(data["result_base64"])
+                        ts           = int(time.time())
+                        fname        = f"converted_{ts}.{target_format}"
+                        out_path     = str(ARTICLES_DIR / fname)
+                        async with aiofiles.open(out_path, "wb") as fh:
+                            await fh.write(result_bytes)
+                        await action_logger.log(
+                            "convert_image",
+                            {"to_format": target_format},
+                            {"size_bytes": data.get("size_bytes", 0),
+                             "dimensions": data.get("dimensions", "")},
+                            True,
+                        )
+                        await status.delete()
+                        await message.answer_document(
+                            FSInputFile(out_path, filename=fname),
+                            caption=(
+                                f"\u2705 Конвертировано в {target_format.upper()}\n"
+                                f"Размер: {data.get('dimensions', '?')}, "
+                                f"{data.get('size_bytes', 0) // 1024} КБ"
+                            ),
+                        )
+                        return
+                    await status.edit_text(f"\u274c {data.get('error', 'Ошибка конвертации')[:300]}")
+                    return
+                await status.edit_text(f"\u274c VM: HTTP {resp.status}")
+                return
+    except Exception as exc:
+        logger.error("photo_convert: %s", exc)
+    await status.edit_text(
+        "\u274c Ошибка конвертации\\. Убедитесь, что VM запущена\\.",
+        parse_mode="MarkdownV2",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Video handler — analyze video via VM /agent/describe_image (thumbnail frame)
+# ---------------------------------------------------------------------------
+
+async def _analyze_video_bytes(video_bytes: bytes, caption: str, message: Message,
+                                status_msg: Message) -> bool:
+    """Try to extract a frame from video bytes and describe it via vision model.
+
+    Returns True when a description was sent, False otherwise.
+    """
+    # Try to extract a frame using ffmpeg (if available)
+    frame_b64 = ""
+    try:
+        import subprocess
+        import tempfile as _tf
+        with _tf.NamedTemporaryFile(suffix=".mp4", delete=False) as vf:
+            vf.write(video_bytes)
+            vpath = vf.name
+        frame_path = vpath + "_frame.jpg"
+        result = subprocess.run(
+            ["ffmpeg", "-y", "-i", vpath, "-vframes", "1", "-q:v", "2", frame_path],
+            capture_output=True, timeout=15,
+        )
+        if result.returncode == 0 and os.path.exists(frame_path):
+            with open(frame_path, "rb") as ff:
+                frame_b64 = base64.b64encode(ff.read()).decode()
+        try:
+            os.unlink(vpath)
+            if os.path.exists(frame_path):
+                os.unlink(frame_path)
+        except OSError:
+            pass
+    except (FileNotFoundError, Exception):
+        pass
+
+    if not frame_b64:
+        return False
+
+    # Sanitize user input: strip control characters and limit length
+    safe_caption = re.sub(r'[\x00-\x08\x0b-\x1f\x7f]', '', caption)[:500] if caption else ""
+    prompt_extra = f" Вопрос пользователя: {safe_caption}" if safe_caption else ""
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{VM_BASE}/agent/describe_image",
+                json={
+                    "image_base64": frame_b64,
+                    "filename": "video_frame.jpg",
+                    "prompt": f"Опиши это видео (кадр из видео).{prompt_extra}",
+                },
+                timeout=aiohttp.ClientTimeout(total=90),
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    description = data.get("description", "").strip()
+                    if description:
+                        model_used = data.get("model", "")
+                        await status_msg.delete()
+                        reply = f"\U0001f3a5 {description}"
+                        for chunk in _split_text(reply, 4000):
+                            await message.answer(chunk)
+                        if model_used:
+                            await message.answer(
+                                f"_Модель: {_esc(model_used)}_",
+                                parse_mode="MarkdownV2",
+                            )
+                        return True
+    except Exception as exc:
+        logger.debug("video_frame_analyze: %s", exc)
+    return False
+
+
+@router.message(F.video)
+async def handle_video(message: Message) -> None:
+    """Analyze video with AI vision model (extracts a frame) or describe file info."""
+    caption = (message.caption or "").strip()
+    _push_tg_message_to_vm(
+        from_name=(message.from_user.full_name if message.from_user else "TG"),
+        text=caption or "(видео без подписи)",
+        chat_title=getattr(message.chat, "title", "") or "",
+    )
+    video = message.video
+    if not video:
+        return
+    status = await message.answer("\U0001f3a5 Анализирую видео\u2026")
+    try:
+        file_info = await bot.get_file(video.file_id)
+        buf = io.BytesIO()
+        await bot.download_file(file_info.file_path, buf)
+        video_bytes = buf.getvalue()
+
+        # Try frame extraction + vision analysis
+        if await _analyze_video_bytes(video_bytes, caption, message, status):
+            return
+
+        # Fallback: show video metadata
+        dur = video.duration or 0
+        w   = video.width or 0
+        h   = video.height or 0
+        sz  = (video.file_size or 0) // 1024
+        mime = video.mime_type or "video"
+        fn  = video.file_name or "video"
+        info = (
+            f"\U0001f3a5 *Видео получено*\n\n"
+            f"Файл: `{_esc(fn)}`\n"
+            f"Размер: {sz} КБ\n"
+            f"Разрешение: {w}×{h}\n"
+            f"Длительность: {dur} сек\n"
+            f"Формат: `{_esc(mime)}`\n\n"
+            f"_Для покадрового анализа видео установите `ffmpeg` на VM\\._"
+        )
+        if caption:
+            info += f"\n\nПодпись: {_esc(caption)}"
+        await status.delete()
+        await message.answer(info, parse_mode="MarkdownV2")
+    except Exception as exc:
+        logger.error("handle_video: %s", exc)
+        await status.edit_text(
+            "\u274c Ошибка обработки видео\\. Убедитесь, что VM запущена \\(/vm\\)\\.",
+            parse_mode="MarkdownV2",
+        )
+
+
+@router.message(F.video_note)
+async def handle_video_note(message: Message) -> None:
+    """Analyze round video note (Telegram video message) with AI vision model."""
+    _push_tg_message_to_vm(
+        from_name=(message.from_user.full_name if message.from_user else "TG"),
+        text="(видео-сообщение)",
+        chat_title=getattr(message.chat, "title", "") or "",
+    )
+    vnote = message.video_note
+    if not vnote:
+        return
+    status = await message.answer("\U0001f3a5 Анализирую видео-сообщение\u2026")
+    try:
+        file_info = await bot.get_file(vnote.file_id)
+        buf = io.BytesIO()
+        await bot.download_file(file_info.file_path, buf)
+        video_bytes = buf.getvalue()
+
+        if await _analyze_video_bytes(video_bytes, "", message, status):
+            return
+
+        dur = vnote.duration or 0
+        sz  = (vnote.file_size or 0) // 1024
+        info = (
+            f"\U0001f3a5 *Видео\\-сообщение получено*\n\n"
+            f"Длительность: {dur} сек, Размер: {sz} КБ\n\n"
+            f"_Для покадрового анализа установите `ffmpeg` на VM\\._"
+        )
+        await status.delete()
+        await message.answer(info, parse_mode="MarkdownV2")
+    except Exception as exc:
+        logger.error("handle_video_note: %s", exc)
+        await status.edit_text(
+            "\u274c Ошибка обработки видео\\. Убедитесь, что VM запущена \\(/vm\\)\\.",
+            parse_mode="MarkdownV2",
+        )
+
+
+# ---------------------------------------------------------------------------
+# Document handler — convert text file via VM /convert/text
+# Supported: JSON→CSV, CSV→JSON, HTML→text, Markdown→HTML
+# ---------------------------------------------------------------------------
+
+_TEXT_CONVERT_DEFAULTS = {
+    "json": "csv", "csv": "json", "html": "text", "htm": "text", "md": "html", "markdown": "html"
+}
+
+
+_CODE_EXTS = {"py", "js", "ts", "sh", "bash", "rb", "go", "rs", "cpp", "c", "java", "php", "swift", "kt", "sql"}
+
+
+@router.message(F.document)
+async def handle_document_convert(message: Message) -> None:
+    """Handle uploaded documents.
+
+    • Code files (.py, .js, .sh, …) — upload to VM and execute via /execute.
+      Caption triggers execution; no caption shows file content in editor.
+    • Article files (.html, .htm, .txt, .md) that look like articles — enrich via /research.
+    • Text format files (JSON, CSV, HTML, Markdown) — convert via /convert/text.
+    """
+    doc   = message.document
+    if not doc:
+        return
+    fname   = (doc.file_name or "").lower()
+    caption = (message.caption or "").strip()
+    caption_lower = caption.lower()
+
+    # Detect extension
+    ext = fname.rsplit(".", 1)[-1] if "." in fname else ""
+
+    # --- Branch 1: code file upload → execute in VM ---
+    if ext in _CODE_EXTS:
+        # Limit size to 512 KB
+        if doc.file_size and doc.file_size > 524_288:
+            await message.answer("\u26a0\ufe0f Файл слишком большой \\(макс 512 КБ\\)\\.", parse_mode="MarkdownV2")
+            return
+
+        _ext_lang = {
+            "py": "python", "js": "javascript", "ts": "typescript",
+            "sh": "shell", "bash": "bash", "rb": "ruby",
+            "go": "go", "rs": "rust", "cpp": "cpp", "c": "c",
+            "java": "java", "php": "php", "swift": "swift", "kt": "kotlin",
+            "sql": "sql",
+        }
+        lang = _ext_lang.get(ext, ext)
+
+        status = await message.answer(
+            f"\u2699\ufe0f Запускаю `{_esc(doc.file_name or fname)}` в VM sandbox\u2026",
+            parse_mode="MarkdownV2",
+        )
+        try:
+            file_info = await bot.get_file(doc.file_id)
+            buf       = io.BytesIO()
+            await bot.download_file(file_info.file_path, buf)
+            raw_bytes = buf.getvalue()
+            try:
+                code = raw_bytes.decode("utf-8")
+            except UnicodeDecodeError:
+                try:
+                    code = raw_bytes.decode("cp1251")
+                except UnicodeDecodeError:
+                    await status.edit_text("\u274c Файл содержит не-текстовые данные \\(не UTF\\-8\\)\\.", parse_mode="MarkdownV2")
+                    return
+
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{VM_BASE}/execute",
+                    json={"code": code, "language": lang},
+                    timeout=aiohttp.ClientTimeout(total=60),
+                ) as resp:
+                    if resp.status == 200:
+                        data    = await resp.json()
+                        success = data.get("success", False)
+                        output  = (data.get("output") or "").strip()
+                        error   = (data.get("error") or "").strip()
+                        await action_logger.log(
+                            "execute_upload",
+                            {"filename": doc.file_name, "language": lang},
+                            {"success": success, "output": output[:200]},
+                            success,
+                        )
+                        icon = "\u2705" if success else "\u274c"
+                        lines = [f"{icon} `{_esc(doc.file_name or fname)}` \\({_esc(lang)}\\)"]
+                        if output:
+                            lines.append(f"\n\U0001f4e4 *Вывод:*\n```\n{_esc(output[:800])}\n```")
+                        if not success and error:
+                            lines.append(f"\n\U0001f6a8 *Ошибка:*\n```\n{_esc(error[:600])}\n```")
+                        await status.delete()
+                        try:
+                            await message.answer("\n".join(lines), parse_mode="MarkdownV2")
+                        except Exception:
+                            await message.answer(f"{icon} {output or error}")
+                        return
+                    err_text = await resp.text()
+                    await status.edit_text(f"\u274c VM {resp.status}: {err_text[:200]}")
+        except Exception as exc:
+            logger.error("handle_document code exec: %s", exc)
+            await status.edit_text(f"\u274c Ошибка: {str(exc)[:200]}")
+        return
+
+    # --- Branch 1b: article file upload (html/htm/txt/md) → enrich via /research ---
+    _ARTICLE_EXTS = {"html", "htm", "txt", "md", "markdown"}
+    if ext in _ARTICLE_EXTS and not caption_lower.startswith(("csv", "json", "text", "txt")):
+        # Download file and check if it looks like an article
+        if doc.file_size and doc.file_size > 1_048_576:
+            await message.answer("\u26a0\ufe0f Файл слишком большой \\(макс 1 МБ\\)\\.", parse_mode="MarkdownV2")
+            return
+        try:
+            file_info = await bot.get_file(doc.file_id)
+            buf       = io.BytesIO()
+            await bot.download_file(file_info.file_path, buf)
+            raw_bytes = buf.getvalue()
+            try:
+                file_content = raw_bytes.decode("utf-8")
+            except UnicodeDecodeError:
+                file_content = raw_bytes.decode("cp1251", errors="replace")
+
+            # Strip HTML tags for plain text comparison
+            if ext in ("html", "htm"):
+                import html as _html_mod
+                plain_text = re.sub(r'<[^>]+>', ' ', file_content)
+                plain_text = re.sub(r'\s+', ' ', plain_text).strip()
+                plain_text = _html_mod.unescape(plain_text)
+            else:
+                plain_text = file_content
+
+            # Check if it looks like an article
+            article_topic = _extract_article_topic(plain_text) or (
+                _extract_article_topic(file_content) if ext in ("md", "markdown") else ""
+            )
+
+            if article_topic:
+                # It's an article — enrich it via /research
+                await message.answer(
+                    f"📰 Определил тему статьи: *{_esc(article_topic[:80])}*\n\n"
+                    "🔍 Ищу актуальную информацию для обогащения и проверки фактов…",
+                    parse_mode="MarkdownV2",
+                )
+                await _enrich_article_via_research(article_topic, plain_text[:4000], message)
+                return
+        except Exception as exc:
+            logger.warning("handle_document article check: %s", exc)
+
+    # --- Branch 2: text format conversion ---
+    from_fmt = ext if ext in _TEXT_CONVERT_DEFAULTS else None
+    if not from_fmt:
+        return  # Not a file format we handle — silently ignore
+
+    # Detect target format from caption; fall back to default
+    to_fmt = None
+    valid_targets = {
+        "json": {"csv"},
+        "csv":  {"json"},
+        "html": {"text", "txt"},
+        "htm":  {"text", "txt"},
+        "md":   {"html"},
+        "markdown": {"html"},
+    }.get(from_fmt, set())
+    for word in caption_lower.split():
+        if word in valid_targets or (word == "txt" and "text" in valid_targets):
+            to_fmt = "text" if word == "txt" else word
+            break
+    if not to_fmt:
+        to_fmt = _TEXT_CONVERT_DEFAULTS[from_fmt]
+
+    # Map source extension to canonical server format name
+    server_from = {"htm": "html", "markdown": "md"}.get(from_fmt, from_fmt)
+
+    # Limit file size to 1 MB
+    if doc.file_size and doc.file_size > 1_048_576:
+        await message.answer(
+            "\u26a0\ufe0f Файл слишком большой \\(макс 1 МБ\\)\\.", parse_mode="MarkdownV2"
+        )
+        return
+
+    status = await message.answer(
+        f"\U0001f504 Конвертирую {from_fmt.upper()} \u2192 {to_fmt.upper()} через VM\u2026"
+    )
+    try:
+        file_info = await bot.get_file(doc.file_id)
+        buf       = io.BytesIO()
+        await bot.download_file(file_info.file_path, buf)
+        content   = buf.getvalue().decode("utf-8", errors="replace")
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{VM_BASE}/convert/text",
+                json={"content": content, "from_format": server_from, "to_format": to_fmt},
+                timeout=aiohttp.ClientTimeout(total=30),
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    if data.get("success"):
+                        result_text = data.get("result", "")
+                        ts          = int(time.time())
+                        out_ext     = to_fmt if to_fmt != "text" else "txt"
+                        out_fname   = f"converted_{ts}.{out_ext}"
+                        out_path    = str(ARTICLES_DIR / out_fname)
+                        async with aiofiles.open(out_path, "w", encoding="utf-8") as fh:
+                            await fh.write(result_text)
+                        await action_logger.log(
+                            "convert_text",
+                            {"from_format": from_fmt, "to_format": to_fmt},
+                            {"length": len(result_text)},
+                            True,
+                        )
+                        await status.delete()
+                        await message.answer_document(
+                            FSInputFile(out_path, filename=out_fname),
+                            caption=f"\u2705 {from_fmt.upper()} \u2192 {to_fmt.upper()}",
+                        )
+                        return
+                    await status.edit_text(f"\u274c {data.get('error', 'Ошибка')[:300]}")
+                    return
+                await status.edit_text(f"\u274c VM: HTTP {resp.status}")
+                return
+    except Exception as exc:
+        logger.error("doc_convert: %s", exc)
+    await status.edit_text(
+        "\u274c Ошибка конвертации\\. Убедитесь, что VM запущена\\.",
+        parse_mode="MarkdownV2",
+    )
+
+
+# ---------------------------------------------------------------------------
+# /agent command — autonomous browser agent (DRGRBrowserAgent)
+# ---------------------------------------------------------------------------
+
+
+@router.message(Command("agent"))
+async def cmd_agent(message: Message) -> None:
+    """Run the autonomous DRGRBrowserAgent to complete a browser task.
+
+    Usage: /agent <task description>
+           /agent <url> <task description>
+    """
+    parts = (message.text or "").split(maxsplit=1)
+    if len(parts) < 2:
+        await message.answer(
+            "🤖 *Автономный браузер\\-агент*\n\n"
+            "Использование:\n"
+            "`/agent <задание>` — агент сам откроет браузер и выполнит задачу\n\n"
+            "Примеры:\n"
+            "• `/agent Найди последние новости о Python 3\\.13`\n"
+            "• `/agent https://github\\.com Найди самый популярный репозиторий Python`\n\n"
+            "Агент делает скриншоты, кликает, заполняет формы и отвечает на задачу\\.\n"
+            "Требуется: Ollama \\+ модель qwen3\\-vl:8b или drgr\\-visor",
+            parse_mode="MarkdownV2",
+        )
+        return
+
+    task_text = parts[1].strip()
+    start_url = ""
+    # If task starts with a URL, extract it
+    task_words = task_text.split(maxsplit=1)
+    if task_words[0].startswith(("http://", "https://", "www.")):
+        start_url = task_words[0]
+        if not start_url.startswith("http"):
+            start_url = "https://" + start_url
+        task_text = task_words[1] if len(task_words) > 1 else task_text
+
+    model = await get_best_model()
+    status = await message.answer(
+        f"🤖 Запускаю автономный агент\\.\\.\\.\n"
+        f"Задание: {_esc(task_text[:100])}\n"
+        f"Модель: {_esc(model or 'не найдена')}",
+        parse_mode="MarkdownV2",
+    )
+
+    log_lines: list = [f"🤖 Агент: {task_text[:200]}"]
+    if start_url:
+        log_lines.append(f"🌐 Стартовый URL: {start_url}")
+    log_lines.append("")
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{VM_BASE}/browse/agent/run",
+                json={
+                    "task": task_text,
+                    "model": model,
+                    "max_steps": 10,
+                    "start_url": start_url,
+                },
+                timeout=aiohttp.ClientTimeout(total=300),
+            ) as resp:
+                if resp.status != 200:
+                    await status.edit_text(f"❌ VM вернула {resp.status}")
+                    return
+                async for raw_line in resp.content:
+                    line = raw_line.decode("utf-8", errors="replace").strip()
+                    if not line.startswith("data: "):
+                        continue
+                    payload = line[6:]
+                    if payload == "[DONE]":
+                        break
+                    try:
+                        obj = json.loads(payload)
+                    except ValueError:
+                        continue
+                    if obj.get("error"):
+                        log_lines.append(f"❌ {obj['error'][:200]}")
+                        break
+                    cycle     = obj.get("cycle", "?")
+                    url_now   = obj.get("url", "")
+                    status_v  = obj.get("status", "running")
+                    thoughts  = obj.get("thoughts", {})
+                    plan      = (thoughts.get("plan_short") or "")[:100]
+                    results   = obj.get("results", [])
+                    log_lines.append(f"⚙ Цикл {cycle}: {url_now[:60]}")
+                    if plan:
+                        log_lines.append(f"  → {plan}")
+                    for r in results:
+                        ok_mark = "✓" if r.get("ok") else "✗"
+                        log_lines.append(f"  {ok_mark} {r.get('type','')}: {(r.get('info') or '')[:60]}")
+                    if status_v.startswith("finished_"):
+                        log_lines.append(f"\n🏁 {status_v}")
+                        break
+                    # Update status message every 3 cycles
+                    if isinstance(cycle, int) and cycle % 3 == 0:
+                        try:
+                            await status.edit_text(
+                                "\n".join(log_lines[-20:])[:4000],
+                                parse_mode=None,
+                            )
+                        except Exception:
+                            pass
+    except Exception as exc:
+        logger.error("cmd_agent: %s", exc)
+        log_lines.append(f"❌ Ошибка: {str(exc)[:200]}")
+
+    await action_logger.log(
+        "browser_agent",
+        {"task": task_text[:200], "start_url": start_url},
+        {"cycles": len(log_lines), "success": any("finished_success" in ln for ln in log_lines)},
+        any("finished_success" in ln for ln in log_lines),
+    )
+
+    final = "\n".join(log_lines)[:4000]
+    try:
+        await status.edit_text(final, parse_mode=None)
+    except Exception:
+        await message.answer(final[:4096], parse_mode=None)
+
+
+@router.message(F.text & ~F.text.startswith("/"))
+async def handle_text(message: Message) -> None:
+    query = (message.text or "").strip()
+    if len(query) < 3:
+        await message.answer(
+            "Запрос слишком короткий\\. Напишите что хотите найти\\.",
+            parse_mode="MarkdownV2",
+        )
+        return
+    user_id = message.from_user.id if message.from_user else 0
+
+    # Forward the incoming TG message to the VM chat panel (fire-and-forget)
+    _push_tg_message_to_vm(
+        from_name=(message.from_user.full_name if message.from_user else "TG"),
+        text=query,
+        chat_title=getattr(message.chat, "title", "") or "",
+    )
+
+    # Smart routing: if user replied to a photo/video message, analyze that media
+    reply = message.reply_to_message
+    if reply is not None:
+        replied_photo = reply.photo
+        replied_video = reply.video
+        replied_doc   = reply.document
+        if replied_photo:
+            # User asked something about a photo they replied to
+            status = await message.answer("\U0001f50d Анализирую фото\u2026")
+            try:
+                photo = replied_photo[-1]
+                file_info = await bot.get_file(photo.file_id)
+                buf = io.BytesIO()
+                await bot.download_file(file_info.file_path, buf)
+                img_b64 = base64.b64encode(buf.getvalue()).decode()
+                # Sanitize user input before passing to vision model
+                safe_query = re.sub(r'[\x00-\x08\x0b-\x1f\x7f]', '', query)[:500]
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(
+                        f"{VM_BASE}/agent/describe_image",
+                        json={"image_base64": img_b64, "filename": "photo.jpg",
+                              "prompt": safe_query},
+                        timeout=aiohttp.ClientTimeout(total=90),
+                    ) as resp:
+                        if resp.status == 200:
+                            data = await resp.json()
+                            description = data.get("description", "").strip()
+                            if description:
+                                model_used = data.get("model", "")
+                                await status.delete()
+                                for chunk in _split_text(f"\U0001f5bc {description}", 4000):
+                                    await message.answer(chunk)
+                                if model_used:
+                                    await message.answer(
+                                        f"_Модель: {_esc(model_used)}_",
+                                        parse_mode="MarkdownV2",
+                                    )
+                                return
+            except Exception as exc:
+                logger.error("reply_photo_analyze: %s", exc)
+            try:
+                await status.edit_text("\u274c Не удалось проанализировать фото\\. Попробуйте ещё раз\\.", parse_mode="MarkdownV2")
+            except Exception:
+                pass
+            return
+        if replied_video:
+            status = await message.answer("\U0001f3a5 Анализирую видео\u2026")
+            try:
+                file_info = await bot.get_file(replied_video.file_id)
+                buf = io.BytesIO()
+                await bot.download_file(file_info.file_path, buf)
+                if await _analyze_video_bytes(buf.getvalue(), query, message, status):
+                    return
+            except Exception as exc:
+                logger.error("reply_video_analyze: %s", exc)
+            try:
+                await status.edit_text("\u274c Не удалось проанализировать видео\\.", parse_mode="MarkdownV2")
+            except Exception:
+                pass
+            return
+
+    # Smart routing: if message contains a URL, treat it as a ВИЗОР/browse request
+    url_match = _URL_IN_TEXT_RE.search(query)
+    if url_match:
+        url = _clean_url(url_match.group(0))
+        status = await message.answer(
+            f"🖥 ВИЗОР анализирует `{url[:80]}`\\.\\.\\.",
+            parse_mode="MarkdownV2",
+        )
+        t0 = time.monotonic()
+        try:
+            async with aiohttp.ClientSession() as _sess:
+                async with _sess.post(
+                    f"{VM_BASE}/browse/screenshot",
+                    json={"url": url},
+                    timeout=aiohttp.ClientTimeout(total=60),
+                ) as resp:
+                    data = await resp.json() if resp.status == 200 else {}
+        except Exception as exc:
+            await status.edit_text(f"❌ Ошибка: {str(exc)[:200]}")
+            return
+        dur = int((time.monotonic() - t0) * 1000)
+        screenshot_b64 = data.get("screenshot_base64", "")
+        description    = data.get("description", "")
+        model_used     = data.get("model", "")
+        await status.delete()
+        if screenshot_b64:
+            img_bytes = base64.b64decode(screenshot_b64)
+            ts = int(time.time())
+            shot_path = str(SCREENSHOTS_DIR / f"visor_{ts}.png")
+            with open(shot_path, "wb") as fh:
+                fh.write(img_bytes)
+            caption = f"🖥 *ВИЗОР* — {_esc(url[:60])}\n\n{_esc(description[:900])}"
+            if model_used:
+                caption += f"\n\n_Модель: {_esc(model_used)}_"
+            caption += f"\n⏱ {dur} мс"
+            try:
+                await message.answer_photo(
+                    FSInputFile(shot_path),
+                    caption=caption[:1024],
+                    parse_mode="MarkdownV2",
+                )
+            except Exception:
+                await message.answer(caption[:4096], parse_mode=None)
+        else:
+            await message.answer(
+                (description or "❌ Не удалось получить скриншот")[:4096]
+            )
+        return
+
+    q_lower = query.lower()
+
+    # Smart routing: detect update intent → show update command
+    # (checked BEFORE general PS_CMD_KEYWORDS to avoid "где команда" swallowing
+    #  update-specific questions like "где команда для скачивания и запуска обновлений")
+    _UPDATE_KEYWORDS = (
+        "обновл", "скачать файл", "скачать обновл", "установить обновл",
+        "устоновить обновл", "устоновить", "обновить.bat", "обновить bat",
+        "новые файл", "команда для скачивания", "команда для обновл",
+        "update.ps1", "как обновить",
+        "апгрейд", "апдейт", "upgrade", "запуска апгрейд", "запустить апгрейд",
+        "скачивания", "скачать и запустить", "скачать и запуск",
+        "как скачать", "скачать и установить",
+    )
+    if any(kw in q_lower for kw in _UPDATE_KEYWORDS):
+        await cmd_update(message)
+        return
+
+    # Smart routing: chatroom / online chat page queries → show the chatroom URL
+    _CHATROOM_KEYWORDS = (
+        "чат онлайн", "онлайн чат", "чат-зал", "чат зал", "чат комната",
+        "chat room", "chatroom", "онлайн страница", "страница чата",
+        "открыть чат", "войти в чат", "чат страница",
+        "чат не найден", "чат не работает", "страница не найдена",
+    )
+    if any(kw in q_lower for kw in _CHATROOM_KEYWORDS):
+        try:
+            await message.answer(
+                "🌐 *Онлайн чат \\(Чат\\-зал\\)*\n\n"
+                "Откройте в браузере на компьютере, где запущена VM:\n\n"
+                f"🔗 `{_esc(VM_BASE)}/chatroom/page`\n\n"
+                "Или нажмите кнопку *🌐 Чат\\-зал* в веб\\-интерфейсе VM:\n"
+                f"`{_esc(VM_BASE)}/`\n\n"
+                "Чат\\-зал — это многопользовательский онлайн\\-чат, "
+                "доступный в локальной сети\\.",
+                parse_mode="MarkdownV2",
+            )
+        except Exception:
+            await message.answer(
+                "🌐 Онлайн чат (Чат-зал)\n\n"
+                "Откройте в браузере:\n"
+                f"{VM_BASE}/chatroom/page\n\n"
+                "Или нажмите кнопку 🌐 Чат-зал в веб-интерфейсе VM:\n"
+                f"{VM_BASE}/"
+            )
+        return
+
+    # Smart routing: questions about article screenshots → explain /research + /search commands
+    _ARTICLE_SCREENSHOT_KEYWORDS = (
+        "скрин статьи", "скрин сгенер", "скриншот статьи", "скриншот сгенер",
+        "screenshot статьи", "где скрин", "где скриншот",
+        "сгенерированной статьи",
+    )
+    if any(kw in q_lower for kw in _ARTICLE_SCREENSHOT_KEYWORDS):
+        md = (
+            "\U0001f4f0 *Статья со скриншотами*\n\n"
+            "Чтобы получить статью с иллюстрациями:\n"
+            "1\\. Напиши `/research <тема>` или `/search <тема>` — бот найдёт источники, "
+            "сделает скриншоты страниц и пришлёт полную статью\\.\n"
+            "2\\. Или просто напиши тему — бот определит намерение автоматически\\.\n\n"
+            "Статья придёт тремя частями:\n"
+            "• Текст статьи\n"
+            "• 📸 Скриншоты страниц\\-источников\n"
+            "• 📄 HTML\\-файл с оформленной версией\n\n"
+            f"*⬇ Обновить файлы бота \\(PowerShell\\):*\n"
+            f"`{_UPDATE_PS1_CMD}`"
+        )
+        try:
+            await message.answer(md, parse_mode="MarkdownV2")
+        except Exception:
+            await message.answer(
+                "📰 Статья со скриншотами\n\n"
+                "Чтобы получить статью с иллюстрациями:\n"
+                "1. Напиши /research <тема> или /search <тема> — бот найдёт источники, "
+                "сделает скриншоты страниц и пришлёт полную статью.\n"
+                "2. Или просто напиши тему — бот определит намерение автоматически.\n\n"
+                "Статья придёт тремя частями:\n"
+                "• Текст статьи\n"
+                "• 📸 Скриншоты страниц-источников\n"
+                "• 📄 HTML-файл с оформленной версией\n\n"
+                f"⬇ Обновить файлы бота (PowerShell):\n{_UPDATE_PS1_CMD}"
+            )
+        return
+
+    # Smart routing: general PowerShell/install question → show all commands via /vm
+    _PS_CMD_KEYWORDS = (
+        "команда для повершел", "команда для повершелл",
+        "команда для поверш",
+        "команда powershell", "powershell команда",
+        "где команда", "пауэршелл", "повершелл", "повекршел",
+        "как установить", "установка vm", "установить vm",
+        "run.ps1", "start.ps1",
+        "lm studio", "lm-studio", "лм студио", "подключить лм", "подключить vm",
+        "подключение vm", "подключение вм", "статус vm", "статус вм",
+    )
+    if any(kw in q_lower for kw in _PS_CMD_KEYWORDS):
+        await cmd_vm(message)
+        return
+
+    # Smart routing: detect clear search intent keywords → use research_and_reply
+    if any(kw in q_lower for kw in _SEARCH_KEYWORDS_RU):
+        await research_and_reply(query, message)
+        return
+
+    # Smart routing: detect when user sends an existing article → enrich it
+    article_topic = _extract_article_topic(query)
+    if article_topic:
+        await message.answer(
+            f"📰 Определил тему статьи: *{_esc(article_topic[:80])}*\n\n"
+            "🔍 Ищу актуальную информацию для обогащения и проверки фактов…",
+            parse_mode="MarkdownV2",
+        )
+        # Pass the original article text as context for enrichment
+        await _enrich_article_via_research(article_topic, query[:4000], message)
+        return
+
+    # Default: conversational VM chat with per-user history.
+    # Falls back to full web research if VM is unreachable or returns nothing.
+    try:
+        if not await chat_via_vm(user_id, query, message):
+            await research_and_reply(query, message)
+    except Exception as exc:
+        logger.error("handle_text error: %s", exc)
+        try:
+            await message.answer(
+                "⚠ Произошла ошибка при обработке запроса\\. "
+                "Убедитесь, что VM и Ollama запущены \\(см\\. /vm\\)\\.",
+                parse_mode="MarkdownV2",
+            )
+        except Exception:
+            pass
+
+
+# ===========================================================================
+# ENTRY POINT
+# ===========================================================================
+
+async def main() -> None:
+    logger.info(
+        "AI Research Agent starting. Playwright=%s, DDG=%s, VM=%s",
+        PLAYWRIGHT_AVAILABLE,
+        DDG_AVAILABLE,
+        VM_BASE,
+    )
+    # Register bot commands so Telegram shows them in the menu
+    await bot.set_my_commands([
+        BotCommand(command="search",     description="🔍 Искать в интернете + написать статью + скриншоты"),
+        BotCommand(command="research",   description="🔎 Веб-агент: ищет, читает страницы, отвечает"),
+        BotCommand(command="agent",      description="🤖 Автономный браузер-агент (Playwright + vision)"),
+        BotCommand(command="generate",   description="🌐 Сгенерировать HTML-страницу по описанию"),
+        BotCommand(command="code",       description="💻 Написать и выполнить код (авто-исправление)"),
+        BotCommand(command="execute",    description="▶ Выполнить код в VM sandbox"),
+        BotCommand(command="browse",     description="📸 Скриншот страницы + AI анализ"),
+        BotCommand(command="visor",      description="🖥 ВИЗОР: скриншот + AI анализ страницы"),
+        BotCommand(command="screenshot", description="📷 Быстрый скриншот страницы"),
+        BotCommand(command="download",   description="📥 Скачать файл по URL через VM"),
+        BotCommand(command="convert",    description="🔄 Конвертер файлов (фото, json, csv, md)"),
+        BotCommand(command="vm",         description="⚙ Статус VM и команды запуска"),
+        BotCommand(command="models",     description="🧠 Доступные AI-модели"),
+        BotCommand(command="stats",      description="📊 Статистика самообучения"),
+        BotCommand(command="retrain",    description="🔁 Запустить цикл самообучения VM"),
+        BotCommand(command="web",        description="🌐 Открыть веб-интерфейс Code VM (localhost:5000)"),
+        BotCommand(command="update",     description="⬇ Скачать и установить новые файлы"),
+        BotCommand(command="help",       description="📖 Все команды и справка"),
+    ])
+    await dp.start_polling(bot, skip_updates=True)
 
 
 if __name__ == "__main__":

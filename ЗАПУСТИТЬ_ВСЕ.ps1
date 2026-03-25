@@ -1,0 +1,347 @@
+<#
+.SYNOPSIS
+    Единый скрипт запуска DRGR — VM + Telegram-бот + браузер.
+
+.DESCRIPTION
+    1. Создаёт/обновляет .env (BOT_TOKEN, порты, модели)
+    2. Устанавливает зависимости Python в .venv (если нужно)
+    3. Запускает VM-сервер (Flask, порт 5000) в фоне
+    4. Запускает Telegram-бота в фоне
+    5. Открывает браузер на http://localhost:5000
+    6. Показывает статус и ждёт нажатия Enter для остановки
+
+    Использование:
+        .\ЗАПУСТИТЬ_ВСЕ.ps1 [-Token "1234567890:AAxxxx..."]
+
+    BOT_TOKEN можно передать:
+        - параметром -Token
+        - переменной окружения $env:BOT_TOKEN
+        - уже записанным в .env файле
+#>
+param(
+    [string]$Token = ""
+)
+
+# Only Stop on truly unrecoverable errors; individual steps use try/catch
+$ErrorActionPreference = "Continue"
+
+# ── Resolve repo root ────────────────────────────────────────────────────────
+$repoDir = if ($PSScriptRoot) { $PSScriptRoot }
+           elseif ($MyInvocation.MyCommand.Path) { Split-Path -Parent $MyInvocation.MyCommand.Path }
+           else { (Get-Location).Path }
+Set-Location $repoDir
+
+# ── Helper: colored output ───────────────────────────────────────────────────
+function Say($msg, $color = "Cyan") { Write-Host $msg -ForegroundColor $color }
+function Err($msg) { Write-Host "  [!] $msg" -ForegroundColor Red }
+function Ok($msg)  { Write-Host "  [+] $msg" -ForegroundColor Green }
+function Info($msg){ Write-Host "  [~] $msg" -ForegroundColor Yellow }
+
+Say ""
+Say "  +====================================================+" "Cyan"
+Say "  |           DRGR — Полный запуск системы            |" "Cyan"
+Say "  +====================================================+" "Cyan"
+Say ""
+
+# ── Step 0: Auto-update from GitHub ─────────────────────────────────────────
+Say "► Шаг 0: Проверка обновлений"
+
+if (Get-Command git -ErrorAction SilentlyContinue) {
+    if (Test-Path (Join-Path $repoDir ".git")) {
+        try {
+            # Stash any local modifications so pull doesn't fail
+            git -C $repoDir fetch origin 2>&1 | Out-Null
+            $localRev  = (& git -C $repoDir rev-parse HEAD 2>&1).Trim()
+            $branch    = (& git -C $repoDir rev-parse --abbrev-ref HEAD 2>&1).Trim()
+            if (-not $branch -or $branch -eq "HEAD") { $branch = "main" }
+            $remoteRev = (& git -C $repoDir rev-parse "origin/$branch" 2>&1).Trim()
+            if ($localRev -ne $remoteRev) {
+                Info "Найдены обновления — применяю git pull..."
+                git -C $repoDir pull --ff-only 2>&1 | Out-Null
+                if ($LASTEXITCODE -ne 0) {
+                    # ff-only failed (local changes) — try harder
+                    git -C $repoDir stash 2>&1 | Out-Null
+                    git -C $repoDir pull 2>&1 | Out-Null
+                }
+                Ok "Обновления применены"
+            } else {
+                Ok "Обновлений нет — всё актуально"
+            }
+        } catch {
+            Info "Не удалось проверить обновления (нет интернета?): $_"
+        }
+    } else {
+        Info "Git-репозиторий не найден — пропускаю авто-обновление"
+    }
+} else {
+    Info "Git не установлен — авто-обновление недоступно"
+}
+
+# ── Step 0b: Windows Firewall — allow port 5000 from LAN ────────────────────
+Say ""
+Say "► Шаг 0b: Настройка брандмауэра (порт 5000)"
+try {
+    $ruleName = "DRGR-VM-Port5000"
+    $existing = netsh advfirewall firewall show rule name=$ruleName 2>&1
+    if ($existing -match "No rules match") {
+        netsh advfirewall firewall add rule name=$ruleName dir=in action=allow protocol=tcp localport=5000 profile=private,domain 2>&1 | Out-Null
+        Ok "Правило брандмауэра добавлено: TCP 5000 (приватная сеть)"
+    } else {
+        Ok "Правило брандмауэра уже существует"
+    }
+} catch {
+    Info "Не удалось добавить правило брандмауэра (требуются права администратора): $_"
+}
+
+# ── Step 1: BOT_TOKEN ────────────────────────────────────────────────────────
+Say ""
+Say "► Шаг 1: Токен бота"
+
+$envFile = Join-Path $repoDir ".env"
+
+# Priority: param > env var > .env file
+if (-not $Token) { $Token = $env:BOT_TOKEN }
+
+if (-not $Token) {
+    # Try to read from existing .env
+    if (Test-Path $envFile) {
+        $m = Select-String -Path $envFile -Pattern '^BOT_TOKEN=(.+)$'
+        if ($m) { $Token = $m.Matches[0].Groups[1].Value.Trim() }
+    }
+}
+
+if (-not $Token) {
+    Err "BOT_TOKEN не задан!"
+    Say "  Введите токен бота (из @BotFather) или нажмите Enter для пропуска:" "Yellow"
+    $Token = Read-Host "  BOT_TOKEN"
+}
+
+if ($Token -and $Token -ne "your_telegram_bot_token_here") {
+    Ok "Токен задан: $($Token.Substring(0,[Math]::Min(15,$Token.Length)))..."
+} else {
+    Info "Токен не задан — бот Telegram не запустится, но VM-интерфейс будет работать."
+    $Token = ""
+}
+
+# ── Step 2: Write/update .env ────────────────────────────────────────────────
+Say ""
+Say "► Шаг 2: Настройка .env"
+
+$envContent = @"
+# Auto-generated by ЗАПУСТИТЬ_ВСЕ.ps1 — $(Get-Date -Format 'yyyy-MM-dd HH:mm')
+
+# ─── Telegram Bot ────────────────────────────────────────────────────────────
+BOT_TOKEN=$Token
+
+# ─── Ollama ──────────────────────────────────────────────────────────────────
+OLLAMA_HOST=http://localhost:11434
+OLLAMA_MODEL=llama2
+OLLAMA_VISION_MODEL=llava
+
+# ─── VM Server ───────────────────────────────────────────────────────────────
+VM_BASE=http://localhost:5000
+VM_PORT=5000
+
+# ─── Agent settings ──────────────────────────────────────────────────────────
+MAX_SEARCH_RESULTS=5
+MAX_SCREENSHOTS=2
+RETRAIN_AFTER_ACTIONS=10
+
+# ─── Directories ─────────────────────────────────────────────────────────────
+SCREENSHOTS_DIR=screenshots
+ARTICLES_DIR=articles
+LOG_FILE=bot.log
+"@
+
+# Keep existing values for keys already set (merge: new file wins for missing keys only)
+if (Test-Path $envFile) {
+    # Read existing key=value pairs
+    $existing = @{}
+    Get-Content $envFile | Where-Object { $_ -match '^([^#=\s]+)=(.*)$' } | ForEach-Object {
+        $k = $Matches[1]; $v = $Matches[2]
+        $existing[$k] = $v
+    }
+    # Only preserve BOT_TOKEN if we didn't supply one above
+    if ($Token) { $existing['BOT_TOKEN'] = $Token }
+    # Rewrite with merged values
+    $lines = $envContent -split "`n"
+    $merged = $lines | ForEach-Object {
+        if ($_ -match '^([^#=\s]+)=(.*)$') {
+            $k = $Matches[1]
+            if ($existing.ContainsKey($k)) { "${k}=$($existing[$k])" } else { $_ }
+        } else { $_ }
+    }
+    [IO.File]::WriteAllText($envFile, ($merged -join "`n"))
+} else {
+    [IO.File]::WriteAllText($envFile, $envContent)
+}
+Ok ".env записан: $envFile"
+
+# ── Step 3: Python virtual environment ──────────────────────────────────────
+Say ""
+Say "► Шаг 3: Python окружение"
+
+$venvPython = Join-Path $repoDir ".venv\Scripts\python.exe"
+$venvPip    = Join-Path $repoDir ".venv\Scripts\pip.exe"
+
+if (-not (Test-Path $venvPython)) {
+    Info "Создаю .venv..."
+    try {
+        python -m venv (Join-Path $repoDir ".venv") 2>&1 | Out-Null
+        Ok ".venv создан"
+    } catch {
+        Err "Не удалось создать .venv: $_"
+        Err "Убедитесь что Python 3.10+ установлен и доступен в PATH"
+        pause; exit 1
+    }
+} else {
+    Ok ".venv уже существует"
+}
+
+Info "Проверяю зависимости..."
+try {
+    $pipOut = & $venvPip install --quiet -r (Join-Path $repoDir "requirements.txt") 2>&1
+    if ($LASTEXITCODE -ne 0) { Err "pip вернул код $LASTEXITCODE. Возможны проблемы с зависимостями." }
+    else { Ok "Зависимости установлены" }
+} catch {
+    Err "Ошибка установки зависимостей: $_"
+}
+
+# ── Step 4: Check Ollama ─────────────────────────────────────────────────────
+Say ""
+Say "► Шаг 4: Проверка Ollama"
+
+$ollamaOk = $false
+foreach ($port in @(11434, 11435, 11436, 11437, 11438, 11439, 11440, 11441, 11442, 11443, 11444)) {
+    try {
+        $r = Invoke-WebRequest -Uri "http://localhost:$port/api/tags" -TimeoutSec 2 -UseBasicParsing -EA Stop
+        Ok "Ollama доступна на порту $port"
+        # Update .env with correct port
+        $content = Get-Content $envFile -Raw
+        $content = $content -replace 'OLLAMA_HOST=http://localhost:\d+', "OLLAMA_HOST=http://localhost:$port"
+        [IO.File]::WriteAllText($envFile, $content)
+        # Also set the env var so server.py spawned below inherits the right URL
+        # (server.py reads OLLAMA_HOST from env with override=False; env var wins over .env)
+        $env:OLLAMA_HOST = "http://localhost:$port"
+        $ollamaOk = $true
+        break
+    } catch {}
+}
+if (-not $ollamaOk) {
+    Info "Ollama не обнаружена. VM будет работать без AI (запустите `ollama serve` отдельно)."
+    Info "Скачать Ollama: https://ollama.ai/download"
+}
+
+# ── Step 5: Start VM server ──────────────────────────────────────────────────
+Say ""
+Say "► Шаг 5: Запуск VM-сервера (Flask)"
+
+# Kill any existing process on port 5000
+$old = Get-NetTCPConnection -LocalPort 5000 -State Listen -EA SilentlyContinue
+if ($old) {
+    $old | ForEach-Object { try { Stop-Process -Id $_.OwningProcess -Force -EA SilentlyContinue } catch {} }
+    Start-Sleep 1
+    Info "Старый VM-сервер остановлен"
+}
+
+$vmLog = Join-Path $repoDir "vm_server.log"
+$vmProc = Start-Process -FilePath $venvPython `
+    -ArgumentList (Join-Path $repoDir "vm\server.py") `
+    -WorkingDirectory (Join-Path $repoDir "vm") `
+    -RedirectStandardOutput $vmLog `
+    -RedirectStandardError  $vmLog `
+    -NoNewWindow -PassThru
+
+Info "Ожидаю запуска сервера..."
+$started = $false
+for ($i = 0; $i -lt 20; $i++) {
+    Start-Sleep 1
+    try {
+        Invoke-WebRequest -Uri "http://localhost:5000/health" -TimeoutSec 1 -UseBasicParsing -EA Stop | Out-Null
+        $started = $true; break
+    } catch {}
+}
+
+if ($started) { Ok "VM-сервер запущен (PID $($vmProc.Id)), порт 5000" }
+else {
+    Err "VM-сервер не запустился за 20 сек. Смотри лог: $vmLog"
+    Say "  Последние строки лога:" "Red"
+    if (Test-Path $vmLog) { Get-Content $vmLog -Tail 15 | ForEach-Object { Say "    $_" "Red" } }
+}
+
+# ── Step 6: Start Telegram bot ────────────────────────────────────────────────
+Say ""
+Say "► Шаг 6: Запуск Telegram-бота"
+
+$botProc = $null
+if ($Token) {
+    $botLog = Join-Path $repoDir "bot.log"
+    $botProc = Start-Process -FilePath $venvPython `
+        -ArgumentList (Join-Path $repoDir "bot.py") `
+        -WorkingDirectory $repoDir `
+        -RedirectStandardOutput $botLog `
+        -RedirectStandardError  $botLog `
+        -NoNewWindow -PassThru
+    Start-Sleep 3
+    if (-not $botProc.HasExited) {
+        Ok "Telegram-бот запущен (PID $($botProc.Id))"
+    } else {
+        Err "Бот завершился сразу. Смотри лог: $botLog"
+        if (Test-Path $botLog) { Get-Content $botLog -Tail 10 | ForEach-Object { Say "    $_" "Red" } }
+    }
+} else {
+    Info "BOT_TOKEN не задан — бот не запущен."
+}
+
+# ── Step 7: Open browser ──────────────────────────────────────────────────────
+Say ""
+Say "► Шаг 7: Открываю браузер"
+$url = "http://localhost:5000"
+try { Start-Process $url; Ok "Браузер открыт: $url" }
+catch { Info "Откройте в браузере: $url" }
+
+# ── Summary ────────────────────────────────────────────────────────────────────
+# Determine LAN IP for display
+$lanIp = ""
+try {
+    $lanIp = (Get-NetIPAddress -AddressFamily IPv4 |
+        Where-Object { $_.PrefixOrigin -in @("Dhcp","Manual") -and
+                       $_.IPAddress -notmatch '^(127\.|169\.254\.)' } |
+        Sort-Object InterfaceMetric |
+        Select-Object -First 1).IPAddress
+} catch {}
+
+Say ""
+Say "  +====================================================+" "Green"
+Say "  |  Система запущена!                                 |" "Green"
+Say "  |  VM-интерфейс:  http://localhost:5000              |" "Green"
+if ($lanIp) {
+Say "  |  Из сети (LAN): http://${lanIp}:5000              |" "Green"
+}
+if ($Token) {
+Say "  |  Telegram-бот:  активен                            |" "Green"
+} else {
+Say "  |  Telegram-бот:  НЕ запущен (нет токена)            |" "Yellow"
+}
+if ($ollamaOk) {
+Say "  |  Ollama AI:     подключена                         |" "Green"
+} else {
+Say "  |  Ollama AI:     не обнаружена (запустите вручную)  |" "Yellow"
+}
+Say "  +====================================================+" "Green"
+Say ""
+Say "  Нажмите Enter для остановки всех процессов..." "Gray"
+Read-Host | Out-Null
+
+# ── Shutdown ───────────────────────────────────────────────────────────────────
+Say ""
+Say "► Остановка..."
+if ($vmProc -and -not $vmProc.HasExited) {
+    Stop-Process -Id $vmProc.Id -Force -EA SilentlyContinue
+    Ok "VM-сервер остановлен"
+}
+if ($botProc -and -not $botProc.HasExited) {
+    Stop-Process -Id $botProc.Id -Force -EA SilentlyContinue
+    Ok "Telegram-бот остановлен"
+}
+Say "  Готово." "Cyan"
