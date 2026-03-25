@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     Обновляет drgr-bot: git pull, pip install, резервная копия и автоматический откат при ошибке.
@@ -6,7 +6,7 @@
     1. Сохраняет текущий хеш коммита (резервная копия).
     2. Выполняет git pull origin main.
     3. Устанавливает зависимости из requirements.txt.
-    4. При ошибке на любом шаге — откатывается к предыдущему коммиту.
+    4. При ошибке на любом шаге - откатывается к предыдущему коммиту.
     5. После успешного обновления перезапускает bot.py.
 #>
 
@@ -77,7 +77,7 @@ $ScriptDir = $PSScriptRoot
 Set-Location $ScriptDir
 
 Write-Host "`n============================================" -ForegroundColor Magenta
-Write-Host "   drgr-bot — скрипт обновления (update.ps1)" -ForegroundColor Magenta
+Write-Host "   drgr-bot - скрипт обновления (update.ps1)" -ForegroundColor Magenta
 Write-Host "============================================`n" -ForegroundColor Magenta
 
 # 1. Сохранение текущего хеша (резервная копия)
