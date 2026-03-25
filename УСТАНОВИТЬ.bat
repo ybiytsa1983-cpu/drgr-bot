@@ -121,10 +121,26 @@ if %errorlevel% EQU 0 (
 
 if exist "%SCRIPT_DIR%bot.py" (
     start "drgr-bot" python "%SCRIPT_DIR%bot.py"
+
+    :: ── Создаём ярлык ЗАПУСТИТЬ.bat на Рабочем столе ────────────────────
+    echo.
+    echo  Создание ярлыка на Рабочем столе...
+    set "LAUNCH_BAT=%SCRIPT_DIR%ЗАПУСТИТЬ.bat"
+    set "SHORTCUT=%USERPROFILE%\Desktop\drgr-bot.lnk"
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
+        "$ws = New-Object -ComObject WScript.Shell; $s = $ws.CreateShortcut('%SHORTCUT%'); $s.TargetPath = '%LAUNCH_BAT%'; $s.WorkingDirectory = '%SCRIPT_DIR%'; $s.Description = 'Запустить drgr-bot'; $s.Save()" >nul 2>&1
+    if exist "%SHORTCUT%" (
+        echo   Ярлык создан: %SHORTCUT%
+    ) else (
+        echo  [ПРЕДУПРЕЖДЕНИЕ] Ярлык на рабочем столе не создан ^(это не критично^).
+    )
+
     echo.
     echo ╔══════════════════════════════════════════════╗
     echo ║      Установка завершена! Бот запущен.       ║
     echo ╠══════════════════════════════════════════════╣
+    echo ║  Ярлык "drgr-bot" добавлен на Рабочий стол  ║
+    echo ║  Для запуска используйте ЗАПУСТИТЬ.bat       ║
     echo ║  Для обновления используйте ОБНОВИТЬ.bat     ║
     echo ╚══════════════════════════════════════════════╝
 ) else (
