@@ -173,6 +173,10 @@ COMFYUI_BASE = os.environ.get("COMFYUI_API_URL", "http://127.0.0.1:8188").rstrip
 # Can be changed live via /settings without restarting the bot.
 BOT_VM: str = os.environ.get("BOT_VM", "auto").strip().lower() or "auto"
 
+# BOT_MODEL — pin a specific model for the Telegram bot (e.g. "llama3:8b", "lmstudio:mistral").
+# Empty string means "auto" — use whatever get_best_model() returns.
+BOT_MODEL: str = os.environ.get("BOT_MODEL", "").strip()
+
 # Sources that produce poor screenshots (JS-heavy, login walls, etc.)
 _EXCLUDED_SCREENSHOT_SOURCES = frozenset({"reddit", "hackernews"})
 
@@ -3125,6 +3129,7 @@ def get_settings():
         "bot_token_set": bot_token_set,
         "ollama_relay_port": _OLLAMA_RELAY_PORT,
         "bot_vm": BOT_VM,
+        "bot_model": BOT_MODEL,
     })
 
 
@@ -3133,7 +3138,7 @@ def save_settings():
     """Save settings (Telegram bot token, chat ID, Ollama URL, LM Studio URL, Remote VM URL) to .env."""
     global OLLAMA_BASE, _OLLAMA_SCANNED, LM_STUDIO_BASE, TGWUI_BASE, ROO_CODE_BASE  # noqa: PLW0603
     global OAF_BASE, TRIPOSR_BASE, WEBBUILDER_BASE, VIDEDITOR_BASE  # noqa: PLW0603
-    global REMOTE_VM_URL, VISION_VM_URL, SD_BASE, COMFYUI_BASE, BOT_VM  # noqa: PLW0603
+    global REMOTE_VM_URL, VISION_VM_URL, SD_BASE, COMFYUI_BASE, BOT_VM, BOT_MODEL  # noqa: PLW0603
     body = request.get_json(silent=True) or {}
     bot_token      = body.get("bot_token",      "").strip()
     chat_id        = body.get("chat_id",         "").strip()
@@ -3150,10 +3155,11 @@ def save_settings():
     sd_url         = body.get("sd_url",           "").strip().rstrip("/")
     comfyui_url    = body.get("comfyui_url",      "").strip().rstrip("/")
     bot_vm_val     = body.get("bot_vm",           "").strip().lower()
+    bot_model_val  = body.get("bot_model",        "").strip()
 
     if not any([bot_token, chat_id, ollama_url, lm_studio_url, tgwui_url, roo_code_url, oaf_url,
                 triposr_url, webbuilder_url, videditor_url, remote_vm_url, vision_vm_url,
-                sd_url, comfyui_url, bot_vm_val]):
+                sd_url, comfyui_url, bot_vm_val, bot_model_val]):
         return jsonify({"ok": False, "error": "Nothing to save"})
 
     env_path = os.path.join(os.path.dirname(_DIR), ".env")
@@ -3353,6 +3359,18 @@ def save_settings():
             lines.append(f"BOT_VM={bot_vm_val}\n")
         os.environ["BOT_VM"] = bot_vm_val
         BOT_VM = bot_vm_val
+
+    if bot_model_val is not None and "bot_model" in body:
+        bm_found = False
+        for i, line in enumerate(lines):
+            if line.startswith("BOT_MODEL="):
+                lines[i] = f"BOT_MODEL={bot_model_val}\n"
+                bm_found = True
+                break
+        if not bm_found:
+            lines.append(f"BOT_MODEL={bot_model_val}\n")
+        os.environ["BOT_MODEL"] = bot_model_val
+        BOT_MODEL = bot_model_val
 
     try:
         with open(env_path, "w", encoding="utf-8") as f:
