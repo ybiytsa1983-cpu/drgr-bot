@@ -168,6 +168,11 @@ _VISION_VM_PREFIX = "visionvm:"
 SD_BASE = os.environ.get("SD_API_URL", "http://127.0.0.1:7860").rstrip("/")
 COMFYUI_BASE = os.environ.get("COMFYUI_API_URL", "http://127.0.0.1:8188").rstrip("/")
 
+# BOT_VM — which AI backend the Telegram bot should prefer for chat requests.
+# Values: "auto" (default — use whatever is available), "ollama", "lmstudio", "tgwui", "remote"
+# Can be changed live via /settings without restarting the bot.
+BOT_VM: str = os.environ.get("BOT_VM", "auto").strip().lower() or "auto"
+
 # Sources that produce poor screenshots (JS-heavy, login walls, etc.)
 _EXCLUDED_SCREENSHOT_SOURCES = frozenset({"reddit", "hackernews"})
 
@@ -3094,6 +3099,7 @@ def get_settings():
         "comfyui_url": COMFYUI_BASE,
         "bot_token_set": bot_token_set,
         "ollama_relay_port": _OLLAMA_RELAY_PORT,
+        "bot_vm": BOT_VM,
     })
 
 
@@ -3102,7 +3108,7 @@ def save_settings():
     """Save settings (Telegram bot token, chat ID, Ollama URL, LM Studio URL, Remote VM URL) to .env."""
     global OLLAMA_BASE, _OLLAMA_SCANNED, LM_STUDIO_BASE, TGWUI_BASE, ROO_CODE_BASE  # noqa: PLW0603
     global OAF_BASE, TRIPOSR_BASE, WEBBUILDER_BASE, VIDEDITOR_BASE  # noqa: PLW0603
-    global REMOTE_VM_URL, VISION_VM_URL, SD_BASE, COMFYUI_BASE  # noqa: PLW0603
+    global REMOTE_VM_URL, VISION_VM_URL, SD_BASE, COMFYUI_BASE, BOT_VM  # noqa: PLW0603
     body = request.get_json(silent=True) or {}
     bot_token      = body.get("bot_token",      "").strip()
     chat_id        = body.get("chat_id",         "").strip()
@@ -3118,10 +3124,11 @@ def save_settings():
     vision_vm_url  = body.get("vision_vm_url",   "").strip().rstrip("/")
     sd_url         = body.get("sd_url",           "").strip().rstrip("/")
     comfyui_url    = body.get("comfyui_url",      "").strip().rstrip("/")
+    bot_vm_val     = body.get("bot_vm",           "").strip().lower()
 
     if not any([bot_token, chat_id, ollama_url, lm_studio_url, tgwui_url, roo_code_url, oaf_url,
                 triposr_url, webbuilder_url, videditor_url, remote_vm_url, vision_vm_url,
-                sd_url, comfyui_url]):
+                sd_url, comfyui_url, bot_vm_val]):
         return jsonify({"ok": False, "error": "Nothing to save"})
 
     env_path = os.path.join(os.path.dirname(_DIR), ".env")
@@ -3310,6 +3317,18 @@ def save_settings():
         os.environ["COMFYUI_API_URL"] = comfyui_url
         COMFYUI_BASE = comfyui_url
 
+    if bot_vm_val and bot_vm_val in ("auto", "ollama", "lmstudio", "tgwui", "remote"):
+        bvm_found = False
+        for i, line in enumerate(lines):
+            if line.startswith("BOT_VM="):
+                lines[i] = f"BOT_VM={bot_vm_val}\n"
+                bvm_found = True
+                break
+        if not bvm_found:
+            lines.append(f"BOT_VM={bot_vm_val}\n")
+        os.environ["BOT_VM"] = bot_vm_val
+        BOT_VM = bot_vm_val
+
     try:
         with open(env_path, "w", encoding="utf-8") as f:
             f.writelines(lines)
@@ -3391,6 +3410,51 @@ def bot_test():
         return jsonify({"ok": False, "error": "Таймаут запроса к Telegram API (>10 сек)"})
     except Exception:  # pylint: disable=broad-except
         return jsonify({"ok": False, "error": "Ошибка при проверке токена — попробуйте позже"})
+
+
+@app.route("/autostart/register", methods=["POST"])
+def autostart_register():
+    """Register the VM server as a Windows Task Scheduler task so it starts on login.
+
+    Works only on Windows. On other platforms returns {"ok": false, "error": "..."}
+    """
+    import sys as _sys
+    import shutil as _shutil
+    if _sys.platform != "win32":
+        return jsonify({"ok": False, "error": "Автозапуск поддерживается только на Windows"})
+    try:
+        repo_dir = os.path.abspath(os.path.join(_DIR, ".."))
+        python_exe = _sys.executable
+        server_py  = os.path.join(repo_dir, "vm", "server.py")
+        task_name  = "DrgrBotVM"
+        # Build a minimal schtasks command — runs at logon, hidden window, highest privileges
+        cmd = (
+            f'schtasks /create /tn "{task_name}" /tr "\\"{python_exe}\\" \\"{server_py}\\"" '
+            f'/sc ONLOGON /rl HIGHEST /f /it'
+        )
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=15)
+        if result.returncode == 0:
+            return jsonify({"ok": True, "message": f"Задача '{task_name}' создана — VM будет запускаться при входе в Windows"})
+        return jsonify({"ok": False, "error": result.stderr.strip() or result.stdout.strip() or "schtasks вернул ошибку"})
+    except Exception as exc:  # pylint: disable=broad-except
+        return jsonify({"ok": False, "error": str(exc)})
+
+
+@app.route("/autostart/remove", methods=["POST"])
+def autostart_remove():
+    """Remove the Windows Task Scheduler autostart task."""
+    import sys as _sys
+    if _sys.platform != "win32":
+        return jsonify({"ok": False, "error": "Автозапуск поддерживается только на Windows"})
+    try:
+        task_name = "DrgrBotVM"
+        cmd = f'schtasks /delete /tn "{task_name}" /f'
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=15)
+        if result.returncode == 0:
+            return jsonify({"ok": True, "message": f"Задача '{task_name}' удалена"})
+        return jsonify({"ok": False, "error": result.stderr.strip() or "Задача не найдена или ошибка удаления"})
+    except Exception as exc:  # pylint: disable=broad-except
+        return jsonify({"ok": False, "error": str(exc)})
 
 
 @app.route("/ollama/models", methods=["GET"])

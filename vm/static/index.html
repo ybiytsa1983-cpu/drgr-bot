@@ -669,6 +669,32 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
       <button class="pb pb-m pb-f" style="margin-top:4px" onclick="restartBot()">🔄 Перезапустить бот</button>
     </div>
 
+    <!-- Bot VM selector -->
+    <div>
+      <div class="pl">🧠 ВМ для Telegram бота</div>
+      <div class="pr">
+        <select id="bot-vm-sel" onchange="saveBotVm(this.value)" style="flex:1">
+          <option value="auto">🔄 Авто (лучший доступный)</option>
+          <option value="ollama">🦙 Ollama</option>
+          <option value="lmstudio">🎛 LM Studio</option>
+          <option value="tgwui">⚙️ text-generation-webui</option>
+          <option value="remote">🌐 Remote VM (Colab/ngrok)</option>
+        </select>
+      </div>
+      <div style="font-size:10px;color:var(--text2)">Какой ИИ-бэкенд использует бот при общении в Telegram. «Авто» — сам выбирает доступный.</div>
+    </div>
+
+    <!-- Windows autostart -->
+    <div>
+      <div class="pl">🚀 Автозапуск Windows</div>
+      <div class="pr" style="margin-top:4px">
+        <button class="pb pb-s" style="flex:1" onclick="registerAutostart()">✅ Включить автозапуск</button>
+        <button class="pb pb-m" style="flex:1" onclick="removeAutostart()">❌ Отключить</button>
+      </div>
+      <div id="autostart-status" style="font-size:10px;margin-top:2px"></div>
+      <div style="font-size:10px;color:var(--text2)">Регистрирует задачу в Планировщике заданий Windows — VM запускается автоматически при входе в систему.</div>
+    </div>
+
     <!-- Chat ID -->
     <div>
       <div class="pl">💬 Telegram Chat ID</div>
@@ -3895,12 +3921,56 @@ async function loadOllamaUrl() {
     if (d.comfyui_url && document.getElementById('comfyui-url')) {
       document.getElementById('comfyui-url').value = d.comfyui_url;
     }
+    // Restore bot_vm selector
+    if (d.bot_vm && document.getElementById('bot-vm-sel')) {
+      document.getElementById('bot-vm-sel').value = d.bot_vm;
+    }
     // Also update bot token indicator from settings if health hasn't been polled yet
     if (typeof d.bot_token_set === 'boolean') {
       var hasToken = d.bot_token_set;
       set('h-bot', hasToken ? '⚠ Не запущен' : '✗ Нет токена', hasToken ? 'warn' : 'fail');
     }
   } catch(e) {}
+}
+async function saveBotVm(val) {
+  if (!val) return;
+  try {
+    var r = await fetch('/settings', { method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ bot_vm: val }) });
+    var d = await _safeJson(r);
+    if (d.ok) { toast('✓ ВМ для бота сохранена: ' + val); }
+    else { toast('⚠ ' + (d.error||'Ошибка')); }
+  } catch(e) { toast('⚠ Ошибка: ' + e.message); }
+}
+async function registerAutostart() {
+  var s = document.getElementById('autostart-status');
+  if (s) s.textContent = '⏳ Регистрируем задачу...';
+  try {
+    var r = await fetch('/autostart/register', { method:'POST' });
+    var d = await _safeJson(r);
+    if (d.ok) {
+      toast('✅ Автозапуск включён');
+      if (s) s.textContent = '✅ ' + (d.message||'Задача создана');
+    } else {
+      toast('⚠ ' + (d.error||'Ошибка'));
+      if (s) s.textContent = '⚠ ' + (d.error||'Ошибка');
+    }
+  } catch(e) { toast('⚠ Ошибка: ' + e.message); if (s) s.textContent = '⚠ ' + e.message; }
+}
+async function removeAutostart() {
+  var s = document.getElementById('autostart-status');
+  try {
+    var r = await fetch('/autostart/remove', { method:'POST' });
+    var d = await _safeJson(r);
+    if (d.ok) {
+      toast('✅ Автозапуск отключён');
+      if (s) s.textContent = '✅ Задача удалена';
+    } else {
+      toast('⚠ ' + (d.error||'Ошибка'));
+      if (s) s.textContent = '⚠ ' + (d.error||'Ошибка');
+    }
+  } catch(e) { toast('⚠ Ошибка: ' + e.message); }
 }
 async function saveOllamaUrl() {
   var url = document.getElementById('ol-url').value.trim();
