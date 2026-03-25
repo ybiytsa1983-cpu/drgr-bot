@@ -261,22 +261,33 @@ Start-Process -FilePath $python `
 Write-Host "[Code VM] Waiting for server to be ready..." -ForegroundColor Cyan
 $ready = $false
 $pingScheme = if ($useHttps) { "https" } else { "http" }
+# Disable SSL certificate validation ONCE before the poll loop.
+# A bare scriptblock { $true } is not a valid RemoteCertificateValidationCallback
+# delegate in Windows PowerShell 5.1 — use the properly-typed cast instead.
+if ($useHttps) {
+    try {
+        [System.Net.ServicePointManager]::ServerCertificateValidationCallback =
+            [System.Net.Security.RemoteCertificateValidationCallback]{ param($s,$c,$ch,$e) $true }
+    } catch { }
+}
 for ($i = 0; $i -lt 20; $i++) {
     Start-Sleep -Seconds 1
     try {
         # Use /ping (instant, no Ollama query) so the check never races against
         # the 3-second Ollama timeout inside /health.
         # Use 127.0.0.1 (not localhost) to avoid IPv6 resolution on Windows.
-        # Disable certificate validation for self-signed cert probe.
-        if ($useHttps) {
-            [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
-        }
         $null = Invoke-WebRequest -Uri "${pingScheme}://127.0.0.1:$Port/ping" -UseBasicParsing -TimeoutSec 10
         $ready = $true
         break
     } catch [System.Net.WebException] {
         # Any HTTP response (even 4xx/5xx) means the server IS up.
-        if ($_.Exception.Response -ne $null) { $ready = $true; break }
+        # TrustFailure / SecureChannelFailure = SSL cert error (self-signed) = server IS up.
+        $wStatus = $_.Exception.Status
+        if ($_.Exception.Response -ne $null -or
+            $wStatus -eq [System.Net.WebExceptionStatus]::TrustFailure -or
+            $wStatus -eq [System.Net.WebExceptionStatus]::SecureChannelFailure) {
+            $ready = $true; break
+        }
     } catch { }
 }
 if (-not $ready) {
