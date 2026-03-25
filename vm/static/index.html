@@ -3632,6 +3632,17 @@ async function loadHealth() {
     }
     set('h-bot', botRun ? '✓ Работает' : (bot ? '⚠ Не запущен' : '✗ Нет токена'),
         botRun ? 'ok' : (bot ? 'warn' : 'fail'));
+    // Auto-open settings panel on first load when bot token is not set
+    if (!bot && !window._settingsAutoOpened) {
+      window._settingsAutoOpened = true;
+      setTimeout(function(){
+        openPanel();
+        setTimeout(function(){
+          var el = document.getElementById('tok-inp');
+          if (el) { el.scrollIntoView({behavior:'smooth', block:'center'}); el.focus(); }
+        }, 400);
+      }, 600);
+    }
     var anyOk = ol || lmsOk || tgwuiOk || rcOk || rvmOk || vvmOk;
     document.getElementById('sdot').className = anyOk ? 'ok' : '';
     // Show/hide "Ollama not running" banner in chat view
