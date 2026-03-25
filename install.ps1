@@ -109,10 +109,17 @@ if (-not $python) {
 
 # -- 2. Create virtual environment ---------------------------------------------
 $venvPython = Join-Path $venvDir "Scripts\python.exe"
+$venvCfg    = Join-Path $venvDir "pyvenv.cfg"
 
-if (Test-Path $venvPython) {
+# A valid venv must have both python.exe AND pyvenv.cfg.
+# If python.exe exists but pyvenv.cfg is absent the venv is corrupt — remove and recreate.
+if ((Test-Path $venvPython) -and (Test-Path $venvCfg)) {
     Ok "Виртуальное окружение уже существует (.venv)"
 } else {
+    if (Test-Path $venvDir) {
+        Info "Обнаружено повреждённое виртуальное окружение — пересоздание..."
+        Remove-Item -Recurse -Force $venvDir
+    }
     Info "Создание виртуального окружения (.venv)..."
     & $python -m venv $venvDir
     if ($LASTEXITCODE -ne 0) {
