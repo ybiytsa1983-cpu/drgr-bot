@@ -109,7 +109,6 @@ if (-not $python) {
 
 # -- 2. Create virtual environment ---------------------------------------------
 $venvPython = Join-Path $venvDir "Scripts\python.exe"
-$venvPip    = Join-Path $venvDir "Scripts\pip.exe"
 
 if (Test-Path $venvPython) {
     Ok "Виртуальное окружение уже существует (.venv)"
@@ -135,7 +134,7 @@ Ok "pip обновлён"
 
 # -- 4. Install Flask + requests -----------------------------------------------
 Info "Установка Flask + requests..."
-& $venvPip install flask requests --quiet
+& $venvPython -m pip install flask requests --quiet
 if ($LASTEXITCODE -ne 0) {
     Err "Не удалось установить Flask/requests."
     Read-Host "  Нажми Enter для выхода"
@@ -147,7 +146,7 @@ Ok "Flask + requests установлены"
 $reqFile = Join-Path $repoDir "requirements.txt"
 if (Test-Path $reqFile) {
     Info "Установка requirements.txt (зависимости Telegram-бота)..."
-    & $venvPip install -r $reqFile --quiet 2>$null
+    & $venvPython -m pip install -r $reqFile --quiet 2>$null
     Ok "requirements.txt обработан"
 }
 
