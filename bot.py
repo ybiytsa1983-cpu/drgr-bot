@@ -404,41 +404,114 @@ async def get_ollama_models() -> List[str]:
 
 
 async def get_best_model() -> str:
-    """Return the best available model: Ollama first, then LM Studio, then TGWUI.
+    """Return the best available model respecting the BOT_VM preference set in VM settings.
 
+    Reads BOT_VM from /settings, then tries the preferred backend first.
+    Falls back through remaining backends in priority order.
     Returns the model name with prefix for non-Ollama models (e.g. "lmstudio:X").
     """
-    models = await get_ollama_models()
-    if models:
-        return models[0]
-    # Fallback: try LM Studio models via VM
+    # Fetch BOT_VM preference from VM settings
+    bot_vm = "auto"
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(
-                f"{VM_BASE}/lmstudio/models",
-                timeout=aiohttp.ClientTimeout(total=5),
+                f"{VM_BASE}/settings",
+                timeout=aiohttp.ClientTimeout(total=3),
             ) as resp:
                 if resp.status == 200:
-                    data = await resp.json()
-                    lms_models = [m.get("id", "") for m in data.get("data", []) if m.get("id")]
-                    if lms_models:
-                        return f"lmstudio:{lms_models[0]}"
+                    cfg = await resp.json()
+                    bot_vm = cfg.get("bot_vm", "auto") or "auto"
     except Exception as exc:
-        logger.debug("VM /lmstudio/models: %s", exc)
-    # Fallback: try TGWUI models via VM
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                f"{VM_BASE}/tgwui/models",
-                timeout=aiohttp.ClientTimeout(total=5),
-            ) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    tgwui_models = [m.get("id", "") for m in data.get("data", []) if m.get("id")]
-                    if tgwui_models:
-                        return f"tgwui:{tgwui_models[0]}"
-    except Exception as exc:
-        logger.debug("VM /tgwui/models: %s", exc)
+        logger.debug("Could not fetch BOT_VM from /settings: %s", exc)
+
+    async def _try_ollama() -> str:
+        models = await get_ollama_models()
+        return models[0] if models else ""
+
+    async def _try_lmstudio() -> str:
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    f"{VM_BASE}/lmstudio/models",
+                    timeout=aiohttp.ClientTimeout(total=5),
+                ) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        ids = [m.get("id", "") for m in data.get("data", []) if m.get("id")]
+                        if ids:
+                            return f"lmstudio:{ids[0]}"
+        except Exception as exc:
+            logger.debug("VM /lmstudio/models: %s", exc)
+        return ""
+
+    async def _try_tgwui() -> str:
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    f"{VM_BASE}/tgwui/models",
+                    timeout=aiohttp.ClientTimeout(total=5),
+                ) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        ids = [m.get("id", "") for m in data.get("data", []) if m.get("id")]
+                        if ids:
+                            return f"tgwui:{ids[0]}"
+        except Exception as exc:
+            logger.debug("VM /tgwui/models: %s", exc)
+        return ""
+
+    async def _try_roocode() -> str:
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    f"{VM_BASE}/roocode/models",
+                    timeout=aiohttp.ClientTimeout(total=5),
+                ) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        ids = data.get("models", [])
+                        if ids:
+                            return f"roo:{ids[0]}"
+        except Exception as exc:
+            logger.debug("VM /roocode/models: %s", exc)
+        return ""
+
+    async def _try_remote() -> str:
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    f"{VM_BASE}/remote/models",
+                    timeout=aiohttp.ClientTimeout(total=5),
+                ) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        # /remote/models returns models already prefixed with "remote:"
+                        ids = data.get("models", [])
+                        if ids:
+                            return ids[0]
+        except Exception as exc:
+            logger.debug("VM /remote/models: %s", exc)
+        return ""
+
+    # Build ordered list of backends based on BOT_VM preference
+    if bot_vm == "ollama":
+        order = [_try_ollama, _try_lmstudio, _try_tgwui, _try_roocode]
+    elif bot_vm == "lmstudio":
+        order = [_try_lmstudio, _try_ollama, _try_tgwui, _try_roocode]
+    elif bot_vm == "tgwui":
+        order = [_try_tgwui, _try_ollama, _try_lmstudio, _try_roocode]
+    elif bot_vm == "roocode":
+        order = [_try_roocode, _try_ollama, _try_lmstudio, _try_tgwui]
+    elif bot_vm == "remote":
+        order = [_try_remote, _try_ollama, _try_lmstudio, _try_tgwui]
+    else:  # auto
+        order = [_try_ollama, _try_lmstudio, _try_tgwui, _try_roocode]
+
+    for _try_fn in order:
+        result = await _try_fn()
+        if result:
+            return result
+
     return OLLAMA_MODEL
 
 

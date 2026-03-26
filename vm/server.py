@@ -3437,7 +3437,7 @@ def save_settings():
         os.environ["COMFYUI_API_URL"] = comfyui_url
         COMFYUI_BASE = comfyui_url
 
-    if bot_vm_val and bot_vm_val in ("auto", "ollama", "lmstudio", "tgwui", "remote"):
+    if bot_vm_val and bot_vm_val in ("auto", "ollama", "lmstudio", "tgwui", "roocode", "remote"):
         bvm_found = False
         for i, line in enumerate(lines):
             if line.startswith("BOT_VM="):
@@ -5906,6 +5906,66 @@ def chat_stream():
 
         return Response(
             stream_with_context(_stream_tgwui()),
+            mimetype="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
+    is_roocode = model.startswith(_ROO_CODE_PREFIX)
+    if is_roocode:
+        real_model = model[len(_ROO_CODE_PREFIX):]
+        roo_url    = ROO_CODE_BASE
+
+        # For OpenAI-compatible API, image must be in content array format
+        if image_base64:
+            user_msg["content"] = [
+                {"type": "text",       "text": message},
+                {"type": "image_url",  "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"}},
+            ]
+            user_msg.pop("images", None)
+
+        def _stream_roocode():
+            if not roo_url:
+                yield 'data: {"error":"Roo Code URL не настроен — укажите URL в настройках (☰)"}\n\n'
+                return
+            try:
+                resp = _http.post(
+                    f"{roo_url}/v1/chat/completions",
+                    json={"model": real_model, "messages": messages, "stream": True},
+                    stream=True,
+                    timeout=_LMS_TIMEOUT,
+                )
+                resp.raise_for_status()
+                for raw_line in resp.iter_lines():
+                    if not raw_line:
+                        continue
+                    line_str = raw_line.decode("utf-8") if isinstance(raw_line, bytes) else raw_line
+                    if line_str.startswith("data: "):
+                        line_str = line_str[6:]
+                    if line_str.strip() in ("[DONE]", ""):
+                        yield "data: [DONE]\n\n"
+                        return
+                    try:
+                        chunk = json.loads(line_str)
+                    except ValueError:
+                        continue
+                    delta  = chunk.get("choices", [{}])[0].get("delta", {})
+                    token  = delta.get("content", "")
+                    finish = chunk.get("choices", [{}])[0].get("finish_reason")
+                    if token:
+                        yield f"data: {json.dumps({'token': token})}\n\n"
+                    if finish:
+                        yield "data: [DONE]\n\n"
+                        return
+            except _http.exceptions.Timeout:
+                _oto = int(os.environ.get("OLLAMA_TIMEOUT", 120))
+                yield f'data: {{"error":"Нет ответа от Roo Code за {_oto} с."}}\n\n'
+            except _http.exceptions.ConnectionError:
+                yield f'data: {json.dumps({"error": f"Нет соединения с Roo Code по адресу {roo_url}"})}\n\n'
+            except Exception as exc:  # pylint: disable=broad-except
+                yield f"data: {json.dumps({'error': str(exc)})}\n\n"
+
+        return Response(
+            stream_with_context(_stream_roocode()),
             mimetype="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
