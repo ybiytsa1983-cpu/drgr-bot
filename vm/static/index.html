@@ -7,12 +7,13 @@
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: Arial, sans-serif; display: flex; height: 100vh; background: #1e1e1e; color: #fff; }
-        #sidebar { width: 320px; background: #252526; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; }
-        #main { flex: 1; display: flex; flex-direction: column; }
+        #sidebar { width: 320px; background: #252526; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; flex-shrink: 0; }
+        #main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
         #toolbar { background: #2d2d30; padding: 10px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
         #editor { flex: 1; }
         button { padding: 8px 15px; background: #0e639c; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
         button:hover { background: #1177bb; }
+        button:disabled { background: #555; cursor: not-allowed; }
         select, textarea { padding: 8px; background: #3c3c3c; color: #fff; border: 1px solid #555; border-radius: 4px; }
         input[type="file"] { display: none; }
         .file-upload-btn { background: #0a7d3e; }
@@ -20,14 +21,25 @@
         h3 { color: #4ec9b0; margin-bottom: 8px; }
         h4 { color: #ce9178; margin-bottom: 8px; }
         .vm-select { margin-bottom: 4px; }
+
+        /* Task panel */
         #task-panel { border-top: 1px solid #444; padding-top: 12px; }
-        #task-input { width: 100%; height: 80px; resize: vertical; font-size: 12px; }
-        #task-list { margin-top: 10px; font-size: 12px; max-height: 200px; overflow-y: auto; }
+        #task-input { width: 100%; height: 90px; resize: vertical; font-size: 12px; }
+        #task-submit-btn { width: 100%; margin-top: 6px; }
+        #task-status { font-size: 12px; min-height: 18px; margin-top: 6px; padding: 4px 6px; border-radius: 3px; }
+        #task-status.ok  { background: #0a3d0a; color: #4caf50; }
+        #task-status.err { background: #3d0a0a; color: #f44336; }
+        #task-status.inf { background: #1a2a3a; color: #9cdcfe; }
+        #task-status.warn{ background: #3d2e0a; color: #ffc107; }
+
+        #task-ai-badge { font-size: 10px; color: #888; margin-top: 3px; }
+
+        #task-list { margin-top: 10px; font-size: 12px; max-height: 180px; overflow-y: auto; }
         .task-item { background: #1e1e2e; border: 1px solid #444; border-radius: 4px; padding: 6px 8px; margin-bottom: 6px; cursor: pointer; }
         .task-item:hover { border-color: #4ec9b0; }
         .task-item .task-title { color: #9cdcfe; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .task-item .task-date { color: #666; font-size: 10px; }
-        #task-status { color: #aaa; font-size: 12px; min-height: 18px; margin-top: 4px; }
+        .task-item .task-meta  { color: #666; font-size: 10px; display: flex; justify-content: space-between; }
+        .task-item .task-ai-badge { color: #4ec9b0; }
     </style>
 </head>
 <body>
@@ -55,23 +67,26 @@
             </div>
         </div>
 
+        <!-- Task panel: sends description to local AI for real code generation -->
         <div id="task-panel">
-            <h4>📋 Задание для VM</h4>
-            <textarea id="task-input" placeholder="Опишите проект или задание…&#10;Например: OpenClaw — AI-система подбора товаров для маркетплейсов"></textarea>
-            <button style="width:100%;margin-top:6px;" onclick="submitTask()">🚀 Запустить задание</button>
-            <div id="task-status"></div>
+            <h4>📋 Задание для AI</h4>
+            <textarea id="task-input"
+                placeholder="Опишите задание для AI-агента…&#10;Например: Напиши Python скрипт парсинга Wildberries с сохранением в SQLite и выводом юнит-экономики&#10;&#10;AI (Ollama/LM Studio) сгенерирует реальный код."></textarea>
+            <button id="task-submit-btn" onclick="submitTask()">🚀 Отправить в AI</button>
+            <div id="task-status" class="inf">🤖 Ожидание задания…</div>
+            <div id="task-ai-badge"></div>
             <div id="task-list"></div>
         </div>
     </div>
 
     <div id="main">
         <div id="toolbar">
-            <label for="fileUpload" class="file-upload-btn" style="cursor: pointer; padding: 8px 15px; border-radius: 4px;">
+            <label for="fileUpload" class="file-upload-btn" style="cursor:pointer;padding:8px 15px;border-radius:4px;">
                 📎 Upload File
             </label>
             <input type="file" id="fileUpload" onchange="uploadFile(event)">
             <button onclick="saveProject()">💾 Save Project</button>
-            <span style="margin-left: auto; color: #aaa;">Monaco Editor Active</span>
+            <span id="editor-label" style="margin-left:auto;color:#aaa;font-size:12px;">Monaco Editor Active</span>
         </div>
         <div id="editor"></div>
     </div>
@@ -82,10 +97,11 @@
         require.config({ paths: { vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs' } });
         require(['vs/editor/editor.main'], function() {
             editor = monaco.editor.create(document.getElementById('editor'), {
-                value: '<!-- DRGR VM Ready -->\n\n\nWelcome to DRGR VM\n',
-                language: 'html',
+                value: '<!-- DRGR VM Ready -->\n\nВведите задание в панели слева и нажмите "Отправить в AI".\nAI (Ollama / LM Studio) сгенерирует код и покажет его здесь.\n',
+                language: 'markdown',
                 theme: 'vs-dark',
-                automaticLayout: true
+                automaticLayout: true,
+                wordWrap: 'on',
             });
         });
 
@@ -94,20 +110,37 @@
             if (!file) return;
             const reader = new FileReader();
             reader.onload = function(e) {
-                if (editor) editor.setValue(e.target.result);
+                if (editor) {
+                    editor.setValue(e.target.result);
+                    setEditorLanguage(file.name);
+                }
+            };
+            reader.onerror = function() {
+                setStatus('❌ Ошибка чтения файла', 'err');
             };
             reader.readAsText(file);
         }
 
+        function setEditorLanguage(filename) {
+            if (!editor) return;
+            const ext = (filename.split('.').pop() || '').toLowerCase();
+            const langMap = { py:'python', js:'javascript', ts:'typescript', html:'html',
+                              css:'css', json:'json', md:'markdown', yml:'yaml', yaml:'yaml',
+                              sh:'shell', sql:'sql', txt:'plaintext' };
+            const lang = langMap[ext] || 'plaintext';
+            monaco.editor.setModelLanguage(editor.getModel(), lang);
+            document.getElementById('editor-label').textContent = filename + ' (' + lang + ')';
+        }
+
         function saveProject() {
             const content = editor ? editor.getValue() : '';
-            const filename = prompt('Введите имя файла:', 'project.html');
+            const filename = prompt('Введите имя файла:', 'project.py');
             if (!filename) return;
             fetch('/api/project', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ filename, content })
-            }).then(r => r.json()).then(() => setStatus('✅ Сохранено: ' + filename));
+            }).then(r => r.json()).then(() => setStatus('✅ Сохранено: ' + filename, 'ok'));
         }
 
         function loadProjectsToEditor() {
@@ -115,12 +148,18 @@
                 if (!projects.length) { alert('Нет сохранённых проектов.'); return; }
                 const name = prompt('Введите имя проекта:\n' + projects.map(p => p.name).join('\n'));
                 const proj = projects.find(p => p.name === name);
-                if (proj && editor) editor.setValue(proj.content);
+                if (proj && editor) {
+                    editor.setValue(proj.content);
+                    setEditorLanguage(proj.name);
+                }
             });
         }
 
         function generateHTML() {
-            if (editor) editor.setValue('<!DOCTYPE html>\n<html lang="ru">\n<head>\n<meta charset="UTF-8">\n<title>Новый проект</title>\n</head>\n<body>\n<h1>Проект</h1>\n</body>\n</html>');
+            if (editor) {
+                editor.setValue('<!DOCTYPE html>\n<html lang="ru">\n<head>\n<meta charset="UTF-8">\n<title>Новый проект</title>\n</head>\n<body>\n<h1>Проект</h1>\n</body>\n</html>');
+                monaco.editor.setModelLanguage(editor.getModel(), 'html');
+            }
         }
 
         function run3DGen() {
@@ -134,23 +173,38 @@
         }
 
         function runGoose() {
-            fetch('/api/goose', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: 'Analyze code' }) })
-                .then(r => r.json()).then(data => alert('🦢 Goose AI: ' + data.result));
+            const query = prompt('Введите запрос для Goose AI:');
+            if (!query) return;
+            setStatus('🦢 Отправляю в Goose AI…', 'inf');
+            fetch('/api/goose', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query }) })
+                .then(r => r.json()).then(data => {
+                    if (editor && data.result) editor.setValue(data.result);
+                    setStatus('✅ Goose AI ответил (' + (data.source||'') + ')', 'ok');
+                }).catch(e => setStatus('❌ ' + e.message, 'err'));
         }
 
         document.getElementById('vmSelect').addEventListener('change', function(e) {
-            setStatus('🔄 VM: ' + e.target.options[e.target.selectedIndex].text);
+            setStatus('🔄 VM: ' + e.target.options[e.target.selectedIndex].text, 'inf');
         });
 
-        // --- Task panel ---
-        function setStatus(msg) {
-            document.getElementById('task-status').textContent = msg;
+        // ── Task panel ────────────────────────────────────────────────────
+
+        function setStatus(msg, cls) {
+            const el = document.getElementById('task-status');
+            el.textContent = msg;
+            el.className = cls || 'inf';
         }
 
         async function submitTask() {
             const description = document.getElementById('task-input').value.trim();
-            if (!description) { alert('Введите описание задания.'); return; }
-            setStatus('⚙️ Отправляю задание…');
+            if (!description) { alert('Введите описание задания для AI.'); return; }
+
+            const btn = document.getElementById('task-submit-btn');
+            btn.disabled = true;
+            btn.textContent = '⏳ Генерирую…';
+            setStatus('⏳ Отправляю задание в AI (Ollama / LM Studio)…', 'inf');
+            document.getElementById('task-ai-badge').textContent = '';
+
             try {
                 const resp = await fetch('/api/task', {
                     method: 'POST',
@@ -158,18 +212,33 @@
                     body: JSON.stringify({ description })
                 });
                 const data = await resp.json();
-                if (data.error) { setStatus('❌ ' + data.error); return; }
-                // Show blueprint in editor
-                if (data.html_file) {
-                    const projResp = await fetch('/api/projects');
-                    const projects = await projResp.json();
-                    const proj = projects.find(p => p.name === data.html_file);
-                    if (proj && editor) editor.setValue(proj.content);
+
+                if (data.error) {
+                    setStatus('❌ ' + data.error, 'err');
+                    return;
                 }
-                setStatus('✅ Задание выполнено: ' + (data.plan && data.plan.title || 'OK'));
+
+                // Show generated code directly in Monaco editor
+                if (data.content && editor) {
+                    editor.setValue(data.content);
+                    // Detect language from filename
+                    if (data.html_file) setEditorLanguage(data.html_file);
+                }
+
+                if (data.used_ai) {
+                    setStatus('✅ Код сгенерирован AI: ' + (data.title || '').slice(0, 50), 'ok');
+                    document.getElementById('task-ai-badge').textContent = '🤖 ' + (data.ai_source || 'AI');
+                } else {
+                    setStatus('⚠️ AI недоступен — показан шаблон. Запустите Ollama и повторите.', 'warn');
+                    document.getElementById('task-ai-badge').textContent = '📋 ' + (data.ai_source || 'шаблон');
+                }
+
                 loadTasks();
             } catch(e) {
-                setStatus('❌ Ошибка: ' + e.message);
+                setStatus('❌ Ошибка сети: ' + e.message, 'err');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '🚀 Отправить в AI';
             }
         }
 
@@ -179,17 +248,27 @@
                 const tasks = await resp.json();
                 const list = document.getElementById('task-list');
                 list.innerHTML = '';
-                tasks.slice(0, 10).forEach(t => {
+                if (!tasks.length) {
+                    list.innerHTML = '<div style="color:#666;font-size:11px;">История заданий пуста</div>';
+                    return;
+                }
+                tasks.slice(0, 8).forEach(t => {
                     const div = document.createElement('div');
                     div.className = 'task-item';
-                    div.innerHTML = `<div class="task-title">${escHtml(t.plan && t.plan.title || t.description)}</div><div class="task-date">${escHtml(t.created_at ? t.created_at.slice(0,16) : '')}</div>`;
-                    div.onclick = () => loadTaskBlueprint(t);
+                    const badge = t.used_ai ? '<span class="task-ai-badge">🤖</span>' : '<span style="color:#888">📋</span>';
+                    div.innerHTML = `
+                        <div class="task-title">${escHtml(t.title || t.description)}</div>
+                        <div class="task-meta">
+                            <span>${escHtml((t.created_at||'').slice(0,16))}</span>
+                            ${badge}
+                        </div>`;
+                    div.onclick = () => loadTaskContent(t);
                     list.appendChild(div);
                 });
             } catch(e) { /* VM may not be available */ }
         }
 
-        async function loadTaskBlueprint(task) {
+        async function loadTaskContent(task) {
             if (!task.html_file) return;
             try {
                 const resp = await fetch('/api/projects');
@@ -197,16 +276,19 @@
                 const proj = projects.find(p => p.name === task.html_file);
                 if (proj && editor) {
                     editor.setValue(proj.content);
-                    setStatus('📂 Загружен: ' + task.html_file);
+                    setEditorLanguage(proj.name);
+                    setStatus('📂 Загружено: ' + task.html_file, 'ok');
+                    document.getElementById('task-ai-badge').textContent =
+                        task.used_ai ? ('🤖 ' + (task.ai_source||'AI')) : ('📋 ' + (task.ai_source||'шаблон'));
                 }
             } catch(e) {}
         }
 
         function escHtml(s) {
-            return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+            return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
         }
 
-        // Load tasks on start
+        // Load task history on start
         loadTasks();
     </script>
 </body>

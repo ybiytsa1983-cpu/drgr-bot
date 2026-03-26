@@ -7,5 +7,7 @@ dist/
 build/
 .venv/
 venv/
-pg_data/
 *.log
+# VM extension runtime directories (generated at startup)
+vm/tasks/
+vm/projects/
