@@ -58,6 +58,31 @@ if not BOT_TOKEN:
 
 OLLAMA_BASE        = os.getenv("OLLAMA_HOST",        "http://localhost:11434")
 VM_BASE            = os.getenv("VM_BASE",            "http://localhost:5000")
+
+# Auto-discover Ollama if the default port 11434 is not responding.
+# This fixes the common case where Ollama runs on a non-default port (e.g. 11435).
+def _bot_discover_ollama(base: str) -> str:
+    """Return a working Ollama base URL, scanning local ports if needed."""
+    import urllib.request as _req
+    def _try(url: str) -> bool:
+        try:
+            r = _req.urlopen(f"{url}/api/tags", timeout=1)
+            return r.status == 200
+        except Exception:
+            return False
+    if _try(base):
+        return base
+    for _port in (11435, 11436, 11437, 11434, 11438, 11439, 11440):
+        for _host in ("127.0.0.1", "localhost"):
+            _candidate = f"http://{_host}:{_port}"
+            if _candidate.rstrip("/") == base.rstrip("/"):
+                continue
+            if _try(_candidate):
+                print(f"[bot] Ollama auto-discovered at {_candidate}", flush=True)
+                return _candidate
+    return base  # fall back to original (will fail at runtime, but let handlers log it)
+
+OLLAMA_BASE = _bot_discover_ollama(OLLAMA_BASE)
 OLLAMA_MODEL       = os.getenv("OLLAMA_MODEL",       "llama2")
 MAX_SEARCH_RESULTS = int(os.getenv("MAX_SEARCH_RESULTS", "5"))
 MAX_SCREENSHOTS    = int(os.getenv("MAX_SCREENSHOTS",    "2"))

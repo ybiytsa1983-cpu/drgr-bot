@@ -1224,6 +1224,14 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
           Делать скриншоты
         </label>
         <button id="research-run-btn" onclick="researchRun()" style="padding:9px;background:var(--accent);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600">🔍 Исследовать</button>
+        <div style="border-top:1px solid var(--border);padding-top:8px">
+          <div style="font-size:11px;color:var(--text2);margin-bottom:6px">⚡ Быстрые задания:</div>
+          <div style="display:flex;flex-direction:column;gap:5px">
+            <button onclick="document.getElementById('research-query').value='WP WooCommerce редизайн под ключ — сайт заказа печати фотографий после фотосессии: главная с 4-значным кодом, каталог кадров с форматами печати, корзина, оформление заказа, страница скачивания электронных версий, 404/500, промо-страницы. Элементы: прогресс-бар скидки, мобильное меню, слайдер, цветовая схема, логотип. Bootstrap 5, PHP WooCommerce hooks, адаптивная вёрстка.'" style="text-align:left;padding:5px 8px;background:var(--bg4);border:1px solid var(--border);border-radius:4px;cursor:pointer;font-size:11px;color:var(--text)">📸 WP Woo — фотопечать редизайн</button>
+            <button onclick="document.getElementById('research-query').value='Ollama API интеграция с Python Flask: endpoints /api/chat /api/generate /api/tags, streaming, CORS proxy, авто-обнаружение на портах 11434-11445'" style="text-align:left;padding:5px 8px;background:var(--bg4);border:1px solid var(--border);border-radius:4px;cursor:pointer;font-size:11px;color:var(--text)">🤖 Ollama Flask интеграция</button>
+            <button onclick="document.getElementById('research-query').value='WooCommerce custom plugin: 4-digit session code, photo gallery with print format selector, discount progress bar, order emails with download links'" style="text-align:left;padding:5px 8px;background:var(--bg4);border:1px solid var(--border);border-radius:4px;cursor:pointer;font-size:11px;color:var(--text)">🛒 WooCommerce plugin — фотосессия</button>
+          </div>
+        </div>
         <div id="research-status" style="font-size:12px;color:var(--text2);display:none"></div>
         <div id="research-sources" style="display:none">
           <div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.7px;margin-bottom:6px">Источники</div>
@@ -3975,7 +3983,7 @@ async function removeAutostart() {
 async function saveOllamaUrl() {
   var url = document.getElementById('ol-url').value.trim();
   if (!url) { toast('Введите URL, например: http://127.0.0.1:11434'); return; }
-  if (!/^https?:\/\/.+:\d+/.test(url)) { toast('Неверный формат. Пример: http://127.0.0.1:11435'); return; }
+  if (!/^https?:\/\/.+:\d+/.test(url)) { toast('Неверный формат. Пример: http://127.0.0.1:11435 (или 11434)'); return; }
   try {
     var r = await fetch('/settings', { method:'POST',
       headers:{'Content-Type':'application/json'},
@@ -5071,7 +5079,7 @@ async function vmRefreshAiStatus() {
     }
     var relay = d.ollama_relay || {};
     relayEl.textContent = relay.status === 'ok'
-      ? '✅ Relay :' + (relay.port || 11435)
+      ? '✅ Relay :' + (relay.port || 11436)
       : (relay.status === 'disabled' ? '➖ Relay выключен' : '⚠ Relay стартует...');
     relayEl.style.color = relay.status === 'ok' ? '#50fa7b' : '#888';
     modelEl.textContent = curModel ? ('🤖 ' + curModel) : '➖ Модель не выбрана';

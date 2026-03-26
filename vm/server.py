@@ -204,9 +204,10 @@ except ValueError as _e:
 # requests to OLLAMA_BASE with permissive CORS headers so Chrome extensions
 # (sidepanel, content scripts) can call Ollama directly from the browser
 # without running into CORS restrictions.
-# Default: 11435  (Ollama default is 11434; +1 keeps it easy to remember).
+# Default: 11436  (Ollama default is 11434; relay on +2 keeps port 11435 free
+# for users who run Ollama on port 11435).
 # Override via env var: OLLAMA_RELAY_PORT=0 to disable.
-_OLLAMA_RELAY_PORT = int(os.environ.get("OLLAMA_RELAY_PORT", 11435))
+_OLLAMA_RELAY_PORT = int(os.environ.get("OLLAMA_RELAY_PORT", 11436))
 
 # ---------------------------------------------------------------------------
 # Remote VM polling job queue
@@ -531,7 +532,7 @@ threading.Thread(target=_lms_heartbeat, daemon=True).start()
 
 
 # ---------------------------------------------------------------------------
-# Ollama CORS relay  (port 11435 by default)
+# Ollama CORS relay  (port 11436 by default)
 # ---------------------------------------------------------------------------
 # A minimal HTTP proxy that runs on _OLLAMA_RELAY_PORT.
 # It forwards /api/chat, /api/generate, /api/tags … to OLLAMA_BASE
@@ -540,14 +541,14 @@ threading.Thread(target=_lms_heartbeat, daemon=True).start()
 # Chrome extensions (sidepanel, content scripts) cannot call Ollama at
 # localhost:11434 directly because Chrome blocks mixed-content / CORS for
 # extension pages that have no declared host_permissions for that origin.
-# The relay lives at http://127.0.0.1:11435 and the extension declares
+# The relay lives at http://127.0.0.1:11436 and the extension declares
 # host_permissions for THAT origin — so the request succeeds.
 # ---------------------------------------------------------------------------
 def _start_ollama_cors_relay() -> None:
     """Start a CORS-aware HTTP proxy for Ollama on _OLLAMA_RELAY_PORT."""
     if _OLLAMA_RELAY_PORT == 0:
         return  # disabled by user
-    # If OLLAMA_BASE itself uses the relay port (e.g. user set OLLAMA_HOST=...:11435
+    # If OLLAMA_BASE itself uses the relay port (e.g. user set OLLAMA_HOST=...:11436
     # and Ollama really is there), starting the relay on that port would either
     # fail (port taken) or create an infinite forwarding loop.  Skip the relay.
     try:
