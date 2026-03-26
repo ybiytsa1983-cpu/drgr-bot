@@ -1,295 +1,369 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-    <meta charset="UTF-8">
-    <title>DRGR VM - Enhanced</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/editor/editor.main.min.css">
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: Arial, sans-serif; display: flex; height: 100vh; background: #1e1e1e; color: #fff; }
-        #sidebar { width: 320px; background: #252526; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; flex-shrink: 0; }
-        #main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-        #toolbar { background: #2d2d30; padding: 10px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-        #editor { flex: 1; }
-        button { padding: 8px 15px; background: #0e639c; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
-        button:hover { background: #1177bb; }
-        button:disabled { background: #555; cursor: not-allowed; }
-        select, textarea { padding: 8px; background: #3c3c3c; color: #fff; border: 1px solid #555; border-radius: 4px; }
-        input[type="file"] { display: none; }
-        .file-upload-btn { background: #0a7d3e; }
-        .file-upload-btn:hover { background: #0d9248; }
-        h3 { color: #4ec9b0; margin-bottom: 8px; }
-        h4 { color: #ce9178; margin-bottom: 8px; }
-        .vm-select { margin-bottom: 4px; }
+<meta charset="UTF-8">
+<title>DRGR VM</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/editor/editor.main.min.css">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Arial,sans-serif;display:flex;height:100vh;background:#1e1e1e;color:#fff}
+#sidebar{width:310px;background:#252526;padding:12px;overflow-y:auto;display:flex;flex-direction:column;gap:10px;flex-shrink:0}
+#main{flex:1;display:flex;flex-direction:column;min-width:0}
+#toolbar{background:#2d2d30;padding:8px 12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+#editor{flex:1}
+button{padding:6px 12px;background:#0e639c;color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:12px}
+button:hover{background:#1177bb}
+button:disabled{background:#555;cursor:not-allowed}
+select,input[type=text],textarea{padding:6px;background:#3c3c3c;color:#fff;border:1px solid #555;border-radius:3px;font-size:12px}
+input[type=file]{display:none}
+.file-btn{background:#0a7d3e}
+.file-btn:hover{background:#0d9248}
+h3{color:#4ec9b0;font-size:13px;margin-bottom:6px}
+h4{color:#ce9178;font-size:12px;margin-bottom:5px}
 
-        /* Task panel */
-        #task-panel { border-top: 1px solid #444; padding-top: 12px; }
-        #task-input { width: 100%; height: 90px; resize: vertical; font-size: 12px; }
-        #task-submit-btn { width: 100%; margin-top: 6px; }
-        #task-status { font-size: 12px; min-height: 18px; margin-top: 6px; padding: 4px 6px; border-radius: 3px; }
-        #task-status.ok  { background: #0a3d0a; color: #4caf50; }
-        #task-status.err { background: #3d0a0a; color: #f44336; }
-        #task-status.inf { background: #1a2a3a; color: #9cdcfe; }
-        #task-status.warn{ background: #3d2e0a; color: #ffc107; }
+/* ── Status tiles ─────────────────────────────────────────────────── */
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:4px}
+.tile{background:#1a1a2e;border:1px solid #444;border-radius:4px;padding:5px 7px;font-size:11px;min-height:42px}
+.tile .t-label{color:#aaa;font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tile .t-status{font-weight:bold;margin-top:2px;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tile.ok   {border-color:#2a6a2a}.tile.ok   .t-status{color:#4caf50}
+.tile.warn {border-color:#6a4a10}.tile.warn .t-status{color:#ffc107}
+.tile.err  {border-color:#6a1a1a}.tile.err  .t-status{color:#f44336}
+.tile.off  {border-color:#444}   .tile.off  .t-status{color:#888}
 
-        #task-ai-badge { font-size: 10px; color: #888; margin-top: 3px; }
+/* ── Task panel ───────────────────────────────────────────────────── */
+#task-input{width:100%;height:80px;resize:vertical;font-size:11px}
+#task-submit-btn{width:100%;margin-top:5px}
+#task-status{font-size:11px;min-height:16px;margin-top:4px;padding:3px 6px;border-radius:3px}
+#task-status.ok  {background:#0a3d0a;color:#4caf50}
+#task-status.err {background:#3d0a0a;color:#f44336}
+#task-status.inf {background:#1a2a3a;color:#9cdcfe}
+#task-status.warn{background:#3d2e0a;color:#ffc107}
+#task-ai-badge{font-size:10px;color:#888;margin-top:2px}
+#task-list{margin-top:8px;font-size:11px;max-height:150px;overflow-y:auto}
+.task-item{background:#1e1e2e;border:1px solid #444;border-radius:3px;padding:5px 7px;margin-bottom:4px;cursor:pointer}
+.task-item:hover{border-color:#4ec9b0}
+.task-item .ti-title{color:#9cdcfe;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.task-item .ti-meta{color:#666;font-size:10px;display:flex;justify-content:space-between}
 
-        #task-list { margin-top: 10px; font-size: 12px; max-height: 180px; overflow-y: auto; }
-        .task-item { background: #1e1e2e; border: 1px solid #444; border-radius: 4px; padding: 6px 8px; margin-bottom: 6px; cursor: pointer; }
-        .task-item:hover { border-color: #4ec9b0; }
-        .task-item .task-title { color: #9cdcfe; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .task-item .task-meta  { color: #666; font-size: 10px; display: flex; justify-content: space-between; }
-        .task-item .task-ai-badge { color: #4ec9b0; }
-    </style>
+/* ── Settings panel ───────────────────────────────────────────────── */
+#settings-panel{display:none;border-top:1px solid #444;padding-top:8px}
+#settings-panel.visible{display:block}
+.sfield{display:flex;flex-direction:column;margin-bottom:6px}
+.sfield label{font-size:10px;color:#aaa;margin-bottom:2px}
+.sfield input{font-size:11px}
+
+#editor-label{margin-left:auto;color:#aaa;font-size:11px}
+</style>
 </head>
 <body>
-    <div id="sidebar">
-        <div>
-            <h3>🔧 DRGR VM Control Panel</h3>
-            <div class="vm-select">
-                <label>Select VM:</label>
-                <select id="vmSelect">
-                    <option value="local">Local VM</option>
-                    <option value="colab">Google Colab</option>
-                    <option value="cloud">Cloud VM</option>
-                </select>
-            </div>
-        </div>
+<div id="sidebar">
 
-        <div>
-            <h4>Quick Actions</h4>
-            <div style="display:flex;flex-direction:column;gap:6px;">
-                <button onclick="generateHTML()">Generate HTML</button>
-                <button onclick="run3DGen()">🎬 3D Generator</button>
-                <button onclick="runVideoGen()">🎥 Video Generator</button>
-                <button onclick="runGoose()">🦢 Goose AI</button>
-                <button onclick="loadProjectsToEditor()">📂 Load Projects</button>
-            </div>
-        </div>
-
-        <!-- Task panel: sends description to local AI for real code generation -->
-        <div id="task-panel">
-            <h4>📋 Задание для AI</h4>
-            <textarea id="task-input"
-                placeholder="Опишите задание для AI-агента…&#10;Например: Напиши Python скрипт парсинга Wildberries с сохранением в SQLite и выводом юнит-экономики&#10;&#10;AI (Ollama/LM Studio) сгенерирует реальный код."></textarea>
-            <button id="task-submit-btn" onclick="submitTask()">🚀 Отправить в AI</button>
-            <div id="task-status" class="inf">🤖 Ожидание задания…</div>
-            <div id="task-ai-badge"></div>
-            <div id="task-list"></div>
-        </div>
+  <!-- Status tiles -->
+  <div>
+    <h3>⚡ Статус сервисов</h3>
+    <div class="tiles" id="tiles">
+      <div class="tile off" id="t-ollama">   <div class="t-label">🦙 Ollama</div>    <div class="t-status">—</div></div>
+      <div class="tile off" id="t-lmstudio"> <div class="t-label">🖥 LM Studio</div> <div class="t-status">—</div></div>
+      <div class="tile off" id="t-tgwui">    <div class="t-label">🧠 TGWUI</div>     <div class="t-status">—</div></div>
+      <div class="tile off" id="t-roocode">  <div class="t-label">🦘 Roo Code</div>  <div class="t-status">—</div></div>
+      <div class="tile off" id="t-oaf">      <div class="t-label">🤝 OAF</div>       <div class="t-status">—</div></div>
+      <div class="tile off" id="t-triposr">  <div class="t-label">🧊 3D (TripoSR)</div><div class="t-status">—</div></div>
+      <div class="tile off" id="t-sd">       <div class="t-label">🎨 SD</div>        <div class="t-status">—</div></div>
+      <div class="tile off" id="t-comfyui">  <div class="t-label">⚙ ComfyUI</div>   <div class="t-status">—</div></div>
+      <div class="tile off" id="t-vvm">      <div class="t-label">👁 Vision VM</div> <div class="t-status">—</div></div>
+      <div class="tile off" id="t-light">    <div class="t-label">👁‍🗨 Лёгк.Зрение</div><div class="t-status">—</div></div>
+      <div class="tile off" id="t-remote">   <div class="t-label">🌐 Remote VM</div> <div class="t-status">—</div></div>
+      <div class="tile off" id="t-tgbot">    <div class="t-label">📱 TG Bot</div>    <div class="t-status">—</div></div>
     </div>
-
-    <div id="main">
-        <div id="toolbar">
-            <label for="fileUpload" class="file-upload-btn" style="cursor:pointer;padding:8px 15px;border-radius:4px;">
-                📎 Upload File
-            </label>
-            <input type="file" id="fileUpload" onchange="uploadFile(event)">
-            <button onclick="saveProject()">💾 Save Project</button>
-            <span id="editor-label" style="margin-left:auto;color:#aaa;font-size:12px;">Monaco Editor Active</span>
-        </div>
-        <div id="editor"></div>
+    <div style="display:flex;gap:4px;margin-top:5px">
+      <button onclick="refreshHealth()" style="flex:1;font-size:10px">🔄 Обновить</button>
+      <button onclick="toggleSettings()" style="flex:1;font-size:10px;background:#555">⚙ Настройки</button>
     </div>
+  </div>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/loader.min.js"></script>
-    <script>
-        let editor;
-        require.config({ paths: { vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs' } });
-        require(['vs/editor/editor.main'], function() {
-            editor = monaco.editor.create(document.getElementById('editor'), {
-                value: '<!-- DRGR VM Ready -->\n\nВведите задание в панели слева и нажмите "Отправить в AI".\nAI (Ollama / LM Studio) сгенерирует код и покажет его здесь.\n',
-                language: 'markdown',
-                theme: 'vs-dark',
-                automaticLayout: true,
-                wordWrap: 'on',
-            });
-        });
+  <!-- Settings panel -->
+  <div id="settings-panel">
+    <h4>⚙ Настройки сервисов</h4>
+    <div id="sfields"></div>
+    <button onclick="saveSettings()" style="width:100%;margin-top:4px;background:#0a7d3e">💾 Сохранить</button>
+    <div id="settings-status" style="font-size:10px;color:#aaa;margin-top:3px"></div>
+  </div>
 
-        function uploadFile(event) {
-            const file = event.target.files[0];
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                if (editor) {
-                    editor.setValue(e.target.result);
-                    setEditorLanguage(file.name);
-                }
-            };
-            reader.onerror = function() {
-                setStatus('❌ Ошибка чтения файла', 'err');
-            };
-            reader.readAsText(file);
-        }
+  <!-- Quick actions -->
+  <div>
+    <h4>⚡ Действия</h4>
+    <div style="display:flex;flex-direction:column;gap:4px">
+      <button onclick="generateHTML()">Generate HTML</button>
+      <button onclick="run3DGen()">🎬 3D Generator</button>
+      <button onclick="runVideoGen()">🎥 Video Generator</button>
+      <button onclick="runGoose()">🦢 Goose AI</button>
+      <button onclick="loadProjectsToEditor()">📂 Load Project</button>
+    </div>
+  </div>
 
-        function setEditorLanguage(filename) {
-            if (!editor) return;
-            const ext = (filename.split('.').pop() || '').toLowerCase();
-            const langMap = { py:'python', js:'javascript', ts:'typescript', html:'html',
-                              css:'css', json:'json', md:'markdown', yml:'yaml', yaml:'yaml',
-                              sh:'shell', sql:'sql', txt:'plaintext' };
-            const lang = langMap[ext] || 'plaintext';
-            monaco.editor.setModelLanguage(editor.getModel(), lang);
-            document.getElementById('editor-label').textContent = filename + ' (' + lang + ')';
-        }
+  <!-- Task panel -->
+  <div id="task-panel" style="border-top:1px solid #444;padding-top:8px">
+    <h4>📋 Задание для AI</h4>
+    <textarea id="task-input" placeholder="Опишите задание для AI-агента…&#10;Например: Напиши Python скрипт парсинга Wildberries с сохранением в SQLite"></textarea>
+    <button id="task-submit-btn" onclick="submitTask()">🚀 Отправить в AI</button>
+    <div id="task-status" class="inf">🤖 Ожидание задания…</div>
+    <div id="task-ai-badge"></div>
+    <div id="task-list"></div>
+  </div>
 
-        function saveProject() {
-            const content = editor ? editor.getValue() : '';
-            const filename = prompt('Введите имя файла:', 'project.py');
-            if (!filename) return;
-            fetch('/api/project', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ filename, content })
-            }).then(r => r.json()).then(() => setStatus('✅ Сохранено: ' + filename, 'ok'));
-        }
+</div><!-- /sidebar -->
 
-        function loadProjectsToEditor() {
-            fetch('/api/projects').then(r => r.json()).then(projects => {
-                if (!projects.length) { alert('Нет сохранённых проектов.'); return; }
-                const name = prompt('Введите имя проекта:\n' + projects.map(p => p.name).join('\n'));
-                const proj = projects.find(p => p.name === name);
-                if (proj && editor) {
-                    editor.setValue(proj.content);
-                    setEditorLanguage(proj.name);
-                }
-            });
-        }
+<div id="main">
+  <div id="toolbar">
+    <label for="fileUpload" class="file-btn" style="cursor:pointer;padding:6px 12px;border-radius:3px;font-size:12px">📎 Upload</label>
+    <input type="file" id="fileUpload" onchange="uploadFile(event)">
+    <button onclick="saveProject()">💾 Save</button>
+    <span id="editor-label">Monaco Editor</span>
+  </div>
+  <div id="editor"></div>
+</div>
 
-        function generateHTML() {
-            if (editor) {
-                editor.setValue('<!DOCTYPE html>\n<html lang="ru">\n<head>\n<meta charset="UTF-8">\n<title>Новый проект</title>\n</head>\n<body>\n<h1>Проект</h1>\n</body>\n</html>');
-                monaco.editor.setModelLanguage(editor.getModel(), 'html');
-            }
-        }
+<script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/loader.min.js"></script>
+<script>
+// ── Monaco setup ─────────────────────────────────────────────────────
+let editor;
+require.config({paths:{vs:'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs'}});
+require(['vs/editor/editor.main'],function(){
+  editor = monaco.editor.create(document.getElementById('editor'),{
+    value:'<!-- DRGR VM Ready -->\n\nВведите задание слева → нажмите "Отправить в AI".\nAI сгенерирует код и покажет его здесь.\n',
+    language:'markdown',theme:'vs-dark',automaticLayout:true,wordWrap:'on'
+  });
+});
 
-        function run3DGen() {
-            fetch('/api/generate-3d', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt: 'Generate 3D model' }) })
-                .then(r => r.json()).then(data => alert('🎬 3D Generator: ' + data.result));
-        }
+function setLang(filename){
+  if(!editor) return;
+  const ext=(filename.split('.').pop()||'').toLowerCase();
+  const m={py:'python',js:'javascript',ts:'typescript',html:'html',css:'css',
+           json:'json',md:'markdown',yml:'yaml',yaml:'yaml',sh:'shell',sql:'sql',txt:'plaintext'};
+  monaco.editor.setModelLanguage(editor.getModel(), m[ext]||'plaintext');
+  document.getElementById('editor-label').textContent=filename+' ('+(m[ext]||ext)+')';
+}
 
-        function runVideoGen() {
-            fetch('/api/generate-video', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt: 'Generate video' }) })
-                .then(r => r.json()).then(data => alert('🎥 Video Generator: ' + data.result));
-        }
+// ── File / Project actions ────────────────────────────────────────────
+function uploadFile(e){
+  const f=e.target.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=ev=>{ if(editor){editor.setValue(ev.target.result);setLang(f.name);} };
+  r.onerror=()=>setTaskStatus('❌ Ошибка чтения файла','err');
+  r.readAsText(f);
+}
+function saveProject(){
+  const content=editor?editor.getValue():'';
+  const fn=prompt('Имя файла:','project.py'); if(!fn) return;
+  fetch('/api/project',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({filename:fn,content})})
+  .then(r=>r.json()).then(()=>setTaskStatus('✅ Сохранено: '+fn,'ok'));
+}
+function loadProjectsToEditor(){
+  fetch('/api/projects').then(r=>r.json()).then(projects=>{
+    if(!projects.length){alert('Нет сохранённых проектов.');return;}
+    const name=prompt('Имя проекта:\n'+projects.map(p=>p.name).join('\n'));
+    const p=projects.find(x=>x.name===name);
+    if(p&&editor){editor.setValue(p.content);setLang(p.name);}
+  });
+}
+function generateHTML(){
+  if(editor){editor.setValue('<!DOCTYPE html>\n<html lang="ru">\n<head>\n<meta charset="UTF-8">\n<title>Проект</title>\n</head>\n<body>\n<h1>Проект</h1>\n</body>\n</html>');
+  monaco.editor.setModelLanguage(editor.getModel(),'html');}
+}
+function run3DGen(){
+  fetch('/api/generate-3d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})})
+  .then(r=>r.json()).then(d=>alert('🎬 '+d.result));
+}
+function runVideoGen(){
+  fetch('/api/generate-video',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})})
+  .then(r=>r.json()).then(d=>alert('🎥 '+d.result));
+}
+function runGoose(){
+  const q=prompt('Запрос для Goose AI:'); if(!q) return;
+  setTaskStatus('🦢 Отправляю…','inf');
+  fetch('/api/goose',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:q})})
+  .then(r=>r.json()).then(d=>{
+    if(editor&&d.result) editor.setValue(d.result);
+    setTaskStatus('✅ Goose AI ('+(d.source||'')+')','ok');
+  }).catch(e=>setTaskStatus('❌ '+e.message,'err'));
+}
 
-        function runGoose() {
-            const query = prompt('Введите запрос для Goose AI:');
-            if (!query) return;
-            setStatus('🦢 Отправляю в Goose AI…', 'inf');
-            fetch('/api/goose', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query }) })
-                .then(r => r.json()).then(data => {
-                    if (editor && data.result) editor.setValue(data.result);
-                    setStatus('✅ Goose AI ответил (' + (data.source||'') + ')', 'ok');
-                }).catch(e => setStatus('❌ ' + e.message, 'err'));
-        }
+// ── Health / status tiles ─────────────────────────────────────────────
+function tile(id,cls,text){
+  const el=document.getElementById('t-'+id); if(!el) return;
+  el.className='tile '+cls;
+  el.querySelector('.t-status').textContent=text;
+}
+function applyHealth(h){
+  if(!h) return;
+  // Ollama
+  const ol=h.ollama||{};
+  tile('ollama', ol.status==='ok'?'ok':'off',
+       ol.status==='ok'?'✓ '+(ol.count||0)+' моделей':'✗ Офлайн');
+  // LM Studio
+  const lm=h.lmstudio||{};
+  tile('lmstudio', lm.status==='ok'?'ok':'off',
+       lm.status==='ok'?'✓ '+(lm.count||0)+' моделей':'✗ Офлайн');
+  // TGWUI
+  const tw=h.tgwui||{};
+  tile('tgwui', tw.status==='ok'?'ok':'off',
+       tw.status==='ok'?'✓ Активен':'— Не настроен');
+  // Roo Code
+  const rc=h.roocode||{};
+  tile('roocode', rc.status==='ok'?'ok':'off',
+       rc.status==='ok'?'✓ Активен':'— Не настроен');
+  // OAF
+  const oaf=h.oaf||{};
+  tile('oaf', oaf.status==='ok'?'ok':'off',
+       oaf.status==='ok'?'✓ Активен':'— Не настроен');
+  // TripoSR
+  const tr=h.triposr||{};
+  tile('triposr', tr.status==='ok'?'ok':'off',
+       tr.status==='ok'?'✓ Активен':'— Не настроен');
+  // SD
+  const sd=h.stable_diffusion||{};
+  tile('sd', sd.status==='ok'?'ok':'err',
+       sd.status==='ok'?'✓ Активен':'✗ Недоступен');
+  // ComfyUI
+  const cu=h.comfyui||{};
+  tile('comfyui', cu.status==='ok'?'ok':'err',
+       cu.status==='ok'?'✓ Активен':'✗ Недоступен');
+  // Vision VM
+  const vv=h.vision_vm||{};
+  tile('vvm', vv.status==='ok'?'ok':'off',
+       vv.status==='ok'?'✓ Активна':'— Не настроена');
+  // Light vision
+  const lv=h.vision_light||{};
+  tile('light', lv.status==='ok'?'ok':'warn',
+       lv.status==='ok'?'✓ '+(lv.model||'moondream'):'— Офлайн');
+  // Remote VM
+  const rv=h.remote_vm||{};
+  tile('remote', rv.status==='ok'?'ok':'off',
+       rv.status==='ok'?'✓ Активна':'— Не настроен');
+  // TG Bot
+  const tb=h.tg_bot||{};
+  if(tb.status==='ok')        tile('tgbot','ok', '✓ @'+tb.username);
+  else if(tb.status==='no_token') tile('tgbot','warn','⚠ Нет токена');
+  else                        tile('tgbot','err','⚠ Не запущен');
+}
+async function refreshHealth(){
+  try{
+    const r=await fetch('/health'); const h=await r.json();
+    applyHealth(h);
+  }catch(e){console.warn('health fetch failed',e);}
+}
+// Auto-refresh every 15 s
+refreshHealth();
+setInterval(refreshHealth, 15000);
 
-        document.getElementById('vmSelect').addEventListener('change', function(e) {
-            setStatus('🔄 VM: ' + e.target.options[e.target.selectedIndex].text, 'inf');
-        });
+// ── Settings panel ────────────────────────────────────────────────────
+const _settingsKeys=[
+  ['OLLAMA_URL',   '🦙 Ollama URL'],
+  ['LMS_URL',      '🖥 LM Studio URL'],
+  ['TGWUI_URL',    '🧠 TGWUI URL'],
+  ['COMFYUI_URL',  '⚙ ComfyUI URL'],
+  ['SD_URL',       '🎨 Stable Diffusion URL'],
+  ['OAF_URL',      '🤝 OAF URL'],
+  ['TRIPOSR_URL',  '🧊 TripoSR URL'],
+  ['ROOCODE_URL',  '🦘 Roo Code URL'],
+  ['VISION_VM_URL','👁 Vision VM URL'],
+  ['REMOTE_VM_URL','🌐 Remote VM URL'],
+  ['BOT_TOKEN',    '📱 Telegram Bot Token'],
+];
+(function buildSettings(){
+  const container=document.getElementById('sfields');
+  _settingsKeys.forEach(([key,label])=>{
+    const div=document.createElement('div'); div.className='sfield';
+    div.innerHTML=`<label>${label}</label><input type="text" id="s-${key}" placeholder="${key}">`;
+    container.appendChild(div);
+  });
+  // Load current values
+  fetch('/settings').then(r=>r.json()).then(cfg=>{
+    _settingsKeys.forEach(([key])=>{
+      const el=document.getElementById('s-'+key);
+      if(el&&cfg[key]) el.value=cfg[key];
+    });
+  });
+})();
+function toggleSettings(){
+  const p=document.getElementById('settings-panel');
+  p.classList.toggle('visible');
+}
+async function saveSettings(){
+  const payload={};
+  _settingsKeys.forEach(([key])=>{
+    const el=document.getElementById('s-'+key);
+    if(el&&el.value.trim()) payload[key]=el.value.trim();
+  });
+  try{
+    await fetch('/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    document.getElementById('settings-status').textContent='✅ Сохранено';
+    setTimeout(()=>{document.getElementById('settings-status').textContent='';},3000);
+    refreshHealth();
+  }catch(e){
+    document.getElementById('settings-status').textContent='❌ '+e.message;
+  }
+}
 
-        // ── Task panel ────────────────────────────────────────────────────
+// ── Task panel ────────────────────────────────────────────────────────
+function setTaskStatus(msg,cls){
+  const el=document.getElementById('task-status');
+  el.textContent=msg; el.className=cls||'inf';
+}
+async function submitTask(){
+  const description=document.getElementById('task-input').value.trim();
+  if(!description){alert('Введите описание задания.');return;}
+  const btn=document.getElementById('task-submit-btn');
+  btn.disabled=true; btn.textContent='⏳ Генерирую…';
+  setTaskStatus('⏳ Отправляю в AI (Ollama / LM Studio)…','inf');
+  document.getElementById('task-ai-badge').textContent='';
+  try{
+    const resp=await fetch('/api/task',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({description})});
+    const data=await resp.json();
+    if(data.error){setTaskStatus('❌ '+data.error,'err');return;}
+    if(data.content&&editor){editor.setValue(data.content);if(data.html_file)setLang(data.html_file);}
+    if(data.used_ai){
+      setTaskStatus('✅ Сгенерировано: '+(data.title||'').slice(0,50),'ok');
+      document.getElementById('task-ai-badge').textContent='🤖 '+(data.ai_source||'AI');
+    }else{
+      setTaskStatus('⚠️ AI офлайн — шаблон. Запустите Ollama и повторите.','warn');
+      document.getElementById('task-ai-badge').textContent='📋 '+(data.ai_source||'шаблон');
+    }
+    loadTasks();
+  }catch(e){setTaskStatus('❌ '+e.message,'err');}
+  finally{btn.disabled=false;btn.textContent='🚀 Отправить в AI';}
+}
+async function loadTasks(){
+  try{
+    const tasks=await fetch('/api/tasks').then(r=>r.json());
+    const list=document.getElementById('task-list'); list.innerHTML='';
+    if(!tasks.length){list.innerHTML='<div style="color:#666;font-size:10px">История пуста</div>';return;}
+    tasks.slice(0,8).forEach(t=>{
+      const div=document.createElement('div'); div.className='task-item';
+      const badge=t.used_ai?'🤖':'📋';
+      div.innerHTML=`<div class="ti-title">${esc(t.title||t.description)}</div>`+
+        `<div class="ti-meta"><span>${esc((t.created_at||'').slice(0,16))}</span><span>${badge}</span></div>`;
+      div.onclick=()=>loadTaskContent(t);
+      list.appendChild(div);
+    });
+  }catch(e){}
+}
+async function loadTaskContent(t){
+  if(!t.html_file) return;
+  try{
+    const projects=await fetch('/api/projects').then(r=>r.json());
+    const p=projects.find(x=>x.name===t.html_file);
+    if(p&&editor){editor.setValue(p.content);setLang(p.name);
+      setTaskStatus('📂 Загружено: '+t.html_file,'ok');
+      document.getElementById('task-ai-badge').textContent=(t.used_ai?'🤖':'📋')+' '+(t.ai_source||'');
+    }
+  }catch(e){}
+}
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 
-        function setStatus(msg, cls) {
-            const el = document.getElementById('task-status');
-            el.textContent = msg;
-            el.className = cls || 'inf';
-        }
-
-        async function submitTask() {
-            const description = document.getElementById('task-input').value.trim();
-            if (!description) { alert('Введите описание задания для AI.'); return; }
-
-            const btn = document.getElementById('task-submit-btn');
-            btn.disabled = true;
-            btn.textContent = '⏳ Генерирую…';
-            setStatus('⏳ Отправляю задание в AI (Ollama / LM Studio)…', 'inf');
-            document.getElementById('task-ai-badge').textContent = '';
-
-            try {
-                const resp = await fetch('/api/task', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ description })
-                });
-                const data = await resp.json();
-
-                if (data.error) {
-                    setStatus('❌ ' + data.error, 'err');
-                    return;
-                }
-
-                // Show generated code directly in Monaco editor
-                if (data.content && editor) {
-                    editor.setValue(data.content);
-                    // Detect language from filename
-                    if (data.html_file) setEditorLanguage(data.html_file);
-                }
-
-                if (data.used_ai) {
-                    setStatus('✅ Код сгенерирован AI: ' + (data.title || '').slice(0, 50), 'ok');
-                    document.getElementById('task-ai-badge').textContent = '🤖 ' + (data.ai_source || 'AI');
-                } else {
-                    setStatus('⚠️ AI недоступен — показан шаблон. Запустите Ollama и повторите.', 'warn');
-                    document.getElementById('task-ai-badge').textContent = '📋 ' + (data.ai_source || 'шаблон');
-                }
-
-                loadTasks();
-            } catch(e) {
-                setStatus('❌ Ошибка сети: ' + e.message, 'err');
-            } finally {
-                btn.disabled = false;
-                btn.textContent = '🚀 Отправить в AI';
-            }
-        }
-
-        async function loadTasks() {
-            try {
-                const resp = await fetch('/api/tasks');
-                const tasks = await resp.json();
-                const list = document.getElementById('task-list');
-                list.innerHTML = '';
-                if (!tasks.length) {
-                    list.innerHTML = '<div style="color:#666;font-size:11px;">История заданий пуста</div>';
-                    return;
-                }
-                tasks.slice(0, 8).forEach(t => {
-                    const div = document.createElement('div');
-                    div.className = 'task-item';
-                    const badge = t.used_ai ? '<span class="task-ai-badge">🤖</span>' : '<span style="color:#888">📋</span>';
-                    div.innerHTML = `
-                        <div class="task-title">${escHtml(t.title || t.description)}</div>
-                        <div class="task-meta">
-                            <span>${escHtml((t.created_at||'').slice(0,16))}</span>
-                            ${badge}
-                        </div>`;
-                    div.onclick = () => loadTaskContent(t);
-                    list.appendChild(div);
-                });
-            } catch(e) { /* VM may not be available */ }
-        }
-
-        async function loadTaskContent(task) {
-            if (!task.html_file) return;
-            try {
-                const resp = await fetch('/api/projects');
-                const projects = await resp.json();
-                const proj = projects.find(p => p.name === task.html_file);
-                if (proj && editor) {
-                    editor.setValue(proj.content);
-                    setEditorLanguage(proj.name);
-                    setStatus('📂 Загружено: ' + task.html_file, 'ok');
-                    document.getElementById('task-ai-badge').textContent =
-                        task.used_ai ? ('🤖 ' + (task.ai_source||'AI')) : ('📋 ' + (task.ai_source||'шаблон'));
-                }
-            } catch(e) {}
-        }
-
-        function escHtml(s) {
-            return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-        }
-
-        // Load task history on start
-        loadTasks();
-    </script>
+loadTasks();
+</script>
 </body>
 </html>
