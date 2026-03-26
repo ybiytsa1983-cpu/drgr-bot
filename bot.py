@@ -1,5 +1,6 @@
 import os
 import re
+import random
 import asyncio
 import logging
 import aiofiles
@@ -28,12 +29,12 @@ load_dotenv()
 
 # Получение токенов и настроек
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-HUGGINGFACE_API_KEY = os.getenv("HUGGINGFACE_API_KEY")
 
 if not BOT_TOKEN:
     raise ValueError("Добавьте BOT_TOKEN в .env файл.")
-if not HUGGINGFACE_API_KEY:
-    raise ValueError("Добавьте HUGGINGFACE_API_KEY в .env файл.")
+
+# Hugging Face API ключ опциональный — бот запустится и без него
+HUGGINGFACE_API_KEY = os.getenv("HUGGINGFACE_API_KEY")
 
 # Директории
 PHOTOS_DIR = os.getenv("PHOTOS_DIR", "photos")
@@ -52,17 +53,24 @@ MAX_COMMENTS = int(os.getenv("MAX_COMMENTS", 20))
 for d in [PHOTOS_DIR, VIDEOS_DIR, GALLERY_DIR, FRAME_DIR, COLLAGE_DIR, FRAME_OVERLAY_DIR]:
     os.makedirs(d, exist_ok=True)
 
-# Инициализация клиента Hugging Face
-client = InferenceClient(api_key=HUGGINGFACE_API_KEY)
-
-# Логирование
+# Логирование: и в файл, и в консоль (для облачных платформ)
+_log_handlers: List[logging.Handler] = [
+    logging.StreamHandler(),
+    logging.FileHandler(LOG_FILE, encoding="utf-8"),
+]
 logging.basicConfig(
     level=logging.INFO,
-    filename=LOG_FILE,
-    filemode="a",
     format="%(asctime)s | %(levelname)s | %(message)s",
+    handlers=_log_handlers,
 )
 logger = logging.getLogger("FSMMediaBot")
+
+# Инициализация клиента Hugging Face (опционально)
+if HUGGINGFACE_API_KEY:
+    client = InferenceClient(api_key=HUGGINGFACE_API_KEY)
+else:
+    client = None
+    logger.warning("HUGGINGFACE_API_KEY не задан — функции Hugging Face недоступны.")
 
 # Базовые данные
 EFFECTS = ["blur", "sharpen", "bw", "brightness", "contrast", "pixelate", "glitch", "sepia"]
@@ -100,7 +108,6 @@ def apply_effect(image: Image.Image, effect: str) -> Image.Image:
         return small.resize((w, h), Image.NEAREST)
     if effect == "glitch":
         data = list(image.getdata())
-        import random
         random.shuffle(data)
         img = Image.new(image.mode, image.size)
         img.putdata(data)
