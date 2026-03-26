@@ -4,6 +4,7 @@ import random
 import asyncio
 import logging
 import aiofiles
+import aiohttp
 from typing import List, Dict, Optional
 from collections import defaultdict, deque
 from urllib.parse import urlparse
@@ -33,6 +34,9 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 if not BOT_TOKEN:
     raise ValueError("Добавьте BOT_TOKEN в .env файл.")
 
+# URL расширения VM (по умолчанию — локальный сервер)
+VM_URL = os.getenv("VM_URL", "http://localhost:5001")
+
 # Hugging Face API ключ опциональный — бот запустится и без него
 HUGGINGFACE_API_KEY = os.getenv("HUGGINGFACE_API_KEY")
 
@@ -54,14 +58,14 @@ for d in [PHOTOS_DIR, VIDEOS_DIR, GALLERY_DIR, FRAME_DIR, COLLAGE_DIR, FRAME_OVE
     os.makedirs(d, exist_ok=True)
 
 # Логирование: и в файл, и в консоль (для облачных платформ)
-_log_handlers: List[logging.Handler] = [
+log_handlers: List[logging.Handler] = [
     logging.StreamHandler(),
     logging.FileHandler(LOG_FILE, encoding="utf-8"),
 ]
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s",
-    handlers=_log_handlers,
+    handlers=log_handlers,
 )
 logger = logging.getLogger("FSMMediaBot")
 
@@ -326,9 +330,26 @@ dp = Dispatcher()
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     await message.reply(
-        "Привет! Используйте команды:\n"
+        "Привет! Я DRGR-бот.\n\n"
+        "Доступные команды:\n"
         "/search <запрос> — поиск в интернете\n"
+        "/task <описание проекта> — создать проект через VM\n"
         "/help — справка"
+    )
+
+
+@dp.message(Command("help"))
+async def cmd_help(message: types.Message):
+    await message.reply(
+        "📖 <b>Справка DRGR-бота</b>\n\n"
+        "<b>Поиск:</b>\n"
+        "/search <запрос> — поиск через DuckDuckGo\n\n"
+        "<b>Проекты / VM:</b>\n"
+        "/task <описание> — отправить задание на VM и получить план проекта\n\n"
+        "<b>Примеры:</b>\n"
+        "<code>/search Python asyncio</code>\n"
+        "<code>/task OpenClaw — AI-система подбора товаров для маркетплейсов</code>",
+        parse_mode="HTML",
     )
 @dp.message(Command("search"))
 async def cmd_search(message: types.Message):
@@ -344,6 +365,101 @@ async def cmd_search(message: types.Message):
     query = args[1].strip()
     await message.reply("🔍 Ищу, подождите…")
     result = await search_duckduckgo(query)
+    await message.reply(result, parse_mode="HTML", disable_web_page_preview=True)
+
+
+async def _call_vm_task(description: str) -> str:
+    """
+    Отправить задание на VM-расширение (POST /api/task).
+    Возвращает текст ответа.
+    """
+    url = f"{VM_URL}/api/task"
+    payload = {"description": description}
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, json=payload, timeout=aiohttp.ClientTimeout(total=30)) as resp:
+                data = await resp.json()
+                return data.get("result", "VM не вернул результат.")
+    except aiohttp.ClientConnectorError:
+        logger.warning(f"VM недоступна по адресу {VM_URL}, генерирую план локально.")
+        return _generate_project_plan_local(description)
+    except Exception as e:
+        logger.error(f"VM task error: {e}")
+        return _generate_project_plan_local(description)
+
+
+def _generate_project_plan_local(description: str) -> str:
+    """
+    Сформировать структурированный план проекта локально
+    (когда VM недоступна).
+    """
+    first_line = description.strip().splitlines()[0][:80]
+    return (
+        f"📋 <b>Автоплан проекта: {first_line}</b>\n\n"
+        "Ниже — типовая структура для полноценного проекта.\n\n"
+        "<b>📁 Структура файлов:</b>\n"
+        "<pre>"
+        "project/\n"
+        "├── docker-compose.yml\n"
+        "├── .env.example\n"
+        "├── README.md\n"
+        "├── bot/\n"
+        "│   ├── Dockerfile\n"
+        "│   ├── requirements.txt\n"
+        "│   └── main.py           # Telegram-бот\n"
+        "├── api/\n"
+        "│   ├── Dockerfile\n"
+        "│   ├── requirements.txt\n"
+        "│   └── app.py            # FastAPI/Flask сервер\n"
+        "├── workers/\n"
+        "│   ├── scraper.py        # Парсинг Wildberries / Alibaba\n"
+        "│   ├── analytics.py      # Юнит-экономика, скоринг\n"
+        "│   └── scheduler.py      # Фоновые задачи (APScheduler)\n"
+        "├── db/\n"
+        "│   └── migrations/       # SQL-миграции (Alembic)\n"
+        "└── dashboard/\n"
+        "    └── index.html        # Web-интерфейс\n"
+        "</pre>\n\n"
+        "<b>🛠 Технологический стек:</b>\n"
+        "• <b>Bot:</b> aiogram 3.x\n"
+        "• <b>API:</b> FastAPI + SQLAlchemy\n"
+        "• <b>DB:</b> PostgreSQL 15\n"
+        "• <b>Cache:</b> Redis\n"
+        "• <b>AI:</b> OpenClaw / Ollama / HuggingFace\n"
+        "• <b>Парсинг:</b> httpx + BeautifulSoup4\n"
+        "• <b>Деплой:</b> Docker Compose\n\n"
+        "<b>⚙️ Ключевые модули:</b>\n"
+        "1. <code>scraper.py</code> — сбор данных с Wildberries, MPStats, Alibaba\n"
+        "2. <code>analytics.py</code> — скоринг товаров (маржа, конкуренция, спрос)\n"
+        "3. <code>bot/main.py</code> — голосовой и текстовый ввод через Telegram\n"
+        "4. <code>dashboard/</code> — дашборд с графиками и фильтрами\n\n"
+        "Для запуска сохраните этот план на VM командой /task и откройте "
+        "расширение по адресу <code>http://localhost:5001</code>."
+    )
+
+
+@dp.message(Command("task"))
+async def cmd_task(message: types.Message):
+    """
+    Отправить задание на VM-расширение.
+    Использование: /task <описание проекта>
+    """
+    args = message.text.split(maxsplit=1)
+    if len(args) < 2 or not args[1].strip():
+        await message.reply(
+            "Использование: <code>/task описание проекта</code>\n"
+            "Например:\n"
+            "<code>/task OpenClaw — AI-система подбора товаров для маркетплейсов</code>",
+            parse_mode="HTML",
+        )
+        return
+    description = args[1].strip()
+    status_msg = await message.reply("⚙️ Отправляю задание на VM, подождите…")
+    result = await _call_vm_task(description)
+    await status_msg.delete()
+    # Telegram ограничивает сообщения до 4096 символов
+    if len(result) > 4000:
+        result = result[:3997] + "…"
     await message.reply(result, parse_mode="HTML", disable_web_page_preview=True)
 
 

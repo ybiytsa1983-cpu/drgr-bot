@@ -2,6 +2,7 @@ aiogram==3.0.0
 pillow
 moviepy
 requests
+aiohttp>=3.13.3
 python-dotenv
 aiofiles
 ddgs>=9.0.0

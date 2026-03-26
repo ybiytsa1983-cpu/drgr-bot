@@ -7,47 +7,70 @@
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: Arial, sans-serif; display: flex; height: 100vh; background: #1e1e1e; color: #fff; }
-        #sidebar { width: 300px; background: #252526; padding: 20px; overflow-y: auto; }
+        #sidebar { width: 320px; background: #252526; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; }
         #main { flex: 1; display: flex; flex-direction: column; }
-        #toolbar { background: #2d2d30; padding: 10px; display: flex; gap: 10px; align-items: center; }
+        #toolbar { background: #2d2d30; padding: 10px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
         #editor { flex: 1; }
         button { padding: 8px 15px; background: #0e639c; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
         button:hover { background: #1177bb; }
-        select { padding: 8px; background: #3c3c3c; color: #fff; border: 1px solid #555; border-radius: 4px; }
+        select, textarea { padding: 8px; background: #3c3c3c; color: #fff; border: 1px solid #555; border-radius: 4px; }
         input[type="file"] { display: none; }
         .file-upload-btn { background: #0a7d3e; }
         .file-upload-btn:hover { background: #0d9248; }
-        h3 { margin-bottom: 15px; color: #4ec9b0; }
-        .vm-select { margin-bottom: 20px; }
+        h3 { color: #4ec9b0; margin-bottom: 8px; }
+        h4 { color: #ce9178; margin-bottom: 8px; }
+        .vm-select { margin-bottom: 4px; }
+        #task-panel { border-top: 1px solid #444; padding-top: 12px; }
+        #task-input { width: 100%; height: 80px; resize: vertical; font-size: 12px; }
+        #task-list { margin-top: 10px; font-size: 12px; max-height: 200px; overflow-y: auto; }
+        .task-item { background: #1e1e2e; border: 1px solid #444; border-radius: 4px; padding: 6px 8px; margin-bottom: 6px; cursor: pointer; }
+        .task-item:hover { border-color: #4ec9b0; }
+        .task-item .task-title { color: #9cdcfe; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .task-item .task-date { color: #666; font-size: 10px; }
+        #task-status { color: #aaa; font-size: 12px; min-height: 18px; margin-top: 4px; }
     </style>
 </head>
 <body>
     <div id="sidebar">
-        <h3>🔧 DRGR VM Control Panel</h3>
-        <div class="vm-select">
-            <label>Select VM:</label>
-            <select id="vmSelect">
-                <option value="local">Local VM</option>
-                <option value="colab">Google Colab</option>
-                <option value="cloud">Cloud VM</option>
-            </select>
+        <div>
+            <h3>🔧 DRGR VM Control Panel</h3>
+            <div class="vm-select">
+                <label>Select VM:</label>
+                <select id="vmSelect">
+                    <option value="local">Local VM</option>
+                    <option value="colab">Google Colab</option>
+                    <option value="cloud">Cloud VM</option>
+                </select>
+            </div>
         </div>
-        <div style="margin-top: 20px;">
-            <h4 style="color: #ce9178;">Quick Actions</h4>
-            <button onclick="generateHTML()">Generate HTML</button>
-            <button onclick="run3DGen()">🎬 3D Generator</button>
-            <button onclick="runVideoGen()">🎥 Video Generator</button>
-            <button onclick="runGoose()">🦢 Goose AI</button>
+
+        <div>
+            <h4>Quick Actions</h4>
+            <div style="display:flex;flex-direction:column;gap:6px;">
+                <button onclick="generateHTML()">Generate HTML</button>
+                <button onclick="run3DGen()">🎬 3D Generator</button>
+                <button onclick="runVideoGen()">🎥 Video Generator</button>
+                <button onclick="runGoose()">🦢 Goose AI</button>
+                <button onclick="loadProjectsToEditor()">📂 Load Projects</button>
+            </div>
+        </div>
+
+        <div id="task-panel">
+            <h4>📋 Задание для VM</h4>
+            <textarea id="task-input" placeholder="Опишите проект или задание…&#10;Например: OpenClaw — AI-система подбора товаров для маркетплейсов"></textarea>
+            <button style="width:100%;margin-top:6px;" onclick="submitTask()">🚀 Запустить задание</button>
+            <div id="task-status"></div>
+            <div id="task-list"></div>
         </div>
     </div>
+
     <div id="main">
         <div id="toolbar">
             <label for="fileUpload" class="file-upload-btn" style="cursor: pointer; padding: 8px 15px; border-radius: 4px;">
                 📎 Upload File
             </label>
             <input type="file" id="fileUpload" onchange="uploadFile(event)">
-            <button onclick="saveProject()">Save Project</button>
-            <button onclick="loadProjects()">Load Projects</button>
+            <button onclick="saveProject()">💾 Save Project</button>
             <span style="margin-left: auto; color: #aaa;">Monaco Editor Active</span>
         </div>
         <div id="editor"></div>
@@ -59,7 +82,7 @@
         require.config({ paths: { vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs' } });
         require(['vs/editor/editor.main'], function() {
             editor = monaco.editor.create(document.getElementById('editor'), {
-                value: '\n\n\n DRGR VM Ready\n\n\n  Welcome to DRGR VM ==================  \n\n',
+                value: '<!-- DRGR VM Ready -->\n\n\nWelcome to DRGR VM\n',
                 language: 'html',
                 theme: 'vs-dark',
                 automaticLayout: true
@@ -72,60 +95,119 @@
             const reader = new FileReader();
             reader.onload = function(e) {
                 if (editor) editor.setValue(e.target.result);
-                alert('✅ File uploaded: ' + file.name);
             };
             reader.readAsText(file);
         }
 
         function saveProject() {
             const content = editor ? editor.getValue() : '';
-            const filename = prompt('Enter filename:', 'project.html');
+            const filename = prompt('Введите имя файла:', 'project.html');
             if (!filename) return;
             fetch('/api/project', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ filename, content })
-            }).then(r => r.json()).then(data => alert('✅ Project saved!'));
+            }).then(r => r.json()).then(() => setStatus('✅ Сохранено: ' + filename));
         }
 
-        function loadProjects() {
+        function loadProjectsToEditor() {
             fetch('/api/projects').then(r => r.json()).then(projects => {
-                const list = projects.map(p => p.name).join('\n');
-                alert('Saved projects:\n' + list);
+                if (!projects.length) { alert('Нет сохранённых проектов.'); return; }
+                const name = prompt('Введите имя проекта:\n' + projects.map(p => p.name).join('\n'));
+                const proj = projects.find(p => p.name === name);
+                if (proj && editor) editor.setValue(proj.content);
             });
         }
 
         function generateHTML() {
-            alert('🚀 HTML Generator activated!');
+            if (editor) editor.setValue('<!DOCTYPE html>\n<html lang="ru">\n<head>\n<meta charset="UTF-8">\n<title>Новый проект</title>\n</head>\n<body>\n<h1>Проект</h1>\n</body>\n</html>');
         }
 
         function run3DGen() {
-            fetch('/api/generate-3d', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ prompt: 'Generate 3D model' })
-            }).then(r => r.json()).then(data => alert('🎬 3D Generator: ' + data.result));
+            fetch('/api/generate-3d', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt: 'Generate 3D model' }) })
+                .then(r => r.json()).then(data => alert('🎬 3D Generator: ' + data.result));
         }
 
         function runVideoGen() {
-            fetch('/api/generate-video', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ prompt: 'Generate video' })
-            }).then(r => r.json()).then(data => alert('🎥 Video Generator: ' + data.result));
+            fetch('/api/generate-video', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt: 'Generate video' }) })
+                .then(r => r.json()).then(data => alert('🎥 Video Generator: ' + data.result));
         }
 
         function runGoose() {
-            fetch('/api/goose', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ query: 'Analyze code' })
-            }).then(r => r.json()).then(data => alert('🦢 Goose AI: ' + data.result));
+            fetch('/api/goose', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: 'Analyze code' }) })
+                .then(r => r.json()).then(data => alert('🦢 Goose AI: ' + data.result));
         }
 
         document.getElementById('vmSelect').addEventListener('change', function(e) {
-            alert('🔄 Switched to: ' + e.target.options[e.target.selectedIndex].text);
+            setStatus('🔄 VM: ' + e.target.options[e.target.selectedIndex].text);
         });
+
+        // --- Task panel ---
+        function setStatus(msg) {
+            document.getElementById('task-status').textContent = msg;
+        }
+
+        async function submitTask() {
+            const description = document.getElementById('task-input').value.trim();
+            if (!description) { alert('Введите описание задания.'); return; }
+            setStatus('⚙️ Отправляю задание…');
+            try {
+                const resp = await fetch('/api/task', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ description })
+                });
+                const data = await resp.json();
+                if (data.error) { setStatus('❌ ' + data.error); return; }
+                // Show blueprint in editor
+                if (data.html_file) {
+                    const projResp = await fetch('/api/projects');
+                    const projects = await projResp.json();
+                    const proj = projects.find(p => p.name === data.html_file);
+                    if (proj && editor) editor.setValue(proj.content);
+                }
+                setStatus('✅ Задание выполнено: ' + (data.plan && data.plan.title || 'OK'));
+                loadTasks();
+            } catch(e) {
+                setStatus('❌ Ошибка: ' + e.message);
+            }
+        }
+
+        async function loadTasks() {
+            try {
+                const resp = await fetch('/api/tasks');
+                const tasks = await resp.json();
+                const list = document.getElementById('task-list');
+                list.innerHTML = '';
+                tasks.slice(0, 10).forEach(t => {
+                    const div = document.createElement('div');
+                    div.className = 'task-item';
+                    div.innerHTML = `<div class="task-title">${escHtml(t.plan && t.plan.title || t.description)}</div><div class="task-date">${escHtml(t.created_at ? t.created_at.slice(0,16) : '')}</div>`;
+                    div.onclick = () => loadTaskBlueprint(t);
+                    list.appendChild(div);
+                });
+            } catch(e) { /* VM may not be available */ }
+        }
+
+        async function loadTaskBlueprint(task) {
+            if (!task.html_file) return;
+            try {
+                const resp = await fetch('/api/projects');
+                const projects = await resp.json();
+                const proj = projects.find(p => p.name === task.html_file);
+                if (proj && editor) {
+                    editor.setValue(proj.content);
+                    setStatus('📂 Загружен: ' + task.html_file);
+                }
+            } catch(e) {}
+        }
+
+        function escHtml(s) {
+            return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        }
+
+        // Load tasks on start
+        loadTasks();
     </script>
 </body>
 </html>
