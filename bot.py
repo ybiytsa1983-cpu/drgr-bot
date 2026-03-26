@@ -327,14 +327,27 @@ async def search_duckduckgo(
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
+# Per-user selected AI model (e.g. 'ollama:llama3', 'lms:qwen2-7b', or '')
+_user_model: Dict[int, str] = {}
+
+
+def _get_user_model(user_id: int) -> str:
+    return _user_model.get(user_id, '')
+
+
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     await message.reply(
-        "Привет! Я DRGR-бот.\n\n"
-        "Доступные команды:\n"
-        "/search <запрос> — поиск в интернете\n"
-        "/task <описание проекта> — создать проект через VM\n"
-        "/help — справка"
+        "👋 <b>Привет! Я DRGR-бот.</b>\n\n"
+        "📌 <b>Доступные команды:</b>\n"
+        "/search &lt;запрос&gt; — поиск в DuckDuckGo\n"
+        "/task &lt;описание&gt; — задание для AI через VM\n"
+        "/research &lt;тема&gt; — сгенерировать статью с графиками и изображениями\n"
+        "/model — выбрать AI-модель для VM\n"
+        "/vm — статус VM и AI-сервисов\n"
+        "/help — справка\n\n"
+        "🔗 VM-интерфейс: <code>http://localhost:5001</code>",
+        parse_mode="HTML",
     )
 
 
@@ -342,15 +355,22 @@ async def cmd_start(message: types.Message):
 async def cmd_help(message: types.Message):
     await message.reply(
         "📖 <b>Справка DRGR-бота</b>\n\n"
-        "<b>Поиск:</b>\n"
-        "/search <запрос> — поиск через DuckDuckGo\n\n"
-        "<b>Проекты / VM:</b>\n"
-        "/task <описание> — отправить задание на VM и получить план проекта\n\n"
+        "<b>🔍 Поиск:</b>\n"
+        "/search &lt;запрос&gt; — поиск через DuckDuckGo\n\n"
+        "<b>🤖 AI через VM:</b>\n"
+        "/task &lt;описание&gt; — отправить задание на VM\n"
+        "/research &lt;тема&gt; — сгенерировать HTML-статью по теме\n"
+        "/model — показать и выбрать AI-модель\n"
+        "/vm — проверить статус VM и всех AI-сервисов\n\n"
         "<b>Примеры:</b>\n"
         "<code>/search Python asyncio</code>\n"
-        "<code>/task OpenClaw — AI-система подбора товаров для маркетплейсов</code>",
+        "<code>/task Напиши парсер Wildberries</code>\n"
+        "<code>/research Искусственный интеллект 2024</code>\n"
+        "<code>/model</code> — покажет доступные модели Ollama и LM Studio",
         parse_mode="HTML",
     )
+
+
 @dp.message(Command("search"))
 async def cmd_search(message: types.Message):
     """Поиск в интернете через DuckDuckGo. Использование: /search <запрос>"""
@@ -368,24 +388,153 @@ async def cmd_search(message: types.Message):
     await message.reply(result, parse_mode="HTML", disable_web_page_preview=True)
 
 
-async def _call_vm_task(description: str) -> str:
+async def _vm_get(path: str, timeout: int = 8) -> Optional[dict]:
+    """GET request to VM server. Returns dict or None on error."""
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{VM_URL}{path}", timeout=aiohttp.ClientTimeout(total=timeout)
+            ) as resp:
+                if resp.content_type == 'application/json':
+                    return await resp.json()
+                return {'text': await resp.text()}
+    except Exception as e:
+        logger.warning(f"VM GET {path} failed: {e}")
+        return None
+
+
+async def _vm_post(path: str, payload: dict, timeout: int = 120) -> Optional[dict]:
+    """POST JSON to VM server. Returns dict or None on error."""
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{VM_URL}{path}", json=payload,
+                timeout=aiohttp.ClientTimeout(total=timeout)
+            ) as resp:
+                if resp.content_type == 'application/json':
+                    return await resp.json()
+                return {'text': await resp.text()}
+    except aiohttp.ClientConnectorError:
+        logger.warning(f"VM недоступна по адресу {VM_URL}")
+        return None
+    except Exception as e:
+        logger.error(f"VM POST {path} error: {e}")
+        return None
+
+
+@dp.message(Command("vm"))
+async def cmd_vm(message: types.Message):
+    """Статус VM и AI-сервисов."""
+    status_msg = await message.reply("🔄 Проверяю статус VM…")
+    data = await _vm_get('/health', timeout=10)
+    if data is None:
+        await status_msg.edit_text(
+            f"❌ VM недоступна по адресу <code>{VM_URL}</code>\n"
+            "Запустите VM командой <code>ЗАПУСТИТЬ_БОТА.bat</code>.",
+            parse_mode="HTML"
+        )
+        return
+
+    services = data.get('services', {})
+    lines = [f"🖥 <b>VM статус</b> — <code>{VM_URL}</code>\n"]
+    icons = {'ok': '🟢', 'warn': '🟡', 'error': '🔴', 'off': '⚪'}
+    for name, info in services.items():
+        status = info.get('status', 'off')
+        note   = info.get('note', info.get('model', ''))
+        icon   = icons.get(status, '⚪')
+        lines.append(f"{icon} <b>{name}</b>: {note or status}")
+
+    cur_model = _get_user_model(message.from_user.id)
+    if cur_model:
+        lines.append(f"\n🤖 Ваша модель: <code>{cur_model}</code>")
+    else:
+        lines.append("\n🤖 Модель: авто (используй /model)")
+
+    await status_msg.edit_text('\n'.join(lines), parse_mode="HTML")
+
+
+@dp.message(Command("model"))
+async def cmd_model(message: types.Message):
+    """Показать доступные модели и выбрать одну. /model [model_id]"""
+    args = message.text.split(maxsplit=1)
+    user_id = message.from_user.id
+
+    # If user passed a model id directly: /model ollama:llama3
+    if len(args) == 2 and args[1].strip():
+        chosen = args[1].strip()
+        _user_model[user_id] = chosen
+        await message.reply(
+            f"✅ Модель установлена: <code>{chosen}</code>\n"
+            "Она будет использоваться для /task и /research.",
+            parse_mode="HTML"
+        )
+        return
+
+    # Otherwise: fetch models from VM and show keyboard
+    status_msg = await message.reply("🔄 Загружаю список моделей с VM…")
+    data = await _vm_get('/api/models', timeout=10)
+    if data is None:
+        await status_msg.edit_text(
+            f"❌ VM недоступна (<code>{VM_URL}</code>).\n"
+            "Модель можно задать вручную: <code>/model ollama:llama3</code>",
+            parse_mode="HTML"
+        )
+        return
+
+    all_models = data.get('ollama', []) + data.get('lmstudio', [])
+    if not all_models:
+        await status_msg.edit_text(
+            "⚠️ AI-модели не найдены.\n\n"
+            "Убедитесь, что <b>Ollama</b> или <b>LM Studio</b> запущены.\n"
+            "• Ollama: <code>ollama serve</code>\n"
+            "• LM Studio: запустите приложение и загрузите модель",
+            parse_mode="HTML"
+        )
+        return
+
+    kb = InlineKeyboardBuilder()
+    cur = _get_user_model(user_id)
+    for m in all_models[:10]:
+        mid   = m['id']
+        name  = m['name']
+        src   = m['source']
+        label = f"{'✅ ' if mid == cur else ''}{src}: {name}"
+        kb.button(text=label, callback_data=f"setmodel:{mid}")
+    kb.button(text="🔄 Авто (без предпочтения)", callback_data="setmodel:")
+    kb.adjust(1)
+
+    cur_text = f"Текущая модель: <code>{cur}</code>" if cur else "Модель: авто"
+    await status_msg.edit_text(
+        f"🤖 <b>Выбор AI-модели для VM</b>\n{cur_text}\n\nДоступные модели:",
+        reply_markup=kb.as_markup(),
+        parse_mode="HTML"
+    )
+
+
+@dp.callback_query(lambda c: c.data and c.data.startswith("setmodel:"))
+async def cb_set_model(callback: types.CallbackQuery):
+    model_id = callback.data[len("setmodel:"):]
+    user_id  = callback.from_user.id
+    _user_model[user_id] = model_id
+    label = f"<code>{model_id}</code>" if model_id else "авто"
+    await callback.answer(f"Модель: {model_id or 'авто'}", show_alert=False)
+    await callback.message.edit_text(
+        f"✅ Модель установлена: {label}\n"
+        "Используется в /task и /research.",
+        parse_mode="HTML"
+    )
+
+
+async def _call_vm_task(description: str, model: str = '') -> str:
     """
     Отправить задание на VM-расширение (POST /api/task).
     Возвращает текст ответа.
     """
-    url = f"{VM_URL}/api/task"
-    payload = {"description": description}
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, json=payload, timeout=aiohttp.ClientTimeout(total=30)) as resp:
-                data = await resp.json()
-                return data.get("result", "VM не вернул результат.")
-    except aiohttp.ClientConnectorError:
+    data = await _vm_post('/api/task', {'description': description, 'model': model}, timeout=120)
+    if data is None:
         logger.warning(f"VM недоступна по адресу {VM_URL}, генерирую план локально.")
         return _generate_project_plan_local(description)
-    except Exception as e:
-        logger.error(f"VM task error: {e}")
-        return _generate_project_plan_local(description)
+    return data.get('content') or data.get('result') or 'VM не вернул результат.'
 
 
 def _generate_project_plan_local(description: str) -> str:
@@ -433,8 +582,8 @@ def _generate_project_plan_local(description: str) -> str:
         "2. <code>analytics.py</code> — скоринг товаров (маржа, конкуренция, спрос)\n"
         "3. <code>bot/main.py</code> — голосовой и текстовый ввод через Telegram\n"
         "4. <code>dashboard/</code> — дашборд с графиками и фильтрами\n\n"
-        "Для запуска сохраните этот план на VM командой /task и откройте "
-        "расширение по адресу <code>http://localhost:5001</code>."
+        "Для запуска откройте расширение по адресу "
+        "<code>http://localhost:5001</code>."
     )
 
 
@@ -454,14 +603,77 @@ async def cmd_task(message: types.Message):
         )
         return
     description = args[1].strip()
-    status_msg = await message.reply("⚙️ Отправляю задание на VM, подождите…")
-    result = await _call_vm_task(description)
+    model = _get_user_model(message.from_user.id)
+    status_msg = await message.reply(
+        f"⚙️ Отправляю задание на VM…"
+        + (f"\n🤖 Модель: <code>{model}</code>" if model else ""),
+        parse_mode="HTML"
+    )
+    result = await _call_vm_task(description, model=model)
     await status_msg.delete()
     # Telegram ограничивает сообщения до 4096 символов
     if len(result) > 4000:
         result = result[:3997] + "…"
     await message.reply(result, parse_mode="HTML", disable_web_page_preview=True)
 
+
+@dp.message(Command("research"))
+async def cmd_research(message: types.Message):
+    """
+    Сгенерировать HTML-статью по теме с графиками и изображениями.
+    Использование: /research <тема>
+    """
+    args = message.text.split(maxsplit=1)
+    if len(args) < 2 or not args[1].strip():
+        await message.reply(
+            "Использование: <code>/research тема статьи</code>\n"
+            "Например:\n"
+            "<code>/research Искусственный интеллект 2024</code>\n"
+            "<code>/research Как работает квантовый компьютер</code>",
+            parse_mode="HTML",
+        )
+        return
+    topic = args[1].strip()
+    model = _get_user_model(message.from_user.id)
+    status_msg = await message.reply(
+        f"🔬 Генерирую статью по теме: <b>{topic}</b>\n"
+        "⏳ Это может занять 1–3 минуты…"
+        + (f"\n🤖 Модель: <code>{model}</code>" if model else ""),
+        parse_mode="HTML"
+    )
+    data = await _vm_post(
+        '/research',
+        {'topic': topic, 'max_sources': 15, 'model': model},
+        timeout=180
+    )
+    await status_msg.delete()
+    if data is None:
+        await message.reply(
+            f"❌ VM недоступна (<code>{VM_URL}</code>).\n"
+            "Запустите VM через <code>ЗАПУСТИТЬ_БОТА.bat</code>.",
+            parse_mode="HTML"
+        )
+        return
+    if data.get('error'):
+        await message.reply(f"❌ Ошибка: {data['error']}", parse_mode="HTML")
+        return
+
+    article_id = data.get('article_id', '')
+    src_count  = data.get('sources_count', 0)
+    ai_src     = data.get('ai_source', '?')
+    article_url = f"{VM_URL}/research/article/{article_id}" if article_id else ''
+
+    reply = (
+        f"✅ <b>Статья готова!</b>\n\n"
+        f"📄 Тема: <b>{topic}</b>\n"
+        f"📚 Источников: {src_count}\n"
+        f"🤖 AI: {ai_src}\n"
+    )
+    if article_url:
+        reply += f"\n🔗 <a href='{article_url}'>Открыть статью</a>\n"
+        reply += f"<code>{article_url}</code>"
+
+    await message.reply(reply, parse_mode="HTML", disable_web_page_preview=False)
 
 
 async def main():

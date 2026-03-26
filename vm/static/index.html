@@ -142,6 +142,9 @@ h4{color:#ce9178;font-size:12px;margin-bottom:5px}
         <option value="15" selected>15 источников</option>
         <option value="25">25 источников</option>
       </select>
+      <select id="res-model" style="width:160px;font-size:11px" title="AI-модель">
+        <option value="">🤖 Авто (Ollama→LMS)</option>
+      </select>
       <button onclick="researchRun()" id="res-btn">🔬 Создать статью</button>
       <button onclick="researchOpen()" id="res-open-btn" style="background:#555;display:none">🔗 Открыть</button>
       <button onclick="researchCopyHtml()" id="res-copy-btn" style="background:#555;display:none">📋 Копировать HTML</button>
@@ -400,6 +403,26 @@ function setTab(name){
     if(btn) btn.classList.toggle('tab-active', t===name);
   });
   if(name==='editor'&&editor) editor.layout();
+  if(name==='research') _loadResearchModels();
+}
+
+// ── Load models into selector ─────────────────────────────────────────
+async function _loadResearchModels(){
+  const sel=document.getElementById('res-model');
+  if(sel.dataset.loaded) return;  // already loaded
+  try{
+    const data=await fetch('/api/models').then(r=>r.json());
+    const all=[...( data.ollama||[]),...(data.lmstudio||[])];
+    if(all.length){
+      sel.innerHTML='<option value="">🤖 Авто (Ollama→LMS)</option>';
+      all.forEach(m=>{
+        const opt=document.createElement('option');
+        opt.value=m.id; opt.textContent=`${m.source}: ${m.name}`;
+        sel.appendChild(opt);
+      });
+      sel.dataset.loaded='1';
+    }
+  }catch(e){}
 }
 
 // ── Research ──────────────────────────────────────────────────────────
@@ -412,15 +435,16 @@ async function researchRun(){
   const topic=document.getElementById('res-topic').value.trim();
   if(!topic){alert('Введите тему статьи.');return;}
   const maxSrc=parseInt(document.getElementById('res-sources').value||'15');
+  const model=(document.getElementById('res-model').value||'').trim();
   const btn=document.getElementById('res-btn');
   btn.disabled=true; btn.textContent='⏳ Генерирую…';
-  resStatus('🔍 Ищу источники и генерирую статью…');
+  resStatus('🔍 Ищу источники и генерирую статью'+(model?' (модель: '+model+')':'')+'…');
   document.getElementById('res-open-btn').style.display='none';
   document.getElementById('res-copy-btn').style.display='none';
   document.getElementById('res-frame').srcdoc='<body style="background:#1e1e1e;color:#aaa;font-family:Arial,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh"><div style="text-align:center"><div style="font-size:40px;animation:spin 1.5s linear infinite">⚙</div><p style="margin-top:16px">Генерирую статью…</p><style>@keyframes spin{to{transform:rotate(360deg)}}</style></div></body>';
   try{
     const resp=await fetch('/research',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({topic,max_sources:maxSrc})});
+      body:JSON.stringify({topic,max_sources:maxSrc,model})});
     const data=await resp.json();
     if(data.error){resStatus('❌ '+data.error);return;}
     _lastArticleId=data.article_id||'';

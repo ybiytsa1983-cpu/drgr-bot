@@ -191,24 +191,52 @@ threading.Thread(target=_health_refresh_loop, daemon=True, name='health-refresh'
 # AI helpers — Ollama → LM Studio → fallback
 # ---------------------------------------------------------------------------
 
-def _ollama_model(base_url: str) -> str:
+def _ollama_models(base_url: str) -> list:
+    """Return list of model names from Ollama, or [] on error."""
     try:
         req = urllib.request.Request(f"{base_url}/api/tags")
         with urllib.request.urlopen(req, timeout=5) as resp:
             data = json.loads(resp.read())
-            models = data.get('models', [])
-            if models:
-                return models[0]['name']
+            return [m['name'] for m in data.get('models', [])]
     except Exception:
-        pass
-    return 'llama3'
+        return []
 
-def _ai_generate(prompt: str) -> tuple:
-    """Returns (text, source_label). Tries Ollama then LM Studio."""
-    # Ollama
-    for base in [_ENV['OLLAMA_URL'], 'http://127.0.0.1:11434']:
+def _ollama_model(base_url: str) -> str:
+    models = _ollama_models(base_url)
+    return models[0] if models else 'llama3'
+
+def _lms_models(base_url: str) -> list:
+    """Return list of loaded model IDs from LM Studio /v1/models, or [] on error."""
+    for port in [1234, 1235, 1236]:
+        candidate = re.sub(r':\d+', f':{port}', base_url)
         try:
-            model = _ollama_model(base)
+            req = urllib.request.Request(f"{candidate}/v1/models")
+            with urllib.request.urlopen(req, timeout=4) as resp:
+                data = json.loads(resp.read())
+                models = [m.get('id', m.get('name', 'local-model')) for m in data.get('data', [])]
+                if models:
+                    # Update global LMS URL to the working port
+                    _ENV['LMS_URL'] = candidate
+                    return models
+        except Exception:
+            pass
+    return []
+
+def _lms_model(base_url: str) -> str:
+    models = _lms_models(base_url)
+    return models[0] if models else 'local-model'
+
+def _ai_generate(prompt: str, preferred_model: str = '') -> tuple:
+    """Returns (text, source_label). Tries Ollama then LM Studio.
+    preferred_model can be 'lms:modelname', 'ollama:modelname', or bare model name.
+    """
+    prefer_lms = preferred_model.startswith('lms:')
+    prefer_ollama = preferred_model.startswith('ollama:')
+    bare_model = re.sub(r'^(lms:|ollama:)', '', preferred_model).strip()
+
+    def _try_ollama(base: str) -> tuple:
+        try:
+            model = bare_model if (prefer_ollama and bare_model) else _ollama_model(base)
             payload = json.dumps({
                 'model': model, 'prompt': prompt, 'stream': False,
                 'options': {'num_predict': 4096, 'temperature': 0.2},
@@ -222,23 +250,51 @@ def _ai_generate(prompt: str) -> tuple:
                     return text, f'Ollama ({model})'
         except Exception:
             pass
-    # LM Studio
-    for base in [_ENV['LMS_URL'], 'http://127.0.0.1:1234']:
-        try:
-            payload = json.dumps({
-                'model': 'local-model',
-                'messages': [{'role': 'user', 'content': prompt}],
-                'max_tokens': 4096, 'temperature': 0.2,
-            }).encode()
-            req = urllib.request.Request(
-                f"{base}/v1/chat/completions", data=payload,
-                headers={'Content-Type': 'application/json'}, method='POST')
-            with urllib.request.urlopen(req, timeout=_AI_TIMEOUT) as resp:
-                text = json.loads(resp.read())['choices'][0]['message']['content'].strip()
-                if text:
-                    return text, 'LM Studio'
-        except Exception:
-            pass
+        return '', ''
+
+    def _try_lms(base: str) -> tuple:
+        for port in [1234, 1235, 1236]:
+            candidate = re.sub(r':\d+', f':{port}', base)
+            try:
+                model = bare_model if (prefer_lms and bare_model) else _lms_model(candidate)
+                payload = json.dumps({
+                    'model': model,
+                    'messages': [{'role': 'user', 'content': prompt}],
+                    'max_tokens': 4096, 'temperature': 0.2,
+                }).encode()
+                req = urllib.request.Request(
+                    f"{candidate}/v1/chat/completions", data=payload,
+                    headers={'Content-Type': 'application/json'}, method='POST')
+                with urllib.request.urlopen(req, timeout=_AI_TIMEOUT) as resp:
+                    text = json.loads(resp.read())['choices'][0]['message']['content'].strip()
+                    if text:
+                        _ENV['LMS_URL'] = candidate
+                        return text, f'LM Studio ({model})'
+            except Exception:
+                pass
+        return '', ''
+
+    ollama_bases = [_ENV['OLLAMA_URL'], 'http://127.0.0.1:11434']
+    lms_bases    = [_ENV['LMS_URL'],    'http://127.0.0.1:1234']
+
+    if prefer_lms:
+        for base in lms_bases:
+            text, src = _try_lms(base)
+            if text:
+                return text, src
+        for base in ollama_bases:
+            text, src = _try_ollama(base)
+            if text:
+                return text, src
+    else:
+        for base in ollama_bases:
+            text, src = _try_ollama(base)
+            if text:
+                return text, src
+        for base in lms_bases:
+            text, src = _try_lms(base)
+            if text:
+                return text, src
     return '', 'none'
 
 def _build_code_prompt(description: str) -> str:
@@ -395,11 +451,13 @@ def create_task():
     if not description:
         return jsonify({'error': 'description is required'}), 400
 
+    model = (data.get('model') or '').strip()  # e.g. 'lms:qwen2-7b' or 'ollama:llama3'
+
     ts        = datetime.now().strftime('%Y%m%d_%H%M%S')
     safe_name = _safe_name(description.splitlines()[0][:80])
 
     prompt       = _build_code_prompt(description)
-    ai_text, src = _ai_generate(prompt)
+    ai_text, src = _ai_generate(prompt, preferred_model=model)
 
     if ai_text:
         content, used_ai, title = ai_text, True, description.splitlines()[0][:80]
@@ -421,6 +479,26 @@ def create_task():
 
     return jsonify({'title': title, 'content': content,
                     'html_file': filename, 'used_ai': used_ai, 'ai_source': src})
+
+
+@app.route('/api/models')
+def list_models():
+    """List available AI models from Ollama and LM Studio."""
+    result = {'ollama': [], 'lmstudio': [], 'default': ''}
+    for base in [_ENV['OLLAMA_URL'], 'http://127.0.0.1:11434']:
+        models = _ollama_models(base)
+        if models:
+            result['ollama'] = [{'id': f'ollama:{m}', 'name': m, 'source': 'Ollama'} for m in models]
+            break
+    for base in [_ENV['LMS_URL'], 'http://127.0.0.1:1234']:
+        models = _lms_models(base)
+        if models:
+            result['lmstudio'] = [{'id': f'lms:{m}', 'name': m, 'source': 'LM Studio'} for m in models]
+            break
+    all_models = result['ollama'] + result['lmstudio']
+    if all_models:
+        result['default'] = all_models[0]['id']
+    return jsonify(result)
 
 
 @app.route('/api/tasks', methods=['GET'])
@@ -822,7 +900,8 @@ def research():
     prompt = _build_research_prompt(topic, sources)
 
     # 3. Generate article via AI
-    ai_text, ai_src = _ai_generate(prompt)
+    model = (data.get('model') or '').strip()
+    ai_text, ai_src = _ai_generate(prompt, preferred_model=model)
 
     if not ai_text:
         # Minimal fallback
