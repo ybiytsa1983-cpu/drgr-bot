@@ -1,0 +1,26 @@
+{
+  "id": "20260326_172844",
+  "description": "OpenClaw — AI-система подбора товаров для маркетплейсов (Telegram, PostgreSQL, Docker, Wildberries, AI)",
+  "plan": {
+    "title": "OpenClaw — AI-система подбора товаров для маркетплейсов (Telegram, PostgreSQL, Docker, Wildberries, AI)",
+    "stack": [
+      "aiogram 3.x (Telegram Bot)",
+      "PostgreSQL 15 + SQLAlchemy + Alembic",
+      "Docker Compose",
+      "Wildberries API / MPStats / Alibaba scraper",
+      "OpenClaw / Ollama / HuggingFace Inference API"
+    ],
+    "structure": "OpenClaw_AI_система_подбора_товаров_для_/\n├── docker-compose.yml\n├── .env.example\n├── README.md\n├── bot/\n│   ├── Dockerfile\n│   ├── requirements.txt\n│   └── main.py           # Telegram-бот (aiogram)\n├── app/\n│   ├── Dockerfile\n│   ├── requirements.txt\n│   └── main.py           # FastAPI / Flask сервер\n├── workers/\n│   ├── scraper.py        # Wildberries / Alibaba / MPStats\n│   ├── analytics.py      # Юнит-экономика, скоринг товаров\n│   └── scheduler.py      # APScheduler: фоновые задачи\n├── db/\n│   ├── models.py\n│   └── migrations/       # Alembic\n└── dashboard/\n    └── index.html        # Web-интерфейс / дашборд",
+    "modules": [
+      "scraper.py — асинхронный сбор данных (Wildberries, Alibaba, MPStats)",
+      "analytics.py — скоринг товаров: маржа, конкуренция, динамика спроса",
+      "bot/main.py — приём текстовых и голосовых команд через Telegram",
+      "ai_agent.py — AI-ассистент (OpenClaw / Ollama) для рекомендаций",
+      "db/models.py — ORM-модели: Product, Category, Supplier, Analysis",
+      "dashboard/index.html — дашборд: графики, фильтры, карточки товаров"
+    ],
+    "run_instructions": "# 1. Клонировать и настроить окружение\ncp .env.example .env\n# Заполните .env: BOT_TOKEN, DATABASE_URL, WB_API_KEY и т.д.\n\n# 2. Запустить через Docker Compose\ndocker compose up --build -d\n\n# 3. Применить миграции БД\ndocker compose exec api alembic upgrade head\n\n# 4. Открыть дашборд\n# http://localhost:8080"
+  },
+  "html_file": "OpenClaw_AI_система_подбора_товаров_для__20260326_172844.html",
+  "created_at": "2026-03-26T17:28:44.291085"
+}
