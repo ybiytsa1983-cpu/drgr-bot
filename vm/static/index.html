@@ -54,6 +54,8 @@ h4{color:#ce9178;font-size:12px;margin-bottom:5px}
 .sfield input{font-size:11px}
 
 #editor-label{margin-left:auto;color:#aaa;font-size:11px}
+.tab-active{background:#007acc!important}
+#main{display:flex;flex-direction:column}
 </style>
 </head>
 <body>
@@ -116,12 +118,37 @@ h4{color:#ce9178;font-size:12px;margin-bottom:5px}
 
 <div id="main">
   <div id="toolbar">
+    <button onclick="setTab('editor')" id="tab-editor" class="tab-active">📝 Редактор</button>
+    <button onclick="setTab('research')" id="tab-research">🔬 Исследование</button>
+    <div style="width:1px;background:#555;margin:0 4px;align-self:stretch"></div>
     <label for="fileUpload" class="file-btn" style="cursor:pointer;padding:6px 12px;border-radius:3px;font-size:12px">📎 Upload</label>
     <input type="file" id="fileUpload" onchange="uploadFile(event)">
     <button onclick="saveProject()">💾 Save</button>
-    <span id="editor-label">Monaco Editor</span>
+    <span id="editor-label" style="margin-left:auto;color:#aaa;font-size:11px">Monaco Editor</span>
   </div>
-  <div id="editor"></div>
+
+  <!-- Editor pane -->
+  <div id="pane-editor" style="flex:1;display:flex;flex-direction:column">
+    <div id="editor" style="flex:1"></div>
+  </div>
+
+  <!-- Research pane -->
+  <div id="pane-research" style="flex:1;display:none;flex-direction:column;overflow:hidden">
+    <div style="background:#2d2d30;padding:8px 12px;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+      <input type="text" id="res-topic" placeholder="Тема статьи… напр: «Искусственный интеллект 2024»"
+             style="flex:1;min-width:200px;font-size:12px" onkeydown="if(event.key==='Enter')researchRun()">
+      <select id="res-sources" style="width:110px;font-size:11px">
+        <option value="8">8 источников</option>
+        <option value="15" selected>15 источников</option>
+        <option value="25">25 источников</option>
+      </select>
+      <button onclick="researchRun()" id="res-btn">🔬 Создать статью</button>
+      <button onclick="researchOpen()" id="res-open-btn" style="background:#555;display:none">🔗 Открыть</button>
+      <button onclick="researchCopyHtml()" id="res-copy-btn" style="background:#555;display:none">📋 Копировать HTML</button>
+    </div>
+    <div id="res-status" style="background:#1a2a3a;color:#9cdcfe;font-size:11px;padding:4px 12px;min-height:22px"></div>
+    <iframe id="res-frame" style="flex:1;border:none;background:#fff"></iframe>
+  </div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/loader.min.js"></script>
@@ -364,6 +391,66 @@ async function loadTaskContent(t){
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 
 loadTasks();
+
+// ── Tab switcher ──────────────────────────────────────────────────────
+function setTab(name){
+  ['editor','research'].forEach(t=>{
+    document.getElementById('pane-'+t).style.display = t===name ? 'flex' : 'none';
+    const btn=document.getElementById('tab-'+t);
+    if(btn) btn.classList.toggle('tab-active', t===name);
+  });
+  if(name==='editor'&&editor) editor.layout();
+}
+
+// ── Research ──────────────────────────────────────────────────────────
+let _lastArticleId='';
+let _lastArticleHtml='';
+
+function resStatus(msg){document.getElementById('res-status').textContent=msg;}
+
+async function researchRun(){
+  const topic=document.getElementById('res-topic').value.trim();
+  if(!topic){alert('Введите тему статьи.');return;}
+  const maxSrc=parseInt(document.getElementById('res-sources').value||'15');
+  const btn=document.getElementById('res-btn');
+  btn.disabled=true; btn.textContent='⏳ Генерирую…';
+  resStatus('🔍 Ищу источники и генерирую статью…');
+  document.getElementById('res-open-btn').style.display='none';
+  document.getElementById('res-copy-btn').style.display='none';
+  document.getElementById('res-frame').srcdoc='<body style="background:#1e1e1e;color:#aaa;font-family:Arial,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh"><div style="text-align:center"><div style="font-size:40px;animation:spin 1.5s linear infinite">⚙</div><p style="margin-top:16px">Генерирую статью…</p><style>@keyframes spin{to{transform:rotate(360deg)}}</style></div></body>';
+  try{
+    const resp=await fetch('/research',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({topic,max_sources:maxSrc})});
+    const data=await resp.json();
+    if(data.error){resStatus('❌ '+data.error);return;}
+    _lastArticleId=data.article_id||'';
+    _lastArticleHtml=data.html||'';
+    document.getElementById('res-frame').srcdoc=_lastArticleHtml;
+    const srcNote=data.sources_count>0?data.sources_count+' источников':'AI (без поиска)';
+    resStatus('✅ Готово · '+srcNote+' · 🤖 '+data.ai_source);
+    document.getElementById('res-open-btn').style.display='';
+    document.getElementById('res-copy-btn').style.display='';
+  }catch(e){resStatus('❌ '+e.message);}
+  finally{btn.disabled=false;btn.textContent='🔬 Создать статью';}
+}
+
+function researchOpen(){
+  if(_lastArticleId) window.open('/research/article/'+_lastArticleId,'_blank');
+}
+
+function researchCopyHtml(){
+  if(!_lastArticleHtml){return;}
+  navigator.clipboard.writeText(_lastArticleHtml)
+    .then(()=>resStatus('📋 HTML скопирован в буфер обмена'))
+    .catch(()=>{
+      // fallback
+      const ta=document.createElement('textarea');
+      ta.value=_lastArticleHtml;
+      document.body.appendChild(ta);ta.select();
+      document.execCommand('copy');document.body.removeChild(ta);
+      resStatus('📋 HTML скопирован');
+    });
+}
 </script>
 </body>
 </html>
