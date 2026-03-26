@@ -1013,17 +1013,22 @@ textarea{resize:vertical;min-height:60px;font-family:monospace;font-size:11px}
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px" id="vm-ai-status">
           <div class="vm-ai-item" id="vai-ollama">⏳ Ollama…</div>
           <div class="vm-ai-item" id="vai-lmstudio">⏳ LM Studio…</div>
+          <div class="vm-ai-item" id="vai-tgwui">⏳ TGWUI…</div>
           <div class="vm-ai-item" id="vai-roocode">⏳ Roo Code…</div>
-          <div class="vm-ai-item" id="vai-model">⏳ Модель…</div>
+          <div class="vm-ai-item" id="vai-oaf">⏳ OAF…</div>
+          <div class="vm-ai-item" id="vai-triposr">⏳ 3D…</div>
+          <div class="vm-ai-item" id="vai-remote">⏳ Remote VM…</div>
           <div class="vm-ai-item" id="vai-relay">⏳ Relay…</div>
           <div class="vm-ai-item" id="vai-sd">⏳ SD…</div>
           <div class="vm-ai-item" id="vai-comfyui">⏳ ComfyUI…</div>
           <div class="vm-ai-item" id="vai-vvm">⏳ Vision VM…</div>
           <div class="vm-ai-item" id="vai-light-vision">⏳ Лёгкое зрение…</div>
+          <div class="vm-ai-item" id="vai-model">⏳ Модель…</div>
         </div>
         <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
           <button class="pb pb-s" style="flex:1;padding:7px;min-width:130px" onclick="vmDetectLmStudio()" id="vm-btn-detect-lms">🔍 Найти LM Studio</button>
           <button class="pb pb-s" style="flex:1;padding:7px;min-width:130px" onclick="vmCheckLightVision()">👁 Лёгкое зрение</button>
+          <button class="pb pb-s" style="flex:1;padding:7px;min-width:130px" onclick="vmShowReport()">📊 Отчёт</button>
           <button class="pb pb-m" style="flex:1;padding:7px;min-width:130px" onclick="openPanel()">⚙ Настройки / Токен</button>
         </div>
         <div id="vm-lms-detect-result" style="margin-top:6px;font-size:11px;color:var(--text2)"></div>
@@ -5049,7 +5054,11 @@ async function retrain() {
 async function vmRefreshAiStatus() {
   var ollamaEl  = document.getElementById('vai-ollama');
   var lmsEl     = document.getElementById('vai-lmstudio');
+  var tgwuiEl   = document.getElementById('vai-tgwui');
   var rcEl      = document.getElementById('vai-roocode');
+  var oafEl     = document.getElementById('vai-oaf');
+  var triposrEl = document.getElementById('vai-triposr');
+  var remoteEl  = document.getElementById('vai-remote');
   var modelEl   = document.getElementById('vai-model');
   var relayEl   = document.getElementById('vai-relay');
   var sdEl      = document.getElementById('vai-sd');
@@ -5070,12 +5079,40 @@ async function vmRefreshAiStatus() {
       ? '✅ LM Studio ' + (lms.url || '').replace('http://', '')
       : (lms.status === 'not_configured' ? '➖ LM Studio (не настроен)' : '⚠ LM Studio недоступен');
     lmsEl.style.color = lms.status === 'ok' ? '#50fa7b' : (lms.status === 'not_configured' ? '#888' : '#ff5555');
+    if (tgwuiEl) {
+      var tgwui = d.tgwui || {};
+      tgwuiEl.textContent = tgwui.status === 'ok'
+        ? '✅ TGWUI ' + (tgwui.url || '').replace('http://', '')
+        : (tgwui.status === 'not_configured' ? '➖ TGWUI (не настроен)' : '⚠ TGWUI недоступен');
+      tgwuiEl.style.color = tgwui.status === 'ok' ? '#50fa7b' : (tgwui.status === 'not_configured' ? '#888' : '#ff5555');
+    }
     if (rcEl) {
       var rc = d.roo_code || {};
       rcEl.textContent = rc.status === 'ok'
         ? '✅ Roo Code ' + (rc.url || '').replace('http://', '')
         : (rc.status === 'not_configured' ? '➖ Roo Code (не настроен)' : '⚠ Roo Code недоступен');
       rcEl.style.color = rc.status === 'ok' ? '#50fa7b' : (rc.status === 'not_configured' ? '#888' : '#ff5555');
+    }
+    if (oafEl) {
+      var oaf = d.oaf || {};
+      oafEl.textContent = oaf.status === 'ok'
+        ? '✅ OAF ' + (oaf.url || '').replace('http://', '')
+        : (oaf.status === 'not_configured' ? '➖ OAF (не настроен)' : '⚠ OAF недоступен');
+      oafEl.style.color = oaf.status === 'ok' ? '#50fa7b' : (oaf.status === 'not_configured' ? '#888' : '#ff5555');
+    }
+    if (triposrEl) {
+      var tp = d.triposr || {};
+      triposrEl.textContent = tp.status === 'ok'
+        ? '✅ 3D ' + (tp.url || '').replace('http://', '')
+        : (tp.status === 'not_configured' ? '➖ 3D (не настроен)' : '⚠ 3D недоступен');
+      triposrEl.style.color = tp.status === 'ok' ? '#50fa7b' : (tp.status === 'not_configured' ? '#888' : '#ff5555');
+    }
+    if (remoteEl) {
+      var rvm = d.remote_vm || {};
+      remoteEl.textContent = rvm.status === 'ok'
+        ? '✅ Remote VM'
+        : (rvm.status === 'not_configured' ? '➖ Remote VM (нет URL)' : '⚠ Remote VM недост.');
+      remoteEl.style.color = rvm.status === 'ok' ? '#50fa7b' : (rvm.status === 'not_configured' ? '#888' : '#ff5555');
     }
     var relay = d.ollama_relay || {};
     relayEl.textContent = relay.status === 'ok'

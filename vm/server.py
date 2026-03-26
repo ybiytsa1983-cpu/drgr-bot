@@ -2381,6 +2381,94 @@ def health():
 
 
 # ---------------------------------------------------------------------------
+# Extension status report — human-readable diagnostic summary
+# ---------------------------------------------------------------------------
+@app.route("/extension/report", methods=["GET"])
+def extension_report():
+    """Return a full structured diagnostic report for all extension services.
+
+    Calls /health internally and formats the result into a plain-text report
+    plus the raw JSON data.  Useful for debugging and status checks.
+    """
+    import flask as _fl  # already imported at top level but kept local for clarity
+
+    try:
+        resp = health()  # reuse the existing health() view function
+        if hasattr(resp, "get_json"):
+            data = resp.get_json(force=True) or {}
+        else:
+            import json as _json
+            data = _json.loads(resp.data)
+    except Exception:  # pylint: disable=broad-except
+        data = {}
+
+    def _fmt(name: str, svc: dict) -> str:
+        s = (svc or {}).get("status", "")
+        url = (svc or {}).get("url", "")
+        if s == "ok":
+            return f"✅ {name}" + (f" → {url}" if url else "")
+        if s == "not_configured":
+            return f"⚪ {name} — не настроен (URL не задан)"
+        return f"❌ {name}" + (f" [{url}]" if url else "") + " — недоступен"
+
+    lines = [
+        "📊 Отчёт о работе расширения DRGR-BOT",
+        "=" * 46,
+        _fmt("Ollama",       data.get("ollama", {})),
+        _fmt("LM Studio",    data.get("lm_studio", {})),
+        _fmt("TGWUI",        data.get("tgwui", {})),
+        _fmt("Roo Code",     data.get("roo_code", {})),
+        _fmt("OAF",          data.get("oaf", {})),
+        _fmt("3D (TripoSR)", data.get("triposr", {})),
+        _fmt("WebBuilder",   data.get("webbuilder", {})),
+        _fmt("VidEditor",    data.get("videditor", {})),
+        _fmt("Remote VM",    data.get("remote_vm", {})),
+        _fmt("Vision VM",    data.get("vision_vm", {})),
+        _fmt("SD",           data.get("stable_diffusion", {})),
+        _fmt("ComfyUI",      data.get("comfyui", {})),
+    ]
+
+    lv = data.get("vision_light", {})
+    lv_s = lv.get("status", "")
+    lines.append(
+        f"✅ Лёгк.зрение → {lv.get('model', '')}" if lv_s == "ok"
+        else f"⚪ Лёгк.зрение — {lv.get('note', 'нет модели')}"
+    )
+
+    relay = data.get("ollama_relay", {})
+    relay_s = relay.get("status", "")
+    lines.append(
+        f"✅ CORS Relay :{relay.get('port', 11436)}" if relay_s == "ok"
+        else f"⚠ Relay — {relay_s}"
+    )
+
+    bot = data.get("bot", {})
+    bot_s = bot.get("status", "")
+    if bot_s == "running":
+        lines.append("✅ TG Bot — работает")
+    elif bot_s == "configured":
+        lines.append("⚠ TG Bot — настроен, не запущен")
+    else:
+        lines.append("⚪ TG Bot — токен не задан")
+
+    om = (data.get("ollama", {}) or {}).get("models", [])
+    if om:
+        lines.append("Ollama модели: " + ", ".join(om))
+    lm = (data.get("lm_studio", {}) or {}).get("models", [])
+    if lm:
+        lines.append("LM Studio модели: " + ", ".join(lm))
+
+    import datetime as _dt
+    lines.append("=" * 46)
+    lines.append("Дата: " + _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+
+    return jsonify({
+        "report": "\n".join(lines),
+        "data": data,
+    })
+
+
+# ---------------------------------------------------------------------------
 # Navigator PWA
 # ---------------------------------------------------------------------------
 @app.route("/navigator/")
