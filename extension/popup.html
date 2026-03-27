@@ -34,15 +34,21 @@ body{width:420px;min-height:300px;background:#1e1e1e;color:#d4d4d4;font-family:A
 
 /* Sandbox tab */
 #sandbox-wrap{display:flex;flex-direction:column;gap:6px}
-#code-area{width:100%;height:160px;background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:3px;font-family:monospace;font-size:12px;padding:6px;resize:vertical}
-.sb-toolbar{display:flex;gap:4px;align-items:center}
+#code-area{width:100%;height:150px;background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:3px;font-family:monospace;font-size:12px;padding:6px;resize:vertical}
+#code-area.dragover{border-color:#4ec9b0;background:#0d1a17}
+.sb-toolbar{display:flex;gap:4px;align-items:center;flex-wrap:wrap}
 #lang-sel{background:#3c3c3c;border:1px solid #555;color:#fff;padding:3px 6px;border-radius:3px;font-size:11px}
-#run-code-btn{padding:5px 14px;background:#238636;color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:11px}
+#run-code-btn{padding:5px 12px;background:#238636;color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:11px}
 #run-code-btn:disabled{background:#555;cursor:not-allowed}
-#clear-out-btn{padding:5px 10px;background:#333;color:#aaa;border:1px solid #555;border-radius:3px;cursor:pointer;font-size:11px}
-#output-area{width:100%;height:120px;background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:3px;font-family:monospace;font-size:11px;padding:6px;overflow-y:auto;white-space:pre-wrap;word-break:break-all}
+#stop-code-btn{padding:5px 10px;background:#7d0a0a;color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:11px}
+#stop-code-btn:disabled{background:#555;cursor:not-allowed;opacity:.5}
+#img-paste-btn{padding:5px 8px;background:#2d4a7a;color:#9cdcfe;border:1px solid #3d6aaa;border-radius:3px;cursor:pointer;font-size:11px;title:"Вставить картинку как base64 код (также Ctrl+V с картинкой в буфере)"}
+#img-file-input{display:none}
+#clear-out-btn{padding:5px 10px;background:#333;color:#aaa;border:1px solid #555;border-radius:3px;cursor:pointer;font-size:11px;margin-left:auto}
+#output-area{width:100%;height:115px;background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:3px;font-family:monospace;font-size:11px;padding:6px;overflow-y:auto;white-space:pre-wrap;word-break:break-all}
 #out-status{font-size:10px;padding:2px 0;min-height:14px}
 #out-status.ok{color:#4caf50}#out-status.err{color:#f44336}#out-status.inf{color:#9cdcfe}
+#img-hint{font-size:10px;color:#666;text-align:center;padding:2px 0}
 
 /* Settings tab */
 #settings-wrap{display:flex;flex-direction:column;gap:5px}
@@ -77,6 +83,7 @@ body{width:420px;min-height:300px;background:#1e1e1e;color:#d4d4d4;font-family:A
     <div class="tile off" id="t-comfyui">  <div class="t-lbl">⚙ ComfyUI</div>   <div class="t-val">—</div></div>
     <div class="tile off" id="t-vvm">      <div class="t-lbl">👁 Vision VM</div> <div class="t-val">—</div></div>
     <div class="tile off" id="t-tgbot">    <div class="t-lbl">📱 TG Bot</div>    <div class="t-val">—</div></div>
+    <div class="tile off" id="t-goose">    <div class="t-lbl">🪿 Goose/LLM</div> <div class="t-val">—</div></div>
   </div>
   <div class="bot-ctrl">
     <button id="btn-start" onclick="botStart()">▶ Запустить бота</button>
@@ -89,16 +96,20 @@ body{width:420px;min-height:300px;background:#1e1e1e;color:#d4d4d4;font-family:A
 <!-- SANDBOX TAB -->
 <div id="tab-sandbox" style="display:none;padding:10px">
   <div id="sandbox-wrap">
-    <textarea id="code-area" placeholder="# Введите код Python или Bash здесь&#10;print('Hello DRGR VM!')"></textarea>
+    <textarea id="code-area" placeholder="# Введите код Python или Bash здесь&#10;# Ctrl+V с картинкой → вставляется как base64 код&#10;print('Hello DRGR VM!')"></textarea>
+    <div id="img-hint">🖼 Перетащите картинку сюда или нажмите 📎 — вставится как Python base64 код</div>
     <div class="sb-toolbar">
       <select id="lang-sel">
         <option value="python">🐍 Python</option>
         <option value="bash">🐚 Bash</option>
       </select>
       <button id="run-code-btn" onclick="runCode()">▶ Запустить</button>
-      <button id="clear-out-btn" onclick="clearOut()">🗑 Очистить</button>
+      <button id="stop-code-btn" onclick="stopCode()" disabled>⏹ Стоп</button>
+      <button id="img-paste-btn" onclick="triggerImgPaste()" title="Вставить картинку как base64 код">📎 Картинка</button>
+      <input type="file" id="img-file-input" accept="image/*" onchange="handleImgFile(this.files[0])">
+      <button id="clear-out-btn" onclick="clearOut()">🗑</button>
     </div>
-    <div id="out-status" class="inf">Нажмите ▶ Запустить</div>
+    <div id="out-status" class="inf">Нажмите ▶ Запустить (Ctrl+Enter)</div>
     <div id="output-area">Вывод появится здесь...</div>
   </div>
 </div>

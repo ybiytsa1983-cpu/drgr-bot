@@ -17,6 +17,7 @@ import json
 import textwrap
 import subprocess
 import sys
+import uuid
 import urllib.request
 import urllib.error
 import threading
@@ -24,6 +25,10 @@ import time
 from datetime import datetime
 
 app = Flask(__name__, static_folder='static', template_folder='static')
+
+# Track running execution processes (exec_id -> Popen)
+_EXEC_PROCS: dict = {}
+_EXEC_LOCK = threading.Lock()
 
 # Allow browser extensions (chrome-extension://*) and local pages to call the API
 @app.after_request
@@ -558,34 +563,67 @@ def api_execute():
     if not code:
         return jsonify({'ok': False, 'output': '', 'error': 'Нет кода для выполнения'})
 
-    try:
-        if lang in ('python', 'py'):
-            cmd = [sys.executable, '-c', code]
-        elif lang in ('bash', 'shell', 'sh'):
-            cmd = ['bash', '-c', code]
-        else:
-            return jsonify({'ok': False, 'output': '', 'error': f'Язык {lang} не поддерживается'})
+    if lang in ('python', 'py'):
+        cmd = [sys.executable, '-c', code]
+    elif lang in ('bash', 'shell', 'sh'):
+        cmd = ['bash', '-c', code]
+    else:
+        return jsonify({'ok': False, 'output': '', 'error': f'Язык {lang} не поддерживается'})
 
-        proc = subprocess.run(
+    exec_id = uuid.uuid4().hex[:10]
+    try:
+        proc = subprocess.Popen(
             cmd,
             cwd=_ROOT_DIR,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            timeout=timeout,
             env=os.environ.copy(),
         )
-        output = proc.stdout + (('\n[stderr]\n' + proc.stderr) if proc.stderr.strip() else '')
+        with _EXEC_LOCK:
+            _EXEC_PROCS[exec_id] = proc
+        try:
+            stdout, stderr = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            stdout, stderr = proc.communicate()
+            with _EXEC_LOCK:
+                _EXEC_PROCS.pop(exec_id, None)
+            return jsonify({
+                'ok': False, 'output': stdout,
+                'error': f'Превышено время ожидания ({timeout}s)',
+                'exec_id': exec_id,
+            })
+        finally:
+            with _EXEC_LOCK:
+                _EXEC_PROCS.pop(exec_id, None)
+        output = stdout + (('\n[stderr]\n' + stderr) if stderr.strip() else '')
         return jsonify({
             'ok': proc.returncode == 0,
             'output': output,
             'returncode': proc.returncode,
+            'exec_id': exec_id,
         })
-    except subprocess.TimeoutExpired:
-        return jsonify({'ok': False, 'output': '', 'error': f'Превышено время ожидания ({timeout}s)'})
     except FileNotFoundError as exc:
-        return jsonify({'ok': False, 'output': '', 'error': str(exc)})
+        return jsonify({'ok': False, 'output': '', 'error': str(exc), 'exec_id': exec_id})
     except Exception as exc:
-        return jsonify({'ok': False, 'output': '', 'error': str(exc)})
+        return jsonify({'ok': False, 'output': '', 'error': str(exc), 'exec_id': exec_id})
+
+
+@app.route('/api/execute/stop', methods=['POST'])
+def api_execute_stop():
+    """Kill a running execution by exec_id."""
+    data = request.json or {}
+    exec_id = data.get('exec_id', '')
+    with _EXEC_LOCK:
+        proc = _EXEC_PROCS.pop(exec_id, None)
+    if proc:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+        return jsonify({'ok': True, 'message': 'Процесс остановлен'})
+    return jsonify({'ok': False, 'message': 'Процесс не найден или уже завершён'})
 
 
 @app.route('/api/projects', methods=['GET'])
