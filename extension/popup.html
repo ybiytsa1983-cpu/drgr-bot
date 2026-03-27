@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>DRGR VM</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{width:420px;min-height:300px;background:#1e1e1e;color:#d4d4d4;font-family:Arial,sans-serif;font-size:12px}
+#header{background:#252526;padding:8px 12px;display:flex;align-items:center;gap:8px;border-bottom:1px solid #333}
+#header-title{font-size:13px;font-weight:bold;color:#4ec9b0;flex:1}
+#vm-url-input{background:#3c3c3c;border:1px solid #555;color:#fff;padding:3px 6px;border-radius:3px;font-size:11px;width:160px}
+#save-url-btn{padding:3px 8px;font-size:11px;background:#0e639c;color:#fff;border:none;border-radius:3px;cursor:pointer}
+#nav{display:flex;background:#2d2d30;border-bottom:1px solid #333}
+.nav-btn{flex:1;padding:7px;background:none;border:none;color:#888;cursor:pointer;font-size:11px;border-bottom:2px solid transparent}
+.nav-btn.active{color:#4ec9b0;border-bottom-color:#4ec9b0}
+.nav-btn:hover{color:#d4d4d4}
+#content{padding:10px}
+
+/* Status tab */
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:8px}
+.tile{background:#1a1a2e;border:1px solid #444;border-radius:3px;padding:4px 7px;font-size:10px}
+.tile .t-lbl{color:#888}
+.tile .t-val{font-weight:bold;margin-top:1px;font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tile.ok{border-color:#2a6a2a}.tile.ok .t-val{color:#4caf50}
+.tile.warn{border-color:#6a4a10}.tile.warn .t-val{color:#ffc107}
+.tile.err{border-color:#6a1a1a}.tile.err .t-val{color:#f44336}
+.tile.off{border-color:#444}.tile.off .t-val{color:#666}
+.bot-ctrl{display:flex;gap:4px;margin-top:6px}
+.bot-ctrl button{flex:1;padding:5px;font-size:11px;border:none;border-radius:3px;cursor:pointer;color:#fff}
+#btn-start{background:#0a7d3e}#btn-start:hover{background:#0d9248}
+#btn-stop{background:#7d0a0a}#btn-stop:hover{background:#9d1010}
+#btn-refresh{background:#555}#btn-refresh:hover{background:#666}
+#ctrl-status{font-size:10px;color:#aaa;margin-top:4px;min-height:14px}
+
+/* Sandbox tab */
+#sandbox-wrap{display:flex;flex-direction:column;gap:6px}
+#code-area{width:100%;height:160px;background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:3px;font-family:monospace;font-size:12px;padding:6px;resize:vertical}
+.sb-toolbar{display:flex;gap:4px;align-items:center}
+#lang-sel{background:#3c3c3c;border:1px solid #555;color:#fff;padding:3px 6px;border-radius:3px;font-size:11px}
+#run-code-btn{padding:5px 14px;background:#238636;color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:11px}
+#run-code-btn:disabled{background:#555;cursor:not-allowed}
+#clear-out-btn{padding:5px 10px;background:#333;color:#aaa;border:1px solid #555;border-radius:3px;cursor:pointer;font-size:11px}
+#output-area{width:100%;height:120px;background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:3px;font-family:monospace;font-size:11px;padding:6px;overflow-y:auto;white-space:pre-wrap;word-break:break-all}
+#out-status{font-size:10px;padding:2px 0;min-height:14px}
+#out-status.ok{color:#4caf50}#out-status.err{color:#f44336}#out-status.inf{color:#9cdcfe}
+
+/* Settings tab */
+#settings-wrap{display:flex;flex-direction:column;gap:5px}
+.sfield{display:flex;flex-direction:column;gap:2px}
+.sfield label{font-size:10px;color:#888}
+.sfield input{background:#3c3c3c;border:1px solid #555;color:#fff;padding:4px 6px;border-radius:3px;font-size:11px}
+#save-settings-btn{padding:5px;background:#0a7d3e;color:#fff;border:none;border-radius:3px;cursor:pointer;margin-top:4px}
+#settings-status{font-size:10px;color:#aaa;min-height:14px}
+#open-vm-btn{padding:5px;background:#0e639c;color:#fff;border:none;border-radius:3px;cursor:pointer;margin-top:2px;font-size:11px}
+</style>
+</head>
+<body>
+<div id="header">
+  <span id="header-title">🤖 DRGR VM</span>
+  <input id="vm-url-input" type="text" placeholder="http://localhost:5001" value="http://localhost:5001">
+  <button id="save-url-btn">✓</button>
+</div>
+<div id="nav">
+  <button class="nav-btn active" id="nav-status" onclick="switchTab('status')">⚡ Статус</button>
+  <button class="nav-btn" id="nav-sandbox" onclick="switchTab('sandbox')">🖥 Песочница</button>
+  <button class="nav-btn" id="nav-settings" onclick="switchTab('settings')">⚙ Настройки</button>
+</div>
+
+<!-- STATUS TAB -->
+<div id="tab-status" id="content">
+<div id="content">
+  <div class="tiles" id="tiles">
+    <div class="tile off" id="t-ollama">   <div class="t-lbl">🦙 Ollama</div>    <div class="t-val">—</div></div>
+    <div class="tile off" id="t-lmstudio"> <div class="t-lbl">🖥 LM Studio</div> <div class="t-val">—</div></div>
+    <div class="tile off" id="t-tgwui">    <div class="t-lbl">🧠 TGWUI</div>     <div class="t-val">—</div></div>
+    <div class="tile off" id="t-roocode">  <div class="t-lbl">🦘 Roo Code</div>  <div class="t-val">—</div></div>
+    <div class="tile off" id="t-sd">       <div class="t-lbl">🎨 SD</div>        <div class="t-val">—</div></div>
+    <div class="tile off" id="t-comfyui">  <div class="t-lbl">⚙ ComfyUI</div>   <div class="t-val">—</div></div>
+    <div class="tile off" id="t-vvm">      <div class="t-lbl">👁 Vision VM</div> <div class="t-val">—</div></div>
+    <div class="tile off" id="t-tgbot">    <div class="t-lbl">📱 TG Bot</div>    <div class="t-val">—</div></div>
+  </div>
+  <div class="bot-ctrl">
+    <button id="btn-start" onclick="botStart()">▶ Запустить бота</button>
+    <button id="btn-stop" onclick="botStop()">⏹ Стоп</button>
+    <button id="btn-refresh" onclick="refresh()">🔄</button>
+  </div>
+  <div id="ctrl-status"></div>
+</div>
+</div>
+
+<!-- SANDBOX TAB -->
+<div id="tab-sandbox" style="display:none;padding:10px">
+  <div id="sandbox-wrap">
+    <textarea id="code-area" placeholder="# Введите код Python или Bash здесь&#10;print('Hello DRGR VM!')"></textarea>
+    <div class="sb-toolbar">
+      <select id="lang-sel">
+        <option value="python">🐍 Python</option>
+        <option value="bash">🐚 Bash</option>
+      </select>
+      <button id="run-code-btn" onclick="runCode()">▶ Запустить</button>
+      <button id="clear-out-btn" onclick="clearOut()">🗑 Очистить</button>
+    </div>
+    <div id="out-status" class="inf">Нажмите ▶ Запустить</div>
+    <div id="output-area">Вывод появится здесь...</div>
+  </div>
+</div>
+
+<!-- SETTINGS TAB -->
+<div id="tab-settings" style="display:none;padding:10px">
+  <div id="settings-wrap">
+    <div class="sfield"><label>📱 Telegram Bot Token</label><input type="password" id="s-BOT_TOKEN" placeholder="уже настроен — введите новый для замены"></div>
+    <div class="sfield"><label>🦙 Ollama URL</label><input type="text" id="s-OLLAMA_URL" placeholder="http://localhost:11434"></div>
+    <div class="sfield"><label>🖥 LM Studio URL</label><input type="text" id="s-LMS_URL" placeholder="http://localhost:1234"></div>
+    <div class="sfield"><label>🧠 TGWUI URL</label><input type="text" id="s-TGWUI_URL" placeholder="http://localhost:5000"></div>
+    <div class="sfield"><label>🦘 Roo Code URL</label><input type="text" id="s-ROOCODE_URL" placeholder="http://localhost:3000"></div>
+    <button id="save-settings-btn" onclick="saveSettings()">💾 Сохранить настройки</button>
+    <div id="settings-status"></div>
+    <button id="open-vm-btn" onclick="openVM()">🌐 Открыть VM интерфейс</button>
+  </div>
+</div>
+
+<script src="popup.js"></script>
+</body>
+</html>

@@ -25,6 +25,28 @@ from datetime import datetime
 
 app = Flask(__name__, static_folder='static', template_folder='static')
 
+# Allow browser extensions (chrome-extension://*) and local pages to call the API
+@app.after_request
+def _add_cors(response):
+    origin = request.headers.get('Origin', '')
+    if origin.startswith('chrome-extension://') or origin.startswith('moz-extension://') or origin in ('http://localhost:5001', 'http://127.0.0.1:5001'):
+        response.headers['Access-Control-Allow-Origin'] = origin
+        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+    return response
+
+@app.route('/', defaults={'path': ''}, methods=['OPTIONS'])
+@app.route('/<path:path>', methods=['OPTIONS'])
+def _cors_preflight(path):
+    from flask import Response
+    resp = Response()
+    origin = request.headers.get('Origin', '')
+    if origin.startswith('chrome-extension://') or origin.startswith('moz-extension://'):
+        resp.headers['Access-Control-Allow-Origin'] = origin
+        resp.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+        resp.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+    return resp
+
 # ---------------------------------------------------------------------------
 # Config — all overridable by environment variables
 # ---------------------------------------------------------------------------
