@@ -77,11 +77,38 @@ if exist "%DEST%\.git" (
     echo  Репозиторий обновлён.
 ) else (
     if exist "%DEST%" (
-        echo  [ОШИБКА] Папка "%DEST%" уже существует, но не является git-репозиторием.
-        echo  Переименуйте или удалите её вручную и запустите снова.
+        echo  Папка "%DEST%" существует, но не является git-репозиторием.
+        echo  Возможно, она повреждена или удалена случайно.
+        echo.
+        :ASK_DELETE
+        set "DEL_CHOICE="
+        set /p "DEL_CHOICE= Удалить папку и скачать заново? (да/нет): "
+        if /i "!DEL_CHOICE!"=="да"  goto :DO_DELETE
+        if /i "!DEL_CHOICE!"=="yes" goto :DO_DELETE
+        if /i "!DEL_CHOICE!"=="д"   goto :DO_DELETE
+        if /i "!DEL_CHOICE!"=="y"   goto :DO_DELETE
+        if /i "!DEL_CHOICE!"=="нет" goto :CANT_PROCEED
+        if /i "!DEL_CHOICE!"=="no"  goto :CANT_PROCEED
+        if /i "!DEL_CHOICE!"=="н"   goto :CANT_PROCEED
+        if /i "!DEL_CHOICE!"=="n"   goto :CANT_PROCEED
+        echo  Введите "да" или "нет".
+        goto :ASK_DELETE
+
+        :CANT_PROCEED
+        echo  Переименуйте или удалите папку "%DEST%" вручную и запустите снова.
         echo.
         pause
         exit /b 1
+
+        :DO_DELETE
+        echo  Удаляем старую папку...
+        rmdir /s /q "%DEST%"
+        if errorlevel 1 (
+            echo  [ОШИБКА] Не удалось удалить папку. Удалите её вручную и запустите снова.
+            pause
+            exit /b 1
+        )
+        echo  Папка удалена.
     )
     git clone "%REPO%" "%DEST%"
     if errorlevel 1 (
