@@ -1,85 +1,58 @@
 # drgr-bot
 
-Telegram-бот с веб-интерфейсом и VM-сервером для управления AI-моделями.
+Telegram-бот с веб-интерфейсом и VM-сервером для управления AI-моделями (Ollama, LM Studio и др.).
 
 ---
 
-## 🖥️ Скачать все файлы на ноутбук (самый простой способ — без Git)
+## ⚡ Установить одной командой PowerShell
 
-> **Нет Git? Это нормально!** Используйте `СКАЧАТЬ.bat` — он скачает всё без Git.
-
-### Шаг 1 — Установите Python (один раз)
-
-Скачайте и установите **Python 3.10+**: https://www.python.org/downloads/
-
-> ⚠️ **Важно:** при установке отметьте галочку **"Add Python to PATH"**
-
-### Шаг 2 — Скачайте СКАЧАТЬ.bat одной командой
+> **Самый простой способ — без Git, без ручного скачивания файлов!**
 
 Откройте **PowerShell** (Win+R → `powershell`) и вставьте:
 
 ```powershell
-irm https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/download.ps1 | iex
+irm https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/install.ps1 | iex
 ```
 
-Скрипт сам скачает `СКАЧАТЬ.bat` на Рабочий стол и запустит его.
+Скрипт автоматически:
 
-> 💡 Если PowerShell недоступен — скачайте файл вручную по ссылке:
-> **[Скачать СКАЧАТЬ.bat](https://github.com/ybiytsa1983-cpu/drgr-bot/raw/main/%D0%A1%D0%9A%D0%90%D0%A7%D0%90%D0%A2%D0%AC.bat)**
+1. Скачает все файлы проекта с GitHub (ZIP, **Git не нужен**)
+2. Создаст папку `drgr-bot` на **Рабочем столе**
+3. Установит зависимости Python
+4. Создаст значок **🟢 "ЗАПУСТИТЬ БОТА"** на Рабочем столе
+5. Создаст значок **📁 "drgr-bot (папка)"** для быстрого доступа к файлам
+6. Предложит ввести токен бота и сразу запустить
 
-### Шаг 3 — Запустите СКАЧАТЬ.bat
-
-Дважды кликните по нему. Скрипт автоматически:
-
-1. Скачает все файлы проекта с GitHub (ZIP, без Git)
-2. Установит все зависимости Python
-3. Создаст папку `drgr-bot` на Рабочем столе
-4. Создаст значок **"ЗАПУСТИТЬ БОТА"** на Рабочем столе
-5. Создаст значок **"drgr-bot (папка)"** для быстрого доступа к файлам
+> ⚠️ Нужен **Python 3.10+** — скачать: https://www.python.org/downloads/
+> При установке обязательно отметьте **"Add Python to PATH"**
 
 После этого — двойной клик по **"ЗАПУСТИТЬ БОТА"** — и всё работает! 🚀
 
 ---
 
-## ⚡ Установить через PowerShell — одной командой
+## 🖥️ Скачать вручную (без PowerShell)
 
-> Если PowerShell доступен (Win+R → `powershell`), можно без скачивания файлов:
+Если PowerShell недоступен — скачайте и запустите:
 
-**Без Git (рекомендуется для новых пользователей):**
-```powershell
-irm https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/download.ps1 | iex
-```
-
-**С Git (для тех у кого есть Git):**
-```powershell
-irm https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/%D0%A3%D0%A1%D0%A2%D0%90%D0%9D%D0%9E%D0%92%D0%98%D0%A2%D0%AC.bat -OutFile "$env:TEMP\install.bat"; Start-Process "$env:TEMP\install.bat"
-```
+**[⬇ Скачать СКАЧАТЬ.bat](https://github.com/ybiytsa1983-cpu/drgr-bot/raw/main/%D0%A1%D0%9A%D0%90%D0%A7%D0%90%D0%A2%D0%AC.bat)**
 
 ---
 
 ## 🆘 Папка пропала / ничего не работает
 
-**Вариант 1 — быстрое восстановление одной командой** (PowerShell, Win+R → `powershell`):
+**Быстрое восстановление — одной командой PowerShell** (Win+R → `powershell`):
 
 ```powershell
-irm https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/%D0%9F%D0%9E%D0%A7%D0%98%D0%9D%D0%98%D0%A2%D0%AC.bat -OutFile "$env:TEMP\repair.bat"; Start-Process "$env:TEMP\repair.bat"
+irm https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/install.ps1 | iex
 ```
 
-**Вариант 2 — запустите уже скачанный файл:**
+Или запустите файл из папки проекта:
 
 ```
 Рабочий стол\drgr-bot\ПОЧИНИТЬ.bat
 ```
 
-> Не нашли файл? Скачайте: [ПОЧИНИТЬ.bat](https://github.com/ybiytsa1983-cpu/drgr-bot/raw/main/%D0%9F%D0%9E%D0%A7%D0%98%D0%9D%D0%98%D0%A2%D0%AC.bat)
-
-Скрипт:
-1. Сохранит ваш токен (`.env`)
-2. Удалит повреждённую папку
-3. Заново скачает проект
-4. Восстановит токен
-5. Установит зависимости
-6. Создаст значок на Рабочем столе
+> Не нашли файл? [Скачать ПОЧИНИТЬ.bat](https://github.com/ybiytsa1983-cpu/drgr-bot/raw/main/%D0%9F%D0%9E%D0%A7%D0%98%D0%9D%D0%98%D0%A2%D0%AC.bat)
 
 ---
 
@@ -183,7 +156,8 @@ drgr-bot/
 │       └── index.html     # Веб-интерфейс
 ├── requirements.txt       # Зависимости Python
 ├── .env                   # Токен бота (не в репозитории!)
-├── СКАЧАТЬ.bat            # Скачать и установить БЕЗ Git (рекомендуется)
+├── install.ps1            # ⭐ Установщик — одна команда PowerShell (рекомендуется)
+├── СКАЧАТЬ.bat            # Скачать и установить БЕЗ Git (без PowerShell)
 ├── УСТАНОВИТЬ.bat         # Первичная установка (требует Git)
 ├── ЗАПУСТИТЬ_БОТА.bat     # Запуск бота и VM-сервера
 ├── ОБНОВИТЬ.bat           # Обновление до последней версии
@@ -193,6 +167,9 @@ drgr-bot/
 ---
 
 ## ❓ Решение проблем
+
+**Хочу установить всё одной командой**
+→ PowerShell (Win+R → `powershell`): `irm https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/install.ps1 | iex`
 
 **Хочу скачать файлы без Git**
 → Используйте `СКАЧАТЬ.bat` — скачивает через ZIP, Git не нужен.
