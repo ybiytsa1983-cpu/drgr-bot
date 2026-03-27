@@ -11,14 +11,16 @@
         #main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
         #toolbar { background: #2d2d30; padding: 10px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
         #editor { flex: 1; }
-        #research-pane { flex: 1; display: none; flex-direction: column; overflow: hidden; }
-        #research-pane.active { display: flex; }
+        .pane { flex: 1; display: none; flex-direction: column; overflow: hidden; }
+        .pane.active { display: flex; }
         #editor.hidden { display: none; }
         button { padding: 7px 13px; background: #0e639c; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
         button:hover { background: #1177bb; }
         button:disabled { background: #555; cursor: not-allowed; }
         select { padding: 7px; background: #3c3c3c; color: #fff; border: 1px solid #555; border-radius: 4px; font-size: 13px; }
         input[type="file"] { display: none; }
+        textarea { background: #3c3c3c; color: #fff; border: 1px solid #555; border-radius: 4px; padding: 8px; font-size: 13px; resize: vertical; font-family: Arial,sans-serif; }
+        textarea::placeholder { color: #888; }
         .file-upload-btn { background: #0a7d3e; }
         .file-upload-btn:hover { background: #0d9248; }
         h3 { margin-bottom: 12px; color: #4ec9b0; font-size: 15px; }
@@ -39,6 +41,30 @@
         .btn-open-tab { background: #198754; font-size: 12px; padding: 5px 10px; }
         .btn-open-tab:hover { background: #1a9e62; }
         #research-save-btn { display: none; }
+
+        /* VM Chat pane */
+        #vmchat-pane { padding: 16px; gap: 10px; overflow-y: auto; }
+        .vmchat-row { display: flex; gap: 10px; align-items: flex-start; flex-wrap: wrap; }
+        .vmchat-row label { font-size: 12px; color: #aaa; display: block; margin-bottom: 4px; }
+        .vmchat-group { display: flex; flex-direction: column; gap: 4px; }
+        #vmchat-output { flex: 1; min-height: 200px; background: #1e1e1e; border: 1px solid #3c3c3c; border-radius: 6px; padding: 12px; font-size: 13px; line-height: 1.6; white-space: pre-wrap; overflow-y: auto; color: #d4d4d4; }
+        .btn-vmchat { background: #d97706; }
+        .btn-vmchat:hover { background: #f59e0b; }
+
+        /* Dual VM pane */
+        #duorun-pane { padding: 16px; gap: 10px; overflow-y: auto; }
+        .agent-card { background: #2d2d30; border: 1px solid #3c3c3c; border-radius: 8px; padding: 12px; flex: 1; min-width: 220px; }
+        .agent-card h5 { font-size: 13px; margin-bottom: 10px; color: #4ec9b0; }
+        .step-card { background: #2d2d30; border-left: 3px solid #0e639c; border-radius: 4px; padding: 10px 14px; margin-bottom: 10px; }
+        .step-card.agent-b { border-left-color: #d97706; }
+        .step-card .step-header { font-size: 11px; color: #aaa; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.05em; }
+        .step-card .step-body { font-size: 13px; white-space: pre-wrap; line-height: 1.6; color: #d4d4d4; }
+        .final-card { background: #1a3a1a; border: 1px solid #2a5a2a; border-radius: 8px; padding: 14px; }
+        .final-card h5 { color: #4ec9b0; margin-bottom: 8px; }
+        .btn-duo { background: #b5179e; }
+        .btn-duo:hover { background: #d01ec0; }
+        #duorun-status { font-size: 12px; color: #aaa; padding: 4px 0; }
+        #duorun-steps { margin-top: 10px; }
     </style>
 </head>
 <body>
@@ -58,6 +84,8 @@
             <div style="display:flex;flex-direction:column;gap:6px;margin-top:6px;">
                 <button onclick="switchToEditor()">📝 Monaco Редактор</button>
                 <button class="btn-research" onclick="switchToResearch()">🔍 Генератор статей</button>
+                <button class="btn-vmchat" onclick="switchToVMChat()">🤖 VM Чат</button>
+                <button class="btn-duo" onclick="switchToDuoRun()">⚡ Dual VM Co-Run</button>
                 <button onclick="run3DGen()">🎬 3D Генератор</button>
                 <button onclick="runVideoGen()">🎥 Видеоредактор</button>
                 <button onclick="runGoose()">🦢 Goose ИИ</button>
@@ -86,6 +114,12 @@
                 🔗 Открыть в новой вкладке
             </button>
         </div>
+
+        <div class="sidebar-section" id="models-sidebar">
+            <h4 style="color:#4ec9b0;">🔌 AI Модели</h4>
+            <div id="models-status" style="font-size:11px;color:#888;margin-top:6px;">нажмите «Обновить»</div>
+            <button onclick="refreshModels()" style="margin-top:8px;font-size:11px;padding:5px 10px;width:100%;">🔄 Обновить модели</button>
+        </div>
     </div>
 
     <div id="main">
@@ -98,12 +132,14 @@
             <button onclick="saveProject()">💾 Save</button>
             <button onclick="loadProjects()">📂 Load</button>
             <button class="btn-research" onclick="switchToResearch()">🔍 Статьи</button>
+            <button class="btn-vmchat" onclick="switchToVMChat()">🤖 VM Чат</button>
+            <button class="btn-duo" onclick="switchToDuoRun()">⚡ Dual Co-Run</button>
             <span style="margin-left:auto;color:#aaa;font-size:12px;">Monaco Editor</span>
         </div>
         <div id="editor"></div>
 
         <!-- Research / Article Generator view -->
-        <div id="research-pane">
+        <div id="research-pane" class="pane">
             <div id="research-input-area">
                 <input id="research-query" type="text" placeholder="Введите тему статьи… (например: квантовые компьютеры)" onkeydown="if(event.key==='Enter')startResearch()">
                 <button class="btn-research" id="research-btn" onclick="startResearch()">🔍 Генерировать</button>
@@ -114,6 +150,148 @@
                 <iframe id="article-frame" sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"></iframe>
             </div>
         </div>
+
+        <!-- VM Chat pane -->
+        <div id="vmchat-pane" class="pane" style="flex-direction:column;">
+            <div style="display:flex;gap:8px;align-items:center;padding-bottom:10px;border-bottom:1px solid #3c3c3c;">
+                <span style="font-size:16px;font-weight:bold;color:#f0c040;">🤖 VM Чат</span>
+                <button onclick="switchToEditor()" style="background:#555;font-size:12px;padding:5px 10px;margin-left:auto;">✕</button>
+            </div>
+
+            <div class="vmchat-row" style="margin-top:12px;">
+                <div class="vmchat-group">
+                    <label>Бэкенд</label>
+                    <select id="vmchat-backend" onchange="onVMChatBackendChange()">
+                        <option value="ollama">Ollama</option>
+                        <option value="lmstudio">LM Studio</option>
+                    </select>
+                </div>
+                <div class="vmchat-group" id="vmchat-port-group">
+                    <label>Порт Ollama</label>
+                    <select id="vmchat-port" style="width:120px;">
+                        <option value="11434">11434</option>
+                        <option value="11435">11435</option>
+                        <option value="11436">11436</option>
+                        <option value="11437">11437</option>
+                    </select>
+                </div>
+                <div class="vmchat-group" style="flex:1;min-width:180px;">
+                    <label>Модель</label>
+                    <select id="vmchat-model" style="width:100%;"></select>
+                </div>
+            </div>
+
+            <div class="vmchat-group" style="margin-top:10px;">
+                <label>Системный промпт (необязательно)</label>
+                <textarea id="vmchat-system" rows="2" style="width:100%;" placeholder="Ты полезный ассистент…"></textarea>
+            </div>
+            <div class="vmchat-group" style="margin-top:8px;">
+                <label>Запрос</label>
+                <textarea id="vmchat-prompt" rows="4" style="width:100%;" placeholder="Введите запрос…" onkeydown="if(event.ctrlKey&&event.key==='Enter')sendVMChat()"></textarea>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:8px;">
+                <button class="btn-vmchat" id="vmchat-btn" onclick="sendVMChat()">▶ Отправить (Ctrl+Enter)</button>
+                <button onclick="document.getElementById('vmchat-output').textContent=''" style="background:#555;font-size:12px;padding:5px 10px;">🗑 Очистить</button>
+                <span id="vmchat-status" style="font-size:12px;color:#aaa;align-self:center;"></span>
+            </div>
+            <div class="vmchat-group" style="margin-top:10px;flex:1;">
+                <label>Ответ</label>
+                <div id="vmchat-output" style="min-height:180px;max-height:400px;">Ответ появится здесь…</div>
+            </div>
+        </div>
+
+        <!-- Dual VM Co-Run pane -->
+        <div id="duorun-pane" class="pane" style="flex-direction:column;">
+            <div style="display:flex;gap:8px;align-items:center;padding-bottom:10px;border-bottom:1px solid #3c3c3c;">
+                <span style="font-size:16px;font-weight:bold;color:#e040fb;">⚡ Dual VM Co-Run</span>
+                <button onclick="switchToEditor()" style="background:#555;font-size:12px;padding:5px 10px;margin-left:auto;">✕</button>
+            </div>
+
+            <div style="display:flex;gap:12px;margin-top:12px;flex-wrap:wrap;">
+                <!-- Agent A -->
+                <div class="agent-card">
+                    <h5>🟦 Агент А</h5>
+                    <div class="vmchat-group" style="margin-bottom:8px;">
+                        <label>Бэкенд</label>
+                        <select id="duo-a-backend" onchange="onDuoBackendChange('a')" style="width:100%;">
+                            <option value="ollama">Ollama</option>
+                            <option value="lmstudio">LM Studio</option>
+                        </select>
+                    </div>
+                    <div class="vmchat-group" id="duo-a-port-group" style="margin-bottom:8px;">
+                        <label>Порт Ollama</label>
+                        <select id="duo-a-port" style="width:100%;">
+                            <option value="11434">11434</option>
+                            <option value="11435">11435</option>
+                            <option value="11436">11436</option>
+                            <option value="11437">11437</option>
+                        </select>
+                    </div>
+                    <div class="vmchat-group">
+                        <label>Модель</label>
+                        <select id="duo-a-model" style="width:100%;"></select>
+                    </div>
+                </div>
+
+                <!-- Agent B -->
+                <div class="agent-card" style="border-color:#d97706;">
+                    <h5>🟧 Агент Б</h5>
+                    <div class="vmchat-group" style="margin-bottom:8px;">
+                        <label>Бэкенд</label>
+                        <select id="duo-b-backend" onchange="onDuoBackendChange('b')" style="width:100%;">
+                            <option value="ollama">Ollama</option>
+                            <option value="lmstudio" selected>LM Studio</option>
+                        </select>
+                    </div>
+                    <div class="vmchat-group" id="duo-b-port-group" style="margin-bottom:8px;display:none;">
+                        <label>Порт Ollama</label>
+                        <select id="duo-b-port" style="width:100%;">
+                            <option value="11434">11434</option>
+                            <option value="11435">11435</option>
+                            <option value="11436">11436</option>
+                            <option value="11437">11437</option>
+                        </select>
+                    </div>
+                    <div class="vmchat-group">
+                        <label>Модель</label>
+                        <select id="duo-b-model" style="width:100%;"></select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Task + settings -->
+            <div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap;align-items:flex-start;">
+                <div class="vmchat-group" style="flex:1;min-width:200px;">
+                    <label>Режим совместной работы</label>
+                    <select id="duo-mode" style="width:100%;">
+                        <option value="plan">📋 Планирование — А составляет план, Б детализирует</option>
+                        <option value="debate">💬 Дебаты — А предлагает, Б критикует, А улучшает</option>
+                        <option value="review">✏️ Рецензирование — А пишет черновик, Б рецензирует</option>
+                    </select>
+                </div>
+                <div class="vmchat-group">
+                    <label>Раундов обмена</label>
+                    <select id="duo-rounds" style="width:100px;">
+                        <option value="1">1</option>
+                        <option value="2" selected>2</option>
+                        <option value="3">3</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="vmchat-group" style="margin-top:10px;">
+                <label>Задача для совместной работы</label>
+                <textarea id="duo-task" rows="4" style="width:100%;" placeholder="Опишите задачу или вопрос, который агенты должны решить совместно…"></textarea>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:10px;align-items:center;">
+                <button class="btn-duo" id="duo-btn" onclick="startDuoRun()">⚡ Запустить Dual Co-Run</button>
+                <button onclick="document.getElementById('duorun-steps').innerHTML='';document.getElementById('duorun-final').innerHTML=''" style="background:#555;font-size:12px;padding:5px 10px;">🗑 Очистить</button>
+                <span id="duorun-status"></span>
+            </div>
+
+            <div id="duorun-steps" style="margin-top:14px;"></div>
+            <div id="duorun-final" style="margin-top:10px;"></div>
+        </div>
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/loader.min.js"></script>
@@ -121,6 +299,7 @@
         let editor;
         let _lastArticleHtml = '';
         let _lastArticleQuery = '';
+        let _modelsCache = { ollama: [], lmstudio: [] };
 
         require.config({ paths: { vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs' } });
         require(['vs/editor/editor.main'], function() {
@@ -132,18 +311,220 @@
             });
         });
 
+        // ── pane switching ──────────────────────────────────────────────────
+
+        function _hideAll() {
+            ['research-pane','vmchat-pane','duorun-pane'].forEach(id => {
+                document.getElementById(id).classList.remove('active');
+            });
+            document.getElementById('editor').classList.add('hidden');
+            document.getElementById('toolbar').style.display = 'none';
+        }
+
         function switchToEditor() {
+            _hideAll();
             document.getElementById('editor').classList.remove('hidden');
             document.getElementById('toolbar').style.display = 'flex';
-            document.getElementById('research-pane').classList.remove('active');
         }
 
         function switchToResearch() {
-            document.getElementById('editor').classList.add('hidden');
-            document.getElementById('toolbar').style.display = 'none';
+            _hideAll();
             document.getElementById('research-pane').classList.add('active');
             document.getElementById('research-query').focus();
         }
+
+        function switchToVMChat() {
+            _hideAll();
+            document.getElementById('vmchat-pane').classList.add('active');
+            refreshModels();
+        }
+
+        function switchToDuoRun() {
+            _hideAll();
+            document.getElementById('duorun-pane').classList.add('active');
+            refreshModels();
+        }
+
+        // ── model discovery ─────────────────────────────────────────────────
+
+        async function refreshModels() {
+            document.getElementById('models-status').textContent = '⏳ обнаружение…';
+            try {
+                const resp = await fetch('/vm/models');
+                const data = await resp.json();
+                _modelsCache = data;
+                _populateModelSelects();
+                const ol = data.ollama.length;
+                const lm = data.lmstudio.length;
+                document.getElementById('models-status').textContent =
+                    `Ollama: ${ol} мод. | LM Studio: ${lm} мод.`;
+            } catch(e) {
+                document.getElementById('models-status').textContent = '❌ ' + e.message;
+            }
+        }
+
+        function _populateModelSelects() {
+            const ollamaModels = _modelsCache.ollama || [];
+            const lmsModels    = _modelsCache.lmstudio || [];
+
+            // vmchat
+            _fillSelect('vmchat-model',
+                document.getElementById('vmchat-backend').value === 'lmstudio' ? lmsModels.map(m=>({name:m,port:0})) : ollamaModels
+            );
+            // duo a
+            _fillSelect('duo-a-model',
+                document.getElementById('duo-a-backend').value === 'lmstudio' ? lmsModels.map(m=>({name:m,port:0})) : ollamaModels
+            );
+            // duo b
+            _fillSelect('duo-b-model',
+                document.getElementById('duo-b-backend').value === 'lmstudio' ? lmsModels.map(m=>({name:m,port:0})) : ollamaModels
+            );
+        }
+
+        function _fillSelect(selectId, models) {
+            const sel = document.getElementById(selectId);
+            const prev = sel.value;
+            sel.innerHTML = '';
+            if (!models.length) {
+                sel.innerHTML = '<option value="">(нет доступных)</option>';
+                return;
+            }
+            models.forEach(m => {
+                const name = typeof m === 'string' ? m : m.name;
+                const opt = document.createElement('option');
+                opt.value = name;
+                opt.textContent = name;
+                sel.appendChild(opt);
+            });
+            if (prev) sel.value = prev;
+        }
+
+        function onVMChatBackendChange() {
+            const isLms = document.getElementById('vmchat-backend').value === 'lmstudio';
+            document.getElementById('vmchat-port-group').style.display = isLms ? 'none' : '';
+            _fillSelect('vmchat-model',
+                isLms ? (_modelsCache.lmstudio||[]).map(m=>({name:m})) : (_modelsCache.ollama||[])
+            );
+        }
+
+        function onDuoBackendChange(ab) {
+            const isLms = document.getElementById(`duo-${ab}-backend`).value === 'lmstudio';
+            document.getElementById(`duo-${ab}-port-group`).style.display = isLms ? 'none' : '';
+            _fillSelect(`duo-${ab}-model`,
+                isLms ? (_modelsCache.lmstudio||[]).map(m=>({name:m})) : (_modelsCache.ollama||[])
+            );
+        }
+
+        // ── VM Chat ─────────────────────────────────────────────────────────
+
+        async function sendVMChat() {
+            const prompt = document.getElementById('vmchat-prompt').value.trim();
+            if (!prompt) { alert('Введите запрос'); return; }
+
+            const backend = document.getElementById('vmchat-backend').value;
+            const port    = parseInt(document.getElementById('vmchat-port').value) || 0;
+            const model   = document.getElementById('vmchat-model').value;
+            const system  = document.getElementById('vmchat-system').value.trim();
+
+            const btn    = document.getElementById('vmchat-btn');
+            const status = document.getElementById('vmchat-status');
+            const output = document.getElementById('vmchat-output');
+
+            btn.disabled = true;
+            btn.textContent = '⏳ Генерация…';
+            status.textContent = `Отправка в ${backend}…`;
+            output.textContent = '';
+
+            try {
+                const resp = await fetch('/vm/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ backend, port, model, prompt, system })
+                });
+                const data = await resp.json();
+                if (data.error) throw new Error(data.error);
+                output.textContent = data.response || '(пустой ответ)';
+                status.textContent = `✅ Готово — ${backend} / ${data.model || model}`;
+            } catch(e) {
+                output.textContent = '❌ Ошибка: ' + e.message;
+                status.textContent = '❌ Ошибка';
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '▶ Отправить (Ctrl+Enter)';
+            }
+        }
+
+        // ── Dual VM Co-Run ──────────────────────────────────────────────────
+
+        async function startDuoRun() {
+            const task = document.getElementById('duo-task').value.trim();
+            if (!task) { alert('Введите задачу'); return; }
+
+            const agentA = {
+                backend: document.getElementById('duo-a-backend').value,
+                port:    parseInt(document.getElementById('duo-a-port').value) || 0,
+                model:   document.getElementById('duo-a-model').value,
+            };
+            const agentB = {
+                backend: document.getElementById('duo-b-backend').value,
+                port:    parseInt(document.getElementById('duo-b-port').value) || 0,
+                model:   document.getElementById('duo-b-model').value,
+            };
+            const mode   = document.getElementById('duo-mode').value;
+            const rounds = parseInt(document.getElementById('duo-rounds').value) || 2;
+
+            const btn    = document.getElementById('duo-btn');
+            const status = document.getElementById('duorun-status');
+            const steps  = document.getElementById('duorun-steps');
+            const final  = document.getElementById('duorun-final');
+
+            btn.disabled = true;
+            btn.textContent = '⏳ Работают оба агента…';
+            status.textContent = '⏳ Идёт совместная генерация, подождите…';
+            steps.innerHTML = '';
+            final.innerHTML = '';
+
+            try {
+                const resp = await fetch('/vm/duorun', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ task, agent_a: agentA, agent_b: agentB, mode, rounds })
+                });
+                const data = await resp.json();
+                if (data.error) throw new Error(data.error);
+
+                // render steps
+                (data.steps || []).forEach(s => {
+                    const isB = s.agent && s.agent.includes('Агент Б');
+                    const card = document.createElement('div');
+                    card.className = 'step-card' + (isB ? ' agent-b' : '');
+                    card.innerHTML = `<div class="step-header">${_esc(s.agent)} — ${_esc(s.role)}</div>
+                        <div class="step-body">${_esc(s.text)}</div>`;
+                    steps.appendChild(card);
+                });
+
+                // render final
+                if (data.final) {
+                    final.innerHTML = `<div class="final-card">
+                        <h5>✅ Итоговый результат</h5>
+                        <div style="white-space:pre-wrap;font-size:13px;line-height:1.6;color:#d4d4d4;">${_esc(data.final)}</div>
+                    </div>`;
+                }
+
+                status.textContent = `✅ Готово — ${(data.steps||[]).length} шагов`;
+            } catch(e) {
+                status.textContent = '❌ Ошибка: ' + e.message;
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '⚡ Запустить Dual Co-Run';
+            }
+        }
+
+        function _esc(s) {
+            return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        }
+
+        // ── Research ────────────────────────────────────────────────────────
 
         async function startResearch() {
             const query = document.getElementById('research-query').value.trim();
@@ -182,8 +563,6 @@
 
             } catch (err) {
                 status.textContent = '❌ Ошибка: ' + err.message;
-                const errMsg = document.createElement('p');
-                errMsg.textContent = err.message;
                 document.getElementById('article-frame').srcdoc = '<html><body style="font-family:Arial;padding:2rem;color:#721c24;background:#f8d7da"><h3>Ошибка генерации</h3><p>Убедитесь что VM-сервер запущен на порту 5001.</p></body></html>';
             } finally {
                 btn.disabled = false;
@@ -208,6 +587,8 @@
             const url = URL.createObjectURL(blob);
             window.open(url, '_blank');
         }
+
+        // ── File / project helpers ──────────────────────────────────────────
 
         function uploadFile(event) {
             const file = event.target.files[0];

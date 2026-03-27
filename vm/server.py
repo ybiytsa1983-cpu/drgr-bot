@@ -346,20 +346,24 @@ def _research_call_llm(prompt: str) -> str:
                 'stream': False,
                 'options': {'temperature': 0.3, 'num_predict': 2500}
             }, timeout=120)
-            if r2.status_code == 200:
-                return r2.json().get('response', '').strip()
+            r2.raise_for_status()
+            response_text = r2.json().get('response', '').strip()
+            if response_text:
+                return response_text
         except Exception:
             continue
 
     # LM Studio
     try:
-        r = _req.post('http://127.0.0.1:1234/v1/chat/completions', json={
+        r = _req.post(f'{_LMS_URL}/chat/completions', json={
             'messages': [{'role': 'user', 'content': prompt}],
             'max_tokens': 2500,
             'temperature': 0.3
         }, timeout=120)
-        if r.status_code == 200:
-            return r.json()['choices'][0]['message']['content'].strip()
+        r.raise_for_status()
+        choices = r.json().get('choices') or []
+        if choices:
+            return choices[0]['message']['content'].strip()
     except Exception:
         pass
 
@@ -602,34 +606,319 @@ def research():
     if not query:
         return jsonify({'error': 'query required'}), 400
 
-    # 1. DuckDuckGo search
-    search_results = _research_ddg_search(query)
+    try:
+        # 1. DuckDuckGo search
+        search_results = _research_ddg_search(query)
 
-    # 2. Parallel scraping of top URLs
-    urls = [r.get('href', '') for r in search_results[:_SCRAPE_MAX_URLS] if r.get('href')]
-    scraped: list = []
-    lock = threading.Lock()
+        # 2. Parallel scraping of top URLs
+        urls = [r.get('href', '') for r in search_results[:_SCRAPE_MAX_URLS] if r.get('href')]
+        scraped: list = []
+        lock = threading.Lock()
 
-    def _scrape_one(url):
-        item = _research_scrape_url(url)
-        if item.get('paragraphs'):
-            with lock:
-                scraped.append(item)
+        def _scrape_one(url):
+            item = _research_scrape_url(url)
+            if item.get('paragraphs'):
+                with lock:
+                    scraped.append(item)
 
-    threads = [threading.Thread(target=_scrape_one, args=(u,), daemon=True) for u in urls]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join(timeout=_SCRAPE_THREAD_JOIN_TIMEOUT)
+        threads = [threading.Thread(target=_scrape_one, args=(u,), daemon=True) for u in urls]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=_SCRAPE_THREAD_JOIN_TIMEOUT)
 
-    # 3. Build article HTML
-    html_content = _research_build_article(query, search_results, scraped)
+        # 3. Build article HTML
+        html_content = _research_build_article(query, search_results, scraped)
 
+        return jsonify({
+            'html': html_content,
+            'sources_count': len(search_results),
+            'scraped_count': len(scraped),
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ── VM CHAT & DUAL CO-RUN ────────────────────────────────────────────────────
+
+_LMS_PORT = 1234          # LM Studio default OpenAI-compat port
+_LMS_URL  = f'http://127.0.0.1:{_LMS_PORT}/v1'
+
+_VM_CHAT_TIMEOUT   = 180  # seconds per single LLM call
+_DUORUN_MAX_ROUNDS = 3    # maximum back-and-forth rounds
+
+
+def _ollama_list_models() -> list:
+    """Return list of {name, port} dicts for every Ollama model found."""
+    import requests as _req
+    found = []
+    for port in _OLLAMA_PROBE_PORTS:
+        try:
+            r = _req.get(f'http://localhost:{port}/api/tags', timeout=2)
+            if r.status_code == 200:
+                for m in r.json().get('models', []):
+                    found.append({'name': m['name'], 'port': port})
+        except Exception:
+            continue
+    return found
+
+
+def _lms_list_models() -> list:
+    """Return list of model ids from LM Studio."""
+    import requests as _req
+    try:
+        r = _req.get(f'{_LMS_URL}/models', timeout=2)
+        if r.status_code == 200:
+            return [m['id'] for m in r.json().get('data', [])]
+    except Exception:
+        pass
+    return []
+
+
+def _call_ollama(port: int, model: str, prompt: str, system: str = '') -> str:
+    """Call Ollama /api/generate and return the text response."""
+    import requests as _req
+    messages_prompt = f"{system}\n\n{prompt}" if system else prompt
+    try:
+        r = _req.post(
+            f'http://localhost:{port}/api/generate',
+            json={
+                'model': model,
+                'prompt': messages_prompt,
+                'stream': False,
+                'options': {'temperature': 0.7, 'num_predict': 3000},
+            },
+            timeout=_VM_CHAT_TIMEOUT,
+        )
+        r.raise_for_status()
+        return r.json().get('response', '').strip()
+    except Exception as e:
+        return f'[Ollama error] {e}'
+
+
+def _call_lmstudio(model: str, prompt: str, system: str = '') -> str:
+    """Call LM Studio /v1/chat/completions and return the text response."""
+    import requests as _req
+    messages = []
+    if system:
+        messages.append({'role': 'system', 'content': system})
+    messages.append({'role': 'user', 'content': prompt})
+    try:
+        payload = {
+            'messages': messages,
+            'max_tokens': 3000,
+            'temperature': 0.7,
+        }
+        if model:
+            payload['model'] = model
+        r = _req.post(
+            f'{_LMS_URL}/chat/completions',
+            json=payload,
+            timeout=_VM_CHAT_TIMEOUT,
+        )
+        r.raise_for_status()
+        data = r.json()
+        choices = data.get('choices') or []
+        if not choices:
+            return '[LM Studio error] empty choices in response'
+        return choices[0]['message']['content'].strip()
+    except Exception as e:
+        return f'[LM Studio error] {e}'
+
+
+def _dispatch_vm(backend: str, model: str, port: int, prompt: str, system: str = '') -> str:
+    """Route a prompt to the correct backend and return the text response."""
+    if backend == 'lmstudio':
+        return _call_lmstudio(model, prompt, system)
+    # default: ollama
+    if not port:
+        # auto-discover
+        for p in _OLLAMA_PROBE_PORTS:
+            import requests as _req
+            try:
+                _req.get(f'http://localhost:{p}/api/tags', timeout=1).raise_for_status()
+                port = p
+                break
+            except Exception:
+                continue
+    return _call_ollama(port or _OLLAMA_PROBE_PORTS[0], model, prompt, system)
+
+
+@app.route('/vm/models', methods=['GET'])
+def vm_models():
+    """Return available models for Ollama and LM Studio."""
     return jsonify({
-        'html': html_content,
-        'sources_count': len(search_results),
-        'scraped_count': len(scraped),
+        'ollama':   _ollama_list_models(),
+        'lmstudio': _lms_list_models(),
     })
+
+
+@app.route('/vm/chat', methods=['POST'])
+def vm_chat():
+    """Single-VM chat endpoint.
+
+    Body: {backend, model, port, prompt, system?}
+    """
+    data    = request.json or {}
+    backend = data.get('backend', 'ollama')
+    model   = data.get('model', '')
+    port    = int(data.get('port', 0) or 0)
+    prompt  = (data.get('prompt') or '').strip()
+    system  = (data.get('system') or '').strip()
+
+    if not prompt:
+        return jsonify({'error': 'prompt required'}), 400
+
+    response = _dispatch_vm(backend, model, port, prompt, system)
+    return jsonify({'response': response, 'backend': backend, 'model': model})
+
+
+@app.route('/vm/duorun', methods=['POST'])
+def vm_duorun():
+    """Dual VM Co-Run: two AI agents collaborate on a task.
+
+    Body:
+      task          — the task / question
+      agent_a       — {backend, model, port}   first agent (e.g. Ollama)
+      agent_b       — {backend, model, port}   second agent (e.g. LM Studio)
+      mode          — "plan" | "debate" | "review"  (default "plan")
+      rounds        — number of exchange rounds (1-3, default 2)
+
+    Returns:
+      {steps: [{agent, role, text}, ...], final: str}
+    """
+    data  = request.json or {}
+    task  = (data.get('task') or '').strip()
+    a_cfg = data.get('agent_a') or {}
+    b_cfg = data.get('agent_b') or {}
+    mode  = data.get('mode', 'plan')
+    rounds = min(_DUORUN_MAX_ROUNDS, max(1, int(data.get('rounds', 2) or 2)))
+
+    if not task:
+        return jsonify({'error': 'task required'}), 400
+
+    steps = []
+
+    def _say(agent_label: str, role: str, text: str):
+        steps.append({'agent': agent_label, 'role': role, 'text': text})
+
+    # ── helper to call an agent config ──────────────────────────────────────
+    def _call(cfg: dict, prompt: str, system: str = '') -> str:
+        return _dispatch_vm(
+            backend=cfg.get('backend', 'ollama'),
+            model=cfg.get('model', ''),
+            port=int(cfg.get('port', 0) or 0),
+            prompt=prompt,
+            system=system,
+        )
+
+    label_a = f"Агент А ({a_cfg.get('backend','ollama')})"
+    label_b = f"Агент Б ({b_cfg.get('backend','lmstudio')})"
+
+    if mode == 'debate':
+        # Agent A proposes, Agent B challenges, Agent A concludes
+        sys_a = (
+            'Ты опытный эксперт-аналитик. Твоя роль — формулировать чёткие обоснованные утверждения '
+            'и защищать их логическими аргументами.'
+        )
+        sys_b = (
+            'Ты критический аналитик. Твоя роль — выявлять слабые места в аргументах '
+            'и предлагать улучшения или альтернативные точки зрения.'
+        )
+        # round 1: A proposes
+        prop = _call(a_cfg, f'Сформулируй свою позицию по теме: {task}', sys_a)
+        _say(label_a, 'предложение', prop)
+
+        for i in range(rounds):
+            # B challenges
+            challenge = _call(
+                b_cfg,
+                f'Вот позиция оппонента:\n\n{prop}\n\nВыяви слабые места и предложи контраргументы.',
+                sys_b,
+            )
+            _say(label_b, f'возражение (раунд {i+1})', challenge)
+
+            # A responds
+            prop = _call(
+                a_cfg,
+                f'Твоя позиция:\n{prop}\n\nКонтраргументы оппонента:\n{challenge}\n\n'
+                f'Улучши свою позицию с учётом возражений.',
+                sys_a,
+            )
+            _say(label_a, f'ответ (раунд {i+1})', prop)
+
+        final = prop
+
+    elif mode == 'review':
+        # Agent A produces draft, Agent B reviews, Agent A finalises
+        sys_a = 'Ты квалифицированный специалист. Пиши развёрнуто и структурированно.'
+        sys_b = (
+            'Ты строгий рецензент. Найди ошибки, неточности и пропуски в тексте, '
+            'предложи конкретные улучшения.'
+        )
+        draft = _call(a_cfg, task, sys_a)
+        _say(label_a, 'черновик', draft)
+
+        review = _call(
+            b_cfg,
+            f'Проверь следующий текст и дай детальные рекомендации по улучшению:\n\n{draft}',
+            sys_b,
+        )
+        _say(label_b, 'рецензия', review)
+
+        final = _call(
+            a_cfg,
+            f'Твой черновик:\n{draft}\n\nРецензия:\n{review}\n\n'
+            f'Перепиши текст, учтя все замечания.',
+            sys_a,
+        )
+        _say(label_a, 'финальный текст', final)
+
+    else:
+        # mode == "plan" (default): A plans, B enriches, A synthesises
+        sys_a = (
+            'Ты стратегический планировщик. Разбивай задачи на чёткие шаги, '
+            'распределяй роли и определяй ожидаемые результаты.'
+        )
+        sys_b = (
+            'Ты эксперт по реализации. Детализируй шаги плана, добавляй технические детали, '
+            'выявляй риски и предлагай способы их устранения.'
+        )
+        plan = _call(
+            a_cfg,
+            f'Составь пошаговый план выполнения задачи:\n\n{task}\n\n'
+            f'Распредели роли между двумя агентами (Агент А и Агент Б).',
+            sys_a,
+        )
+        _say(label_a, 'план', plan)
+
+        enriched = _call(
+            b_cfg,
+            f'Задача: {task}\n\nПлан от Агента А:\n{plan}\n\n'
+            f'Детализируй каждый шаг плана, добавь технические подробности и предупреди о рисках.',
+            sys_b,
+        )
+        _say(label_b, 'детализация', enriched)
+
+        for i in range(rounds - 1):
+            extra = _call(
+                a_cfg,
+                f'Исходный план:\n{plan}\n\nДетализация от Агента Б:\n{enriched}\n\n'
+                f'Уточни план с учётом деталей. Раунд {i+2}.',
+                sys_a,
+            )
+            _say(label_a, f'уточнение (раунд {i+2})', extra)
+            plan = extra
+
+        final = _call(
+            a_cfg,
+            f'Задача: {task}\n\nИтоговый план (после обсуждения):\n{plan}\n\n'
+            f'Напиши краткое итоговое резюме с конкретными шагами и результатами.',
+            sys_a,
+        )
+        _say(label_a, 'итог', final)
+
+    return jsonify({'steps': steps, 'final': final})
 
 
 if __name__ == '__main__':
