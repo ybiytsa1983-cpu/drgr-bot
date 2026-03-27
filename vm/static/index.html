@@ -7,64 +7,207 @@
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: Arial, sans-serif; display: flex; height: 100vh; background: #1e1e1e; color: #fff; }
-        #sidebar { width: 300px; background: #252526; padding: 20px; overflow-y: auto; }
-        #main { flex: 1; display: flex; flex-direction: column; }
-        #toolbar { background: #2d2d30; padding: 10px; display: flex; gap: 10px; align-items: center; }
+        #sidebar { width: 300px; background: #252526; padding: 16px; overflow-y: auto; flex-shrink: 0; }
+        #main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+        #toolbar { background: #2d2d30; padding: 10px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
         #editor { flex: 1; }
-        button { padding: 8px 15px; background: #0e639c; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
+        #research-pane { flex: 1; display: none; flex-direction: column; overflow: hidden; }
+        #research-pane.active { display: flex; }
+        #editor.hidden { display: none; }
+        button { padding: 7px 13px; background: #0e639c; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
         button:hover { background: #1177bb; }
-        select { padding: 8px; background: #3c3c3c; color: #fff; border: 1px solid #555; border-radius: 4px; }
+        button:disabled { background: #555; cursor: not-allowed; }
+        select { padding: 7px; background: #3c3c3c; color: #fff; border: 1px solid #555; border-radius: 4px; font-size: 13px; }
         input[type="file"] { display: none; }
         .file-upload-btn { background: #0a7d3e; }
         .file-upload-btn:hover { background: #0d9248; }
-        h3 { margin-bottom: 15px; color: #4ec9b0; }
-        .vm-select { margin-bottom: 20px; }
+        h3 { margin-bottom: 12px; color: #4ec9b0; font-size: 15px; }
+        h4 { font-size: 13px; margin-bottom: 8px; }
+        .vm-select { margin-bottom: 16px; }
+        .sidebar-section { margin-top: 18px; padding-top: 14px; border-top: 1px solid #3c3c3c; }
+        .sidebar-section h4 { color: #ce9178; }
+
+        /* Research UI */
+        #research-input-area { padding: 12px; background: #2d2d30; border-bottom: 1px solid #3c3c3c; display: flex; gap: 8px; align-items: center; }
+        #research-query { flex: 1; padding: 8px 12px; background: #3c3c3c; border: 1px solid #555; color: #fff; border-radius: 4px; font-size: 14px; }
+        #research-query::placeholder { color: #888; }
+        #research-status { padding: 6px 12px; font-size: 12px; color: #aaa; background: #252526; border-bottom: 1px solid #3c3c3c; min-height: 28px; }
+        #article-frame-wrap { flex: 1; overflow: hidden; background: #fff; }
+        #article-frame { width: 100%; height: 100%; border: none; }
+        .btn-research { background: #6f42c1; }
+        .btn-research:hover { background: #8550d8; }
+        .btn-open-tab { background: #198754; font-size: 12px; padding: 5px 10px; }
+        .btn-open-tab:hover { background: #1a9e62; }
+        #research-save-btn { display: none; }
     </style>
 </head>
 <body>
     <div id="sidebar">
         <h3>🔧 DRGR VM Control Panel</h3>
         <div class="vm-select">
-            <label>Select VM:</label>
-            <select id="vmSelect">
+            <label style="font-size:13px;color:#aaa;">Select VM:</label>
+            <select id="vmSelect" style="width:100%;margin-top:4px;">
                 <option value="local">Local VM</option>
                 <option value="colab">Google Colab</option>
                 <option value="cloud">Cloud VM</option>
             </select>
         </div>
-        <div style="margin-top: 20px;">
-            <h4 style="color: #ce9178;">Quick Actions</h4>
-            <button onclick="generateHTML()">Generate HTML</button>
-            <button onclick="run3DGen()">🎬 3D Generator</button>
-            <button onclick="runVideoGen()">🎥 Video Generator</button>
-            <button onclick="runGoose()">🦢 Goose AI</button>
+
+        <div class="sidebar-section">
+            <h4 style="color:#ce9178;">🛠 Инструменты</h4>
+            <div style="display:flex;flex-direction:column;gap:6px;margin-top:6px;">
+                <button onclick="switchToEditor()">📝 Monaco Редактор</button>
+                <button class="btn-research" onclick="switchToResearch()">🔍 Генератор статей</button>
+                <button onclick="run3DGen()">🎬 3D Генератор</button>
+                <button onclick="runVideoGen()">🎥 Видеоредактор</button>
+                <button onclick="runGoose()">🦢 Goose ИИ</button>
+            </div>
+        </div>
+
+        <div class="sidebar-section">
+            <h4 style="color:#ce9178;">📂 Проекты</h4>
+            <div style="display:flex;flex-direction:column;gap:6px;margin-top:6px;">
+                <label for="fileUpload" class="file-upload-btn" style="cursor:pointer;padding:7px 13px;border-radius:4px;font-size:13px;text-align:center;display:block;">
+                    📎 Загрузить файл
+                </label>
+                <input type="file" id="fileUpload" onchange="uploadFile(event)">
+                <button onclick="saveProject()">💾 Сохранить проект</button>
+                <button onclick="loadProjects()">📂 Загрузить проект</button>
+            </div>
+        </div>
+
+        <div class="sidebar-section" id="research-sidebar-section" style="display:none;">
+            <h4 style="color:#4ec9b0;">📰 Последняя статья</h4>
+            <div id="research-meta" style="font-size:12px;color:#aaa;margin-top:6px;"></div>
+            <button id="research-save-btn" class="btn-open-tab" onclick="saveArticle()" style="margin-top:8px;display:none;width:100%;">
+                💾 Сохранить HTML
+            </button>
+            <button class="btn-open-tab" onclick="openArticleNewTab()" id="open-tab-btn" style="margin-top:6px;display:none;width:100%;">
+                🔗 Открыть в новой вкладке
+            </button>
         </div>
     </div>
+
     <div id="main">
+        <!-- Editor view -->
         <div id="toolbar">
-            <label for="fileUpload" class="file-upload-btn" style="cursor: pointer; padding: 8px 15px; border-radius: 4px;">
-                📎 Upload File
+            <label for="fileUpload2" class="file-upload-btn" style="cursor:pointer;padding:7px 13px;border-radius:4px;">
+                📎 Upload
             </label>
-            <input type="file" id="fileUpload" onchange="uploadFile(event)">
-            <button onclick="saveProject()">Save Project</button>
-            <button onclick="loadProjects()">Load Projects</button>
-            <span style="margin-left: auto; color: #aaa;">Monaco Editor Active</span>
+            <input type="file" id="fileUpload2" onchange="uploadFile(event)">
+            <button onclick="saveProject()">💾 Save</button>
+            <button onclick="loadProjects()">📂 Load</button>
+            <button class="btn-research" onclick="switchToResearch()">🔍 Статьи</button>
+            <span style="margin-left:auto;color:#aaa;font-size:12px;">Monaco Editor</span>
         </div>
         <div id="editor"></div>
+
+        <!-- Research / Article Generator view -->
+        <div id="research-pane">
+            <div id="research-input-area">
+                <input id="research-query" type="text" placeholder="Введите тему статьи… (например: квантовые компьютеры)" onkeydown="if(event.key==='Enter')startResearch()">
+                <button class="btn-research" id="research-btn" onclick="startResearch()">🔍 Генерировать</button>
+                <button onclick="switchToEditor()" style="background:#555;font-size:12px;padding:6px 10px;">✕ Редактор</button>
+            </div>
+            <div id="research-status">Введите тему и нажмите «Генерировать»</div>
+            <div id="article-frame-wrap">
+                <iframe id="article-frame" sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"></iframe>
+            </div>
+        </div>
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/loader.min.js"></script>
     <script>
         let editor;
+        let _lastArticleHtml = '';
+        let _lastArticleQuery = '';
+
         require.config({ paths: { vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs' } });
         require(['vs/editor/editor.main'], function() {
             editor = monaco.editor.create(document.getElementById('editor'), {
-                value: '\n\n\n DRGR VM Ready\n\n\n  Welcome to DRGR VM ==================  \n\n',
+                value: '<!-- DRGR VM готов -->\n',
                 language: 'html',
                 theme: 'vs-dark',
                 automaticLayout: true
             });
         });
+
+        function switchToEditor() {
+            document.getElementById('editor').classList.remove('hidden');
+            document.getElementById('toolbar').style.display = 'flex';
+            document.getElementById('research-pane').classList.remove('active');
+        }
+
+        function switchToResearch() {
+            document.getElementById('editor').classList.add('hidden');
+            document.getElementById('toolbar').style.display = 'none';
+            document.getElementById('research-pane').classList.add('active');
+            document.getElementById('research-query').focus();
+        }
+
+        async function startResearch() {
+            const query = document.getElementById('research-query').value.trim();
+            if (!query) { alert('Введите тему статьи'); return; }
+
+            const btn = document.getElementById('research-btn');
+            const status = document.getElementById('research-status');
+            btn.disabled = true;
+            btn.textContent = '⏳ Генерируем…';
+            status.textContent = '🔍 Поиск источников…';
+
+            document.getElementById('article-frame').srcdoc = '<html><body style="background:#f8f9fa;display:flex;align-items:center;justify-content:center;height:100vh;font-family:Arial"><div style="text-align:center"><div style="font-size:48px">⏳</div><p style="color:#555;margin-top:12px">Идёт сбор данных и генерация статьи…<br><small>Это может занять 30–120 секунд</small></p></div></body></html>';
+
+            try {
+                const vmBase = window._vmBase || '';
+                const resp = await fetch(vmBase + '/research', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query })
+                });
+                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                const data = await resp.json();
+
+                if (data.error) throw new Error(data.error);
+
+                _lastArticleHtml = data.html || '';
+                _lastArticleQuery = query;
+
+                document.getElementById('article-frame').srcdoc = _lastArticleHtml;
+                status.textContent = `✅ Готово — ${data.sources_count} источников найдено, ${data.scraped_count} страниц проанализировано`;
+
+                document.getElementById('research-sidebar-section').style.display = 'block';
+                document.getElementById('research-meta').textContent = `Тема: ${query} · ${data.sources_count} источников`;
+                document.getElementById('research-save-btn').style.display = 'block';
+                document.getElementById('open-tab-btn').style.display = 'block';
+
+            } catch (err) {
+                status.textContent = '❌ Ошибка: ' + err.message;
+                const errMsg = document.createElement('p');
+                errMsg.textContent = err.message;
+                document.getElementById('article-frame').srcdoc = '<html><body style="font-family:Arial;padding:2rem;color:#721c24;background:#f8d7da"><h3>Ошибка генерации</h3><p>Убедитесь что VM-сервер запущен на порту 5001.</p></body></html>';
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '🔍 Генерировать';
+            }
+        }
+
+        function saveArticle() {
+            if (!_lastArticleHtml) return;
+            const safe = _lastArticleQuery.replace(/[^а-яёА-ЯЁa-zA-Z0-9_]/g, '_').slice(0, 40);
+            const filename = `article_${safe || 'article'}.html`;
+            fetch('/api/project', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filename, content: _lastArticleHtml })
+            }).then(r => r.json()).then(() => alert(`✅ Сохранено как ${filename}`));
+        }
+
+        function openArticleNewTab() {
+            if (!_lastArticleHtml) return;
+            const blob = new Blob([_lastArticleHtml], { type: 'text/html' });
+            const url = URL.createObjectURL(blob);
+            window.open(url, '_blank');
+        }
 
         function uploadFile(event) {
             const file = event.target.files[0];
@@ -72,31 +215,33 @@
             const reader = new FileReader();
             reader.onload = function(e) {
                 if (editor) editor.setValue(e.target.result);
-                alert('✅ File uploaded: ' + file.name);
+                alert('✅ Файл загружен: ' + file.name);
             };
             reader.readAsText(file);
         }
 
         function saveProject() {
             const content = editor ? editor.getValue() : '';
-            const filename = prompt('Enter filename:', 'project.html');
+            const filename = prompt('Имя файла:', 'project.html');
             if (!filename) return;
             fetch('/api/project', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ filename, content })
-            }).then(r => r.json()).then(data => alert('✅ Project saved!'));
+            }).then(r => r.json()).then(() => alert('✅ Проект сохранён!'));
         }
 
         function loadProjects() {
             fetch('/api/projects').then(r => r.json()).then(projects => {
-                const list = projects.map(p => p.name).join('\n');
-                alert('Saved projects:\n' + list);
+                if (!projects.length) { alert('Нет сохранённых проектов.'); return; }
+                const list = projects.map((p, i) => `${i + 1}. ${p.name}`).join('\n');
+                const choice = prompt(`Выберите проект (номер):\n${list}`);
+                if (!choice) return;
+                const idx = parseInt(choice) - 1;
+                if (idx >= 0 && idx < projects.length && editor) {
+                    editor.setValue(projects[idx].content);
+                }
             });
-        }
-
-        function generateHTML() {
-            alert('🚀 HTML Generator activated!');
         }
 
         function run3DGen() {
@@ -104,7 +249,7 @@
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ prompt: 'Generate 3D model' })
-            }).then(r => r.json()).then(data => alert('🎬 3D Generator: ' + data.result));
+            }).then(r => r.json()).then(data => alert('🎬 3D: ' + data.result));
         }
 
         function runVideoGen() {
@@ -112,7 +257,7 @@
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ prompt: 'Generate video' })
-            }).then(r => r.json()).then(data => alert('🎥 Video Generator: ' + data.result));
+            }).then(r => r.json()).then(data => alert('🎥 Video: ' + data.result));
         }
 
         function runGoose() {
@@ -120,11 +265,13 @@
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ query: 'Analyze code' })
-            }).then(r => r.json()).then(data => alert('🦢 Goose AI: ' + data.result));
+            }).then(r => r.json()).then(data => alert('🦢 Goose: ' + data.result));
         }
 
         document.getElementById('vmSelect').addEventListener('change', function(e) {
-            alert('🔄 Switched to: ' + e.target.options[e.target.selectedIndex].text);
+            const val = e.target.value;
+            if (val === 'local') window._vmBase = '';
+            else alert('🔄 Переключено на: ' + e.target.options[e.target.selectedIndex].text);
         });
     </script>
 </body>
