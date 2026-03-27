@@ -173,12 +173,23 @@ if exist "%DEST%\.env" (
 )
 echo.
 
+:: -- Создание значка на Рабочем столе ---------------------------------
+echo  Создание значка на Рабочем столе...
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
+    "$ws=New-Object -ComObject WScript.Shell; $sc=$ws.CreateShortcut('%USERPROFILE%\Desktop\ЗАПУСТИТЬ БОТА.lnk'); $sc.TargetPath='%DEST%\ЗАПУСТИТЬ_БОТА.bat'; $sc.WorkingDirectory='%DEST%'; $sc.Description='Запустить drgr-bot + VM'; $sc.IconLocation='%SystemRoot%\System32\cmd.exe,0'; $sc.Save()" > nul 2>&1
+if errorlevel 1 (
+    echo  [ПРЕДУПРЕЖДЕНИЕ] Значок не создан. Откройте ЗАПУСТИТЬ_БОТА.bat вручную.
+) else (
+    echo  Значок "ЗАПУСТИТЬ БОТА" создан на Рабочем столе!
+)
+echo.
+
 :: -- Итог ---------------------------------------------------------------
 echo +----------------------------------------------+
 echo ^|       Установка завершена успешно!           ^|
 echo +----------------------------------------------+
-echo ^|  Для запуска бота используйте файл:          ^|
-echo ^|    ЗАПУСТИТЬ_БОТА.bat                        ^|
+echo ^|  Значок "ЗАПУСТИТЬ БОТА" создан на Рабочем  ^|
+echo ^|  столе — дважды кликните чтобы запустить.   ^|
 echo ^|                                              ^|
 echo ^|  Для обновления используйте файл:            ^|
 echo ^|    ОБНОВИТЬ.bat                              ^|

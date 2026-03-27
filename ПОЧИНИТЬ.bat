@@ -170,12 +170,24 @@ if errorlevel 1 (
 )
 echo.
 
+:: ── Создание значка на Рабочем столе ─────────────────────────────────────
+echo  Создание значка на Рабочем столе...
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
+    "$ws=New-Object -ComObject WScript.Shell; $sc=$ws.CreateShortcut('%USERPROFILE%\Desktop\ЗАПУСТИТЬ БОТА.lnk'); $sc.TargetPath='%DEST%\ЗАПУСТИТЬ_БОТА.bat'; $sc.WorkingDirectory='%DEST%'; $sc.Description='Запустить drgr-bot + VM'; $sc.IconLocation='%SystemRoot%\System32\cmd.exe,0'; $sc.Save()" > nul 2>&1
+if errorlevel 1 (
+    echo  [ПРЕДУПРЕЖДЕНИЕ] Значок не создан. Используйте ЗАПУСТИТЬ_БОТА.bat напрямую.
+) else (
+    echo  Значок "ЗАПУСТИТЬ БОТА" создан на Рабочем столе!
+)
+echo.
+
 :: ── Итог ─────────────────────────────────────────────────────────────────
 echo +============================================+
 echo ^|        Восстановление завершено!           ^|
 echo +============================================+
 echo.
 echo  Папка проекта: %DEST%
+echo  Значок "ЗАПУСТИТЬ БОТА" — на Рабочем столе.
 echo.
 
 :ASK_LAUNCH
