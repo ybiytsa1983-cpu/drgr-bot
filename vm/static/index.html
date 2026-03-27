@@ -82,6 +82,11 @@ h4{color:#ce9178;font-size:12px;margin-bottom:5px}
       <button onclick="refreshHealth()" style="flex:1;font-size:10px">🔄 Обновить</button>
       <button onclick="toggleSettings()" style="flex:1;font-size:10px;background:#555">⚙ Настройки</button>
     </div>
+    <div style="display:flex;gap:4px;margin-top:4px">
+      <button id="btn-bot-start" onclick="botStart()" style="flex:1;font-size:10px;background:#0a7d3e">▶ Запустить бота</button>
+      <button id="btn-bot-stop" onclick="botStop()" style="flex:1;font-size:10px;background:#7d0a0a">⏹ Остановить</button>
+    </div>
+    <div id="bot-ctrl-status" style="font-size:10px;color:#aaa;margin-top:2px"></div>
   </div>
 
   <!-- Settings panel -->
@@ -313,7 +318,9 @@ const _settingsKeys=[
   fetch('/settings').then(r=>r.json()).then(cfg=>{
     _settingsKeys.forEach(([key])=>{
       const el=document.getElementById('s-'+key);
-      if(el&&cfg[key]) el.value=cfg[key];
+      if(!el) return;
+      if(cfg[key] && cfg[key]!=='set') el.value=cfg[key];
+      else if(cfg[key]==='set') el.placeholder='уже настроен — введите новый для замены';
     });
   });
 })();
@@ -332,10 +339,44 @@ async function saveSettings(){
     document.getElementById('settings-status').textContent='✅ Сохранено';
     setTimeout(()=>{document.getElementById('settings-status').textContent='';},3000);
     refreshHealth();
+    setTimeout(refreshBotStatus, 2000);
   }catch(e){
     document.getElementById('settings-status').textContent='❌ '+e.message;
   }
 }
+
+// ── Bot controls ─────────────────────────────────────────────────────
+async function botStart(){
+  const s=document.getElementById('bot-ctrl-status');
+  s.textContent='⏳ Запускаю...';
+  try{
+    const r=await fetch('/bot/start',{method:'POST'});
+    const d=await r.json();
+    s.textContent=d.ok?(d.status==='already_running'?'✅ Уже запущен':'✅ Запущен (PID '+d.pid+')'):'❌ '+d.error;
+    setTimeout(()=>{s.textContent='';},4000);
+    setTimeout(refreshHealth,1500);
+  }catch(e){s.textContent='❌ '+e.message;}
+}
+async function botStop(){
+  const s=document.getElementById('bot-ctrl-status');
+  s.textContent='⏳ Останавливаю...';
+  try{
+    const r=await fetch('/bot/stop',{method:'POST'});
+    const d=await r.json();
+    s.textContent=d.ok?'⏹ Остановлен':'❌ '+d.error;
+    setTimeout(()=>{s.textContent='';},3000);
+    setTimeout(refreshHealth,800);
+  }catch(e){s.textContent='❌ '+e.message;}
+}
+async function refreshBotStatus(){
+  try{
+    const r=await fetch('/bot/status');
+    const d=await r.json();
+    const s=document.getElementById('bot-ctrl-status');
+    if(d.running) s.textContent='🟢 Бот работает (PID '+d.pid+')';
+  }catch(e){}
+}
+refreshBotStatus();
 
 // ── Task panel ────────────────────────────────────────────────────────
 function setTaskStatus(msg,cls){

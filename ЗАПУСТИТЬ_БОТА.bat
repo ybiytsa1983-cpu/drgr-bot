@@ -40,7 +40,7 @@ if "%LOCAL%"=="%REMOTE%" (
     goto :SKIP_UPDATE
 )
 
-echo 📦 Применяю обновления...
+echo �� Применяю обновления...
 git reset --hard origin/main
 if errorlevel 1 (
     echo ⚠️ Не удалось применить обновления. Продолжаю с текущей версией...
@@ -57,35 +57,10 @@ if errorlevel 1 (
 )
 echo.
 
-REM Проверка .env файла
-if not exist .env (
-    echo ⚠️ Файл .env не найден!
-    echo Создайте файл .env с содержимым из .env.example
-    echo Минимум: BOT_TOKEN=ваш_токен
-    if exist .env.example (
-        echo.
-        echo Содержимое .env.example:
-        type .env.example
-    )
-    pause
-    exit /b 1
-)
-
-echo ✅ Файл .env найден
+REM Запуск VM сервера (бот запускается автоматически изнутри через расширение)
+echo 🟢 Запуск VM сервера (порт 5001)...
+echo 📌 Веб-интерфейс: http://localhost:5001
+echo 📌 Токен бота вводится в расширении: ⚙ Настройки -^> BOT_TOKEN
+echo 📌 Для остановки нажмите Ctrl+C
 echo.
-
-REM Запуск VM в фоне (без отдельного окна)
-echo 🟢 Запуск VM сервера (порт 5001) в фоновом режиме...
-start /B python vm/server.py > vm_server.log 2>&1
-
-REM Задержка 3 секунды для запуска VM
-timeout /t 3 /nobreak > nul
-
-REM Запуск бота в текущем окне
-echo 🤖 Запуск Telegram бота...
-python bot.py
-
-echo.
-echo ✅ Бот остановлен. VM лог: vm_server.log
-echo.
-pause
+python vm/server.py

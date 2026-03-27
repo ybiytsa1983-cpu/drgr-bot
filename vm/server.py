@@ -15,6 +15,8 @@ import os
 import re
 import json
 import textwrap
+import subprocess
+import sys
 import urllib.request
 import urllib.error
 import threading
@@ -26,8 +28,13 @@ app = Flask(__name__, static_folder='static', template_folder='static')
 # ---------------------------------------------------------------------------
 # Config — all overridable by environment variables
 # ---------------------------------------------------------------------------
-PROJECTS_DIR = os.path.join(os.path.dirname(__file__), 'projects')
-TASKS_DIR    = os.path.join(os.path.dirname(__file__), 'tasks')
+_VM_DIR      = os.path.dirname(os.path.abspath(__file__))
+_ROOT_DIR    = os.path.normpath(os.path.join(_VM_DIR, '..'))
+_ENV_FILE    = os.path.join(_ROOT_DIR, '.env')
+_BOT_PY_PATH = os.path.join(_ROOT_DIR, 'bot.py')
+
+PROJECTS_DIR = os.path.join(_VM_DIR, 'projects')
+TASKS_DIR    = os.path.join(_VM_DIR, 'tasks')
 os.makedirs(PROJECTS_DIR, exist_ok=True)
 os.makedirs(TASKS_DIR, exist_ok=True)
 
@@ -46,6 +53,100 @@ _ENV = {
 }
 _AI_TIMEOUT = int(os.getenv('AI_TIMEOUT', '120'))
 _HEALTH_TIMEOUT = float(os.getenv('HEALTH_TIMEOUT', '3'))
+
+# ---------------------------------------------------------------------------
+# .env file persistence helpers
+# ---------------------------------------------------------------------------
+def _env_file_save(key: str, value: str) -> None:
+    """Write or update KEY=VALUE in the .env file next to bot.py."""
+    try:
+        lines: list = []
+        if os.path.exists(_ENV_FILE):
+            with open(_ENV_FILE, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+        updated = False
+        for i, line in enumerate(lines):
+            if re.match(rf'^{re.escape(key)}\s*=', line):
+                lines[i] = f'{key}={value}\n'
+                updated = True
+                break
+        if not updated:
+            lines.append(f'{key}={value}\n')
+        with open(_ENV_FILE, 'w', encoding='utf-8') as f:
+            f.writelines(lines)
+    except Exception as exc:
+        import logging
+        logging.getLogger('drgr_vm').warning('Cannot write .env: %s', exc)
+
+
+# ---------------------------------------------------------------------------
+# Bot subprocess management
+# ---------------------------------------------------------------------------
+_bot_proc: 'subprocess.Popen | None' = None
+_bot_lock = threading.Lock()
+
+
+def _bot_start() -> dict:
+    """Start bot.py as a child process if not already running."""
+    global _bot_proc
+    with _bot_lock:
+        tok = _ENV.get('BOT_TOKEN', '')
+        if not tok:
+            return {'ok': False, 'error': 'BOT_TOKEN не задан'}
+        if _bot_proc is not None and _bot_proc.poll() is None:
+            return {'ok': True, 'status': 'already_running', 'pid': _bot_proc.pid}
+        if not os.path.exists(_BOT_PY_PATH):
+            return {'ok': False, 'error': f'bot.py не найден: {_BOT_PY_PATH}'}
+        env = os.environ.copy()
+        env['BOT_TOKEN'] = tok
+        try:
+            _bot_proc = subprocess.Popen(
+                [sys.executable, _BOT_PY_PATH],
+                cwd=_ROOT_DIR,
+                env=env,
+            )
+            return {'ok': True, 'status': 'started', 'pid': _bot_proc.pid}
+        except Exception as exc:
+            return {'ok': False, 'error': str(exc)}
+
+
+def _bot_stop() -> dict:
+    """Stop the bot subprocess if running."""
+    global _bot_proc
+    with _bot_lock:
+        if _bot_proc is None or _bot_proc.poll() is not None:
+            _bot_proc = None
+            return {'ok': True, 'status': 'not_running'}
+        try:
+            _bot_proc.terminate()
+            try:
+                _bot_proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                _bot_proc.kill()
+        except Exception:
+            pass
+        _bot_proc = None
+        return {'ok': True, 'status': 'stopped'}
+
+
+def _bot_get_status() -> dict:
+    """Return running/stopped status of the bot subprocess."""
+    global _bot_proc
+    with _bot_lock:
+        if _bot_proc is None:
+            return {'running': False, 'pid': None}
+        rc = _bot_proc.poll()
+        if rc is None:
+            return {'running': True, 'pid': _bot_proc.pid}
+        _bot_proc = None
+        return {'running': False, 'pid': None, 'exit_code': rc}
+
+
+def _bot_autostart() -> None:
+    """Try to start the bot at VM startup if BOT_TOKEN is already configured."""
+    if _ENV.get('BOT_TOKEN'):
+        _bot_start()
+
 
 # ---------------------------------------------------------------------------
 # Health cache — refresh every 15 s in background to keep UI snappy
@@ -392,15 +493,37 @@ def health():
 def settings():
     if request.method == 'POST':
         data = request.json or {}
+        token_changed = False
         for key in ('OLLAMA_URL', 'LMS_URL', 'TGWUI_URL', 'COMFYUI_URL',
                     'SD_URL', 'OAF_URL', 'TRIPOSR_URL', 'ROOCODE_URL',
                     'VISION_VM_URL', 'REMOTE_VM_URL', 'BOT_TOKEN'):
-            if key in data:
+            if key in data and data[key] not in ('', 'set'):
                 _ENV[key] = data[key]
                 os.environ[key] = data[key]
+                _env_file_save(key, data[key])
+                if key == 'BOT_TOKEN':
+                    token_changed = True
+        if token_changed:
+            _bot_stop()
+            _bot_start()
         return jsonify({'ok': True})
     return jsonify({k: (v if k != 'BOT_TOKEN' else ('set' if v else ''))
                     for k, v in _ENV.items()})
+
+
+@app.route('/bot/start', methods=['POST'])
+def bot_start():
+    return jsonify(_bot_start())
+
+
+@app.route('/bot/stop', methods=['POST'])
+def bot_stop():
+    return jsonify(_bot_stop())
+
+
+@app.route('/bot/status', methods=['GET'])
+def bot_status():
+    return jsonify(_bot_get_status())
 
 
 @app.route('/api/projects', methods=['GET'])
@@ -962,4 +1085,6 @@ def research_list():
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5001))
+    # Auto-start bot if token is already configured
+    threading.Thread(target=_bot_autostart, daemon=True).start()
     app.run(host='0.0.0.0', port=port, debug=False)
