@@ -173,7 +173,7 @@ echo.
 :: ── Создание значка на Рабочем столе ─────────────────────────────────────
 echo  Создание значка на Рабочем столе...
 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
-    "$ws=New-Object -ComObject WScript.Shell; $sc=$ws.CreateShortcut('%USERPROFILE%\Desktop\ЗАПУСТИТЬ БОТА.lnk'); $sc.TargetPath='%DEST%\ЗАПУСТИТЬ_БОТА.bat'; $sc.WorkingDirectory='%DEST%'; $sc.Description='Запустить drgr-bot + VM'; $sc.IconLocation='%SystemRoot%\System32\cmd.exe,0'; $sc.Save()" > nul 2>&1
+    "$ws=New-Object -ComObject WScript.Shell; $sc=$ws.CreateShortcut('%USERPROFILE%\Desktop\ЗАПУСТИТЬ БОТА.lnk'); $sc.TargetPath='%DEST%\ЗАПУСТИТЬ_БОТА.bat'; $sc.WorkingDirectory='%DEST%'; $sc.Description='Запустить VM-сервер (бот управляется из веб-интерфейса)'; $sc.IconLocation='%SystemRoot%\System32\cmd.exe,0'; $sc.Save()" > nul 2>&1
 if errorlevel 1 (
     echo  [ПРЕДУПРЕЖДЕНИЕ] Значок не создан. Используйте ЗАПУСТИТЬ_БОТА.bat напрямую.
 ) else (
