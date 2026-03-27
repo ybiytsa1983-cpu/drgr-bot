@@ -168,7 +168,7 @@ try {
     $Sc = $WShell.CreateShortcut("$DesktopPath\ЗАПУСТИТЬ БОТА.lnk")
     $Sc.TargetPath       = "$InstallDir\ЗАПУСТИТЬ_БОТА.bat"
     $Sc.WorkingDirectory = $InstallDir
-    $Sc.Description      = 'Запустить drgr-bot + VM сервер'
+    $Sc.Description      = 'Запустить drgr-bot VM-сервер'
     $Sc.IconLocation     = "$env:SystemRoot\System32\cmd.exe,0"
     $Sc.Save()
     Write-OK 'Ярлык "ЗАПУСТИТЬ БОТА" создан.'
@@ -190,7 +190,7 @@ Write-Host '  |      Установка завершена успешно!      
 Write-Host '  +==========================================+' -ForegroundColor Green
 Write-Host ''
 Write-Host '  На Рабочем столе появились два ярлыка:' -ForegroundColor White
-Write-Host '    "ЗАПУСТИТЬ БОТА"    -- запускает бота и VM-сервер' -ForegroundColor White
+Write-Host '    "ЗАПУСТИТЬ БОТА"    -- запускает VM-сервер (бот управляется из веб-интерфейса)' -ForegroundColor White
 Write-Host '    "drgr-bot (папка)"  -- открывает папку с файлами' -ForegroundColor White
 Write-Host ''
 Write-Host "  Папка проекта: $InstallDir" -ForegroundColor DarkGray
