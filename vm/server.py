@@ -252,6 +252,7 @@ _SCRAPE_TIMEOUT = 8
 _SCRAPE_MAX_URLS = 5
 _SEARCH_MAX_RESULTS = 12
 _SCRAPE_THREAD_JOIN_TIMEOUT = 12  # seconds to wait for all scraping threads
+_OLLAMA_PROBE_PORTS = (11434, 11435, 11436, 11437)  # ports to try when discovering Ollama
 _SCRAPE_HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36',
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
@@ -325,7 +326,7 @@ def _research_call_llm(prompt: str) -> str:
     import requests as _req
 
     # Ollama — try multiple ports
-    for port in (11434, 11435, 11436, 11437):
+    for port in _OLLAMA_PROBE_PORTS:
         base = f'http://localhost:{port}'
         try:
             r = _req.get(f'{base}/api/tags', timeout=1)
@@ -506,8 +507,9 @@ def _research_build_article(query: str, search_results: list, scraped: list) -> 
     chart_data_js = json.dumps([min(100, len(r.get('body', '')) // 3) for r in search_results[:8]])
 
     # ---------- images ----------
-    img_kw = quote_plus(' '.join(query.split()[:2]))
-    img_kw_alt = quote_plus(query.split()[0] if query.split() else query)
+    query_words = query.split()
+    img_kw = quote_plus(' '.join(query_words[:2]))
+    img_kw_alt = quote_plus(query_words[0] if query_words else query)
 
     css = """
     body{font-family:'Segoe UI',Arial,sans-serif;background:#f8f9fa;color:#212529}
