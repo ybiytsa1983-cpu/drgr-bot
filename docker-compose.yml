@@ -1,0 +1,143 @@
+# DRGR AI Services — Docker Compose
+# ================================================
+# Запуск всех AI-сервисов одной командой:
+#   docker compose up -d
+#
+# Требования:
+#   - Docker Desktop для Windows (https://www.docker.com/products/docker-desktop/)
+#   - Для GPU-ускорения: NVIDIA GPU + CUDA + nvidia-container-toolkit
+#
+# Порты по умолчанию:
+#   Ollama     → http://localhost:11434
+#   TGWUI      → http://localhost:5000
+#   ComfyUI    → http://localhost:8188
+#   SD WebUI   → http://localhost:7860
+#   OAF        → http://localhost:3000
+#   DRGR VM    → http://localhost:5001
+# ================================================
+
+services:
+
+  # ── Ollama — локальный LLM-сервер ──────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: drgr-ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    # GPU профиль (раскомментируйте если есть NVIDIA GPU):
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+  # ── Ollama Web UI — браузерный интерфейс к Ollama ──────────────────
+  ollama-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: drgr-ollama-webui
+    restart: unless-stopped
+    ports:
+      - "3000:8080"
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+    volumes:
+      - open_webui_data:/app/backend/data
+    depends_on:
+      - ollama
+
+  # ── Text Generation WebUI (TGWUI) ──────────────────────────────────
+  tgwui:
+    image: atinoda/text-generation-webui:default-cpu
+    container_name: drgr-tgwui
+    restart: unless-stopped
+    ports:
+      - "5000:7860"
+      - "5005:5000"
+    volumes:
+      - tgwui_models:/app/models
+      - tgwui_loras:/app/loras
+      - tgwui_presets:/app/presets
+      - tgwui_prompts:/app/prompts
+      - tgwui_characters:/app/characters
+    command: >
+      python server.py
+      --listen
+      --api
+      --extensions openai
+      --chat
+    environment:
+      - CLI_ARGS=--listen --api --extensions openai
+
+  # ── ComfyUI — нодовый редактор Stable Diffusion ────────────────────
+  comfyui:
+    image: yanwk/comfyui-boot:cu121
+    container_name: drgr-comfyui
+    restart: unless-stopped
+    ports:
+      - "8188:8188"
+    volumes:
+      - comfyui_data:/root
+    # GPU профиль (раскомментируйте для NVIDIA GPU):
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+  # ── Stable Diffusion WebUI (AUTOMATIC1111) ─────────────────────────
+  sd-webui:
+    image: universalindependence/automatic1111:latest
+    container_name: drgr-sd-webui
+    restart: unless-stopped
+    ports:
+      - "7860:7860"
+    volumes:
+      - sd_models:/app/models/Stable-diffusion
+      - sd_outputs:/app/outputs
+    environment:
+      - COMMANDLINE_ARGS=--api --listen --no-half-vae
+
+  # ── DRGR VM Server ─────────────────────────────────────────────────
+  drgr-vm:
+    build:
+      context: ./vm
+      dockerfile: Dockerfile
+    container_name: drgr-vm
+    restart: unless-stopped
+    ports:
+      - "5001:5001"
+    environment:
+      - OLLAMA_URL=http://ollama:11434
+      - TGWUI_URL=http://tgwui:7860
+      - COMFYUI_URL=http://comfyui:8188
+      - SD_URL=http://sd-webui:7860
+      - OAF_URL=http://ollama-webui:8080
+      - PORT=5001
+    env_file:
+      - .env
+    depends_on:
+      - ollama
+    volumes:
+      - ./vm/projects:/app/projects
+      - ./vm/tasks:/app/tasks
+
+volumes:
+  ollama_data:
+  open_webui_data:
+  tgwui_models:
+  tgwui_loras:
+  tgwui_presets:
+  tgwui_prompts:
+  tgwui_characters:
+  comfyui_data:
+  sd_models:
+  sd_outputs:

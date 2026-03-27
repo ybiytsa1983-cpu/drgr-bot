@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "DRGR Bot VM",
+  "version": "1.0",
+  "description": "Управление DRGR ботом: статус, запуск/стоп, песочница кода, терминал VM",
+  "permissions": ["storage", "scripting"],
+  "host_permissions": ["http://localhost:5001/*", "http://127.0.0.1:5001/*"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

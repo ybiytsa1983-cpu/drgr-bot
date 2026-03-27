@@ -96,25 +96,31 @@ try {
 }
 
 # 2. git fetch + reset --hard origin/main
-Write-Step "Шаг 2/4: Получение обновлений (git fetch origin main)..."
-$fetchOutput = git fetch origin main 2>&1
+Write-Step "Шаг 2/4: Получение обновлений (git fetch origin)..."
+$fetchOutput = git fetch origin 2>&1
 $fetchOutput | ForEach-Object { Write-Host "  $_" }
 if ($LASTEXITCODE -ne 0) {
-    Write-Fail "git fetch завершился с ошибкой."
-    Invoke-Rollback $backupHash
+    Write-Fail "git fetch завершился с ошибкой (нет сети?). Обновление пропущено."
+    # Don't rollback — no changes made yet
     exit 2
 }
 Write-Ok "git fetch выполнен успешно."
 
-Write-Step "Применение обновлений (git reset --hard origin/main)..."
-$resetOutput = git reset --hard origin/main 2>&1
+# Determine branch: prefer main, fall back to current tracking branch
+$trackingRef = git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>&1
+if ($LASTEXITCODE -ne 0) {
+    $trackingRef = 'origin/main'
+}
+
+Write-Step "Применение обновлений (git reset --hard $trackingRef)..."
+$resetOutput = git reset --hard $trackingRef 2>&1
 $resetOutput | ForEach-Object { Write-Host "  $_" }
 if ($LASTEXITCODE -ne 0) {
-    Write-Fail "git reset --hard origin/main завершился с ошибкой."
+    Write-Fail "git reset --hard $trackingRef завершился с ошибкой."
     Invoke-Rollback $backupHash
     exit 2
 }
-Write-Ok "Локальные файлы синхронизированы с origin/main."
+Write-Ok "Локальные файлы синхронизированы с $trackingRef."
 
 # 3. pip install -r requirements.txt
 Write-Step "Шаг 3/4: Установка зависимостей (pip install -r requirements.txt)..."
