@@ -74,22 +74,18 @@ if not exist .env (
 echo ✅ Файл .env найден
 echo.
 
-REM Запуск VM в отдельном окне
-echo 🟢 Запуск VM сервера (порт 5001)...
-start "DRGR VM Server" cmd /k "cd /d %CD% && python vm/server.py"
+REM Запуск VM в фоне (без отдельного окна)
+echo 🟢 Запуск VM сервера (порт 5001) в фоновом режиме...
+start /B python vm/server.py > vm_server.log 2>&1
 
 REM Задержка 3 секунды для запуска VM
 timeout /t 3 /nobreak > nul
 
-REM Запуск бота
+REM Запуск бота в текущем окне
 echo 🤖 Запуск Telegram бота...
-start "DRGR Telegram Bot" cmd /k "cd /d %CD% && python bot.py"
+python bot.py
 
 echo.
-echo ✅ Бот и VM запущены в отдельных окнах!
-echo.
-echo 📌 Для остановки закройте окна "DRGR VM Server" и "DRGR Telegram Bot"
-echo 🌐 Веб-интерфейс VM: http://localhost:5001
-echo 🔬 Раздел Исследование: http://localhost:5001  (вкладка 🔬)
+echo ✅ Бот остановлен. VM лог: vm_server.log
 echo.
 pause

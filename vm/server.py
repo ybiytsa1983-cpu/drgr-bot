@@ -63,14 +63,24 @@ def _probe(url: str, path: str = '/', timeout: float = _HEALTH_TIMEOUT) -> bool:
         return False
 
 def _probe_ollama(base: str) -> dict:
-    try:
-        req = urllib.request.Request(base.rstrip('/') + '/api/tags')
-        with urllib.request.urlopen(req, timeout=_HEALTH_TIMEOUT) as resp:
-            data = json.loads(resp.read())
-            models = [m['name'] for m in data.get('models', [])]
-            return {'status': 'ok', 'models': models, 'count': len(models)}
-    except Exception:
-        return {'status': 'offline'}
+    # Try the configured URL first, then scan common Ollama ports
+    parsed = re.match(r'^(https?://[^:]+)(?::(\d+))?', base)
+    host_part = parsed.group(1) if parsed else 'http://localhost'
+    configured_port = int(parsed.group(2)) if (parsed and parsed.group(2)) else 11434
+    ports_to_try = [configured_port] + [p for p in (11434, 11435, 11436) if p != configured_port]
+    for port in ports_to_try:
+        candidate = f'{host_part}:{port}'
+        try:
+            req = urllib.request.Request(candidate.rstrip('/') + '/api/tags')
+            with urllib.request.urlopen(req, timeout=_HEALTH_TIMEOUT) as resp:
+                data = json.loads(resp.read())
+                models = [m['name'] for m in data.get('models', [])]
+                if port != configured_port:
+                    _ENV['OLLAMA_URL'] = candidate
+                return {'status': 'ok', 'models': models, 'count': len(models)}
+        except Exception:
+            pass
+    return {'status': 'offline'}
 
 def _probe_lmstudio(base: str) -> dict:
     try:
