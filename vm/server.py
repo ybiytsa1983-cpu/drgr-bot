@@ -614,13 +614,24 @@ def _sanitize_filename(filename: str) -> str:
     return name[:200] or 'file'
 
 
+def _safe_project_path(filename: str) -> 'str | None':
+    """Return absolute path inside PROJECTS_DIR, or None if traversal detected."""
+    safe_name = _sanitize_filename(filename)
+    target = os.path.realpath(os.path.join(PROJECTS_DIR, safe_name))
+    if os.path.commonpath([target, os.path.realpath(PROJECTS_DIR)]) != os.path.realpath(PROJECTS_DIR):
+        return None
+    return target
+
+
 @app.route('/api/project', methods=['POST'])
 def save_project():
     data = request.json or {}
     filename, content = data.get('filename'), data.get('content')
     if not filename or not content:
         return jsonify({'error': 'Missing filename or content'}), 400
-    fp = os.path.join(PROJECTS_DIR, _sanitize_filename(filename))
+    fp = _safe_project_path(filename)
+    if not fp:
+        return jsonify({'error': 'Недопустимое имя файла'}), 400
     with open(fp, 'w', encoding='utf-8') as f:
         f.write(content)
     return jsonify({'success': True})
