@@ -526,6 +526,46 @@ def bot_status():
     return jsonify(_bot_get_status())
 
 
+@app.route('/api/execute', methods=['POST'])
+def api_execute():
+    """Run arbitrary Python/Shell code from the editor in a sandboxed subprocess."""
+    data = request.json or {}
+    code = (data.get('code') or '').strip()
+    lang = (data.get('lang') or 'python').lower()
+    timeout = min(int(data.get('timeout', 30)), 60)
+    if not code:
+        return jsonify({'ok': False, 'output': '', 'error': 'Нет кода для выполнения'})
+
+    try:
+        if lang in ('python', 'py'):
+            cmd = [sys.executable, '-c', code]
+        elif lang in ('bash', 'shell', 'sh'):
+            cmd = ['bash', '-c', code]
+        else:
+            return jsonify({'ok': False, 'output': '', 'error': f'Язык {lang} не поддерживается'})
+
+        proc = subprocess.run(
+            cmd,
+            cwd=_ROOT_DIR,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            env=os.environ.copy(),
+        )
+        output = proc.stdout + (('\n[stderr]\n' + proc.stderr) if proc.stderr.strip() else '')
+        return jsonify({
+            'ok': proc.returncode == 0,
+            'output': output,
+            'returncode': proc.returncode,
+        })
+    except subprocess.TimeoutExpired:
+        return jsonify({'ok': False, 'output': '', 'error': f'Превышено время ожидания ({timeout}s)'})
+    except FileNotFoundError as exc:
+        return jsonify({'ok': False, 'output': '', 'error': str(exc)})
+    except Exception as exc:
+        return jsonify({'ok': False, 'output': '', 'error': str(exc)})
+
+
 @app.route('/api/projects', methods=['GET'])
 def get_projects():
     projects = []

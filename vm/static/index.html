@@ -124,17 +124,34 @@ h4{color:#ce9178;font-size:12px;margin-bottom:5px}
 <div id="main">
   <div id="toolbar">
     <button onclick="setTab('editor')" id="tab-editor" class="tab-active">📝 Редактор</button>
+    <button onclick="setTab('output')" id="tab-output">🖥 Вывод</button>
     <button onclick="setTab('research')" id="tab-research">🔬 Исследование</button>
     <div style="width:1px;background:#555;margin:0 4px;align-self:stretch"></div>
     <label for="fileUpload" class="file-btn" style="cursor:pointer;padding:6px 12px;border-radius:3px;font-size:12px">📎 Upload</label>
     <input type="file" id="fileUpload" onchange="uploadFile(event)">
     <button onclick="saveProject()">💾 Save</button>
+    <select id="run-lang" style="width:100px;font-size:11px" title="Язык выполнения">
+      <option value="python">🐍 Python</option>
+      <option value="bash">🐚 Bash</option>
+    </select>
+    <button onclick="runCode()" id="run-btn" style="background:#238636">▶ Запустить</button>
     <span id="editor-label" style="margin-left:auto;color:#aaa;font-size:11px">Monaco Editor</span>
   </div>
 
   <!-- Editor pane -->
   <div id="pane-editor" style="flex:1;display:flex;flex-direction:column">
     <div id="editor" style="flex:1"></div>
+    <textarea id="editor-fallback" style="flex:1;background:#1e1e1e;color:#d4d4d4;border:none;font-family:monospace;font-size:13px;padding:8px;resize:none;display:none" placeholder="Monaco Editor недоступен. Введите код здесь."></textarea>
+  </div>
+
+  <!-- Output (sandbox) pane -->
+  <div id="pane-output" style="flex:1;display:none;flex-direction:column;background:#0d1117">
+    <div style="background:#161b22;padding:6px 12px;display:flex;gap:6px;align-items:center;border-bottom:1px solid #30363d">
+      <span style="font-size:11px;color:#8b949e">🖥 Песочница — вывод кода</span>
+      <button onclick="clearOutput()" style="background:#21262d;border:1px solid #30363d;font-size:10px;padding:2px 8px;margin-left:auto">🗑 Очистить</button>
+      <button onclick="runCode()" style="background:#238636;font-size:10px;padding:2px 8px">▶ Запустить снова</button>
+    </div>
+    <pre id="output-pre" style="flex:1;margin:0;padding:10px 14px;color:#e6edf3;font-family:monospace;font-size:12px;overflow:auto;white-space:pre-wrap">Нажмите ▶ Запустить для выполнения кода из редактора.</pre>
   </div>
 
   <!-- Research pane -->
@@ -159,17 +176,34 @@ h4{color:#ce9178;font-size:12px;margin-bottom:5px}
   </div>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/loader.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/loader.min.js" onerror="_monacoFallback()"></script>
 <script>
 // ── Monaco setup ─────────────────────────────────────────────────────
 let editor;
-require.config({paths:{vs:'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs'}});
-require(['vs/editor/editor.main'],function(){
-  editor = monaco.editor.create(document.getElementById('editor'),{
-    value:'<!-- DRGR VM Ready -->\n\nВведите задание слева → нажмите "Отправить в AI".\nAI сгенерирует код и покажет его здесь.\n',
-    language:'markdown',theme:'vs-dark',automaticLayout:true,wordWrap:'on'
+function _monacoFallback(){
+  document.getElementById('editor').style.display='none';
+  document.getElementById('editor-fallback').style.display='flex';
+  document.getElementById('editor-label').textContent='Textarea (Monaco недоступен)';
+}
+if(typeof require!=='undefined'){
+  require.config({paths:{vs:'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs'}});
+  require(['vs/editor/editor.main'],function(){
+    editor = monaco.editor.create(document.getElementById('editor'),{
+      value:'<!-- DRGR VM Ready -->\n\nВведите задание слева → нажмите "Отправить в AI".\nAI сгенерирует код и покажет его здесь.\n',
+      language:'markdown',theme:'vs-dark',automaticLayout:true,wordWrap:'on'
+    });
   });
-});
+} else { _monacoFallback(); }
+
+// Returns current editor text (Monaco or fallback textarea)
+function _editorValue(){
+  if(editor) return editor.getValue();
+  return document.getElementById('editor-fallback').value;
+}
+function _editorSet(val){
+  if(editor) editor.setValue(val);
+  else document.getElementById('editor-fallback').value=val;
+}
 
 function setLang(filename){
   if(!editor) return;
@@ -180,16 +214,40 @@ function setLang(filename){
   document.getElementById('editor-label').textContent=filename+' ('+(m[ext]||ext)+')';
 }
 
+// ── Code execution (sandbox) ─────────────────────────────────────────
+function clearOutput(){document.getElementById('output-pre').textContent='';}
+async function runCode(){
+  const code=_editorValue().trim();
+  if(!code){setTab('output');document.getElementById('output-pre').textContent='Редактор пуст — введите код.';return;}
+  const lang=document.getElementById('run-lang').value;
+  const btn=document.getElementById('run-btn');
+  btn.disabled=true; btn.textContent='⏳ …';
+  setTab('output');
+  document.getElementById('output-pre').textContent='⏳ Выполняю…';
+  try{
+    const r=await fetch('/api/execute',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({code,lang})});
+    const d=await r.json();
+    if(d.error){
+      document.getElementById('output-pre').textContent='❌ '+d.error;
+    } else {
+      const prefix=d.ok?'✅ Код выполнен (rc=0)\n':'⚠ Завершено с ошибкой (rc='+d.returncode+')\n';
+      document.getElementById('output-pre').textContent=prefix+'─'.repeat(40)+'\n'+(d.output||'(нет вывода)');
+    }
+  }catch(e){document.getElementById('output-pre').textContent='❌ '+e.message;}
+  finally{btn.disabled=false; btn.textContent='▶ Запустить';}
+}
+
 // ── File / Project actions ────────────────────────────────────────────
 function uploadFile(e){
   const f=e.target.files[0]; if(!f) return;
   const r=new FileReader();
-  r.onload=ev=>{ if(editor){editor.setValue(ev.target.result);setLang(f.name);} };
+  r.onload=ev=>{ _editorSet(ev.target.result); if(editor) setLang(f.name); };
   r.onerror=()=>setTaskStatus('❌ Ошибка чтения файла','err');
   r.readAsText(f);
 }
 function saveProject(){
-  const content=editor?editor.getValue():'';
+  const content=_editorValue();
   const fn=prompt('Имя файла:','project.py'); if(!fn) return;
   fetch('/api/project',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({filename:fn,content})})
@@ -200,12 +258,12 @@ function loadProjectsToEditor(){
     if(!projects.length){alert('Нет сохранённых проектов.');return;}
     const name=prompt('Имя проекта:\n'+projects.map(p=>p.name).join('\n'));
     const p=projects.find(x=>x.name===name);
-    if(p&&editor){editor.setValue(p.content);setLang(p.name);}
+    if(p){ _editorSet(p.content); if(editor) setLang(p.name); }
   });
 }
 function generateHTML(){
-  if(editor){editor.setValue('<!DOCTYPE html>\n<html lang="ru">\n<head>\n<meta charset="UTF-8">\n<title>Проект</title>\n</head>\n<body>\n<h1>Проект</h1>\n</body>\n</html>');
-  monaco.editor.setModelLanguage(editor.getModel(),'html');}
+  _editorSet('<!DOCTYPE html>\n<html lang="ru">\n<head>\n<meta charset="UTF-8">\n<title>Проект</title>\n</head>\n<body>\n<h1>Проект</h1>\n</body>\n</html>');
+  if(editor) monaco.editor.setModelLanguage(editor.getModel(),'html');
 }
 function run3DGen(){
   fetch('/api/generate-3d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})})
@@ -220,7 +278,7 @@ function runGoose(){
   setTaskStatus('🦢 Отправляю…','inf');
   fetch('/api/goose',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:q})})
   .then(r=>r.json()).then(d=>{
-    if(editor&&d.result) editor.setValue(d.result);
+    if(d.result) _editorSet(d.result);
     setTaskStatus('✅ Goose AI ('+(d.source||'')+')','ok');
   }).catch(e=>setTaskStatus('❌ '+e.message,'err'));
 }
@@ -394,7 +452,7 @@ async function submitTask(){
     const resp=await fetch('/api/task',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({description})});
     const data=await resp.json();
     if(data.error){setTaskStatus('❌ '+data.error,'err');return;}
-    if(data.content&&editor){editor.setValue(data.content);if(data.html_file)setLang(data.html_file);}
+    if(data.content){_editorSet(data.content);if(data.html_file&&editor)setLang(data.html_file);}
     if(data.used_ai){
       setTaskStatus('✅ Сгенерировано: '+(data.title||'').slice(0,50),'ok');
       document.getElementById('task-ai-badge').textContent='🤖 '+(data.ai_source||'AI');
@@ -426,7 +484,7 @@ async function loadTaskContent(t){
   try{
     const projects=await fetch('/api/projects').then(r=>r.json());
     const p=projects.find(x=>x.name===t.html_file);
-    if(p&&editor){editor.setValue(p.content);setLang(p.name);
+    if(p){ _editorSet(p.content); if(editor) setLang(p.name);
       setTaskStatus('📂 Загружено: '+t.html_file,'ok');
       document.getElementById('task-ai-badge').textContent=(t.used_ai?'🤖':'📋')+' '+(t.ai_source||'');
     }
@@ -438,7 +496,7 @@ loadTasks();
 
 // ── Tab switcher ──────────────────────────────────────────────────────
 function setTab(name){
-  ['editor','research'].forEach(t=>{
+  ['editor','output','research'].forEach(t=>{
     document.getElementById('pane-'+t).style.display = t===name ? 'flex' : 'none';
     const btn=document.getElementById('tab-'+t);
     if(btn) btn.classList.toggle('tab-active', t===name);
