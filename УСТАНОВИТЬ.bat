@@ -8,7 +8,7 @@ setlocal EnableDelayedExpansion
 ::   1. Клонирует репозиторий на Рабочий стол
 ::   2. Создаёт файл .env с токеном бота
 ::   3. Устанавливает зависимости Python
-::   4. Запускает бота и VM-сервер
+::   4. Запускает VM-сервер (бот управляется из веб-интерфейса)
 :: ===================================================================
 
 title drgr-bot - Установка
@@ -176,7 +176,7 @@ echo.
 :: -- Создание значка на Рабочем столе ---------------------------------
 echo  Создание значка на Рабочем столе...
 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
-    "$ws=New-Object -ComObject WScript.Shell; $sc=$ws.CreateShortcut('%USERPROFILE%\Desktop\ЗАПУСТИТЬ БОТА.lnk'); $sc.TargetPath='%DEST%\ЗАПУСТИТЬ_БОТА.bat'; $sc.WorkingDirectory='%DEST%'; $sc.Description='Запустить drgr-bot + VM'; $sc.IconLocation='%SystemRoot%\System32\cmd.exe,0'; $sc.Save()" > nul 2>&1
+    "$ws=New-Object -ComObject WScript.Shell; $sc=$ws.CreateShortcut('%USERPROFILE%\Desktop\ЗАПУСТИТЬ БОТА.lnk'); $sc.TargetPath='%DEST%\ЗАПУСТИТЬ_БОТА.bat'; $sc.WorkingDirectory='%DEST%'; $sc.Description='Запустить VM-сервер drgr-bot'; $sc.IconLocation='%SystemRoot%\System32\cmd.exe,0'; $sc.Save()" > nul 2>&1
 if errorlevel 1 (
     echo  [ПРЕДУПРЕЖДЕНИЕ] Значок не создан. Откройте ЗАПУСТИТЬ_БОТА.bat вручную.
 ) else (
@@ -217,7 +217,7 @@ goto :ASK_LAUNCH
 
 :DO_LAUNCH
 echo.
-echo  Запуск VM-сервера и Telegram-бота...
+echo  Запуск VM-сервера...
 call "%DEST%\ЗАПУСТИТЬ_БОТА.bat"
 goto :END
 

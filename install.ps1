@@ -227,7 +227,7 @@ Write-Host '  ║       Установка завершена успешно!   
 Write-Host '  ╚══════════════════════════════════════════╝' -ForegroundColor Green
 Write-Host ''
 Write-Host '  На Рабочем столе появились два значка:' -ForegroundColor White
-Write-Host '    🟢 "ЗАПУСТИТЬ БОТА"    — запускает бота и VM-сервер' -ForegroundColor White
+Write-Host '    🟢 "ЗАПУСТИТЬ БОТА"    — запускает VM-сервер (бот из веб-интерфейса)' -ForegroundColor White
 Write-Host '    📁 "drgr-bot (папка)"  — открывает папку с файлами' -ForegroundColor White
 Write-Host ''
 Write-Host "  Папка проекта: $InstallDir" -ForegroundColor DarkGray
