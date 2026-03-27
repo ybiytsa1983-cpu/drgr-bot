@@ -570,7 +570,7 @@ def api_execute():
     else:
         return jsonify({'ok': False, 'output': '', 'error': f'Язык {lang} не поддерживается'})
 
-    exec_id = uuid.uuid4().hex[:10]
+    exec_id = uuid.uuid4().hex[:16]
     try:
         proc = subprocess.Popen(
             cmd,
