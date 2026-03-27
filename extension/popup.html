@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>DRGR Bot Control</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      width: 360px;
+      min-height: 420px;
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background: #1e1e1e;
+      color: #d4d4d4;
+      font-size: 13px;
+    }
+
+    /* ── tabs ── */
+    .tabs {
+      display: flex;
+      background: #252526;
+      border-bottom: 1px solid #3e3e3e;
+    }
+    .tab-btn {
+      flex: 1;
+      padding: 10px 0;
+      background: none;
+      border: none;
+      color: #888;
+      cursor: pointer;
+      font-size: 12px;
+      transition: color .15s, background .15s;
+    }
+    .tab-btn:hover { color: #ccc; background: #2d2d30; }
+    .tab-btn.active { color: #4ec9b0; border-bottom: 2px solid #4ec9b0; }
+
+    .tab-panel { display: none; padding: 14px; }
+    .tab-panel.active { display: block; }
+
+    /* ── status ── */
+    .status-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 7px 0;
+      border-bottom: 1px solid #2d2d30;
+    }
+    .status-row:last-child { border-bottom: none; }
+    .status-label { color: #aaa; }
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .badge-ok      { background: #1a4a1a; color: #4ec94e; }
+    .badge-running { background: #1a3a4a; color: #4ec9b0; }
+    .badge-stopped { background: #4a1a1a; color: #f44; }
+    .badge-unknown { background: #333; color: #888; }
+
+    .bot-controls {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    /* ── buttons ── */
+    .btn {
+      padding: 7px 14px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 600;
+      transition: opacity .15s;
+    }
+    .btn:hover { opacity: .85; }
+    .btn:disabled { opacity: .4; cursor: not-allowed; }
+    .btn-green  { background: #0a7d3e; color: #fff; }
+    .btn-red    { background: #7d0a0a; color: #fff; }
+    .btn-blue   { background: #0e639c; color: #fff; }
+    .btn-gray   { background: #3c3c3c; color: #ccc; }
+
+    /* ── sandbox ── */
+    textarea {
+      width: 100%;
+      height: 110px;
+      background: #2d2d30;
+      color: #d4d4d4;
+      border: 1px solid #3e3e3e;
+      border-radius: 4px;
+      padding: 8px;
+      font-family: monospace;
+      font-size: 12px;
+      resize: vertical;
+    }
+    .sandbox-actions { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+    .result-box {
+      margin-top: 10px;
+      background: #252526;
+      border: 1px solid #3e3e3e;
+      border-radius: 4px;
+      padding: 8px;
+      font-family: monospace;
+      font-size: 11px;
+      min-height: 40px;
+      white-space: pre-wrap;
+      word-break: break-all;
+      color: #9cdcfe;
+    }
+
+    /* ── settings ── */
+    .field { margin-bottom: 12px; }
+    .field label { display: block; margin-bottom: 4px; color: #888; font-size: 11px; }
+    .field input {
+      width: 100%;
+      padding: 7px 9px;
+      background: #2d2d30;
+      color: #d4d4d4;
+      border: 1px solid #3e3e3e;
+      border-radius: 4px;
+      font-size: 12px;
+    }
+    .field input:focus { outline: none; border-color: #4ec9b0; }
+
+    /* ── report ── */
+    .report-box {
+      background: #252526;
+      border: 1px solid #3e3e3e;
+      border-radius: 4px;
+      padding: 10px;
+      font-family: monospace;
+      font-size: 11px;
+      white-space: pre-wrap;
+      color: #9cdcfe;
+      min-height: 80px;
+      margin-top: 10px;
+    }
+
+    /* ── misc ── */
+    .open-vm-btn { width: 100%; margin-top: 8px; }
+    .section-title { font-size: 11px; color: #555; text-transform: uppercase; letter-spacing: .5px; margin: 10px 0 6px; }
+    #statusMsg { margin-top: 10px; font-size: 11px; color: #888; min-height: 16px; }
+  </style>
+</head>
+<body>
+
+<div class="tabs">
+  <button class="tab-btn active" data-tab="status">📊 Статус</button>
+  <button class="tab-btn" data-tab="sandbox">🧪 Sandbox</button>
+  <button class="tab-btn" data-tab="settings">⚙️ Настройки</button>
+</div>
+
+<!-- STATUS TAB -->
+<div id="tab-status" class="tab-panel active">
+  <div class="section-title">Сервисы</div>
+  <div class="status-row">
+    <span class="status-label">VM Server</span>
+    <span id="st-vm" class="badge badge-unknown">…</span>
+  </div>
+  <div class="status-row">
+    <span class="status-label">Telegram Bot</span>
+    <span id="st-bot" class="badge badge-unknown">…</span>
+  </div>
+  <div class="status-row">
+    <span class="status-label">Проектов</span>
+    <span id="st-projects">—</span>
+  </div>
+
+  <div class="bot-controls">
+    <button class="btn btn-green" id="btnStart">▶ Запустить</button>
+    <button class="btn btn-red"   id="btnStop" >■ Остановить</button>
+    <button class="btn btn-gray"  id="btnRefresh">↺ Обновить</button>
+  </div>
+
+  <div id="statusMsg"></div>
+
+  <div class="section-title" style="margin-top:14px;">Диагностика</div>
+  <button class="btn btn-blue" id="btnReport">📋 Показать отчёт</button>
+  <div id="reportBox" class="report-box" style="display:none;"></div>
+
+  <button class="btn btn-gray open-vm-btn" id="btnOpenVM">🔗 Открыть VM панель</button>
+</div>
+
+<!-- SANDBOX TAB -->
+<div id="tab-sandbox" class="tab-panel">
+  <div class="section-title">Быстрые действия</div>
+  <div class="sandbox-actions">
+    <button class="btn btn-blue" id="sbGoose">🦢 Goose AI</button>
+    <button class="btn btn-blue" id="sb3d">🎬 3D Gen</button>
+    <button class="btn btn-blue" id="sbVideo">🎥 Video Gen</button>
+  </div>
+
+  <div class="section-title" style="margin-top:12px;">Запрос</div>
+  <textarea id="sbInput" placeholder="Введите запрос или промпт…"></textarea>
+
+  <div class="sandbox-actions">
+    <button class="btn btn-green" id="sbSend">➤ Отправить</button>
+    <button class="btn btn-gray"  id="sbClear">✕ Очистить</button>
+  </div>
+
+  <div class="section-title" style="margin-top:10px;">Результат</div>
+  <div id="sbResult" class="result-box">—</div>
+</div>
+
+<!-- SETTINGS TAB -->
+<div id="tab-settings" class="tab-panel">
+  <div class="field">
+    <label>VM URL (адрес сервера)</label>
+    <input type="text" id="cfgUrl" placeholder="http://localhost:5001">
+  </div>
+
+  <div style="display:flex; gap:8px; margin-top:4px;">
+    <button class="btn btn-green" id="btnSaveCfg">💾 Сохранить</button>
+    <button class="btn btn-gray"  id="btnTestConn">🔌 Проверить</button>
+  </div>
+
+  <div id="cfgMsg" style="margin-top:8px; font-size:11px; min-height:16px; color:#888;"></div>
+</div>
+
+<script src="popup.js"></script>
+</body>
+</html>
