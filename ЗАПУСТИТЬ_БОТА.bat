@@ -21,7 +21,7 @@ echo  [ОШИБКА] Папка проекта не найдена или пов
 echo.
 echo  Переустановите одной командой PowerShell (Win+R -^> powershell):
 echo.
-echo    irm https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/start_vm.ps1 ^| iex
+echo    irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/start_vm.ps1?%%RANDOM%%" ^| iex
 echo.
 pause
 exit /b 1

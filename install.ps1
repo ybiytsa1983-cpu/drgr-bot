@@ -238,7 +238,7 @@ if exist "%INSTALL_DIR%\ЗАПУСТИТЬ_БОТА.bat" (
 ) else (
     echo [ОШИБКА] Папка drgr-bot не найдена: %INSTALL_DIR%
     echo Запустите в PowerShell:
-    echo   irm https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/start_vm.ps1 ^| iex
+    echo   irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/start_vm.ps1?%%RANDOM%%" ^| iex
     pause
 )
 "@ | Set-Content -LiteralPath (Join-Path $DesktopCompatDir 'ЗАПУСТИТЬ_БОТА.bat') -Encoding OEM
@@ -253,7 +253,7 @@ if exist "%INSTALL_DIR%\ОБНОВИТЬ.bat" (
 ) else (
     echo [ОШИБКА] Папка drgr-bot не найдена: %INSTALL_DIR%
     echo Запустите в PowerShell:
-    echo   irm https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/start_vm.ps1 ^| iex
+    echo   irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/start_vm.ps1?%%RANDOM%%" ^| iex
     pause
 )
 "@ | Set-Content -LiteralPath (Join-Path $DesktopCompatDir 'ОБНОВИТЬ.bat') -Encoding OEM
