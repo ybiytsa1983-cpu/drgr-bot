@@ -170,6 +170,8 @@ $DesktopCandidates = @($DesktopPath, $DesktopFallback) |
     Select-Object -Unique
 
 $InstallDirBatSafe = $InstallDir.Replace('"', '""')
+$InstallDirBatSafe = $InstallDirBatSafe.Replace('%', '%%')
+$InstallDirPsSafe  = $InstallDirBatSafe.Replace('`', '``').Replace('$', '`$')
 
 foreach ($Desktop in $DesktopCandidates) {
     $DesktopLabel = if ($Desktop -eq $DesktopPath) { 'основной Рабочий стол' } else { 'альтернативный Рабочий стол (%USERPROFILE%\Desktop)' }
@@ -197,7 +199,7 @@ foreach ($Desktop in $DesktopCandidates) {
         @"
 @echo off
 chcp 65001 > nul
-set "INSTALL_DIR=$InstallDirBatSafe"
+set "INSTALL_DIR=$InstallDirPsSafe"
 if exist "%INSTALL_DIR%\ЗАПУСТИТЬ_БОТА.bat" (
     call "%INSTALL_DIR%\ЗАПУСТИТЬ_БОТА.bat"
 ) else (
@@ -214,7 +216,7 @@ if exist "%INSTALL_DIR%\ЗАПУСТИТЬ_БОТА.bat" (
         @"
 @echo off
 chcp 65001 > nul
-set "INSTALL_DIR=$InstallDirBatSafe"
+set "INSTALL_DIR=$InstallDirPsSafe"
 if exist "%INSTALL_DIR%\ОБНОВИТЬ.bat" (
     call "%INSTALL_DIR%\ОБНОВИТЬ.bat"
 ) else (
