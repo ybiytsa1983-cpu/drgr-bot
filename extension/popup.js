@@ -20,6 +20,15 @@ function normalizeVmUrl(url) {
   return String(url || DEFAULT_VM_URL).trim().replace(/\/+$/, '');
 }
 
+function isValidVmUrl(url) {
+  try {
+    const u = new URL(url);
+    return u.protocol === 'http:' || u.protocol === 'https:';
+  } catch (_) {
+    return false;
+  }
+}
+
 function vmUrlCandidates(primary) {
   const seen = new Set();
   const out = [];
@@ -42,6 +51,7 @@ async function apiFetch(path, opts = {}) {
       const response = await fetch(base + path, opts);
       if (response.ok && base !== configuredBase) {
         chrome.storage.local.set({ vmUrl: base });
+        setMsg('cfgMsg', `ℹ Автопереключение VM URL: ${configuredBase} → ${base}`, '#f0c040');
       }
       return response;
     } catch (e) {
@@ -215,7 +225,12 @@ async function loadSettings() {
 }
 
 document.getElementById('btnSaveCfg').addEventListener('click', () => {
-  const url = normalizeVmUrl(document.getElementById('cfgUrl').value) || DEFAULT_VM_URL;
+  const entered = normalizeVmUrl(document.getElementById('cfgUrl').value) || DEFAULT_VM_URL;
+  if (!isValidVmUrl(entered)) {
+    setMsg('cfgMsg', '✗ Некорректный URL (пример: http://localhost:5001)', '#f66');
+    return;
+  }
+  const url = entered;
   chrome.storage.local.set({ vmUrl: url }, () => {
     setMsg('cfgMsg', '✓ Сохранено', '#4ec94e');
     setTimeout(() => setMsg('cfgMsg', ''), 2000);
