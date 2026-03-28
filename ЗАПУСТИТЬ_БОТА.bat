@@ -45,7 +45,7 @@ if not exist "%SCRIPT_DIR%.env" (
 )
 
 echo  Запуск VM-сервера (порт 5001)...
-start "DRGR VM Server" cmd /k "title DRGR VM Server && cd /d %SCRIPT_DIR% && python vm/server.py"
+start "DRGR VM Server" cmd /k "title DRGR VM Server && cd /d \"%SCRIPT_DIR%\" && python \"vm/server.py\""
 
 echo.
 echo +============================================+
