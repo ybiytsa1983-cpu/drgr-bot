@@ -235,7 +235,14 @@ drgr-bot/
 **Папка drgr-bot пропала с Рабочего стола**
 → Запустите команду PowerShell выше — восстановит всё, токен сохранится.
 
-**PowerShell пишет, что ЗАПУСТИТЬ_БОТА.bat / ОБНОВИТЬ.bat не найден**
+**`ERROR: Could not open requirements file: 'requirements.txt'` / `can't open file 'vm\server.py'`**
+→ Вы запустили старый скрипт из неправильной папки. Переустановите одной командой PowerShell:
+```powershell
+irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/start_vm.ps1?$(Get-Random)" | iex
+```
+После установки запускайте через `START.bat` или `ЗАПУСТИТЬ_БОТА.bat` в папке `drgr-bot` на Рабочем столе.
+
+**PowerShell пишет, что START.bat / ЗАПУСТИТЬ_БОТА.bat / ОБНОВИТЬ.bat не найден**
 → Используйте блоки команд из раздела **"💻 PowerShell команды (скачать / запустить / обновить)"** — они сами проверяют путь, и если папки нет, автоматически запускают установщик.
 
 **"Python не найден"**
