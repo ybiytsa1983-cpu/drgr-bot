@@ -27,6 +27,7 @@ $Repo        = 'ybiytsa1983-cpu/drgr-bot'
 $Branch      = 'main'
 $ZipUrl      = "https://github.com/$Repo/archive/refs/heads/$Branch.zip"
 $DesktopPath = [System.Environment]::GetFolderPath('Desktop')
+$DesktopFallback = Join-Path $env:USERPROFILE 'Desktop'
 $InstallDir  = Join-Path $DesktopPath 'drgr-bot'
 $ZipFile     = Join-Path $env:TEMP 'drgr-bot-main.zip'
 $EnvBackup   = Join-Path $env:TEMP 'drgr_bot_env_backup.txt'
@@ -159,29 +160,73 @@ if (-not (Test-Path $EnvFile)) {
     Write-OK 'Токен (.env) уже настроен.'
 }
 
-# Shortcuts
+# Shortcuts + совместимые BAT-запускатели на рабочем столе
 Write-Host ''
-Write-Host '  Создание ярлыков на Рабочем столе...' -ForegroundColor Cyan
+Write-Host '  Создание ярлыков и BAT-запускателей на Рабочем столе...' -ForegroundColor Cyan
 $WShell = New-Object -ComObject WScript.Shell
 
-try {
-    $Sc = $WShell.CreateShortcut("$DesktopPath\ЗАПУСТИТЬ БОТА.lnk")
-    $Sc.TargetPath       = "$InstallDir\ЗАПУСТИТЬ_БОТА.bat"
-    $Sc.WorkingDirectory = $InstallDir
-    $Sc.Description      = 'Запустить drgr-bot VM-сервер'
-    $Sc.IconLocation     = "$env:SystemRoot\System32\cmd.exe,0"
-    $Sc.Save()
-    Write-OK 'Ярлык "ЗАПУСТИТЬ БОТА" создан.'
-} catch { Write-Warn 'Не удалось создать ярлык запуска.' }
+$DesktopCandidates = @($DesktopPath, $DesktopFallback) |
+    Where-Object { $_ -and (Test-Path $_) } |
+    Select-Object -Unique
 
-try {
-    $Sc2 = $WShell.CreateShortcut("$DesktopPath\drgr-bot (папка).lnk")
-    $Sc2.TargetPath   = $InstallDir
-    $Sc2.Description  = 'Папка проекта drgr-bot'
-    $Sc2.IconLocation = "$env:SystemRoot\System32\imageres.dll,3"
-    $Sc2.Save()
-    Write-OK 'Ярлык "drgr-bot (папка)" создан.'
-} catch { Write-Warn 'Не удалось создать ярлык папки.' }
+$InstallDirBatSafe = $InstallDir.Replace('"', '""')
+
+foreach ($Desktop in $DesktopCandidates) {
+    $DesktopLabel = if ($Desktop -eq $DesktopPath) { 'основной Рабочий стол' } else { 'альтернативный Рабочий стол (%USERPROFILE%\Desktop)' }
+
+    try {
+        $Sc = $WShell.CreateShortcut((Join-Path $Desktop 'ЗАПУСТИТЬ БОТА.lnk'))
+        $Sc.TargetPath       = "$InstallDir\ЗАПУСТИТЬ_БОТА.bat"
+        $Sc.WorkingDirectory = $InstallDir
+        $Sc.Description      = 'Запустить drgr-bot VM-сервер'
+        $Sc.IconLocation     = "$env:SystemRoot\System32\cmd.exe,0"
+        $Sc.Save()
+        Write-OK "Ярлык ""ЗАПУСТИТЬ БОТА"" создан ($DesktopLabel)."
+    } catch { Write-Warn "Не удалось создать ярлык запуска ($Desktop)." }
+
+    try {
+        $Sc2 = $WShell.CreateShortcut((Join-Path $Desktop 'drgr-bot (папка).lnk'))
+        $Sc2.TargetPath   = $InstallDir
+        $Sc2.Description  = 'Папка проекта drgr-bot'
+        $Sc2.IconLocation = "$env:SystemRoot\System32\imageres.dll,3"
+        $Sc2.Save()
+        Write-OK "Ярлык ""drgr-bot (папка)"" создан ($DesktopLabel)."
+    } catch { Write-Warn "Не удалось создать ярлык папки ($Desktop)." }
+
+    try {
+        @"
+@echo off
+chcp 65001 > nul
+set "INSTALL_DIR=$InstallDirBatSafe"
+if exist "%INSTALL_DIR%\ЗАПУСТИТЬ_БОТА.bat" (
+    call "%INSTALL_DIR%\ЗАПУСТИТЬ_БОТА.bat"
+) else (
+    echo [ОШИБКА] Папка drgr-bot не найдена: %INSTALL_DIR%
+    echo Запустите в PowerShell:
+    echo   irm https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/start_vm.ps1 ^| iex
+    pause
+)
+"@ | Set-Content -LiteralPath (Join-Path $Desktop 'ЗАПУСТИТЬ_БОТА.bat') -Encoding OEM
+        Write-OK "BAT ""ЗАПУСТИТЬ_БОТА.bat"" создан ($DesktopLabel)."
+    } catch { Write-Warn "Не удалось создать BAT запуска ($Desktop)." }
+
+    try {
+        @"
+@echo off
+chcp 65001 > nul
+set "INSTALL_DIR=$InstallDirBatSafe"
+if exist "%INSTALL_DIR%\ОБНОВИТЬ.bat" (
+    call "%INSTALL_DIR%\ОБНОВИТЬ.bat"
+) else (
+    echo [ОШИБКА] Папка drgr-bot не найдена: %INSTALL_DIR%
+    echo Запустите в PowerShell:
+    echo   irm https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/start_vm.ps1 ^| iex
+    pause
+)
+"@ | Set-Content -LiteralPath (Join-Path $Desktop 'ОБНОВИТЬ.bat') -Encoding OEM
+        Write-OK "BAT ""ОБНОВИТЬ.bat"" создан ($DesktopLabel)."
+    } catch { Write-Warn "Не удалось создать BAT обновления ($Desktop)." }
+}
 
 # Done
 Write-Host ''
@@ -192,6 +237,7 @@ Write-Host ''
 Write-Host '  На Рабочем столе появились два ярлыка:' -ForegroundColor White
 Write-Host '    "ЗАПУСТИТЬ БОТА"    -- запускает VM-сервер (бот управляется из веб-интерфейса)' -ForegroundColor White
 Write-Host '    "drgr-bot (папка)"  -- открывает папку с файлами' -ForegroundColor White
+Write-Host '  И совместимые BAT-файлы: "ЗАПУСТИТЬ_БОТА.bat" и "ОБНОВИТЬ.bat".' -ForegroundColor White
 Write-Host ''
 Write-Host "  Папка проекта: $InstallDir" -ForegroundColor DarkGray
 Write-Host '  Веб-интерфейс: http://localhost:5001'     -ForegroundColor DarkGray
