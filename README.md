@@ -25,13 +25,27 @@ irm https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/start_vm.ps1
 ### 2) Запустить уже установленный проект
 
 ```powershell
-& "$env:USERPROFILE\Desktop\drgr-bot\ЗАПУСТИТЬ_БОТА.bat"
+$Desktop = [Environment]::GetFolderPath('Desktop')
+$InstallDir = Join-Path $Desktop 'drgr-bot'
+$RunBat = Join-Path $InstallDir 'ЗАПУСТИТЬ_БОТА.bat'
+if (-not (Test-Path $RunBat)) {
+  irm https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/start_vm.ps1 | iex
+} else {
+  & $RunBat
+}
 ```
 
 ### 3) Обновить до последней версии
 
 ```powershell
-& "$env:USERPROFILE\Desktop\drgr-bot\ОБНОВИТЬ.bat"
+$Desktop = [Environment]::GetFolderPath('Desktop')
+$InstallDir = Join-Path $Desktop 'drgr-bot'
+$UpdateBat = Join-Path $InstallDir 'ОБНОВИТЬ.bat'
+if (-not (Test-Path $UpdateBat)) {
+  irm https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/start_vm.ps1 | iex
+} else {
+  & $UpdateBat
+}
 ```
 
 Скрипт автоматически:
@@ -189,6 +203,9 @@ drgr-bot/
 
 **Папка drgr-bot пропала с Рабочего стола**
 → Запустите команду PowerShell выше — восстановит всё, токен сохранится.
+
+**PowerShell пишет, что ЗАПУСТИТЬ_БОТА.bat / ОБНОВИТЬ.bat не найден**
+→ Используйте блоки команд из раздела **"💻 PowerShell команды (скачать / запустить / обновить)"** — они сами проверяют путь, и если папки нет, автоматически запускают установщик.
 
 **"Python не найден"**
 → Установите Python с https://www.python.org/downloads/ (отметьте "Add Python to PATH") и запустите скрипт снова.
