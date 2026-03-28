@@ -8,7 +8,7 @@ setlocal EnableDelayedExpansion
 ::   1. Клонирует репозиторий на Рабочий стол
 ::   2. Создаёт файл .env с токеном бота
 ::   3. Устанавливает зависимости Python
-::   4. Запускает бота и VM-сервер
+::   4. Запускает VM-сервер (бот управляется из веб-интерфейса)
 :: ===================================================================
 
 title drgr-bot - Установка
@@ -77,11 +77,38 @@ if exist "%DEST%\.git" (
     echo  Репозиторий обновлён.
 ) else (
     if exist "%DEST%" (
-        echo  [ОШИБКА] Папка "%DEST%" уже существует, но не является git-репозиторием.
-        echo  Переименуйте или удалите её вручную и запустите снова.
+        echo  Папка "%DEST%" существует, но не является git-репозиторием.
+        echo  Возможно, она повреждена или удалена случайно.
+        echo.
+        :ASK_DELETE
+        set "DEL_CHOICE="
+        set /p "DEL_CHOICE= Удалить папку и скачать заново? (да/нет): "
+        if /i "!DEL_CHOICE!"=="да"  goto :DO_DELETE
+        if /i "!DEL_CHOICE!"=="yes" goto :DO_DELETE
+        if /i "!DEL_CHOICE!"=="д"   goto :DO_DELETE
+        if /i "!DEL_CHOICE!"=="y"   goto :DO_DELETE
+        if /i "!DEL_CHOICE!"=="нет" goto :CANT_PROCEED
+        if /i "!DEL_CHOICE!"=="no"  goto :CANT_PROCEED
+        if /i "!DEL_CHOICE!"=="н"   goto :CANT_PROCEED
+        if /i "!DEL_CHOICE!"=="n"   goto :CANT_PROCEED
+        echo  Введите "да" или "нет".
+        goto :ASK_DELETE
+
+        :CANT_PROCEED
+        echo  Переименуйте или удалите папку "%DEST%" вручную и запустите снова.
         echo.
         pause
         exit /b 1
+
+        :DO_DELETE
+        echo  Удаляем старую папку...
+        rmdir /s /q "%DEST%"
+        if errorlevel 1 (
+            echo  [ОШИБКА] Не удалось удалить папку. Удалите её вручную и запустите снова.
+            pause
+            exit /b 1
+        )
+        echo  Папка удалена.
     )
     git clone "%REPO%" "%DEST%"
     if errorlevel 1 (
@@ -146,12 +173,23 @@ if exist "%DEST%\.env" (
 )
 echo.
 
+:: -- Создание значка на Рабочем столе ---------------------------------
+echo  Создание значка на Рабочем столе...
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
+    "$ws=New-Object -ComObject WScript.Shell; $sc=$ws.CreateShortcut('%USERPROFILE%\Desktop\ЗАПУСТИТЬ БОТА.lnk'); $sc.TargetPath='%DEST%\ЗАПУСТИТЬ_БОТА.bat'; $sc.WorkingDirectory='%DEST%'; $sc.Description='Запустить VM-сервер drgr-bot'; $sc.IconLocation='%SystemRoot%\System32\cmd.exe,0'; $sc.Save()" > nul 2>&1
+if errorlevel 1 (
+    echo  [ПРЕДУПРЕЖДЕНИЕ] Значок не создан. Откройте ЗАПУСТИТЬ_БОТА.bat вручную.
+) else (
+    echo  Значок "ЗАПУСТИТЬ БОТА" создан на Рабочем столе!
+)
+echo.
+
 :: -- Итог ---------------------------------------------------------------
 echo +----------------------------------------------+
 echo ^|       Установка завершена успешно!           ^|
 echo +----------------------------------------------+
-echo ^|  Для запуска бота используйте файл:          ^|
-echo ^|    ЗАПУСТИТЬ_БОТА.bat                        ^|
+echo ^|  Значок "ЗАПУСТИТЬ БОТА" создан на Рабочем  ^|
+echo ^|  столе — дважды кликните чтобы запустить.   ^|
 echo ^|                                              ^|
 echo ^|  Для обновления используйте файл:            ^|
 echo ^|    ОБНОВИТЬ.bat                              ^|
@@ -179,7 +217,7 @@ goto :ASK_LAUNCH
 
 :DO_LAUNCH
 echo.
-echo  Запуск VM-сервера и Telegram-бота...
+echo  Запуск VM-сервера...
 call "%DEST%\ЗАПУСТИТЬ_БОТА.bat"
 goto :END
 
