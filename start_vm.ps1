@@ -6,7 +6,7 @@
 .DESCRIPTION
     Запустите в PowerShell (Win+R -> powershell):
 
-        irm https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/start_vm.ps1 | iex
+        irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/start_vm.ps1?$(Get-Random)" | iex
 
     Скрипт автоматически:
       1. Скачает все файлы проекта с GitHub (ZIP, Git НЕ нужен)
