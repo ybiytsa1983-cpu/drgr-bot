@@ -191,6 +191,9 @@ foreach ($Desktop in $ShortcutDesktopCandidates) {
         New-Item -ItemType Directory -Path $Desktop -Force | Out-Null
     }
     $DesktopLabel = if ($Desktop -eq $DesktopPath) { 'основной Рабочий стол' } else { 'альтернативный Рабочий стол (%USERPROFILE%\Desktop)' }
+    $DesktopCompatDir = Join-Path $Desktop 'drgr-bot'
+    $InstallDirNorm = [System.IO.Path]::GetFullPath($InstallDir).TrimEnd('\')
+    $DesktopCompatDirNorm = [System.IO.Path]::GetFullPath($DesktopCompatDir).TrimEnd('\')
 
     try {
         $Sc = $WShell.CreateShortcut((Join-Path $Desktop 'ЗАПУСТИТЬ БОТА.lnk'))
@@ -244,6 +247,45 @@ if exist "%INSTALL_DIR%\ОБНОВИТЬ.bat" (
 "@ | Set-Content -LiteralPath (Join-Path $Desktop 'ОБНОВИТЬ.bat') -Encoding OEM
         Write-OK "BAT ""ОБНОВИТЬ.bat"" создан ($DesktopLabel)."
     } catch { Write-Warn "Не удалось создать BAT обновления ($Desktop)." }
+
+    if ($DesktopCompatDirNorm -ne $InstallDirNorm) {
+        try {
+            if (-not (Test-Path $DesktopCompatDir)) {
+                New-Item -ItemType Directory -Path $DesktopCompatDir -Force | Out-Null
+            }
+            @"
+@echo off
+chcp 65001 > nul
+set "INSTALL_DIR=$InstallDirPsSafe"
+if exist "%INSTALL_DIR%\ЗАПУСТИТЬ_БОТА.bat" (
+    call "%INSTALL_DIR%\ЗАПУСТИТЬ_БОТА.bat"
+) else (
+    echo [ОШИБКА] Папка drgr-bot не найдена: %INSTALL_DIR%
+    echo Запустите в PowerShell:
+    echo   irm https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/start_vm.ps1 ^| iex
+    pause
+)
+"@ | Set-Content -LiteralPath (Join-Path $DesktopCompatDir 'ЗАПУСТИТЬ_БОТА.bat') -Encoding OEM
+            Write-OK "Совместимый BAT создан: $DesktopCompatDir\ЗАПУСТИТЬ_БОТА.bat"
+        } catch { Write-Warn "Не удалось создать совместимый BAT запуска ($DesktopCompatDir)." }
+
+        try {
+            @"
+@echo off
+chcp 65001 > nul
+set "INSTALL_DIR=$InstallDirPsSafe"
+if exist "%INSTALL_DIR%\ОБНОВИТЬ.bat" (
+    call "%INSTALL_DIR%\ОБНОВИТЬ.bat"
+) else (
+    echo [ОШИБКА] Папка drgr-bot не найдена: %INSTALL_DIR%
+    echo Запустите в PowerShell:
+    echo   irm https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/start_vm.ps1 ^| iex
+    pause
+)
+"@ | Set-Content -LiteralPath (Join-Path $DesktopCompatDir 'ОБНОВИТЬ.bat') -Encoding OEM
+            Write-OK "Совместимый BAT создан: $DesktopCompatDir\ОБНОВИТЬ.bat"
+        } catch { Write-Warn "Не удалось создать совместимый BAT обновления ($DesktopCompatDir)." }
+    }
 }
 
 # Done
