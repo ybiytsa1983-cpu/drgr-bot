@@ -303,15 +303,28 @@
         let _lastArticleQuery = '';
         let _modelsCache = { ollama: [], lmstudio: [] };
 
-        require.config({ paths: { vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs' } });
-        require(['vs/editor/editor.main'], function() {
-            editor = monaco.editor.create(document.getElementById('editor'), {
-                value: '<!-- DRGR VM готов -->\n',
-                language: 'html',
-                theme: 'vs-dark',
-                automaticLayout: true
+        if (typeof require !== 'undefined') {
+            require.config({ paths: { vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs' } });
+            require(['vs/editor/editor.main'], function() {
+                editor = monaco.editor.create(document.getElementById('editor'), {
+                    value: '<!-- DRGR VM готов -->\n',
+                    language: 'html',
+                    theme: 'vs-dark',
+                    automaticLayout: true
+                });
             });
-        });
+        } else {
+            // Monaco CDN unavailable — create a plain textarea fallback
+            var edEl = document.getElementById('editor');
+            if (edEl) {
+                edEl.innerHTML = '<textarea id="editor-fallback" style="width:100%;height:100%;background:#1e1e1e;color:#d4d4d4;border:none;padding:12px;font-family:monospace;font-size:14px;resize:none;">&lt;!-- DRGR VM готов (plain mode) --&gt;\n</textarea>';
+                editor = {
+                    getValue: function() { return document.getElementById('editor-fallback').value; },
+                    setValue: function(v) { document.getElementById('editor-fallback').value = v; }
+                };
+            }
+            console.warn('Monaco CDN недоступен — используется текстовый редактор');
+        }
 
         // ── pane switching ──────────────────────────────────────────────────
 

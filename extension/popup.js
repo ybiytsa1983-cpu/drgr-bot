@@ -11,9 +11,12 @@ const VM_URL_FALLBACKS = [
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 async function getVmUrl() {
-  return new Promise(resolve => {
-    chrome.storage.local.get({ vmUrl: DEFAULT_VM_URL }, d => resolve(d.vmUrl));
-  });
+  if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+    return new Promise(resolve => {
+      chrome.storage.local.get({ vmUrl: DEFAULT_VM_URL }, d => resolve(d.vmUrl));
+    });
+  }
+  return DEFAULT_VM_URL;
 }
 
 function normalizeVmUrl(url) {
@@ -46,11 +49,13 @@ async function apiFetch(path, opts = {}) {
   const candidates = vmUrlCandidates(configuredBase);
   let lastError = null;
 
-  for (const base of candidates) {
+   for (const base of candidates) {
     try {
       const response = await fetch(base + path, opts);
       if (response.ok && base !== configuredBase) {
-        chrome.storage.local.set({ vmUrl: base });
+        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+          chrome.storage.local.set({ vmUrl: base });
+        }
         setMsg('cfgMsg', `ℹ Автопереключение VM URL: ${configuredBase} → ${base}`, '#f0c040');
       }
       return response;
@@ -156,7 +161,11 @@ document.getElementById('btnReport').addEventListener('click', async () => {
 
 document.getElementById('btnOpenVM').addEventListener('click', async () => {
   const base = await getVmUrl();
-  chrome.tabs.create({ url: base });
+  if (typeof chrome !== 'undefined' && chrome.tabs && chrome.tabs.create) {
+    chrome.tabs.create({ url: base });
+  } else {
+    window.open(base, '_blank');
+  }
 });
 
 // ── sandbox tab ──────────────────────────────────────────────────────────────
@@ -231,10 +240,15 @@ document.getElementById('btnSaveCfg').addEventListener('click', () => {
     return;
   }
   const url = entered;
-  chrome.storage.local.set({ vmUrl: url }, () => {
-    setMsg('cfgMsg', '✓ Сохранено', '#4ec94e');
+  if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+    chrome.storage.local.set({ vmUrl: url }, () => {
+      setMsg('cfgMsg', '✓ Сохранено', '#4ec94e');
+      setTimeout(() => setMsg('cfgMsg', ''), 2000);
+    });
+  } else {
+    setMsg('cfgMsg', '✓ Сохранено (сессия)', '#4ec94e');
     setTimeout(() => setMsg('cfgMsg', ''), 2000);
-  });
+  }
 });
 
 document.getElementById('btnTestConn').addEventListener('click', async () => {
