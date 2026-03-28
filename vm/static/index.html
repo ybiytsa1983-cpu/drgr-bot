@@ -317,7 +317,11 @@
             // Monaco CDN unavailable — create a plain textarea fallback
             var edEl = document.getElementById('editor');
             if (edEl) {
-                edEl.innerHTML = '<textarea id="editor-fallback" style="width:100%;height:100%;background:#1e1e1e;color:#d4d4d4;border:none;padding:12px;font-family:monospace;font-size:14px;resize:none;">&lt;!-- DRGR VM готов (plain mode) --&gt;\n</textarea>';
+                var ta = document.createElement('textarea');
+                ta.id = 'editor-fallback';
+                ta.style.cssText = 'width:100%;height:100%;background:#1e1e1e;color:#d4d4d4;border:none;padding:12px;font-family:monospace;font-size:14px;resize:none;';
+                ta.value = '<!-- DRGR VM готов (plain mode) -->\n';
+                edEl.appendChild(ta);
                 editor = {
                     getValue: function() { return document.getElementById('editor-fallback').value; },
                     setValue: function(v) { document.getElementById('editor-fallback').value = v; }
