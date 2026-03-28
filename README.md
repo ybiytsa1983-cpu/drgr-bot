@@ -43,7 +43,11 @@ $RunBat = @(
   (Join-Path ([Environment]::GetFolderPath('Desktop')) 'drgr-bot\START.bat'),
   (Join-Path (Join-Path $env:USERPROFILE 'Desktop') 'drgr-bot\START.bat')
 ) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
-if ($RunBat) { & $RunBat }
+if ($RunBat) {
+  & $RunBat
+} else {
+  irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/start_vm.ps1?$(Get-Random)" | iex
+}
 ```
 
 ### 3) Обновить до последней версии (надёжный вариант)
@@ -67,7 +71,11 @@ $UpdateBat = @(
   (Join-Path ([Environment]::GetFolderPath('Desktop')) 'drgr-bot\UPDATE.bat'),
   (Join-Path (Join-Path $env:USERPROFILE 'Desktop') 'drgr-bot\UPDATE.bat')
 ) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
-if ($UpdateBat) { & $UpdateBat }
+if ($UpdateBat) {
+  & $UpdateBat
+} else {
+  irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/start_vm.ps1?$(Get-Random)" | iex
+}
 ```
 
 Скрипт автоматически:
@@ -77,7 +85,7 @@ if ($UpdateBat) { & $UpdateBat }
 3. Установит зависимости Python
 4. Создаст ярлык **🟢 "ЗАПУСТИТЬ БОТА"** на Рабочем столе
 5. Создаст ярлык **📁 "drgr-bot (папка)"** для быстрого доступа к файлам
-6. Создаст совместимые файлы **`ЗАПУСТИТЬ_БОТА.bat`** и **`ОБНОВИТЬ.bat`** на Рабочем столе
+6. Создаст совместимые файлы **`ЗАПУСТИТЬ_БОТА.bat`**, **`ОБНОВИТЬ.bat`**, **`START.bat`** и **`UPDATE.bat`** на Рабочем столе
 7. Предложит ввести токен бота и сразу запустить
 
 > ⚠️ Нужен **Python 3.10+** — скачать: https://www.python.org/downloads/
