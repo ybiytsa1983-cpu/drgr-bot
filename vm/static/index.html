@@ -74,6 +74,8 @@
             <label style="font-size:13px;color:#aaa;">Select VM:</label>
             <select id="vmSelect" style="width:100%;margin-top:4px;">
                 <option value="local">Local VM</option>
+                <option value="openclaw">🦞 OpenClaw (127.0.0.1:18791)</option>
+                <option value="duo_ollama_lmstudio">⚡ Dual VM (Ollama + LM Studio)</option>
                 <option value="colab">Google Colab</option>
                 <option value="cloud">Cloud VM</option>
             </select>
@@ -649,10 +651,36 @@
             }).then(r => r.json()).then(data => alert('🦢 Goose: ' + data.result));
         }
 
-        document.getElementById('vmSelect').addEventListener('change', function(e) {
+        document.getElementById('vmSelect').addEventListener('change', async function(e) {
             const val = e.target.value;
-            if (val === 'local') window._vmBase = '';
-            else alert('🔄 Переключено на: ' + e.target.options[e.target.selectedIndex].text);
+            const text = e.target.options[e.target.selectedIndex].text;
+            if (val === 'local') {
+                window._vmBase = '';
+                return;
+            }
+            if (val === 'duo_ollama_lmstudio') {
+                switchToDuoRun();
+                await refreshModels();
+                const ol = (_modelsCache.ollama || []).length;
+                const lm = (_modelsCache.lmstudio || []).length;
+                alert(`⚡ Dual VM режим: Ollama (${ol}) + LM Studio (${lm})`);
+                return;
+            }
+            if (val === 'openclaw') {
+                try {
+                    const r = await fetch('/vm/openclaw/status');
+                    const data = await r.json();
+                    if (data.ok) {
+                        alert('✅ OpenClaw доступен: ' + data.browser_url);
+                    } else {
+                        alert('⚠️ OpenClaw недоступен. Проверьте, что он запущен на 127.0.0.1:18789/18791');
+                    }
+                } catch (err) {
+                    alert('❌ Ошибка проверки OpenClaw: ' + err.message);
+                }
+                return;
+            }
+            alert('🔄 Переключено на: ' + text);
         });
     </script>
 </body>

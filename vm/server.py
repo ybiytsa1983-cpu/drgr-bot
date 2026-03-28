@@ -753,6 +753,31 @@ def vm_models():
     })
 
 
+@app.route('/vm/openclaw/status', methods=['GET'])
+def vm_openclaw_status():
+    """Lightweight OpenClaw availability check (gateway + browser server)."""
+    import requests as _req
+    gateway_ok = False
+    browser_ok = False
+    try:
+        r = _req.get('http://127.0.0.1:18789', timeout=1)
+        gateway_ok = r.status_code < 500
+    except Exception:
+        gateway_ok = False
+    try:
+        r = _req.get('http://127.0.0.1:18791', timeout=1)
+        browser_ok = r.status_code < 500
+    except Exception:
+        browser_ok = False
+    return jsonify({
+        'ok': gateway_ok or browser_ok,
+        'gateway_ok': gateway_ok,
+        'browser_ok': browser_ok,
+        'gateway_url': 'ws://127.0.0.1:18789',
+        'browser_url': 'http://127.0.0.1:18791/',
+    })
+
+
 @app.route('/vm/chat', methods=['POST'])
 def vm_chat():
     """Single-VM chat endpoint.
@@ -923,4 +948,3 @@ def vm_duorun():
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5001, debug=True)
-
