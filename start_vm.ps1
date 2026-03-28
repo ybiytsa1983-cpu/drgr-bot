@@ -28,7 +28,20 @@ $Branch      = 'main'
 $ZipUrl      = "https://github.com/$Repo/archive/refs/heads/$Branch.zip"
 $DesktopPath = [System.Environment]::GetFolderPath('Desktop')
 $DesktopFallback = Join-Path $env:USERPROFILE 'Desktop'
-$InstallDir  = Join-Path $DesktopPath 'drgr-bot'
+$DesktopCandidates = @($DesktopPath, $DesktopFallback) |
+    Where-Object { $_ } |
+    Select-Object -Unique
+
+$InstallBase = $DesktopCandidates |
+    Where-Object { Test-Path $_ } |
+    Select-Object -First 1
+
+if (-not $InstallBase) {
+    $InstallBase = $DesktopFallback
+    New-Item -ItemType Directory -Path $InstallBase -Force | Out-Null
+}
+
+$InstallDir  = Join-Path $InstallBase 'drgr-bot'
 $ZipFile     = Join-Path $env:TEMP 'drgr-bot-main.zip'
 $EnvBackup   = Join-Path $env:TEMP 'drgr_bot_env_backup.txt'
 $EnvFile     = Join-Path $InstallDir '.env'
@@ -165,15 +178,18 @@ Write-Host ''
 Write-Host '  Создание ярлыков и BAT-запускателей на Рабочем столе...' -ForegroundColor Cyan
 $WShell = New-Object -ComObject WScript.Shell
 
-$DesktopCandidates = @($DesktopPath, $DesktopFallback) |
-    Where-Object { $_ -and (Test-Path $_) } |
+$ShortcutDesktopCandidates = @($InstallBase, $DesktopPath, $DesktopFallback) |
+    Where-Object { $_ } |
     Select-Object -Unique
 
 $InstallDirBatSafe = $InstallDir.Replace('"', '""')
 $InstallDirBatSafe = $InstallDirBatSafe.Replace('%', '%%')
 $InstallDirPsSafe  = $InstallDirBatSafe.Replace('`', '``').Replace('$', '`$')
 
-foreach ($Desktop in $DesktopCandidates) {
+foreach ($Desktop in $ShortcutDesktopCandidates) {
+    if (-not (Test-Path $Desktop)) {
+        New-Item -ItemType Directory -Path $Desktop -Force | Out-Null
+    }
     $DesktopLabel = if ($Desktop -eq $DesktopPath) { 'основной Рабочий стол' } else { 'альтернативный Рабочий стол (%USERPROFILE%\Desktop)' }
 
     try {
