@@ -61,6 +61,32 @@ Write-Host '  |   (без Git -- только Python)              |' -Foregroun
 Write-Host '  +==========================================+' -ForegroundColor Cyan
 Write-Host ''
 
+# ── Quick-launch: if already installed, offer to just run ──────────────
+$ExistingServer = Join-Path (Join-Path $InstallDir 'vm') 'server.py'
+$ExistingBat    = Join-Path $InstallDir 'ЗАПУСТИТЬ_БОТА.bat'
+
+if ((Test-Path $ExistingServer) -and (Test-Path $ExistingBat)) {
+    Write-Host '  Обнаружена существующая установка drgr-bot!' -ForegroundColor Green
+    Write-Host "  Папка: $InstallDir" -ForegroundColor DarkGray
+    Write-Host ''
+    $choice = Read-Host '  Запустить? (да/нет, Enter = да, "обновить" = переустановить)'
+    if ($choice -match '^(обн|upd|update|reinstall)') {
+        Write-Host '  Переустановка...' -ForegroundColor Yellow
+        # fall through to full install
+    } elseif ($choice -match '^(нет|н|no|n)$') {
+        Write-Host '  Отмена.' -ForegroundColor Yellow
+        exit 0
+    } else {
+        Write-Host '  Запуск...' -ForegroundColor Cyan
+        Start-Process -FilePath $ExistingBat -WorkingDirectory $InstallDir
+        Write-Host ''
+        Write-Host '  VM-сервер запущен!' -ForegroundColor Green
+        Write-Host '  Веб-интерфейс: http://localhost:5001' -ForegroundColor DarkGray
+        Write-Host ''
+        exit 0
+    }
+}
+
 # 1. Python
 Write-Step '1/6' 'Проверка Python...'
 try {
@@ -359,11 +385,12 @@ Write-Host "  Папка проекта: $InstallDir" -ForegroundColor DarkGray
 Write-Host '  Веб-интерфейс: http://localhost:5001'     -ForegroundColor DarkGray
 Write-Host ''
 
-$Launch = Read-Host '  Запустить бота прямо сейчас? (да/нет)'
-if ($Launch -match '^(да|д|yes|y)$') {
+$Launch = Read-Host '  Запустить бота прямо сейчас? (да/нет, Enter = да)'
+if ($Launch -match '^(нет|н|no|n)$') {
+    Write-Host '  Готово! Используйте ярлык "ЗАПУСТИТЬ БОТА" на Рабочем столе.' -ForegroundColor Green
+} else {
     Write-Host '  Запуск...' -ForegroundColor Cyan
     Start-Process -FilePath "$InstallDir\ЗАПУСТИТЬ_БОТА.bat" -WorkingDirectory $InstallDir
-} else {
-    Write-Host '  Готово! Используйте ярлык "ЗАПУСТИТЬ БОТА" на Рабочем столе.' -ForegroundColor Green
+    Write-Host '  VM-сервер запущен! Веб-интерфейс: http://localhost:5001' -ForegroundColor Green
 }
 Write-Host ''
