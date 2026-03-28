@@ -761,12 +761,12 @@ def vm_openclaw_status():
     browser_ok = False
     try:
         r = _req.get('http://127.0.0.1:18789', timeout=1)
-        gateway_ok = r.status_code < 500
+        gateway_ok = 200 <= r.status_code < 300
     except Exception:
         gateway_ok = False
     try:
         r = _req.get('http://127.0.0.1:18791', timeout=1)
-        browser_ok = r.status_code < 500
+        browser_ok = 200 <= r.status_code < 300
     except Exception:
         browser_ok = False
     return jsonify({

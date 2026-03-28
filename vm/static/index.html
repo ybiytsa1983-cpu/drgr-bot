@@ -74,7 +74,7 @@
             <label style="font-size:13px;color:#aaa;">Select VM:</label>
             <select id="vmSelect" style="width:100%;margin-top:4px;">
                 <option value="local">Local VM</option>
-                <option value="openclaw">🦞 OpenClaw (127.0.0.1:18791)</option>
+                <option value="openclaw_vm">🦞 OpenClaw (127.0.0.1:18791)</option>
                 <option value="duo_ollama_lmstudio">⚡ Dual VM (Ollama + LM Studio)</option>
                 <option value="colab">Google Colab</option>
                 <option value="cloud">Cloud VM</option>
@@ -666,12 +666,12 @@
                 alert(`⚡ Dual VM режим: Ollama (${ol}) + LM Studio (${lm})`);
                 return;
             }
-            if (val === 'openclaw') {
+            if (val === 'openclaw_vm') {
                 try {
                     const r = await fetch('/vm/openclaw/status');
                     const data = await r.json();
                     if (data.ok) {
-                        alert('✅ OpenClaw доступен: ' + data.browser_url);
+                        alert('✅ OpenClaw доступен: ' + (data.browser_url || 'http://127.0.0.1:18791/'));
                     } else {
                         alert('⚠️ OpenClaw недоступен. Проверьте, что он запущен на 127.0.0.1:18789/18791');
                     }
