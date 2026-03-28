@@ -1,6 +1,12 @@
 // popup.js — DRGR Bot Control Extension
 
 const DEFAULT_VM_URL = 'http://localhost:5001';
+const VM_URL_FALLBACKS = [
+  'http://localhost:5001',
+  'http://127.0.0.1:5001',
+  'http://localhost:5000',
+  'http://127.0.0.1:5000',
+];
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -10,10 +16,40 @@ async function getVmUrl() {
   });
 }
 
+function normalizeVmUrl(url) {
+  return String(url || DEFAULT_VM_URL).trim().replace(/\/+$/, '');
+}
+
+function vmUrlCandidates(primary) {
+  const seen = new Set();
+  const out = [];
+  [primary, ...VM_URL_FALLBACKS].forEach(u => {
+    const norm = normalizeVmUrl(u);
+    if (!norm || seen.has(norm)) return;
+    seen.add(norm);
+    out.push(norm);
+  });
+  return out;
+}
+
 async function apiFetch(path, opts = {}) {
-  const base = await getVmUrl();
-  const url = base.replace(/\/$/, '') + path;
-  return fetch(url, opts);
+  const configuredBase = normalizeVmUrl(await getVmUrl());
+  const candidates = vmUrlCandidates(configuredBase);
+  let lastError = null;
+
+  for (const base of candidates) {
+    try {
+      const response = await fetch(base + path, opts);
+      if (response.ok && base !== configuredBase) {
+        chrome.storage.local.set({ vmUrl: base });
+      }
+      return response;
+    } catch (e) {
+      lastError = e;
+    }
+  }
+
+  throw lastError || new Error('VM недоступна');
 }
 
 function setBadge(id, text, cls) {
@@ -175,11 +211,11 @@ document.getElementById('sbClear').addEventListener('click', () => {
 
 async function loadSettings() {
   const url = await getVmUrl();
-  document.getElementById('cfgUrl').value = url;
+  document.getElementById('cfgUrl').value = normalizeVmUrl(url);
 }
 
 document.getElementById('btnSaveCfg').addEventListener('click', () => {
-  const url = document.getElementById('cfgUrl').value.trim() || DEFAULT_VM_URL;
+  const url = normalizeVmUrl(document.getElementById('cfgUrl').value) || DEFAULT_VM_URL;
   chrome.storage.local.set({ vmUrl: url }, () => {
     setMsg('cfgMsg', '✓ Сохранено', '#4ec94e');
     setTimeout(() => setMsg('cfgMsg', ''), 2000);
@@ -192,7 +228,8 @@ document.getElementById('btnTestConn').addEventListener('click', async () => {
     const r = await apiFetch('/health');
     if (r.ok) {
       const d = await r.json();
-      setMsg('cfgMsg', `✓ Подключено (vm: ${d.vm})`, '#4ec94e');
+      const activeUrl = normalizeVmUrl(await getVmUrl());
+      setMsg('cfgMsg', `✓ Подключено: ${activeUrl} (vm: ${d.vm})`, '#4ec94e');
     } else {
       setMsg('cfgMsg', `✗ HTTP ${r.status}`, '#f66');
     }
