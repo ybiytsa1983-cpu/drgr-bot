@@ -22,29 +22,31 @@ irm https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/start_vm.ps1
 irm https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/start_vm.ps1 | iex
 ```
 
-### 2) Запустить уже установленный проект
+### 2) Запустить уже установленный проект (надёжный вариант)
 
 ```powershell
-$Desktop = [Environment]::GetFolderPath('Desktop')
-$InstallDir = Join-Path $Desktop 'drgr-bot'
-$RunBat = Join-Path $InstallDir 'ЗАПУСТИТЬ_БОТА.bat'
-if (-not (Test-Path $RunBat)) {
-  irm https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/start_vm.ps1 | iex
-} else {
+$RunBat = @(
+  (Join-Path ([Environment]::GetFolderPath('Desktop')) 'drgr-bot\ЗАПУСТИТЬ_БОТА.bat'),
+  (Join-Path (Join-Path $env:USERPROFILE 'Desktop') 'drgr-bot\ЗАПУСТИТЬ_БОТА.bat')
+) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+if ($RunBat) {
   & $RunBat
+} else {
+  irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/start_vm.ps1?$(Get-Random)" | iex
 }
 ```
 
-### 3) Обновить до последней версии
+### 3) Обновить до последней версии (надёжный вариант)
 
 ```powershell
-$Desktop = [Environment]::GetFolderPath('Desktop')
-$InstallDir = Join-Path $Desktop 'drgr-bot'
-$UpdateBat = Join-Path $InstallDir 'ОБНОВИТЬ.bat'
-if (-not (Test-Path $UpdateBat)) {
-  irm https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/start_vm.ps1 | iex
-} else {
+$UpdateBat = @(
+  (Join-Path ([Environment]::GetFolderPath('Desktop')) 'drgr-bot\ОБНОВИТЬ.bat'),
+  (Join-Path (Join-Path $env:USERPROFILE 'Desktop') 'drgr-bot\ОБНОВИТЬ.bat')
+) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+if ($UpdateBat) {
   & $UpdateBat
+} else {
+  irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/start_vm.ps1?$(Get-Random)" | iex
 }
 ```
 
