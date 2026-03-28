@@ -229,6 +229,20 @@ if exist "%INSTALL_DIR%\ЗАПУСТИТЬ_БОТА.bat" (
 )
 "@ | Set-Content -LiteralPath (Join-Path $Desktop 'ЗАПУСТИТЬ_БОТА.bat') -Encoding OEM
         Write-OK "BAT ""ЗАПУСТИТЬ_БОТА.bat"" создан ($DesktopLabel)."
+        @"
+@echo off
+chcp 65001 > nul
+set "INSTALL_DIR=$InstallDirPsSafe"
+if exist "%INSTALL_DIR%\ЗАПУСТИТЬ_БОТА.bat" (
+    call "%INSTALL_DIR%\ЗАПУСТИТЬ_БОТА.bat"
+) else (
+    echo [ОШИБКА] Папка drgr-bot не найдена: %INSTALL_DIR%
+    echo Запустите в PowerShell:
+    echo   irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/start_vm.ps1?%%RANDOM%%" ^| iex
+    pause
+)
+"@ | Set-Content -LiteralPath (Join-Path $Desktop 'START.bat') -Encoding OEM
+        Write-OK "BAT ""START.bat"" создан ($DesktopLabel)."
     } catch { Write-Warn "Не удалось создать BAT запуска ($Desktop)." }
 
     try {
@@ -246,6 +260,20 @@ if exist "%INSTALL_DIR%\ОБНОВИТЬ.bat" (
 )
 "@ | Set-Content -LiteralPath (Join-Path $Desktop 'ОБНОВИТЬ.bat') -Encoding OEM
         Write-OK "BAT ""ОБНОВИТЬ.bat"" создан ($DesktopLabel)."
+        @"
+@echo off
+chcp 65001 > nul
+set "INSTALL_DIR=$InstallDirPsSafe"
+if exist "%INSTALL_DIR%\ОБНОВИТЬ.bat" (
+    call "%INSTALL_DIR%\ОБНОВИТЬ.bat"
+) else (
+    echo [ОШИБКА] Папка drgr-bot не найдена: %INSTALL_DIR%
+    echo Запустите в PowerShell:
+    echo   irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/start_vm.ps1?%%RANDOM%%" ^| iex
+    pause
+)
+"@ | Set-Content -LiteralPath (Join-Path $Desktop 'UPDATE.bat') -Encoding OEM
+        Write-OK "BAT ""UPDATE.bat"" создан ($DesktopLabel)."
     } catch { Write-Warn "Не удалось создать BAT обновления ($Desktop)." }
 
     if ($DesktopCompatDirNorm -ne $InstallDirNorm) {
@@ -267,6 +295,20 @@ if exist "%INSTALL_DIR%\ЗАПУСТИТЬ_БОТА.bat" (
 )
 "@ | Set-Content -LiteralPath (Join-Path $DesktopCompatDir 'ЗАПУСТИТЬ_БОТА.bat') -Encoding OEM
             Write-OK "Совместимый BAT создан: $DesktopCompatDir\ЗАПУСТИТЬ_БОТА.bat"
+            @"
+@echo off
+chcp 65001 > nul
+set "INSTALL_DIR=$InstallDirPsSafe"
+if exist "%INSTALL_DIR%\ЗАПУСТИТЬ_БОТА.bat" (
+    call "%INSTALL_DIR%\ЗАПУСТИТЬ_БОТА.bat"
+) else (
+    echo [ОШИБКА] Папка drgr-bot не найдена: %INSTALL_DIR%
+    echo Запустите в PowerShell:
+    echo   irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/start_vm.ps1?%%RANDOM%%" ^| iex
+    pause
+)
+"@ | Set-Content -LiteralPath (Join-Path $DesktopCompatDir 'START.bat') -Encoding OEM
+            Write-OK "Совместимый BAT создан: $DesktopCompatDir\START.bat"
         } catch { Write-Warn "Не удалось создать совместимый BAT запуска ($DesktopCompatDir)." }
 
         try {
@@ -284,6 +326,20 @@ if exist "%INSTALL_DIR%\ОБНОВИТЬ.bat" (
 )
 "@ | Set-Content -LiteralPath (Join-Path $DesktopCompatDir 'ОБНОВИТЬ.bat') -Encoding OEM
             Write-OK "Совместимый BAT создан: $DesktopCompatDir\ОБНОВИТЬ.bat"
+            @"
+@echo off
+chcp 65001 > nul
+set "INSTALL_DIR=$InstallDirPsSafe"
+if exist "%INSTALL_DIR%\ОБНОВИТЬ.bat" (
+    call "%INSTALL_DIR%\ОБНОВИТЬ.bat"
+) else (
+    echo [ОШИБКА] Папка drgr-bot не найдена: %INSTALL_DIR%
+    echo Запустите в PowerShell:
+    echo   irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/start_vm.ps1?%%RANDOM%%" ^| iex
+    pause
+)
+"@ | Set-Content -LiteralPath (Join-Path $DesktopCompatDir 'UPDATE.bat') -Encoding OEM
+            Write-OK "Совместимый BAT создан: $DesktopCompatDir\UPDATE.bat"
         } catch { Write-Warn "Не удалось создать совместимый BAT обновления ($DesktopCompatDir)." }
     }
 }

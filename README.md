@@ -36,6 +36,16 @@ if ($RunBat) {
 }
 ```
 
+Если в вашей системе плохо работают русские имена файлов, используйте ASCII-алиас:
+
+```powershell
+$RunBat = @(
+  (Join-Path ([Environment]::GetFolderPath('Desktop')) 'drgr-bot\START.bat'),
+  (Join-Path (Join-Path $env:USERPROFILE 'Desktop') 'drgr-bot\START.bat')
+) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+if ($RunBat) { & $RunBat }
+```
+
 ### 3) Обновить до последней версии (надёжный вариант)
 
 ```powershell
@@ -48,6 +58,16 @@ if ($UpdateBat) {
 } else {
   irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/start_vm.ps1?$(Get-Random)" | iex
 }
+```
+
+ASCII-алиас для обновления:
+
+```powershell
+$UpdateBat = @(
+  (Join-Path ([Environment]::GetFolderPath('Desktop')) 'drgr-bot\UPDATE.bat'),
+  (Join-Path (Join-Path $env:USERPROFILE 'Desktop') 'drgr-bot\UPDATE.bat')
+) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+if ($UpdateBat) { & $UpdateBat }
 ```
 
 Скрипт автоматически:
