@@ -12,9 +12,20 @@ const VM_URL_FALLBACKS = [
 
 async function getVmUrl() {
   if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-    return new Promise(resolve => {
-      chrome.storage.local.get({ vmUrl: DEFAULT_VM_URL }, d => resolve(d.vmUrl));
-    });
+    try {
+      return await new Promise((resolve) => {
+        chrome.storage.local.get({ vmUrl: DEFAULT_VM_URL }, d => {
+          if (chrome.runtime.lastError) {
+            console.warn('storage error:', chrome.runtime.lastError);
+            resolve(DEFAULT_VM_URL);
+          } else {
+            resolve(d.vmUrl);
+          }
+        });
+      });
+    } catch (_) {
+      return DEFAULT_VM_URL;
+    }
   }
   return DEFAULT_VM_URL;
 }
