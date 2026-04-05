@@ -357,7 +357,10 @@ def save_project():
     filename = re.sub(r"[^\w.\-]", "_", filename)
     if not filename or ".." in filename:
         return jsonify({"error": "Invalid filename"}), 400
-    (_PROJECTS_DIR / filename).write_text(content, encoding="utf-8")
+    target = (_PROJECTS_DIR / filename).resolve()
+    if not str(target).startswith(str(_PROJECTS_DIR.resolve())):
+        return jsonify({"error": "Invalid filename"}), 400
+    target.write_text(content, encoding="utf-8")
     return jsonify({"success": True})
 
 @app.route("/api/upload", methods=["POST"])
@@ -371,7 +374,10 @@ def upload_file():
     safe_name = re.sub(r"[^\w.\-]", "_", safe_name)
     if not safe_name or ".." in safe_name:
         return jsonify({"error": "Invalid filename"}), 400
-    f.save(str(_PROJECTS_DIR / safe_name))
+    target = (_PROJECTS_DIR / safe_name).resolve()
+    if not str(target).startswith(str(_PROJECTS_DIR.resolve())):
+        return jsonify({"error": "Invalid filename"}), 400
+    f.save(str(target))
     return jsonify({"success": True, "filename": safe_name})
 
 # --- Бот ---
@@ -420,7 +426,7 @@ def settings_post():
             continue
         v = str(v).strip()
         # Не перезаписываем токен маской
-        if v.endswith("****") and k in existing:
+        if v == "****" and k in existing:
             continue
         existing[k] = v
     _env_save(existing)
@@ -563,6 +569,7 @@ def generate_video():
 # --- TG сообщения (polling для веб-интерфейса) ---
 _tg_messages: List[Dict] = []
 _tg_msg_lock = threading.Lock()
+_tg_msg_counter = 0
 
 @app.route("/chat/tg_messages", methods=["GET"])
 def chat_tg_messages():
@@ -579,14 +586,16 @@ def chat_tg_messages():
 @app.route("/chat/tg_messages", methods=["POST"])
 def chat_tg_messages_post():
     """Добавить TG сообщение (вызывается ботом или webhook)."""
+    global _tg_msg_counter
     data = request.json or {}
-    msg = {
-        "id": int(time.time() * 1000),
-        "text": data.get("text", ""),
-        "from": data.get("from", "unknown"),
-        "date": datetime.now().isoformat(),
-    }
     with _tg_msg_lock:
+        _tg_msg_counter += 1
+        msg = {
+            "id": _tg_msg_counter,
+            "text": data.get("text", ""),
+            "from": data.get("from", "unknown"),
+            "date": datetime.now().isoformat(),
+        }
         _tg_messages.append(msg)
         # Держим не более 500 сообщений
         if len(_tg_messages) > 500:
