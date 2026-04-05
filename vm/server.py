@@ -128,8 +128,8 @@ def _bot_start() -> Tuple[bool, str]:
         env.update(env_data)
         if not env.get("BOT_TOKEN"):
             return False, "BOT_TOKEN не задан в .env"
-        log_fh = open(_BOT_LOG, "a", encoding="utf-8")
         try:
+            log_fh = open(_BOT_LOG, "a", encoding="utf-8")  # noqa: SIM115
             _bot_proc = subprocess.Popen(
                 [sys.executable, str(_BOT_SCRIPT)],
                 cwd=str(_ROOT_DIR),
@@ -138,6 +138,10 @@ def _bot_start() -> Tuple[bool, str]:
                 env=env,
             )
         except Exception as exc:
+            try:
+                log_fh.close()
+            except Exception:
+                pass
             return False, f"Ошибка запуска: {exc}"
         logger.info("Bot started, PID=%s", _bot_proc.pid)
         return True, f"Бот запущен (PID {_bot_proc.pid})"
@@ -347,8 +351,11 @@ def save_project():
     content = data.get("content", "")
     if not filename:
         return jsonify({"error": "Missing filename"}), 400
-    # Sanitize filename
+    # Sanitize filename: strip path components, reject traversal
+    filename = os.path.basename(filename)
     filename = re.sub(r"[^\w.\-]", "_", filename)
+    if not filename or ".." in filename:
+        return jsonify({"error": "Invalid filename"}), 400
     (_PROJECTS_DIR / filename).write_text(content, encoding="utf-8")
     return jsonify({"success": True})
 
@@ -359,7 +366,10 @@ def upload_file():
     f = request.files["file"]
     if not f.filename:
         return jsonify({"error": "No file selected"}), 400
-    safe_name = re.sub(r"[^\w.\-]", "_", f.filename)
+    safe_name = os.path.basename(f.filename)
+    safe_name = re.sub(r"[^\w.\-]", "_", safe_name)
+    if not safe_name or ".." in safe_name:
+        return jsonify({"error": "Invalid filename"}), 400
     f.save(str(_PROJECTS_DIR / safe_name))
     return jsonify({"success": True, "filename": safe_name})
 
@@ -367,12 +377,12 @@ def upload_file():
 @app.route("/bot/start", methods=["POST"])
 def bot_start():
     ok, msg = _bot_start()
-    return jsonify({"ok": ok, "message": msg})
+    return jsonify({"ok": ok, "message": str(msg)})
 
 @app.route("/bot/stop", methods=["POST"])
 def bot_stop():
     ok, msg = _bot_stop()
-    return jsonify({"ok": ok, "message": msg})
+    return jsonify({"ok": ok, "message": str(msg)})
 
 @app.route("/bot/status", methods=["GET"])
 def bot_status():
@@ -394,7 +404,7 @@ def settings_get():
     masked = {}
     for k, v in data.items():
         if "TOKEN" in k.upper() or "KEY" in k.upper() or "SECRET" in k.upper():
-            masked[k] = v[:4] + "****" if len(v) > 4 else "****"
+            masked[k] = "****"
         else:
             masked[k] = v
     return jsonify(masked)
@@ -526,4 +536,4 @@ def _autostart_bot():
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
     threading.Thread(target=_autostart_bot, daemon=True).start()
-    app.run(host="0.0.0.0", port=5001, debug=True)
+    app.run(host="0.0.0.0", port=5001, debug=False)

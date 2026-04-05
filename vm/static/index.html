@@ -451,7 +451,7 @@ function loadSettings() {
       const lbl = document.createElement('label');
       lbl.textContent = k;
       const inp = document.createElement('input');
-      inp.type = (k.toUpperCase().includes('TOKEN') || k.toUpperCase().includes('KEY')) ? 'password' : 'text';
+      inp.type = (k.toUpperCase().includes('TOKEN') || k.toUpperCase().includes('KEY') || k.toUpperCase().includes('SECRET')) ? 'password' : 'text';
       inp.value = v;
       inp.dataset.key = k;
       inp.className = 'env-input';
