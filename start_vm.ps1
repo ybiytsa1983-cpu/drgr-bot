@@ -1,31 +1,31 @@
-# DRGR VM - Скрипт запуска (быстрый)
-# Для полного лаунчера с Ollama: .\start.ps1
-Write-Host "🚀 Запуск DRGR VM..." -ForegroundColor Cyan
+# DRGR VM - Quick start script
+# For full launcher with Ollama: .\start.ps1
+Write-Host "Starting DRGR VM..." -ForegroundColor Cyan
 
-# Пытаемся перейти в корень проекта (работает и при запуске через IEX)
+# Try to switch to project root (also works via IEX)
 $scriptPath = $MyInvocation.MyCommand.Path
 if ($scriptPath) {
     Set-Location (Split-Path -Parent $scriptPath)
 } elseif (Test-Path ".\vm\server.py") {
-    # Уже в корне проекта
+    # Already in project root
 } else {
-    Write-Host "❌ Не удалось определить папку проекта." -ForegroundColor Red
-    Write-Host "   Перейдите в папку drgr-bot и запустите снова." -ForegroundColor Yellow
+    Write-Host "ERROR: Could not determine project directory." -ForegroundColor Red
+    Write-Host "Please cd into drgr-bot and run again." -ForegroundColor Yellow
     exit 1
 }
 
-# Обновление из GitHub
-Write-Host "📥 Подтягивание изменений из GitHub..." -ForegroundColor Yellow
+# Update from GitHub
+Write-Host "Pulling latest changes from GitHub..." -ForegroundColor Yellow
 git pull origin main 2>$null
 
-# Обновление зависимостей
-Write-Host "📦 Обновление зависимостей..." -ForegroundColor Yellow
+# Update dependencies
+Write-Host "Updating dependencies..." -ForegroundColor Yellow
 pip install --upgrade typing-extensions pydantic aiohttp aiofiles --quiet 2>$null
 pip install -r requirements.txt --quiet 2>$null
 
-# Запуск VM сервера
-Write-Host "✅ Запуск VM сервера на http://localhost:5000" -ForegroundColor Green
-Write-Host "   Веб-интерфейс: http://localhost:5000" -ForegroundColor Cyan
-Write-Host "   Ctrl+C — остановка" -ForegroundColor Gray
+# Start VM server
+Write-Host "VM server started on http://localhost:5000" -ForegroundColor Green
+Write-Host "Web UI: http://localhost:5000" -ForegroundColor Cyan
+Write-Host "Press Ctrl+C to stop" -ForegroundColor Gray
 
 python vm/server.py
