@@ -5,12 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch index.ts",
-    "start": "node --loader tsx index.ts"
+    "build": "esbuild index.ts --bundle --platform=node --target=node18 --format=cjs --outfile=dist/index.cjs",
+    "start": "node dist/index.cjs"
   },
   "dependencies": {
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
-    "express": "^4.19.2"
+    "express": "^4.19.2",
+    "esbuild": "^0.25.3"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
