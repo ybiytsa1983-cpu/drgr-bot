@@ -2,8 +2,17 @@
 # Для полного лаунчера с Ollama: .\start.ps1
 Write-Host "🚀 Запуск DRGR VM..." -ForegroundColor Cyan
 
-# cd в папку скрипта
-Set-Location (Split-Path -Parent $MyInvocation.MyCommand.Path)
+# Пытаемся перейти в корень проекта (работает и при запуске через IEX)
+$scriptPath = $MyInvocation.MyCommand.Path
+if ($scriptPath) {
+    Set-Location (Split-Path -Parent $scriptPath)
+} elseif (Test-Path ".\vm\server.py") {
+    # Уже в корне проекта
+} else {
+    Write-Host "❌ Не удалось определить папку проекта." -ForegroundColor Red
+    Write-Host "   Перейдите в папку drgr-bot и запустите снова." -ForegroundColor Yellow
+    exit 1
+}
 
 # Обновление из GitHub
 Write-Host "📥 Подтягивание изменений из GitHub..." -ForegroundColor Yellow
