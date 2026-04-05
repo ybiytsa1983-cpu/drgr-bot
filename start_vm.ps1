@@ -102,8 +102,8 @@ if (-not (Test-Path ".\vm\server.py")) {
     exit 1
 }
 
-Write-Host "VM server starting on http://localhost:5000" -ForegroundColor Green
-Write-Host "Web UI: http://localhost:5000" -ForegroundColor Cyan
+Write-Host "VM server starting on http://localhost:5001" -ForegroundColor Green
+Write-Host "Web UI: http://localhost:5001" -ForegroundColor Cyan
 Write-Host "Press Ctrl+C to stop" -ForegroundColor Gray
 
 & $pythonCmd vm/server.py

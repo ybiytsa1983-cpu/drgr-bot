@@ -28,7 +28,7 @@ powershell -ExecutionPolicy Bypass -File start.ps1
 2. Установит зависимости
 3. Обнаружит и запустит Ollama (если установлена)
 4. Проверит свободность порта
-5. Запустит VM сервер на `http://localhost:5000`
+5. Запустит VM сервер на `http://localhost:5001`
 6. Откроет браузер
 
 ### Вариант 2 — BAT файл
@@ -66,7 +66,7 @@ python vm/server.py
 
 ## 🌐 Веб-интерфейс
 
-После запуска откройте: **http://localhost:5000**
+После запуска откройте: **http://localhost:5001**
 
 | Вкладка | Функция |
 |---------|---------|
@@ -98,7 +98,7 @@ BOT_TOKEN=1234567890:AABBccDDeeFFggHHiiJJkkLLmmNNooPP
 drgr-bot/
 ├── bot.py                 # Telegram-бот (aiogram 3.x)
 ├── vm/
-│   ├── server.py          # VM-сервер (Flask, порт 5000)
+│   ├── server.py          # VM-сервер (Flask, порт 5001)
 │   └── static/
 │       └── index.html     # Веб-интерфейс (7 вкладок)
 ├── extension/
@@ -126,18 +126,18 @@ drgr-bot/
 
 ## ❓ Решение проблем
 
-**Порт 5000 занят**
-→ Запустите: `$env:DRGR_PORT=5002; python vm/server.py`
+**Порт 5001 занят**
+→ Запустите: `$env:DRGR_PORT=5003; python vm/server.py`
 → Или используйте `start.ps1` — он автоматически найдёт свободный порт.
 
 **"Python не найден"**
 → Установите Python с https://www.python.org/downloads/ (отметьте "Add Python to PATH").
 
 **Бот не отвечает в Telegram**
-→ Проверьте BOT_TOKEN в настройках (http://localhost:5000 → Настройки).
+→ Проверьте BOT_TOKEN в настройках (http://localhost:5001 → Настройки).
 
 **Нет AI (чат/статьи не работают)**
 → Установите Ollama: https://ollama.com → `ollama pull llama3`
 
-**VM-сервер недоступен (http://localhost:5000)**
+**VM-сервер недоступен (http://localhost:5001)**
 → Запустите `start.ps1` или `ЗАПУСТИТЬ_БОТА.bat`.
