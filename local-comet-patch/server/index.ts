@@ -1,7 +1,6 @@
 import cors from 'cors';
 import dotenv from 'dotenv';
 import express from 'express';
-import vm from 'node:vm';
 
 dotenv.config();
 
@@ -67,22 +66,8 @@ app.post('/api/editor/run', (req, res) => {
     return res.json({ stdout, stderr, previewHtml });
   }
 
-  try {
-    const logs: string[] = [];
-    const sandbox = {
-      console: {
-        log: (...args: unknown[]) => logs.push(args.map((arg) => String(arg)).join(' ')),
-      },
-    };
-
-    vm.createContext(sandbox);
-    const script = new vm.Script(code);
-    script.runInContext(sandbox, { timeout: 1000 });
-
-    stdout = logs.join('\n');
-  } catch (error) {
-    stderr = error instanceof Error ? error.message : 'Runtime error';
-  }
+  stderr =
+    'Code execution is disabled in this lightweight server for security. Connect an external sandbox/container runner for JS/TS execution.';
 
   previewHtml = `<pre style="white-space: pre-wrap; font-family: monospace; padding: 16px;">${sanitize(code)}</pre>`;
   return res.json({ stdout, stderr, previewHtml });
