@@ -15,8 +15,8 @@ pip install --upgrade typing-extensions pydantic aiohttp aiofiles --quiet 2>$nul
 pip install -r requirements.txt --quiet 2>$null
 
 # Запуск VM сервера
-Write-Host "✅ Запуск VM сервера на http://localhost:5001" -ForegroundColor Green
-Write-Host "   Веб-интерфейс: http://localhost:5001" -ForegroundColor Cyan
+Write-Host "✅ Запуск VM сервера на http://localhost:5000" -ForegroundColor Green
+Write-Host "   Веб-интерфейс: http://localhost:5000" -ForegroundColor Cyan
 Write-Host "   Ctrl+C — остановка" -ForegroundColor Gray
 
 python vm/server.py

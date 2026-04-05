@@ -611,7 +611,7 @@ def _autostart_bot():
 if __name__ == "__main__":
     import socket
 
-    _port = int(os.environ.get("DRGR_PORT", 5001))
+    _port = int(os.environ.get("DRGR_PORT", 5000))
 
     # Проверка порта
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

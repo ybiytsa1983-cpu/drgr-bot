@@ -266,7 +266,7 @@ function changeEditorLang() {
 }
 
 // ---------- Tab navigation ----------
-const allTabs = ['vm','chat','research','editor','bot','settings'];
+const allTabs = ['vm','chat','research','generate','editor','bot','settings'];
 function showTab(name) {
   allTabs.forEach(t => {
     const p = document.getElementById('panel-'+t);
@@ -420,6 +420,15 @@ function botRefresh() {
   api('/bot/log').then(d => {
     document.getElementById('botLogArea').textContent = (d.lines || []).join('\n') || 'Лог пуст';
   }).catch(() => {});
+  // TG messages
+  api('/chat/tg_messages?after=0').then(d => {
+    const area = document.getElementById('tgMessagesArea');
+    if (d && d.length) {
+      area.innerHTML = d.map(m => '<div style="margin-bottom:6px"><b style="color:#4ec9b0">' + (m.from||'?') + ':</b> ' + (m.text||'') + ' <small style="color:#555">' + (m.date||'') + '</small></div>').join('');
+    } else {
+      area.innerHTML = '<em style="color:#555">Нет сообщений</em>';
+    }
+  }).catch(() => {});
 }
 
 // ---------- Editor ----------
@@ -521,15 +530,49 @@ function runGoose() {
   const q = prompt('Goose AI запрос:');
   if (!q) return;
   api('/api/goose', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({query:q})})
-    .then(d => alert('🦢 ' + (d.result || 'Нет ответа'))).catch(e => alert('Ошибка: ' + e.message));
+    .then(d => {
+      setEditorValue(d.result || 'Нет ответа');
+      showTab('editor');
+    }).catch(e => alert('Ошибка: ' + e.message));
 }
 function run3DGen() {
-  api('/api/generate-3d', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({})})
-    .then(d => alert('🎬 ' + d.result)).catch(e => alert('Ошибка: ' + e.message));
+  const q = prompt('Опишите 3D сцену:', '3D куб с текстурой');
+  if (!q) return;
+  api('/api/generate-3d', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({prompt:q})})
+    .then(d => {
+      setEditorValue(d.result || 'Нет результата');
+      showTab('editor');
+    }).catch(e => alert('Ошибка: ' + e.message));
 }
 function runVideoGen() {
-  api('/api/generate-video', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({})})
-    .then(d => alert('🎥 ' + d.result)).catch(e => alert('Ошибка: ' + e.message));
+  const q = prompt('Опишите видео/анимацию:', 'простая анимация');
+  if (!q) return;
+  api('/api/generate-video', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({prompt:q})})
+    .then(d => {
+      setEditorValue(d.result || 'Нет результата');
+      showTab('editor');
+    }).catch(e => alert('Ошибка: ' + e.message));
+}
+
+// ---------- Text Generator ----------
+function runGenerate() {
+  const prompt = document.getElementById('genPrompt').value.trim();
+  if (!prompt) return;
+  const system = document.getElementById('genSystem').value.trim();
+  const btn = document.getElementById('btnGenerate');
+  btn.disabled = true; btn.textContent = '⏳ Генерация...';
+  document.getElementById('genResult').textContent = 'Генерация текста...';
+  api('/generate', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({prompt, system})
+  }).then(d => {
+    document.getElementById('genResult').textContent = d.result || d.error || 'Нет результата';
+  }).catch(e => {
+    document.getElementById('genResult').textContent = 'Ошибка: ' + e.message;
+  }).finally(() => {
+    btn.disabled = false; btn.textContent = '✍️ Генерировать';
+  });
 }
 
 // ---------- Init ----------
