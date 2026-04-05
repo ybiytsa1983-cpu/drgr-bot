@@ -69,6 +69,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
     <button class="nav-btn active" onclick="showTab('vm')">🖥️ VM Статус</button>
     <button class="nav-btn" onclick="showTab('chat')">💬 Чат с AI</button>
     <button class="nav-btn" onclick="showTab('research')">📝 Генератор статей</button>
+    <button class="nav-btn" onclick="showTab('generate')">✍️ Генератор текста</button>
     <button class="nav-btn" onclick="showTab('editor')">📄 Редактор</button>
     <button class="nav-btn" onclick="showTab('bot')">🤖 Telegram бот</button>
     <button class="nav-btn" onclick="showTab('settings')">⚙️ Настройки</button>
@@ -94,6 +95,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
   <button class="tab-item active" data-tab="vm">VM</button>
   <button class="tab-item" data-tab="chat">Чат</button>
   <button class="tab-item" data-tab="research">Статьи</button>
+  <button class="tab-item" data-tab="generate">Текст</button>
   <button class="tab-item" data-tab="editor">Редактор</button>
   <button class="tab-item" data-tab="bot">Бот</button>
   <button class="tab-item" data-tab="settings">Настройки</button>
@@ -150,6 +152,27 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
   </div>
 </div>
 
+<!-- ===== Text Generator Panel ===== -->
+<div id="panel-generate" class="panel">
+  <div class="vm-card" style="flex:1;display:flex;flex-direction:column">
+    <h4>✍️ Генератор текста</h4>
+    <p style="color:#aaa;font-size:.85rem;margin-bottom:10px">Генерация текста по произвольному промпту через локальный LLM (Ollama / LM Studio)</p>
+    <div style="margin-bottom:8px">
+      <label style="font-size:.8rem;color:#aaa">Системный промпт:</label>
+      <input type="text" id="genSystem" value="Ты — полезный AI-ассистент. Отвечай подробно и по-русски." style="width:100%;padding:8px;background:#222;border:1px solid #444;border-radius:6px;color:#fff;font-size:.85rem;margin-top:4px">
+    </div>
+    <div style="margin-bottom:8px">
+      <label style="font-size:.8rem;color:#aaa">Промпт:</label>
+      <textarea id="genPrompt" rows="4" placeholder="Напишите запрос..." style="width:100%;padding:10px;background:#222;border:1px solid #444;border-radius:8px;color:#fff;font-size:.9rem;resize:vertical;margin-top:4px"></textarea>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:12px">
+      <button class="btn-accent" onclick="runGenerate()" id="btnGenerate">✍️ Генерировать</button>
+      <button class="btn-primary2" onclick="document.getElementById('genResult').textContent=''">🗑️ Очистить</button>
+    </div>
+    <div id="genResult" style="background:#111;border-radius:8px;padding:16px;flex:1;overflow-y:auto;white-space:pre-wrap;font-size:.9rem;min-height:200px"><em style="color:#555">Результат появится здесь</em></div>
+  </div>
+</div>
+
 <!-- ===== Editor Panel ===== -->
 <div id="panel-editor" class="panel">
   <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center">
@@ -182,6 +205,8 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
       <button class="btn-accent" onclick="botStop()">⏹ Остановить</button>
       <button class="btn-primary2" onclick="botRefresh()">🔄 Статус</button>
     </div>
+    <h5 style="color:#4ec9b0;font-size:.85rem;margin-bottom:4px">TG Сообщения:</h5>
+    <div id="tgMessagesArea" style="background:#111;border-radius:8px;padding:12px;font-size:.85rem;max-height:200px;overflow-y:auto;margin-bottom:12px"><em style="color:#555">Нет сообщений</em></div>
     <h5 style="color:#4ec9b0;font-size:.85rem;margin-bottom:4px">Лог бота:</h5>
     <div id="botLogArea">Нет данных</div>
   </div>

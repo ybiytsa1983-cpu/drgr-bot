@@ -5,11 +5,12 @@ DRGR VM Server — полнофункциональный бэкенд.
   • Управление ТГ-ботом (start / stop / status) как subprocess
   • Генератор статей (/research) — DDG + scrape + Ollama / LM Studio LLM
   • Чат с AI (/chat) — Ollama / LM Studio
+  • Генерация текста (/generate) — промпт → LLM
   • Настройки (/settings GET/POST → .env)
   • Здоровье (/health, /extension/report)
   • CORS для chrome-extension://
   • Проекты (CRUD) + загрузка файлов
-  • 3D / Video / Goose заглушки
+  • Интеграция TG сообщений (/chat/tg_messages)
 """
 from __future__ import annotations
 
@@ -500,24 +501,97 @@ def extension_report():
 def models():
     return jsonify(_llm_models())
 
-# --- Goose / 3D / Video (заглушки) ---
+# --- Goose AI (через LLM) ---
 @app.route("/api/goose", methods=["POST"])
 def goose_integration():
     data = request.json or {}
     query = data.get("query", "")
+    if not query:
+        return jsonify({"error": "Пустой запрос"}), 400
     reply = _llm_chat([
         {"role": "system", "content": "Ты — эксперт по коду. Анализируй и помогай."},
         {"role": "user", "content": query},
     ])
     return jsonify({"result": reply})
 
+# --- Генерация текста (универсальный промпт → LLM) ---
+@app.route("/generate", methods=["POST"])
+def generate_text():
+    """Генерация текста по произвольному промпту через LLM."""
+    data = request.json or {}
+    prompt = data.get("prompt", "").strip()
+    system = data.get("system", "Ты — полезный AI-ассистент. Отвечай подробно.")
+    model = data.get("model")
+    if not prompt:
+        return jsonify({"error": "Пустой промпт"}), 400
+    reply = _llm_chat([
+        {"role": "system", "content": system},
+        {"role": "user", "content": prompt},
+    ], model=model)
+    return jsonify({"result": reply})
+
+# --- 3D генерация (через LLM — генерация Three.js кода) ---
 @app.route("/api/generate-3d", methods=["POST"])
 def generate_3d():
-    return jsonify({"result": "3D генерация: подключите TripoSR или OpenClaw для работы."})
+    data = request.json or {}
+    prompt = data.get("prompt", "3D куб")
+    reply = _llm_chat([
+        {"role": "system", "content": (
+            "Ты — 3D-разработчик. Генерируй готовый HTML+Three.js код для 3D-сцены. "
+            "Код должен быть полностью рабочим — один HTML файл с CDN для Three.js. "
+            "Включи OrbitControls для вращения. Подключай Three.js через CDN: "
+            "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"
+        )},
+        {"role": "user", "content": f"Создай 3D сцену: {prompt}"},
+    ])
+    return jsonify({"result": reply})
 
+# --- Видео генерация (скрипт через LLM) ---
 @app.route("/api/generate-video", methods=["POST"])
 def generate_video():
-    return jsonify({"result": "Видео генерация: подключите Stable Diffusion для работы."})
+    data = request.json or {}
+    prompt = data.get("prompt", "анимация")
+    reply = _llm_chat([
+        {"role": "system", "content": (
+            "Ты — эксперт по видео. Создай Python-скрипт для генерации видео/анимации "
+            "с помощью moviepy или PIL. Скрипт должен быть полностью рабочим."
+        )},
+        {"role": "user", "content": f"Создай видео/анимацию: {prompt}"},
+    ])
+    return jsonify({"result": reply})
+
+# --- TG сообщения (polling для веб-интерфейса) ---
+_tg_messages: List[Dict] = []
+_tg_msg_lock = threading.Lock()
+
+@app.route("/chat/tg_messages", methods=["GET"])
+def chat_tg_messages():
+    """Получить TG сообщения (для отображения в веб-чате)."""
+    after = request.args.get("after", "0")
+    try:
+        after_id = int(after)
+    except (ValueError, TypeError):
+        after_id = 0
+    with _tg_msg_lock:
+        filtered = [m for m in _tg_messages if m.get("id", 0) > after_id]
+    return jsonify(filtered)
+
+@app.route("/chat/tg_messages", methods=["POST"])
+def chat_tg_messages_post():
+    """Добавить TG сообщение (вызывается ботом или webhook)."""
+    data = request.json or {}
+    msg = {
+        "id": int(time.time() * 1000),
+        "text": data.get("text", ""),
+        "from": data.get("from", "unknown"),
+        "date": datetime.now().isoformat(),
+    }
+    with _tg_msg_lock:
+        _tg_messages.append(msg)
+        # Держим не более 500 сообщений
+        if len(_tg_messages) > 500:
+            _tg_messages[:] = _tg_messages[-500:]
+    return jsonify({"ok": True, "id": msg["id"]})
 
 # ---------------------------------------------------------------------------
 #  Автозапуск бота при старте сервера (если BOT_TOKEN задан)
@@ -535,5 +609,32 @@ def _autostart_bot():
 #  main
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
+    import socket
+
+    _port = int(os.environ.get("DRGR_PORT", 5001))
+
+    # Проверка порта
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        sock.bind(("0.0.0.0", _port))
+        sock.close()
+    except OSError:
+        logger.error("Порт %d уже занят! Попробуйте: DRGR_PORT=5002 python vm/server.py", _port)
+        # Попробовать следующий порт
+        for alt in range(_port + 1, _port + 10):
+            try:
+                sock2 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock2.bind(("0.0.0.0", alt))
+                sock2.close()
+                logger.info("Используется альтернативный порт: %d", alt)
+                _port = alt
+                break
+            except OSError:
+                continue
+        else:
+            logger.error("Все порты %d-%d заняты. Завершение.", _port, _port + 9)
+            sys.exit(1)
+
     threading.Thread(target=_autostart_bot, daemon=True).start()
-    app.run(host="0.0.0.0", port=5001, debug=False)
+    logger.info("DRGR VM Server запущен на http://localhost:%d", _port)
+    app.run(host="0.0.0.0", port=_port, debug=False)
