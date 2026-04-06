@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { getModels, sendChat } from '../lib/vmApi';
 import type { ChatMessage, ModelsResponse } from '../types/vm';
 
@@ -11,9 +11,7 @@ export default function VmChatPage() {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   // Fetch models once on mount
-  const modelsLoaded = useRef(false);
-  if (!modelsLoaded.current) {
-    modelsLoaded.current = true;
+  useEffect(() => {
     getModels()
       .then((res: ModelsResponse) => {
         const all = [...res.ollama, ...res.lmstudio];
@@ -21,7 +19,7 @@ export default function VmChatPage() {
         if (all.length > 0) setModel(all[0]);
       })
       .catch(() => {});
-  }
+  }, []);
 
   const handleSend = useCallback(async () => {
     const text = input.trim();

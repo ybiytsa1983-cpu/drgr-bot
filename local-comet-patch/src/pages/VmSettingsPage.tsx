@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { getSettings, saveSettings } from '../lib/vmApi';
 import type { SettingsData } from '../types/vm';
 
@@ -25,12 +25,10 @@ export default function VmSettingsPage() {
     }
   }, []);
 
-  // Load once
-  const loaded = { current: false };
-  if (!loaded.current) {
-    loaded.current = true;
+  // Load once on mount
+  useEffect(() => {
     refresh();
-  }
+  }, [refresh]);
 
   const handleSave = async () => {
     setLoading(true);

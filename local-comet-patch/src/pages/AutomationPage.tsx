@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   cancelTask,
   createTask,
@@ -33,12 +33,10 @@ export default function AutomationPage() {
     }
   }, []);
 
-  // Load once
-  const loaded = { current: false };
-  if (!loaded.current) {
-    loaded.current = true;
+  // Load on mount
+  useEffect(() => {
     refresh();
-  }
+  }, [refresh]);
 
   const handleSolveCaptcha = async () => {
     if (!captchaUrl.trim()) return;

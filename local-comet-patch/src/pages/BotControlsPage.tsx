@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { getBotLog, getBotStatus, startBot, stopBot } from '../lib/vmApi';
 import type { BotStatusResponse } from '../types/vm';
 
@@ -19,12 +19,10 @@ export default function BotControlsPage() {
     }
   }, []);
 
-  // Load on first render
-  const loaded = { current: false };
-  if (!loaded.current) {
-    loaded.current = true;
+  // Load on mount
+  useEffect(() => {
     refresh();
-  }
+  }, [refresh]);
 
   const handleStart = async () => {
     setBusy(true);
