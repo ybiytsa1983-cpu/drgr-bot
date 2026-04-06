@@ -6,9 +6,46 @@ dotenv.config();
 
 const app = express();
 const PORT = Number(process.env.EDITOR_SERVER_PORT ?? 5052);
+const VM_URL = process.env.VM_URL ?? 'http://localhost:5001';
 
 app.use(cors());
 app.use(express.json({ limit: '2mb' }));
+
+// ---------------------------------------------------------------------------
+//  VM Proxy — forward /api/vm/* to DRGR VM server
+// ---------------------------------------------------------------------------
+
+app.all('/api/vm/*', async (req, res) => {
+  const vmPath = req.path.replace('/api/vm', '');
+  const targetUrl = `${VM_URL}${vmPath}`;
+
+  try {
+    const fetchOpts: RequestInit = {
+      method: req.method,
+      headers: { 'Content-Type': 'application/json' },
+    };
+
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      fetchOpts.body = JSON.stringify(req.body);
+    }
+
+    const vmRes = await fetch(targetUrl, fetchOpts);
+    const contentType = vmRes.headers.get('content-type') || '';
+
+    res.status(vmRes.status);
+
+    if (contentType.includes('application/json')) {
+      const data = await vmRes.json();
+      return res.json(data);
+    }
+
+    const text = await vmRes.text();
+    return res.send(text);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'VM proxy failed';
+    return res.status(502).json({ error: message, target: targetUrl });
+  }
+});
 
 type EditorLanguage =
   | 'html'
