@@ -24,7 +24,7 @@ set "DEST=%USERPROFILE%\Desktop\drgr-bot"
 set "REPO=https://github.com/ybiytsa1983-cpu/drgr-bot.git"
 
 :: -- 1. Проверка Python -------------------------------------------------
-echo  [1/5] Проверка Python...
+echo  [1/6] Проверка Python...
 python --version > nul 2>&1
 if errorlevel 1 (
     echo.
@@ -43,7 +43,7 @@ for /f "tokens=*" %%V in ('python --version 2^>^&1') do echo  Найден: %%V
 echo.
 
 :: -- 2. Проверка Git ----------------------------------------------------
-echo  [2/5] Проверка Git...
+echo  [2/6] Проверка Git...
 git --version > nul 2>&1
 if errorlevel 1 (
     echo.
@@ -61,7 +61,7 @@ for /f "tokens=*" %%V in ('git --version 2^>^&1') do echo  Найден: %%V
 echo.
 
 :: -- 3. Клонирование репозитория ----------------------------------------
-echo  [3/5] Клонирование репозитория в %DEST%...
+echo  [3/6] Клонирование репозитория в %DEST%...
 echo.
 
 if exist "%DEST%\.git" (
@@ -99,21 +99,59 @@ echo.
 :: -- Переходим в папку проекта ------------------------------------------
 cd /d "%DEST%"
 
-:: -- 4. Установка зависимостей ------------------------------------------
-echo  [4/5] Установка зависимостей Python...
+:: -- 4. Установка зависимостей Python -----------------------------------
+echo  [4/6] Установка зависимостей Python...
 pip install --upgrade -r requirements.txt
 if errorlevel 1 (
     echo.
-    echo  [ПРЕДУПРЕЖДЕНИЕ] Некоторые зависимости не установились.
+    echo  [ПРЕДУПРЕЖДЕНИЕ] Некоторые Python-зависимости не установились.
     echo  Попробуйте запустить вручную: pip install -r requirements.txt
     echo.
 ) else (
-    echo  Зависимости установлены успешно.
+    echo  Python-зависимости установлены успешно.
 )
 echo.
 
-:: -- 5. Настройка файла .env --------------------------------------------
-echo  [5/5] Настройка файла .env...
+:: -- 5. Установка зависимостей Local Comet (Node.js) -------------------
+echo  [5/6] Установка Local Comet Editor (Node.js)...
+echo.
+
+node --version > nul 2>&1
+if errorlevel 1 (
+    echo  [!] Node.js не найден.
+    echo      Local Comet Editor — необязательный компонент.
+    echo      VM-сервер будет работать без него.
+    echo.
+    echo      Чтобы включить Local Comet Editor позже:
+    echo        1. Установите Node.js 18+: https://nodejs.org/
+    echo        2. Перезапустите ЗАПУСТИТЬ_БОТА.bat
+    echo.
+) else (
+    for /f "tokens=*" %%V in ('node --version 2^>^&1') do echo  Найден: Node.js %%V
+    if exist "%DEST%\local-comet-patch\server\package.json" (
+        pushd "%DEST%\local-comet-patch\server"
+        echo  Установка npm-зависимостей...
+        call npm install --silent
+        if errorlevel 1 (
+            echo  [ПРЕДУПРЕЖДЕНИЕ] npm install завершился с ошибкой.
+        ) else (
+            echo  Сборка Local Comet Server...
+            call npm run build --silent
+            if errorlevel 1 (
+                echo  [ПРЕДУПРЕЖДЕНИЕ] npm run build завершился с ошибкой.
+            ) else (
+                echo  Local Comet Editor установлен и собран успешно.
+            )
+        )
+        popd
+    ) else (
+        echo  [!] local-comet-patch/server/package.json не найден — пропуск.
+    )
+)
+echo.
+
+:: -- 6. Настройка файла .env --------------------------------------------
+echo  [6/6] Настройка файла .env...
 echo.
 
 if exist "%DEST%\.env" (
@@ -150,10 +188,11 @@ echo.
 echo +----------------------------------------------+
 echo ^|       Установка завершена успешно!           ^|
 echo +----------------------------------------------+
-echo ^|  Для запуска бота используйте файл:          ^|
+echo ^|  Для запуска используйте:                    ^|
 echo ^|    ЗАПУСТИТЬ_БОТА.bat                        ^|
+echo ^|    (запустит VM + Local Comet + бот)         ^|
 echo ^|                                              ^|
-echo ^|  Для обновления используйте файл:            ^|
+echo ^|  Для обновления:                             ^|
 echo ^|    ОБНОВИТЬ.bat                              ^|
 echo +----------------------------------------------+
 echo.
