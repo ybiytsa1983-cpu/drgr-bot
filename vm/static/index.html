@@ -72,6 +72,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
     <button class="nav-btn" onclick="showTab('generate')">✍️ Генератор текста</button>
     <button class="nav-btn" onclick="showTab('editor')">📄 Редактор</button>
     <button class="nav-btn" onclick="showTab('bot')">🤖 Telegram бот</button>
+    <button class="nav-btn" onclick="showTab('automation')">🤖 Автоматизация</button>
     <button class="nav-btn" onclick="showTab('settings')">⚙️ Настройки</button>
   </div>
 
@@ -98,6 +99,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
   <button class="tab-item" data-tab="generate">Текст</button>
   <button class="tab-item" data-tab="editor">Редактор</button>
   <button class="tab-item" data-tab="bot">Бот</button>
+  <button class="tab-item" data-tab="automation">Автоматизация</button>
   <button class="tab-item" data-tab="settings">Настройки</button>
 </div>
 
@@ -212,6 +214,88 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
   </div>
 </div>
 
+<!-- ===== Automation Panel ===== -->
+<div id="panel-automation" class="panel">
+  <!-- Статус модуля -->
+  <div class="vm-card">
+    <h4>🔧 Статус автоматизации</h4>
+    <div id="autoStatus" style="font-size:.85rem;color:#aaa">Загрузка...</div>
+    <button class="btn-primary2" onclick="refreshAutoStatus()" style="margin-top:8px">🔄 Обновить</button>
+  </div>
+
+  <!-- Вход в аккаунт -->
+  <div class="vm-card">
+    <h4>🔑 Вход в аккаунт</h4>
+    <div style="display:grid;grid-template-columns:120px 1fr;gap:8px;align-items:center">
+      <label style="color:#aaa;font-size:.85rem">URL входа:</label>
+      <input id="loginUrl" placeholder="https://example.com/login" style="padding:6px 10px;background:#222;border:1px solid #444;border-radius:6px;color:#fff;font-size:.85rem">
+      <label style="color:#aaa;font-size:.85rem">Логин:</label>
+      <input id="loginUser" placeholder="email или username" style="padding:6px 10px;background:#222;border:1px solid #444;border-radius:6px;color:#fff;font-size:.85rem">
+      <label style="color:#aaa;font-size:.85rem">Пароль:</label>
+      <input id="loginPass" type="password" placeholder="пароль" style="padding:6px 10px;background:#222;border:1px solid #444;border-radius:6px;color:#fff;font-size:.85rem">
+    </div>
+    <div style="margin-top:10px;display:flex;gap:8px">
+      <button class="btn-accent" onclick="doLogin()">🔑 Войти</button>
+    </div>
+    <div id="loginResult" style="margin-top:8px;font-size:.85rem;color:#aaa"></div>
+  </div>
+
+  <!-- CAPTCHA -->
+  <div class="vm-card">
+    <h4>🧩 Решение CAPTCHA</h4>
+    <p style="color:#aaa;font-size:.85rem;margin-bottom:8px">Нужен ключ TWOCAPTCHA_API_KEY в настройках (.env)</p>
+    <div style="display:grid;grid-template-columns:120px 1fr;gap:8px;align-items:center">
+      <label style="color:#aaa;font-size:.85rem">Site Key:</label>
+      <input id="captchaSiteKey" placeholder="reCAPTCHA site key" style="padding:6px 10px;background:#222;border:1px solid #444;border-radius:6px;color:#fff;font-size:.85rem">
+      <label style="color:#aaa;font-size:.85rem">URL страницы:</label>
+      <input id="captchaPageUrl" placeholder="https://example.com/page" style="padding:6px 10px;background:#222;border:1px solid #444;border-radius:6px;color:#fff;font-size:.85rem">
+    </div>
+    <button class="btn-accent" onclick="solveCaptcha()" style="margin-top:8px">🧩 Решить CAPTCHA</button>
+    <div id="captchaResult" style="margin-top:8px;font-size:.85rem;color:#aaa"></div>
+  </div>
+
+  <!-- Создание задачи -->
+  <div class="vm-card">
+    <h4>📋 Новая задача</h4>
+    <div style="display:grid;grid-template-columns:140px 1fr;gap:8px;align-items:center">
+      <label style="color:#aaa;font-size:.85rem">Тип задачи:</label>
+      <select id="taskType" style="padding:6px;background:#222;border:1px solid #444;border-radius:6px;color:#fff;font-size:.85rem" onchange="onTaskTypeChange()">
+        <option value="browse">🌐 Открыть страницу</option>
+        <option value="login">🔑 Авторизация</option>
+        <option value="captcha_test">🧩 Тест CAPTCHA</option>
+      </select>
+      <label style="color:#aaa;font-size:.85rem">URL:</label>
+      <input id="taskUrl" placeholder="https://..." style="padding:6px 10px;background:#222;border:1px solid #444;border-radius:6px;color:#fff;font-size:.85rem">
+      <label style="color:#aaa;font-size:.85rem">Кол-во циклов:</label>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input id="taskCycles" type="number" min="1" max="1000" value="1" style="width:80px;padding:6px 10px;background:#222;border:1px solid #444;border-radius:6px;color:#fff;font-size:.85rem">
+        <input id="taskCyclesRange" type="range" min="1" max="100" value="1" style="flex:1" oninput="document.getElementById('taskCycles').value=this.value">
+        <span id="taskCyclesLabel" style="color:#4ec9b0;font-size:.85rem;min-width:30px">1</span>
+      </div>
+      <label style="color:#aaa;font-size:.85rem">Пауза (сек):</label>
+      <input id="taskDelay" type="number" min="1" max="300" value="5" style="width:80px;padding:6px 10px;background:#222;border:1px solid #444;border-radius:6px;color:#fff;font-size:.85rem">
+    </div>
+    <div id="taskLoginFields" style="display:none;margin-top:8px">
+      <div style="display:grid;grid-template-columns:140px 1fr;gap:8px;align-items:center">
+        <label style="color:#aaa;font-size:.85rem">Логин:</label>
+        <input id="taskLoginUser" placeholder="email/username" style="padding:6px 10px;background:#222;border:1px solid #444;border-radius:6px;color:#fff;font-size:.85rem">
+        <label style="color:#aaa;font-size:.85rem">Пароль:</label>
+        <input id="taskLoginPass" type="password" placeholder="пароль" style="padding:6px 10px;background:#222;border:1px solid #444;border-radius:6px;color:#fff;font-size:.85rem">
+      </div>
+    </div>
+    <div style="margin-top:10px;display:flex;gap:8px">
+      <button class="btn-accent" onclick="createTask()">▶ Запустить задачу</button>
+    </div>
+  </div>
+
+  <!-- Список задач -->
+  <div class="vm-card">
+    <h4>📋 Задачи</h4>
+    <div id="tasksList" style="font-size:.85rem;color:#aaa">Нет задач</div>
+    <button class="btn-primary2" onclick="refreshTasks()" style="margin-top:8px">🔄 Обновить</button>
+  </div>
+</div>
+
 <!-- ===== Settings Panel ===== -->
 <div id="panel-settings" class="panel">
   <div class="vm-card">
@@ -266,7 +350,7 @@ function changeEditorLang() {
 }
 
 // ---------- Tab navigation ----------
-const allTabs = ['vm','chat','research','generate','editor','bot','settings'];
+const allTabs = ['vm','chat','research','generate','editor','bot','automation','settings'];
 function showTab(name) {
   allTabs.forEach(t => {
     const p = document.getElementById('panel-'+t);
@@ -283,6 +367,7 @@ function showTab(name) {
   if (name === 'bot') botRefresh();
   if (name === 'settings') loadSettings();
   if (name === 'chat') loadModelsDropdown();
+  if (name === 'automation') { refreshAutoStatus(); refreshTasks(); }
 }
 document.querySelectorAll('.tab-item').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
 
@@ -573,6 +658,152 @@ function runGenerate() {
   }).finally(() => {
     btn.disabled = false; btn.textContent = '✍️ Генерировать';
   });
+}
+
+// ---------- Automation ----------
+function refreshAutoStatus() {
+  api('/api/automation/status').then(d => {
+    const lines = [
+      'Selenium: ' + (d.selenium_available ? '✅ Установлен' : '❌ Не установлен (pip install selenium)'),
+      '2captcha: ' + (d.twocaptcha_available ? '✅ Установлен' : '❌ Не установлен (pip install 2captcha-python)'),
+      '2captcha ключ: ' + (d.twocaptcha_key_set ? '✅ Задан' : '❌ Задайте TWOCAPTCHA_API_KEY в настройках'),
+      'Задач всего: ' + d.tasks_count,
+      'Выполняется: ' + d.tasks_running,
+    ];
+    document.getElementById('autoStatus').innerHTML = lines.map(l => '<div style="margin-bottom:4px">' + l + '</div>').join('');
+  }).catch(e => {
+    document.getElementById('autoStatus').textContent = 'Ошибка: ' + e.message;
+  });
+}
+
+function doLogin() {
+  const url = document.getElementById('loginUrl').value.trim();
+  const username = document.getElementById('loginUser').value.trim();
+  const password = document.getElementById('loginPass').value.trim();
+  if (!url || !username || !password) { alert('Заполните все поля'); return; }
+  document.getElementById('loginResult').innerHTML = '⏳ Вход...';
+  api('/api/auth/login', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({url, username, password})
+  }).then(d => {
+    if (d.ok) {
+      document.getElementById('loginResult').innerHTML = '✅ Вход выполнен! Страница: ' + (d.title || d.url);
+    } else {
+      document.getElementById('loginResult').innerHTML = '❌ Ошибка: ' + (d.error || 'неизвестная');
+    }
+  }).catch(e => {
+    document.getElementById('loginResult').innerHTML = '❌ ' + e.message;
+  });
+}
+
+function solveCaptcha() {
+  const siteKey = document.getElementById('captchaSiteKey').value.trim();
+  const pageUrl = document.getElementById('captchaPageUrl').value.trim();
+  if (!siteKey || !pageUrl) { alert('Заполните Site Key и URL страницы'); return; }
+  document.getElementById('captchaResult').innerHTML = '⏳ Решение CAPTCHA...';
+  api('/api/captcha/solve', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({site_key:siteKey, page_url:pageUrl})
+  }).then(d => {
+    if (d.ok) {
+      document.getElementById('captchaResult').innerHTML = '✅ Решено! Токен: <code style="color:#4ec9b0;word-break:break-all">' + d.token.substring(0,50) + '...</code>';
+    } else {
+      document.getElementById('captchaResult').innerHTML = '❌ ' + (d.error || 'Не удалось');
+    }
+  }).catch(e => {
+    document.getElementById('captchaResult').innerHTML = '❌ ' + e.message;
+  });
+}
+
+function onTaskTypeChange() {
+  const type = document.getElementById('taskType').value;
+  document.getElementById('taskLoginFields').style.display = type === 'login' ? 'block' : 'none';
+}
+
+// Sync range and number inputs for cycles
+document.addEventListener('DOMContentLoaded', function() {
+  const numInput = document.getElementById('taskCycles');
+  const rangeInput = document.getElementById('taskCyclesRange');
+  const label = document.getElementById('taskCyclesLabel');
+  if (numInput && rangeInput) {
+    numInput.addEventListener('input', function() {
+      rangeInput.value = this.value;
+      if (label) label.textContent = this.value;
+    });
+    rangeInput.addEventListener('input', function() {
+      numInput.value = this.value;
+      if (label) label.textContent = this.value;
+    });
+  }
+});
+
+function createTask() {
+  const type = document.getElementById('taskType').value;
+  const url = document.getElementById('taskUrl').value.trim();
+  const cycles = parseInt(document.getElementById('taskCycles').value) || 1;
+  const delay = parseInt(document.getElementById('taskDelay').value) || 5;
+  if (!url) { alert('Укажите URL'); return; }
+
+  const params = {url, cycle_delay: delay};
+  if (type === 'login') {
+    params.username = document.getElementById('taskLoginUser').value.trim();
+    params.password = document.getElementById('taskLoginPass').value.trim();
+    if (!params.username || !params.password) { alert('Заполните логин и пароль'); return; }
+  }
+
+  api('/api/tasks', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({type, params, cycles})
+  }).then(d => {
+    alert('✅ Задача создана: ' + d.id);
+    refreshTasks();
+  }).catch(e => alert('❌ ' + e.message));
+}
+
+function refreshTasks() {
+  api('/api/tasks').then(tasks => {
+    const el = document.getElementById('tasksList');
+    if (!tasks.length) { el.innerHTML = '<em>Нет задач</em>'; return; }
+    let html = '<table style="width:100%;border-collapse:collapse">';
+    html += '<tr style="border-bottom:1px solid #333"><th style="text-align:left;padding:6px;color:#4ec9b0">ID</th><th style="text-align:left;padding:6px;color:#4ec9b0">Тип</th><th style="text-align:left;padding:6px;color:#4ec9b0">Циклы</th><th style="text-align:left;padding:6px;color:#4ec9b0">Статус</th><th style="padding:6px;color:#4ec9b0">Действия</th></tr>';
+    tasks.forEach(t => {
+      const statusColors = {queued:'#ff0',running:'#0af',completed:'#0f0',failed:'#f00',cancelled:'#888',paused:'#fa0'};
+      const statusColor = statusColors[t.status] || '#aaa';
+      html += '<tr style="border-bottom:1px solid #222">';
+      html += '<td style="padding:6px;font-family:monospace;font-size:.8rem">' + t.id + '</td>';
+      html += '<td style="padding:6px">' + t.type + '</td>';
+      html += '<td style="padding:6px">' + t.cycles_done + '/' + t.cycles_total + '</td>';
+      html += '<td style="padding:6px;color:' + statusColor + '">' + t.status + '</td>';
+      html += '<td style="padding:6px;text-align:center">';
+      if (t.status === 'running' || t.status === 'queued') {
+        html += '<button onclick="cancelTask(\'' + t.id + '\')" style="background:#c73650;color:#fff;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:.8rem">🛑 Снять</button>';
+      }
+      html += ' <button onclick="showTaskLog(\'' + t.id + '\')" style="background:#333;color:#fff;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:.8rem">📋 Лог</button>';
+      html += '</td></tr>';
+    });
+    html += '</table>';
+    el.innerHTML = html;
+  }).catch(e => {
+    document.getElementById('tasksList').innerHTML = '<span style="color:red">Ошибка: ' + e.message + '</span>';
+  });
+}
+
+function cancelTask(taskId) {
+  if (!confirm('Снять задачу ' + taskId + '?')) return;
+  api('/api/tasks/' + taskId + '/cancel', {method:'POST'}).then(d => {
+    alert(d.message || 'OK');
+    refreshTasks();
+  }).catch(e => alert('❌ ' + e.message));
+}
+
+function showTaskLog(taskId) {
+  api('/api/tasks/' + taskId).then(t => {
+    const log = (t.log || []).join('\n') || 'Лог пуст';
+    alert('Лог задачи ' + taskId + ':\n\n' + log);
+  }).catch(e => alert('❌ ' + e.message));
 }
 
 // ---------- Init ----------

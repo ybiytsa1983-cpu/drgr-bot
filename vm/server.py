@@ -25,6 +25,7 @@ import sys
 import threading
 import time
 import traceback
+import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
@@ -601,6 +602,446 @@ def chat_tg_messages_post():
         if len(_tg_messages) > 500:
             _tg_messages[:] = _tg_messages[-500:]
     return jsonify({"ok": True, "id": msg["id"]})
+
+# ---------------------------------------------------------------------------
+#  Автоматизация: задачи, циклы, CAPTCHA, авторизация
+# ---------------------------------------------------------------------------
+
+# --- Хранилище задач ---
+_tasks: Dict[str, Dict[str, Any]] = {}
+_tasks_lock = threading.Lock()
+
+def _task_create(task_type: str, params: Dict[str, Any], cycles: int = 1) -> Dict[str, Any]:
+    """Создать новую задачу."""
+    task_id = uuid.uuid4().hex[:12]
+    task = {
+        "id": task_id,
+        "type": task_type,
+        "params": params,
+        "cycles_total": max(1, cycles),
+        "cycles_done": 0,
+        "status": "queued",  # queued / running / paused / completed / failed / cancelled
+        "created": datetime.now().isoformat(),
+        "log": [],
+        "error": None,
+    }
+    with _tasks_lock:
+        _tasks[task_id] = task
+    return task
+
+def _task_cancel(task_id: str) -> Tuple[bool, str]:
+    """Снять (отменить) задачу."""
+    with _tasks_lock:
+        task = _tasks.get(task_id)
+        if not task:
+            return False, "Задача не найдена"
+        if task["status"] in ("completed", "cancelled"):
+            return False, f"Задача уже {task['status']}"
+        task["status"] = "cancelled"
+        task["log"].append(f"[{datetime.now().isoformat()}] Задача снята пользователем")
+    return True, "Задача снята"
+
+def _task_list() -> List[Dict[str, Any]]:
+    """Получить список всех задач."""
+    with _tasks_lock:
+        return list(_tasks.values())
+
+def _task_get(task_id: str) -> Optional[Dict[str, Any]]:
+    with _tasks_lock:
+        return _tasks.get(task_id)
+
+def _task_log(task_id: str, message: str) -> None:
+    with _tasks_lock:
+        task = _tasks.get(task_id)
+        if task:
+            task["log"].append(f"[{datetime.now().isoformat()}] {message}")
+
+# --- Selenium / браузерная автоматизация ---
+_selenium_available = False
+try:
+    from selenium import webdriver
+    from selenium.webdriver.chrome.options import Options as ChromeOptions
+    from selenium.webdriver.chrome.service import Service as ChromeService
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.support import expected_conditions as EC
+    from selenium.webdriver.support.ui import WebDriverWait
+    _selenium_available = True
+except ImportError:
+    logger.warning("selenium не установлен — браузерная автоматизация недоступна")
+
+# --- 2captcha ---
+_twocaptcha_available = False
+try:
+    from twocaptcha import TwoCaptcha
+    _twocaptcha_available = True
+except ImportError:
+    logger.warning("2captcha-python не установлен — автоматическое решение капчи недоступно")
+
+
+def _create_browser(headless: bool = True) -> Any:
+    """Создать Selenium WebDriver (Chrome)."""
+    if not _selenium_available:
+        raise RuntimeError("selenium не установлен. Выполните: pip install selenium")
+    opts = ChromeOptions()
+    if headless:
+        opts.add_argument("--headless=new")
+    opts.add_argument("--no-sandbox")
+    opts.add_argument("--disable-dev-shm-usage")
+    opts.add_argument("--disable-blink-features=AutomationControlled")
+    opts.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                      "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+    opts.add_experimental_option("excludeSwitches", ["enable-automation"])
+    opts.add_experimental_option("useAutomationExtension", False)
+    driver = webdriver.Chrome(options=opts)
+    driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
+        "source": "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
+    })
+    return driver
+
+
+def _solve_captcha_2captcha(site_key: str, page_url: str) -> Optional[str]:
+    """Решить reCAPTCHA через 2captcha."""
+    if not _twocaptcha_available:
+        logger.error("2captcha-python не установлен")
+        return None
+    env = _env_read()
+    api_key = env.get("TWOCAPTCHA_API_KEY", "")
+    if not api_key:
+        logger.error("TWOCAPTCHA_API_KEY не задан в .env")
+        return None
+    try:
+        solver = TwoCaptcha(api_key)
+        result = solver.recaptcha(sitekey=site_key, url=page_url)
+        return result.get("code")
+    except Exception as exc:
+        logger.error("2captcha error: %s", exc)
+        return None
+
+
+def _solve_captcha_from_page(driver: Any) -> bool:
+    """Попытаться найти и решить CAPTCHA на странице через 2captcha."""
+    try:
+        # Ищем reCAPTCHA iframe
+        iframes = driver.find_elements(By.TAG_NAME, "iframe")
+        site_key = None
+        for iframe in iframes:
+            src = iframe.get_attribute("src") or ""
+            if "recaptcha" in src or "hcaptcha" in src:
+                # Ищем sitekey в src
+                import re as _re
+                match = _re.search(r"k=([A-Za-z0-9_-]+)", src)
+                if match:
+                    site_key = match.group(1)
+                    break
+
+        # Также ищем div.g-recaptcha
+        if not site_key:
+            try:
+                recaptcha_div = driver.find_element(By.CLASS_NAME, "g-recaptcha")
+                site_key = recaptcha_div.get_attribute("data-sitekey")
+            except Exception:
+                pass
+
+        if not site_key:
+            logger.info("CAPTCHA не найдена на странице")
+            return True  # Нет капчи — OK
+
+        logger.info("Найден CAPTCHA sitekey: %s", site_key)
+        token = _solve_captcha_2captcha(site_key, driver.current_url)
+        if not token:
+            return False
+
+        # Вставляем решение
+        driver.execute_script(
+            'document.getElementById("g-recaptcha-response").innerHTML = arguments[0];', token
+        )
+        # Пытаемся вызвать callback
+        driver.execute_script(
+            """
+            if (typeof ___grecaptcha_cfg !== 'undefined') {
+                Object.keys(___grecaptcha_cfg.clients).forEach(function(key) {
+                    var client = ___grecaptcha_cfg.clients[key];
+                    if (client && client.K && client.K.callback) {
+                        client.K.callback(arguments[0]);
+                    }
+                });
+            }
+            """, token
+        )
+        logger.info("CAPTCHA решена и вставлена")
+        return True
+    except Exception as exc:
+        logger.error("Ошибка решения CAPTCHA: %s", exc)
+        return False
+
+
+def _browser_login(url: str, username: str, password: str,
+                   username_selector: str = 'input[name="username"], input[name="email"], input[type="email"], #username, #email',
+                   password_selector: str = 'input[name="password"], input[type="password"], #password',
+                   submit_selector: str = 'button[type="submit"], input[type="submit"], .login-btn, #login-btn') -> Dict[str, Any]:
+    """Войти в аккаунт через браузер."""
+    driver = None
+    try:
+        driver = _create_browser(headless=False)
+        driver.get(url)
+        time.sleep(3)
+
+        wait = WebDriverWait(driver, 15)
+
+        # Ввод логина
+        user_field = None
+        for sel in username_selector.split(", "):
+            try:
+                user_field = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, sel.strip())))
+                break
+            except Exception:
+                continue
+        if not user_field:
+            return {"ok": False, "error": "Поле логина не найдено"}
+
+        user_field.clear()
+        user_field.send_keys(username)
+        time.sleep(0.5)
+
+        # Ввод пароля
+        pass_field = None
+        for sel in password_selector.split(", "):
+            try:
+                pass_field = driver.find_element(By.CSS_SELECTOR, sel.strip())
+                break
+            except Exception:
+                continue
+        if not pass_field:
+            return {"ok": False, "error": "Поле пароля не найдено"}
+
+        pass_field.clear()
+        pass_field.send_keys(password)
+        time.sleep(0.5)
+
+        # Решение CAPTCHA если есть
+        _solve_captcha_from_page(driver)
+        time.sleep(1)
+
+        # Нажатие кнопки входа
+        submit_btn = None
+        for sel in submit_selector.split(", "):
+            try:
+                submit_btn = driver.find_element(By.CSS_SELECTOR, sel.strip())
+                break
+            except Exception:
+                continue
+        if submit_btn:
+            submit_btn.click()
+        else:
+            # Пробуем Enter
+            pass_field.send_keys("\n")
+
+        time.sleep(5)
+
+        # Сохраняем cookies
+        cookies = driver.get_cookies()
+        current_url = driver.current_url
+        page_title = driver.title
+
+        return {
+            "ok": True,
+            "cookies": cookies,
+            "url": current_url,
+            "title": page_title,
+        }
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+    finally:
+        if driver:
+            try:
+                driver.quit()
+            except Exception:
+                pass
+
+
+def _run_task_thread(task_id: str) -> None:
+    """Выполнить задачу в отдельном потоке с поддержкой циклов."""
+    task = _task_get(task_id)
+    if not task:
+        return
+
+    with _tasks_lock:
+        task["status"] = "running"
+
+    task_type = task["type"]
+    params = task["params"]
+    total_cycles = task["cycles_total"]
+
+    for cycle in range(1, total_cycles + 1):
+        # Проверка отмены
+        current = _task_get(task_id)
+        if not current or current["status"] == "cancelled":
+            _task_log(task_id, f"Задача отменена на цикле {cycle}/{total_cycles}")
+            return
+
+        _task_log(task_id, f"Цикл {cycle}/{total_cycles} начат")
+
+        try:
+            if task_type == "login":
+                result = _browser_login(
+                    url=params.get("url", ""),
+                    username=params.get("username", ""),
+                    password=params.get("password", ""),
+                    username_selector=params.get("username_selector", 'input[name="username"], input[name="email"], input[type="email"], #username, #email'),
+                    password_selector=params.get("password_selector", 'input[name="password"], input[type="password"], #password'),
+                    submit_selector=params.get("submit_selector", 'button[type="submit"], input[type="submit"]'),
+                )
+                _task_log(task_id, f"Логин: {'успешно' if result.get('ok') else result.get('error', 'ошибка')}")
+
+            elif task_type == "captcha_test":
+                url = params.get("url", "")
+                driver = None
+                try:
+                    driver = _create_browser(headless=True)
+                    driver.get(url)
+                    time.sleep(3)
+                    solved = _solve_captcha_from_page(driver)
+                    _task_log(task_id, f"CAPTCHA: {'решена' if solved else 'не удалось решить'}")
+                finally:
+                    if driver:
+                        try:
+                            driver.quit()
+                        except Exception:
+                            pass
+
+            elif task_type == "browse":
+                url = params.get("url", "")
+                action_script = params.get("script", "")
+                driver = None
+                try:
+                    driver = _create_browser(headless=True)
+                    driver.get(url)
+                    time.sleep(3)
+                    # Решить CAPTCHA если есть
+                    _solve_captcha_from_page(driver)
+                    # Выполнить пользовательский JS
+                    if action_script:
+                        result = driver.execute_script(action_script)
+                        _task_log(task_id, f"Скрипт выполнен: {str(result)[:200]}")
+                    else:
+                        _task_log(task_id, f"Страница загружена: {driver.title}")
+                finally:
+                    if driver:
+                        try:
+                            driver.quit()
+                        except Exception:
+                            pass
+
+            else:
+                _task_log(task_id, f"Неизвестный тип задачи: {task_type}")
+                with _tasks_lock:
+                    task["status"] = "failed"
+                    task["error"] = f"Неизвестный тип: {task_type}"
+                return
+
+        except Exception as exc:
+            _task_log(task_id, f"Ошибка в цикле {cycle}: {exc}")
+            with _tasks_lock:
+                task["error"] = str(exc)
+
+        with _tasks_lock:
+            task["cycles_done"] = cycle
+
+        # Пауза между циклами
+        if cycle < total_cycles:
+            delay = params.get("cycle_delay", 5)
+            _task_log(task_id, f"Пауза {delay}с перед следующим циклом")
+            time.sleep(delay)
+
+    # Завершение
+    with _tasks_lock:
+        if task["status"] == "running":
+            task["status"] = "completed"
+    _task_log(task_id, "Задача завершена")
+
+
+# --- API маршруты автоматизации ---
+
+@app.route("/api/tasks", methods=["GET"])
+def api_tasks_list():
+    """Получить список задач."""
+    return jsonify(_task_list())
+
+@app.route("/api/tasks", methods=["POST"])
+def api_tasks_create():
+    """Создать и запустить новую задачу."""
+    data = request.json or {}
+    task_type = data.get("type", "").strip()
+    params = data.get("params", {})
+    cycles = int(data.get("cycles", 1))
+    if not task_type:
+        return jsonify({"error": "Не указан тип задачи"}), 400
+    if task_type not in ("login", "captcha_test", "browse"):
+        return jsonify({"error": f"Неизвестный тип: {task_type}. Доступны: login, captcha_test, browse"}), 400
+
+    task = _task_create(task_type, params, cycles)
+    # Запустить в фоновом потоке
+    thread = threading.Thread(target=_run_task_thread, args=(task["id"],), daemon=True)
+    thread.start()
+    return jsonify(task)
+
+@app.route("/api/tasks/<task_id>", methods=["GET"])
+def api_task_get(task_id):
+    """Получить статус задачи."""
+    task = _task_get(task_id)
+    if not task:
+        return jsonify({"error": "Задача не найдена"}), 404
+    return jsonify(task)
+
+@app.route("/api/tasks/<task_id>/cancel", methods=["POST"])
+def api_task_cancel(task_id):
+    """Снять (отменить) задачу."""
+    ok, msg = _task_cancel(task_id)
+    return jsonify({"ok": ok, "message": msg})
+
+@app.route("/api/captcha/solve", methods=["POST"])
+def api_captcha_solve():
+    """Решить CAPTCHA через 2captcha API."""
+    data = request.json or {}
+    site_key = data.get("site_key", "").strip()
+    page_url = data.get("page_url", "").strip()
+    if not site_key or not page_url:
+        return jsonify({"error": "Укажите site_key и page_url"}), 400
+    token = _solve_captcha_2captcha(site_key, page_url)
+    if token:
+        return jsonify({"ok": True, "token": token})
+    return jsonify({"ok": False, "error": "Не удалось решить CAPTCHA"}), 500
+
+@app.route("/api/auth/login", methods=["POST"])
+def api_auth_login():
+    """Войти в аккаунт через браузер (Selenium)."""
+    data = request.json or {}
+    url = data.get("url", "").strip()
+    username = data.get("username", "").strip()
+    password = data.get("password", "").strip()
+    if not url or not username or not password:
+        return jsonify({"error": "Укажите url, username и password"}), 400
+    result = _browser_login(
+        url=url,
+        username=username,
+        password=password,
+        username_selector=data.get("username_selector", 'input[name="username"], input[name="email"], input[type="email"], #username, #email'),
+        password_selector=data.get("password_selector", 'input[name="password"], input[type="password"], #password'),
+        submit_selector=data.get("submit_selector", 'button[type="submit"], input[type="submit"]'),
+    )
+    return jsonify(result)
+
+@app.route("/api/automation/status", methods=["GET"])
+def api_automation_status():
+    """Статус модуля автоматизации."""
+    env = _env_read()
+    return jsonify({
+        "selenium_available": _selenium_available,
+        "twocaptcha_available": _twocaptcha_available,
+        "twocaptcha_key_set": bool(env.get("TWOCAPTCHA_API_KEY")),
+        "tasks_count": len(_tasks),
+        "tasks_running": sum(1 for t in _tasks.values() if t["status"] == "running"),
+    })
 
 # ---------------------------------------------------------------------------
 #  Автозапуск бота при старте сервера (если BOT_TOKEN задан)
