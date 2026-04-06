@@ -131,7 +131,7 @@ if not exist .env (
 REM ── Запуск Local Comet Editor Server в отдельном окне ─────────────
 if "%COMET_READY%"=="1" (
     echo [*] Запуск Local Comet Editor Server (порт 5052)...
-    start "Local Comet Editor" /min cmd /c "cd /d "%REPO_DIR%local-comet-patch\server" && node dist\index.cjs"
+    start "Local Comet Editor" /min cmd /c "cd /d "%REPO_DIR%\local-comet-patch\server" && node dist\index.cjs"
     echo.
 )
 
