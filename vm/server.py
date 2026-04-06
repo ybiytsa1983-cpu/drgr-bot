@@ -251,7 +251,8 @@ def _llm_chat(messages: List[Dict], model: Optional[str] = None) -> str:
         except Exception as exc:
             logger.warning("LMStudio chat error: %s", exc)
 
-    return "❌ Нет доступного LLM (Ollama / LM Studio). Запустите один из них."
+    return ("❌ Нет доступного LLM (Ollama / LM Studio). "
+            "Установите Ollama: https://ollama.com — затем выполните: ollama pull llama3")
 
 # ---------------------------------------------------------------------------
 #  Генератор статей (/research)
@@ -1003,6 +1004,11 @@ def api_task_cancel(task_id):
 @app.route("/api/captcha/solve", methods=["POST"])
 def api_captcha_solve():
     """Решить CAPTCHA через 2captcha API."""
+    if not _twocaptcha_available:
+        return jsonify({"ok": False, "error": "2captcha-python не установлен. pip install 2captcha-python"}), 400
+    env = _env_read()
+    if not env.get("TWOCAPTCHA_API_KEY"):
+        return jsonify({"ok": False, "error": "TWOCAPTCHA_API_KEY не задан в .env. Получите ключ на 2captcha.com"}), 400
     data = request.json or {}
     site_key = data.get("site_key", "").strip()
     page_url = data.get("page_url", "").strip()
@@ -1011,11 +1017,13 @@ def api_captcha_solve():
     token = _solve_captcha_2captcha(site_key, page_url)
     if token:
         return jsonify({"ok": True, "token": token})
-    return jsonify({"ok": False, "error": "Не удалось решить CAPTCHA"}), 500
+    return jsonify({"ok": False, "error": "Не удалось решить CAPTCHA"}), 502
 
 @app.route("/api/auth/login", methods=["POST"])
 def api_auth_login():
     """Войти в аккаунт через браузер (Selenium)."""
+    if not _selenium_available:
+        return jsonify({"ok": False, "error": "selenium не установлен. pip install selenium"}), 400
     data = request.json or {}
     url = data.get("url", "").strip()
     username = data.get("username", "").strip()
@@ -1036,10 +1044,15 @@ def api_auth_login():
 def api_automation_status():
     """Статус модуля автоматизации."""
     env = _env_read()
+    ollama_url = _find_ollama()
+    lmstudio_url = _find_lmstudio()
     return jsonify({
         "selenium_available": _selenium_available,
         "twocaptcha_available": _twocaptcha_available,
         "twocaptcha_key_set": bool(env.get("TWOCAPTCHA_API_KEY")),
+        "llm_available": bool(ollama_url or lmstudio_url),
+        "ollama_url": ollama_url,
+        "lmstudio_url": lmstudio_url,
         "tasks_count": len(_tasks),
         "tasks_running": sum(1 for t in _tasks.values() if t["status"] == "running"),
     })
