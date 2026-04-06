@@ -243,12 +243,18 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
   <!-- CAPTCHA -->
   <div class="vm-card">
     <h4>🧩 Решение CAPTCHA</h4>
-    <p style="color:#aaa;font-size:.85rem;margin-bottom:8px">Нужен ключ TWOCAPTCHA_API_KEY в настройках (.env)</p>
+    <p style="color:#aaa;font-size:.85rem;margin-bottom:8px">Клик-обход бесплатно | 2captcha — платный (ключ в .env)</p>
     <div style="display:grid;grid-template-columns:120px 1fr;gap:8px;align-items:center">
-      <label style="color:#aaa;font-size:.85rem">Site Key:</label>
-      <input id="captchaSiteKey" placeholder="reCAPTCHA site key" style="padding:6px 10px;background:#222;border:1px solid #444;border-radius:6px;color:#fff;font-size:.85rem">
+      <label style="color:#aaa;font-size:.85rem">Метод:</label>
+      <select id="captchaMethod" style="padding:6px 10px;background:#222;border:1px solid #444;border-radius:6px;color:#fff;font-size:.85rem">
+        <option value="auto">🔄 Авто (клик → 2captcha)</option>
+        <option value="click">🖱️ Клик по чекбоксу (бесплатно)</option>
+        <option value="2captcha">🔑 2captcha (платно)</option>
+      </select>
       <label style="color:#aaa;font-size:.85rem">URL страницы:</label>
       <input id="captchaPageUrl" placeholder="https://example.com/page" style="padding:6px 10px;background:#222;border:1px solid #444;border-radius:6px;color:#fff;font-size:.85rem">
+      <label style="color:#aaa;font-size:.85rem">Site Key:</label>
+      <input id="captchaSiteKey" placeholder="reCAPTCHA site key (для 2captcha)" style="padding:6px 10px;background:#222;border:1px solid #444;border-radius:6px;color:#fff;font-size:.85rem">
     </div>
     <button class="btn-accent" onclick="solveCaptcha()" style="margin-top:8px">🧩 Решить CAPTCHA</button>
     <div id="captchaResult" style="margin-top:8px;font-size:.85rem;color:#aaa"></div>
@@ -698,17 +704,22 @@ function doLogin() {
 }
 
 function solveCaptcha() {
+  const method = document.getElementById('captchaMethod').value;
   const siteKey = document.getElementById('captchaSiteKey').value.trim();
   const pageUrl = document.getElementById('captchaPageUrl').value.trim();
-  if (!siteKey || !pageUrl) { alert('Заполните Site Key и URL страницы'); return; }
-  document.getElementById('captchaResult').innerHTML = '⏳ Решение CAPTCHA...';
+  if (!pageUrl) { alert('Укажите URL страницы'); return; }
+  if (method === '2captcha' && !siteKey) { alert('Для 2captcha нужен Site Key'); return; }
+  document.getElementById('captchaResult').innerHTML = '⏳ Решение CAPTCHA (метод: ' + method + ')...';
   api('/api/captcha/solve', {
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({site_key:siteKey, page_url:pageUrl})
+    body: JSON.stringify({method: method, site_key:siteKey, page_url:pageUrl})
   }).then(d => {
     if (d.ok) {
-      document.getElementById('captchaResult').innerHTML = '✅ Решено! Токен: <code style="color:#4ec9b0;word-break:break-all">' + d.token.substring(0,50) + '...</code>';
+      const info = d.token
+        ? '✅ Решено через ' + (d.method||'?') + '! Токен: <code style="color:#4ec9b0;word-break:break-all">' + d.token.substring(0,50) + '...</code>'
+        : '✅ ' + (d.message || 'CAPTCHA решена через ' + (d.method||'клик'));
+      document.getElementById('captchaResult').innerHTML = info;
     } else {
       document.getElementById('captchaResult').innerHTML = '❌ ' + (d.error || 'Не удалось');
     }

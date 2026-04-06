@@ -719,57 +719,146 @@ def _solve_captcha_2captcha(site_key: str, page_url: str) -> Optional[str]:
         return None
 
 
-def _solve_captcha_from_page(driver: Any) -> bool:
-    """Попытаться найти и решить CAPTCHA на странице через 2captcha."""
+def _find_captcha_on_page(driver: Any) -> Optional[str]:
+    """Найти sitekey капчи на странице. Возвращает sitekey или None."""
     try:
-        # Ищем reCAPTCHA iframe
         iframes = driver.find_elements(By.TAG_NAME, "iframe")
-        site_key = None
         for iframe in iframes:
             src = iframe.get_attribute("src") or ""
             if "recaptcha" in src or "hcaptcha" in src:
-                # Ищем sitekey в src
                 match = re.search(r"k=([A-Za-z0-9_-]+)", src)
                 if match:
-                    site_key = match.group(1)
-                    break
+                    return match.group(1)
+        try:
+            recaptcha_div = driver.find_element(By.CLASS_NAME, "g-recaptcha")
+            sk = recaptcha_div.get_attribute("data-sitekey")
+            if sk:
+                return sk
+        except Exception:
+            pass
+    except Exception:
+        pass
+    return None
 
-        # Также ищем div.g-recaptcha
-        if not site_key:
-            try:
-                recaptcha_div = driver.find_element(By.CLASS_NAME, "g-recaptcha")
-                site_key = recaptcha_div.get_attribute("data-sitekey")
-            except Exception:
-                pass
 
+def _try_click_captcha(driver: Any) -> bool:
+    """Попытка решить reCAPTCHA кликом по чекбоксу (бесплатно, без ключа).
+
+    Работает на сайтах с низким уровнем риска, когда Google доверяет
+    браузерному профилю. Стратегия:
+    1. Найти iframe reCAPTCHA
+    2. Переключиться в него
+    3. Кликнуть по чекбоксу #recaptcha-anchor
+    4. Подождать, появится ли зелёная галочка
+    """
+    if not _selenium_available:
+        return False
+    try:
+        iframes = driver.find_elements(By.TAG_NAME, "iframe")
+        captcha_frame = None
+        for iframe in iframes:
+            src = iframe.get_attribute("src") or ""
+            if "recaptcha/api2/anchor" in src or "recaptcha/enterprise/anchor" in src:
+                captcha_frame = iframe
+                break
+        if not captcha_frame:
+            logger.info("reCAPTCHA anchor iframe не найден — клик-обход невозможен")
+            return False
+
+        driver.switch_to.frame(captcha_frame)
+        try:
+            wait = WebDriverWait(driver, 10)
+            checkbox = wait.until(EC.element_to_be_clickable((By.ID, "recaptcha-anchor")))
+            # Имитация человеческого поведения: небольшая задержка перед кликом
+            time.sleep(0.5 + (time.time() % 1) * 0.5)
+            checkbox.click()
+            # Ждём появления галочки (aria-checked="true")
+            time.sleep(3)
+            checked = checkbox.get_attribute("aria-checked")
+            if checked == "true":
+                logger.info("reCAPTCHA решена кликом по чекбоксу (бесплатно)")
+                return True
+            logger.info("Клик по чекбоксу не прошёл — Google запросил доп. проверку")
+            return False
+        finally:
+            driver.switch_to.default_content()
+    except Exception as exc:
+        try:
+            driver.switch_to.default_content()
+        except Exception:
+            pass
+        logger.debug("Клик-обход CAPTCHA не удался: %s", exc)
+        return False
+
+
+def _try_stealth_bypass(driver: Any) -> bool:
+    """Проверить, прошла ли страница без CAPTCHA благодаря stealth-настройкам.
+
+    Если капча не обнаружена — значит stealth (anti-detect) сработал.
+    """
+    time.sleep(2)
+    site_key = _find_captcha_on_page(driver)
+    if not site_key:
+        logger.info("CAPTCHA не появилась — stealth-обход сработал")
+        return True
+    return False
+
+
+def _inject_captcha_token(driver: Any, token: str) -> None:
+    """Вставить решённый токен CAPTCHA в страницу и вызвать callback."""
+    driver.execute_script(
+        'document.getElementById("g-recaptcha-response").value = arguments[0];', token
+    )
+    driver.execute_script(
+        """
+        if (typeof ___grecaptcha_cfg !== 'undefined') {
+            Object.keys(___grecaptcha_cfg.clients).forEach(function(key) {
+                var client = ___grecaptcha_cfg.clients[key];
+                if (client && client.K && client.K.callback) {
+                    client.K.callback(arguments[0]);
+                }
+            });
+        }
+        """, token
+    )
+
+
+def _solve_captcha_from_page(driver: Any, method: str = "auto") -> bool:
+    """Попытаться найти и решить CAPTCHA на странице.
+
+    Методы (method):
+      - "auto"     — сначала stealth, потом клик, потом 2captcha
+      - "click"    — только клик по чекбоксу (бесплатно)
+      - "stealth"  — только проверка stealth-обхода
+      - "2captcha" — только платный 2captcha API
+    """
+    try:
+        site_key = _find_captcha_on_page(driver)
         if not site_key:
             logger.info("CAPTCHA не найдена на странице")
             return True  # Нет капчи — OK
 
-        logger.info("Найден CAPTCHA sitekey: %s", site_key)
-        token = _solve_captcha_2captcha(site_key, driver.current_url)
-        if not token:
-            return False
+        logger.info("Найден CAPTCHA sitekey: %s (метод: %s)", site_key, method)
 
-        # Вставляем решение
-        driver.execute_script(
-            'document.getElementById("g-recaptcha-response").value = arguments[0];', token
-        )
-        # Пытаемся вызвать callback
-        driver.execute_script(
-            """
-            if (typeof ___grecaptcha_cfg !== 'undefined') {
-                Object.keys(___grecaptcha_cfg.clients).forEach(function(key) {
-                    var client = ___grecaptcha_cfg.clients[key];
-                    if (client && client.K && client.K.callback) {
-                        client.K.callback(arguments[0]);
-                    }
-                });
-            }
-            """, token
-        )
-        logger.info("CAPTCHA решена и вставлена")
-        return True
+        # --- Клик по чекбоксу (бесплатно) ---
+        if method in ("auto", "click"):
+            if _try_click_captcha(driver):
+                return True
+            if method == "click":
+                return False
+
+        # --- 2captcha (платно) ---
+        if method in ("auto", "2captcha"):
+            token = _solve_captcha_2captcha(site_key, driver.current_url)
+            if token:
+                _inject_captcha_token(driver, token)
+                logger.info("CAPTCHA решена через 2captcha")
+                return True
+            if method == "2captcha":
+                return False
+
+        logger.warning("Все методы решения CAPTCHA исчерпаны")
+        return False
     except Exception as exc:
         logger.error("Ошибка решения CAPTCHA: %s", exc)
         return False
@@ -1003,21 +1092,70 @@ def api_task_cancel(task_id):
 
 @app.route("/api/captcha/solve", methods=["POST"])
 def api_captcha_solve():
-    """Решить CAPTCHA через 2captcha API."""
-    if not _twocaptcha_available:
-        return jsonify({"ok": False, "error": "2captcha-python не установлен. pip install 2captcha-python"}), 400
-    env = _env_read()
-    if not env.get("TWOCAPTCHA_API_KEY"):
-        return jsonify({"ok": False, "error": "TWOCAPTCHA_API_KEY не задан в .env. Получите ключ на 2captcha.com"}), 400
+    """Решить CAPTCHA. Методы: auto, click (бесплатно), 2captcha (платно).
+
+    Параметры JSON:
+      - method: "auto" (по умолчанию) | "click" | "2captcha"
+      - site_key: ключ reCAPTCHA (обязателен для 2captcha)
+      - page_url: URL страницы с капчей
+    """
     data = request.json or {}
-    site_key = data.get("site_key", "").strip()
+    method = data.get("method", "auto").strip()
     page_url = data.get("page_url", "").strip()
-    if not site_key or not page_url:
-        return jsonify({"error": "Укажите site_key и page_url"}), 400
-    token = _solve_captcha_2captcha(site_key, page_url)
-    if token:
-        return jsonify({"ok": True, "token": token})
-    return jsonify({"ok": False, "error": "Не удалось решить CAPTCHA"}), 502
+
+    if method not in ("auto", "click", "2captcha"):
+        return jsonify({"ok": False, "error": f"Неизвестный метод: {method}. Доступны: auto, click, 2captcha"}), 400
+
+    # --- Метод click / auto: пробуем через Selenium (бесплатно) ---
+    if method in ("auto", "click"):
+        if not _selenium_available:
+            if method == "click":
+                return jsonify({"ok": False, "error": "selenium не установлен. pip install selenium"}), 400
+        elif page_url:
+            driver = None
+            try:
+                driver = _create_browser(headless=True)
+                driver.get(page_url)
+                time.sleep(3)
+                solved = _solve_captcha_from_page(driver, method="click")
+                if solved:
+                    return jsonify({"ok": True, "method": "click", "message": "CAPTCHA решена кликом (бесплатно)"})
+            except Exception as exc:
+                logger.error("Клик-обход CAPTCHA ошибка: %s", exc)
+            finally:
+                if driver:
+                    try:
+                        driver.quit()
+                    except Exception:
+                        pass
+            if method == "click":
+                return jsonify({"ok": False, "error": "Клик-обход не сработал — Google запросил доп. проверку"}), 200
+        elif method == "click":
+            return jsonify({"ok": False, "error": "Укажите page_url для клик-обхода"}), 400
+
+    # --- Метод 2captcha (платно) ---
+    if method in ("auto", "2captcha"):
+        site_key = data.get("site_key", "").strip()
+        if not site_key or not page_url:
+            if method == "2captcha":
+                return jsonify({"error": "Укажите site_key и page_url"}), 400
+        else:
+            if not _twocaptcha_available:
+                if method == "2captcha":
+                    return jsonify({"ok": False, "error": "2captcha-python не установлен. pip install 2captcha-python"}), 400
+            else:
+                env = _env_read()
+                if not env.get("TWOCAPTCHA_API_KEY"):
+                    if method == "2captcha":
+                        return jsonify({"ok": False, "error": "TWOCAPTCHA_API_KEY не задан в .env"}), 400
+                else:
+                    token = _solve_captcha_2captcha(site_key, page_url)
+                    if token:
+                        return jsonify({"ok": True, "method": "2captcha", "token": token})
+                    if method == "2captcha":
+                        return jsonify({"ok": False, "error": "2captcha не смог решить CAPTCHA"}), 502
+
+    return jsonify({"ok": False, "error": "Все методы решения CAPTCHA исчерпаны. Попробуйте клик-обход или задайте TWOCAPTCHA_API_KEY"}), 200
 
 @app.route("/api/auth/login", methods=["POST"])
 def api_auth_login():
