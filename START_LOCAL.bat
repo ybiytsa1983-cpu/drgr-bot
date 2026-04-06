@@ -1,10 +1,58 @@
 @echo off
 chcp 65001 > nul
-cd /d "%~dp0"
+setlocal EnableDelayedExpansion
 
 echo ======================================
 echo   DRGR BOT + VM Server + Local Comet
 echo ======================================
+echo.
+
+REM -- Find the drgr-bot repo folder ------------------------------------
+REM   The .bat may live on the Desktop while the repo is elsewhere.
+set "REPO_DIR="
+
+REM 1) Check the folder where this .bat file lives
+cd /d "%~dp0"
+if exist "vm\server.py" (
+    set "REPO_DIR=%~dp0"
+    goto :FOUND_REPO
+)
+
+REM 2) Check drgr-bot subfolder next to this .bat
+if exist "%~dp0drgr-bot\vm\server.py" (
+    set "REPO_DIR=%~dp0drgr-bot"
+    goto :FOUND_REPO
+)
+
+REM 3) Check Desktop\drgr-bot
+if exist "%USERPROFILE%\Desktop\drgr-bot\vm\server.py" (
+    set "REPO_DIR=%USERPROFILE%\Desktop\drgr-bot"
+    goto :FOUND_REPO
+)
+
+REM 4) Repo not found — try to clone it
+echo [!] drgr-bot folder not found. Cloning from GitHub...
+echo.
+git --version > nul 2>&1
+if errorlevel 1 (
+    echo [X] Git not found! Install Git: https://git-scm.com/download/win
+    echo     Then run this file again.
+    pause
+    exit /b 1
+)
+set "REPO_DIR=%USERPROFILE%\Desktop\drgr-bot"
+git clone "https://github.com/ybiytsa1983-cpu/drgr-bot.git" "%REPO_DIR%"
+if errorlevel 1 (
+    echo [X] Failed to clone repository. Check your internet connection.
+    pause
+    exit /b 1
+)
+echo [OK] Repository cloned to %REPO_DIR%
+echo.
+
+:FOUND_REPO
+cd /d "%REPO_DIR%"
+echo [OK] Project folder: %CD%
 echo.
 
 REM Check Python
@@ -83,7 +131,7 @@ if not exist .env (
 REM -- Start Local Comet Editor Server in a separate window -----------
 if "%COMET_READY%"=="1" (
     echo [*] Starting Local Comet Editor Server (port 5052)...
-    start "Local Comet Editor" /min cmd /c "cd /d "%~dp0local-comet-patch\server" && node dist\index.cjs"
+    start "Local Comet Editor" /min cmd /c "cd /d "%REPO_DIR%local-comet-patch\server" && node dist\index.cjs"
     echo.
 )
 

@@ -1,10 +1,58 @@
 @echo off
 chcp 65001 > nul
-cd /d "%~dp0"
+setlocal EnableDelayedExpansion
 
 echo ======================================
 echo   DRGR BOT + VM Server + Local Comet
 echo ======================================
+echo.
+
+REM -- Поиск папки drgr-bot -----------------------------------------------
+REM   .bat может лежать на Рабочем столе, а репо — в другом месте.
+set "REPO_DIR="
+
+REM 1) Проверяем папку, где лежит этот .bat
+cd /d "%~dp0"
+if exist "vm\server.py" (
+    set "REPO_DIR=%~dp0"
+    goto :FOUND_REPO
+)
+
+REM 2) Проверяем подпапку drgr-bot рядом с .bat
+if exist "%~dp0drgr-bot\vm\server.py" (
+    set "REPO_DIR=%~dp0drgr-bot"
+    goto :FOUND_REPO
+)
+
+REM 3) Проверяем Рабочий стол\drgr-bot
+if exist "%USERPROFILE%\Desktop\drgr-bot\vm\server.py" (
+    set "REPO_DIR=%USERPROFILE%\Desktop\drgr-bot"
+    goto :FOUND_REPO
+)
+
+REM 4) Не найдено — клонируем с GitHub
+echo [!] Папка drgr-bot не найдена. Клонирую с GitHub...
+echo.
+git --version > nul 2>&1
+if errorlevel 1 (
+    echo [X] Git не найден! Установите Git: https://git-scm.com/download/win
+    echo     Затем запустите этот файл снова.
+    pause
+    exit /b 1
+)
+set "REPO_DIR=%USERPROFILE%\Desktop\drgr-bot"
+git clone "https://github.com/ybiytsa1983-cpu/drgr-bot.git" "%REPO_DIR%"
+if errorlevel 1 (
+    echo [X] Не удалось клонировать репозиторий. Проверьте интернет.
+    pause
+    exit /b 1
+)
+echo [OK] Репозиторий клонирован в %REPO_DIR%
+echo.
+
+:FOUND_REPO
+cd /d "%REPO_DIR%"
+echo [OK] Папка проекта: %CD%
 echo.
 
 REM Проверка Python
@@ -83,7 +131,7 @@ if not exist .env (
 REM ── Запуск Local Comet Editor Server в отдельном окне ─────────────
 if "%COMET_READY%"=="1" (
     echo [*] Запуск Local Comet Editor Server (порт 5052)...
-    start "Local Comet Editor" /min cmd /c "cd /d "%~dp0local-comet-patch\server" && node dist\index.cjs"
+    start "Local Comet Editor" /min cmd /c "cd /d "%REPO_DIR%local-comet-patch\server" && node dist\index.cjs"
     echo.
 )
 
