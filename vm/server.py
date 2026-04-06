@@ -1065,23 +1065,23 @@ if __name__ == "__main__":
     _port = int(os.environ.get("DRGR_PORT", 5001))
 
     # Проверка порта
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    try:
-        sock.bind(("0.0.0.0", _port))
-        sock.close()
-    except OSError:
+    def _port_free(p: int) -> bool:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            s.bind(("0.0.0.0", p))
+            return True
+        except OSError:
+            return False
+        finally:
+            s.close()
+
+    if not _port_free(_port):
         logger.error("Порт %d уже занят! Попробуйте: DRGR_PORT=5002 python vm/server.py", _port)
-        # Попробовать следующий порт
         for alt in range(_port + 1, _port + 10):
-            try:
-                sock2 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock2.bind(("0.0.0.0", alt))
-                sock2.close()
+            if _port_free(alt):
                 logger.info("Используется альтернативный порт: %d", alt)
                 _port = alt
                 break
-            except OSError:
-                continue
         else:
             logger.error("Все порты %d-%d заняты. Завершение.", _port, _port + 9)
             sys.exit(1)
