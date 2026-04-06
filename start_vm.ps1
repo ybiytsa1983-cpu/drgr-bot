@@ -1,7 +1,7 @@
-# DRGR VM quick launcher
-# For full launcher with Ollama checks: .\start.ps1
+# DRGR VM — быстрый запуск
+# Полный лаунчер с проверкой Ollama: .\start.ps1
 
-# Ensure TLS 1.2 for reliable HTTPS (GitHub, pip, etc.)
+# Принудительно TLS 1.2 для надёжного HTTPS (GitHub, pip и т.д.)
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 $repoUrl = "https://github.com/ybiytsa1983-cpu/drgr-bot.git"
@@ -9,7 +9,11 @@ $defaultBranch = "main"
 $desktopDir = [Environment]::GetFolderPath("Desktop")
 $defaultInstallDir = Join-Path $desktopDir "drgr-bot"
 
-Write-Host "Starting DRGR VM..." -ForegroundColor Cyan
+Write-Host ""
+Write-Host "============================================" -ForegroundColor Cyan
+Write-Host "  DRGR VM — Быстрый запуск" -ForegroundColor Cyan
+Write-Host "============================================" -ForegroundColor Cyan
+Write-Host ""
 
 function Test-ProjectDir([string]$dir) {
     if (-not $dir) { return $false }
@@ -34,29 +38,29 @@ function Ensure-InstallDir {
         return $defaultInstallDir
     }
 
-    Write-Host "Project folder not found. Installing to: $defaultInstallDir" -ForegroundColor Yellow
+    Write-Host "Папка проекта не найдена. Установка в: $defaultInstallDir" -ForegroundColor Yellow
 
     if (Test-Path $defaultInstallDir) {
         if (-not (Test-Path (Join-Path $defaultInstallDir ".git"))) {
-            Write-Host "ERROR: Folder exists but is not a git repo: $defaultInstallDir" -ForegroundColor Red
-            Write-Host "Delete or rename this folder, then run again." -ForegroundColor Yellow
+            Write-Host "ОШИБКА: Папка существует, но это не git-репозиторий: $defaultInstallDir" -ForegroundColor Red
+            Write-Host "Удалите или переименуйте эту папку, затем запустите снова." -ForegroundColor Yellow
             exit 1
         }
-        Write-Host "Updating existing repo..." -ForegroundColor Yellow
+        Write-Host "Обновление существующего репозитория..." -ForegroundColor Yellow
         git -C $defaultInstallDir fetch origin $defaultBranch 2>$null
         git -C $defaultInstallDir reset --hard "origin/$defaultBranch" 2>$null
     }
     else {
-        Write-Host "Cloning repo..." -ForegroundColor Yellow
+        Write-Host "Клонирование репозитория..." -ForegroundColor Yellow
         git clone $repoUrl $defaultInstallDir
         if ($LASTEXITCODE -ne 0) {
-            Write-Host "ERROR: Failed to clone repository." -ForegroundColor Red
+            Write-Host "ОШИБКА: Не удалось клонировать репозиторий." -ForegroundColor Red
             exit 1
         }
     }
 
     if (-not (Test-ProjectDir $defaultInstallDir)) {
-        Write-Host "ERROR: Installation completed, but required files are missing." -ForegroundColor Red
+        Write-Host "ОШИБКА: Установка завершена, но необходимые файлы отсутствуют." -ForegroundColor Red
         exit 1
     }
 
@@ -69,15 +73,15 @@ if (-not $projectDir) {
 }
 
 Set-Location $projectDir
-Write-Host "Working directory: $projectDir" -ForegroundColor DarkGray
+Write-Host "[start] Рабочая папка: $projectDir" -ForegroundColor DarkGray
 
-# Update from GitHub when repository metadata exists
+# Обновление из GitHub
 if (Test-Path ".git") {
-    Write-Host "Pulling latest changes from GitHub..." -ForegroundColor Yellow
+    Write-Host "Обновление из GitHub..." -ForegroundColor Yellow
     git pull origin $defaultBranch 2>$null
 }
 
-# Resolve Python command
+# Поиск Python
 $pythonCmd = $null
 foreach ($cmd in @("python", "python3", "py")) {
     try {
@@ -90,19 +94,20 @@ foreach ($cmd in @("python", "python3", "py")) {
 }
 
 if (-not $pythonCmd) {
-    Write-Host "ERROR: Python is not installed or not in PATH." -ForegroundColor Red
+    Write-Host "ОШИБКА: Python не установлен или не добавлен в PATH." -ForegroundColor Red
+    Write-Host "  Скачайте: https://www.python.org/downloads/" -ForegroundColor Yellow
     exit 1
 }
 
-# Update dependencies
-Write-Host "Updating dependencies..." -ForegroundColor Yellow
+# Установка зависимостей
+Write-Host "[start] Установка/обновление зависимостей..." -ForegroundColor Yellow
 & $pythonCmd -m pip install --upgrade typing-extensions pydantic aiohttp aiofiles --quiet 2>$null
 & $pythonCmd -m pip install -r requirements.txt --quiet 2>$null
 
-# Create Desktop shortcut DRGR.bat (if it doesn't exist)
+# Создание ярлыка DRGR.bat на Рабочем столе (если его нет)
 $desktopBat = Join-Path $desktopDir "DRGR.bat"
 if (-not (Test-Path $desktopBat)) {
-    Write-Host "Creating Desktop shortcut: DRGR.bat" -ForegroundColor Yellow
+    Write-Host "Создание ярлыка на Рабочем столе: DRGR.bat" -ForegroundColor Yellow
     $batContent = @"
 @echo off
 chcp 65001 > nul
@@ -111,17 +116,22 @@ python vm/server.py
 pause
 "@
     Set-Content -Path $desktopBat -Value $batContent -Encoding UTF8
-    Write-Host "Desktop shortcut created: $desktopBat" -ForegroundColor Green
+    Write-Host "Ярлык создан: $desktopBat" -ForegroundColor Green
 }
 
-# Start VM server
+# Запуск VM сервера
 if (-not (Test-Path ".\vm\server.py")) {
-    Write-Host "ERROR: vm\\server.py not found in $((Get-Location).Path)" -ForegroundColor Red
+    Write-Host "ОШИБКА: vm\server.py не найден в $((Get-Location).Path)" -ForegroundColor Red
     exit 1
 }
 
-Write-Host "VM server starting on http://localhost:5002" -ForegroundColor Green
-Write-Host "Web UI: http://localhost:5002" -ForegroundColor Cyan
-Write-Host "Press Ctrl+C to stop" -ForegroundColor Gray
+Write-Host ""
+Write-Host "============================================" -ForegroundColor Green
+Write-Host "  VM сервер запускается: http://localhost:5002" -ForegroundColor Green
+Write-Host "============================================" -ForegroundColor Green
+Write-Host ""
+Write-Host "  Веб-интерфейс: http://localhost:5002" -ForegroundColor Cyan
+Write-Host "  Ctrl+C — остановка" -ForegroundColor DarkGray
+Write-Host ""
 
 & $pythonCmd vm/server.py
