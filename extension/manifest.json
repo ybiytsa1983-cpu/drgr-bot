@@ -1,9 +1,13 @@
 {
   "manifest_version": 3,
-  "name": "DRGR VM Connector",
+  "name": "DRGR Local Comet",
   "version": "1.0.0",
   "description": "Chrome extension for DRGR VM — статус, sandbox, настройки",
   "permissions": ["storage", "tabs"],
+  "host_permissions": [
+    "http://localhost:*/*",
+    "http://127.0.0.1:*/*"
+  ],
   "action": {
     "default_popup": "popup.html"
   }
