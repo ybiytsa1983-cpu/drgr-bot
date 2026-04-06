@@ -709,7 +709,7 @@ function solveCaptcha() {
   const pageUrl = document.getElementById('captchaPageUrl').value.trim();
   if (!pageUrl) { alert('Укажите URL страницы'); return; }
   if (method === '2captcha' && !siteKey) { alert('Для 2captcha нужен Site Key'); return; }
-  document.getElementById('captchaResult').innerHTML = '⏳ Решение CAPTCHA (метод: ' + method + ')...';
+  document.getElementById('captchaResult').textContent = '⏳ Решение CAPTCHA (метод: ' + method + ')...';
   api('/api/captcha/solve', {
     method:'POST',
     headers:{'Content-Type':'application/json'},
@@ -784,7 +784,7 @@ function refreshTasks() {
       const statusColors = {queued:'#ff0',running:'#0af',completed:'#0f0',failed:'#f00',cancelled:'#888',paused:'#fa0'};
       const statusColor = statusColors[t.status] || '#aaa';
       // Escape values to prevent XSS
-      const safeId = String(t.id).replace(/[^a-f0-9]/g, '');
+      const safeId = String(t.id).replace(/[^a-fA-F0-9]/g, '');
       const safeType = String(t.type).replace(/[<>&"']/g, '');
       const safeStatus = String(t.status).replace(/[<>&"']/g, '');
       html += '<tr style="border-bottom:1px solid #222">';
