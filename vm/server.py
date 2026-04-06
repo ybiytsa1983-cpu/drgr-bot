@@ -1224,7 +1224,7 @@ def _autostart_bot():
 if __name__ == "__main__":
     import socket
 
-    _port = int(os.environ.get("DRGR_PORT", 5001))
+    _port = int(os.environ.get("DRGR_PORT", 5002))
 
     # Проверка порта
     def _port_free(p: int) -> bool:

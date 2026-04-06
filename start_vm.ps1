@@ -96,14 +96,29 @@ Write-Host "Updating dependencies..." -ForegroundColor Yellow
 & $pythonCmd -m pip install --upgrade typing-extensions pydantic aiohttp aiofiles --quiet 2>$null
 & $pythonCmd -m pip install -r requirements.txt --quiet 2>$null
 
+# Create Desktop shortcut DRGR.bat (if it doesn't exist)
+$desktopBat = Join-Path $desktopDir "DRGR.bat"
+if (-not (Test-Path $desktopBat)) {
+    Write-Host "Creating Desktop shortcut: DRGR.bat" -ForegroundColor Yellow
+    $batContent = @"
+@echo off
+chcp 65001 > nul
+cd /d "$projectDir"
+python vm/server.py
+pause
+"@
+    Set-Content -Path $desktopBat -Value $batContent -Encoding UTF8
+    Write-Host "Desktop shortcut created: $desktopBat" -ForegroundColor Green
+}
+
 # Start VM server
 if (-not (Test-Path ".\vm\server.py")) {
     Write-Host "ERROR: vm\\server.py not found in $((Get-Location).Path)" -ForegroundColor Red
     exit 1
 }
 
-Write-Host "VM server starting on http://localhost:5001" -ForegroundColor Green
-Write-Host "Web UI: http://localhost:5001" -ForegroundColor Cyan
+Write-Host "VM server starting on http://localhost:5002" -ForegroundColor Green
+Write-Host "Web UI: http://localhost:5002" -ForegroundColor Cyan
 Write-Host "Press Ctrl+C to stop" -ForegroundColor Gray
 
 & $pythonCmd vm/server.py

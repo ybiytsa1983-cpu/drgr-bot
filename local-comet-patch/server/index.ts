@@ -6,7 +6,7 @@ dotenv.config();
 
 const app = express();
 const PORT = Number(process.env.EDITOR_SERVER_PORT ?? 5052);
-const VM_URL = process.env.VM_URL ?? 'http://localhost:5001';
+const VM_URL = process.env.VM_URL ?? 'http://localhost:5002';
 
 app.use(cors());
 app.use(express.json({ limit: '2mb' }));

@@ -58,7 +58,7 @@ npm i
 #### server/.env
 ```env
 EDITOR_SERVER_PORT=5052
-VM_URL=http://localhost:5001
+VM_URL=http://localhost:5002
 AI_BASE_URL=https://api.openai.com/v1
 AI_API_KEY=your_key_here
 AI_MODEL=gpt-4o-mini
@@ -67,7 +67,7 @@ AI_MODEL=gpt-4o-mini
 #### Frontend .env
 ```env
 VITE_EDITOR_API_URL=http://localhost:5052
-VITE_VM_URL=http://localhost:5001
+VITE_VM_URL=http://localhost:5002
 ```
 
 ## Запуск
@@ -75,7 +75,7 @@ VITE_VM_URL=http://localhost:5001
 ### Шаг 1: Запустить VM сервер
 ```bash
 python vm/server.py
-# Порт 5001 (по умолчанию)
+# Порт 5002 (по умолчанию)
 ```
 
 ### Шаг 2: Запустить Editor server
@@ -108,7 +108,7 @@ cd local-comet-patch/server && npm install
 ```
 Browser (localhost:5051)
   ├── Frontend (React + Vite)
-  │     ├── VM API → localhost:5001 (vm/server.py)
+  │     ├── VM API → localhost:5002 (vm/server.py)
   │     └── Editor API → localhost:5052 (server/index.ts)
   │
   └── server/index.ts (localhost:5052)

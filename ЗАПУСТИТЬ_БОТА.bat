@@ -138,7 +138,7 @@ if "%COMET_READY%"=="1" (
 REM ── Запуск VM сервера ────────────────────────────────────────────
 echo ======================================
 echo   [START] Запуск VM сервера...
-echo   VM:     http://localhost:5001
+echo   VM:     http://localhost:5002
 if "%COMET_READY%"=="1" (
 echo   Editor: http://localhost:5052
 )

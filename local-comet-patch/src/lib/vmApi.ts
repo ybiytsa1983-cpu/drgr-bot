@@ -2,7 +2,7 @@
  * VM API client — connects local-comet frontend to DRGR VM server.
  *
  * All endpoints match vm/server.py routes.
- * Base URL defaults to http://localhost:5001 (DRGR_PORT).
+ * Base URL defaults to http://localhost:5002 (DRGR_PORT).
  */
 import type {
   AutomationStatus,
@@ -24,7 +24,7 @@ import type {
   VmStatusResponse,
 } from '../types/vm';
 
-const VM_BASE = import.meta.env.VITE_VM_URL || 'http://localhost:5001';
+const VM_BASE = import.meta.env.VITE_VM_URL || 'http://localhost:5002';
 
 // ---------------------------------------------------------------------------
 //  Generic helpers
