@@ -1,6 +1,9 @@
 # DRGR VM quick launcher
 # For full launcher with Ollama checks: .\start.ps1
 
+# Ensure TLS 1.2 for reliable HTTPS (GitHub, pip, etc.)
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
 $repoUrl = "https://github.com/ybiytsa1983-cpu/drgr-bot.git"
 $defaultBranch = "main"
 $desktopDir = [Environment]::GetFolderPath("Desktop")
