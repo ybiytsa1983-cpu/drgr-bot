@@ -727,14 +727,14 @@ document.addEventListener('DOMContentLoaded', function() {
   const numInput = document.getElementById('taskCycles');
   const rangeInput = document.getElementById('taskCyclesRange');
   const label = document.getElementById('taskCyclesLabel');
-  if (numInput && rangeInput) {
+  if (numInput && rangeInput && label) {
     numInput.addEventListener('input', function() {
       rangeInput.value = this.value;
-      if (label) label.textContent = this.value;
+      label.textContent = this.value;
     });
     rangeInput.addEventListener('input', function() {
       numInput.value = this.value;
-      if (label) label.textContent = this.value;
+      label.textContent = this.value;
     });
   }
 });
@@ -772,16 +772,20 @@ function refreshTasks() {
     tasks.forEach(t => {
       const statusColors = {queued:'#ff0',running:'#0af',completed:'#0f0',failed:'#f00',cancelled:'#888',paused:'#fa0'};
       const statusColor = statusColors[t.status] || '#aaa';
+      // Escape values to prevent XSS
+      const safeId = String(t.id).replace(/[^a-f0-9]/g, '');
+      const safeType = String(t.type).replace(/[<>&"']/g, '');
+      const safeStatus = String(t.status).replace(/[<>&"']/g, '');
       html += '<tr style="border-bottom:1px solid #222">';
-      html += '<td style="padding:6px;font-family:monospace;font-size:.8rem">' + t.id + '</td>';
-      html += '<td style="padding:6px">' + t.type + '</td>';
-      html += '<td style="padding:6px">' + t.cycles_done + '/' + t.cycles_total + '</td>';
-      html += '<td style="padding:6px;color:' + statusColor + '">' + t.status + '</td>';
+      html += '<td style="padding:6px;font-family:monospace;font-size:.8rem">' + safeId + '</td>';
+      html += '<td style="padding:6px">' + safeType + '</td>';
+      html += '<td style="padding:6px">' + Number(t.cycles_done) + '/' + Number(t.cycles_total) + '</td>';
+      html += '<td style="padding:6px;color:' + statusColor + '">' + safeStatus + '</td>';
       html += '<td style="padding:6px;text-align:center">';
       if (t.status === 'running' || t.status === 'queued') {
-        html += '<button onclick="cancelTask(\'' + t.id + '\')" style="background:#c73650;color:#fff;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:.8rem">🛑 Снять</button>';
+        html += '<button onclick="cancelTask(\'' + safeId + '\')" style="background:#c73650;color:#fff;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:.8rem">🛑 Снять</button>';
       }
-      html += ' <button onclick="showTaskLog(\'' + t.id + '\')" style="background:#333;color:#fff;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:.8rem">📋 Лог</button>';
+      html += ' <button onclick="showTaskLog(\'' + safeId + '\')" style="background:#333;color:#fff;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:.8rem">📋 Лог</button>';
       html += '</td></tr>';
     });
     html += '</table>';

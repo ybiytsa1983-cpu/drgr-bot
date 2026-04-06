@@ -613,7 +613,7 @@ _tasks_lock = threading.Lock()
 
 def _task_create(task_type: str, params: Dict[str, Any], cycles: int = 1) -> Dict[str, Any]:
     """Создать новую задачу."""
-    task_id = uuid.uuid4().hex[:12]
+    task_id = uuid.uuid4().hex
     task = {
         "id": task_id,
         "type": task_type,
@@ -689,7 +689,7 @@ def _create_browser(headless: bool = True) -> Any:
     opts.add_argument("--disable-dev-shm-usage")
     opts.add_argument("--disable-blink-features=AutomationControlled")
     opts.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                      "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                      "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
     opts.add_experimental_option("excludeSwitches", ["enable-automation"])
     opts.add_experimental_option("useAutomationExtension", False)
     driver = webdriver.Chrome(options=opts)
@@ -728,8 +728,7 @@ def _solve_captcha_from_page(driver: Any) -> bool:
             src = iframe.get_attribute("src") or ""
             if "recaptcha" in src or "hcaptcha" in src:
                 # Ищем sitekey в src
-                import re as _re
-                match = _re.search(r"k=([A-Za-z0-9_-]+)", src)
+                match = re.search(r"k=([A-Za-z0-9_-]+)", src)
                 if match:
                     site_key = match.group(1)
                     break
@@ -753,7 +752,7 @@ def _solve_captcha_from_page(driver: Any) -> bool:
 
         # Вставляем решение
         driver.execute_script(
-            'document.getElementById("g-recaptcha-response").innerHTML = arguments[0];', token
+            'document.getElementById("g-recaptcha-response").value = arguments[0];', token
         )
         # Пытаемся вызвать callback
         driver.execute_script(
@@ -778,11 +777,12 @@ def _solve_captcha_from_page(driver: Any) -> bool:
 def _browser_login(url: str, username: str, password: str,
                    username_selector: str = 'input[name="username"], input[name="email"], input[type="email"], #username, #email',
                    password_selector: str = 'input[name="password"], input[type="password"], #password',
-                   submit_selector: str = 'button[type="submit"], input[type="submit"], .login-btn, #login-btn') -> Dict[str, Any]:
+                   submit_selector: str = 'button[type="submit"], input[type="submit"], .login-btn, #login-btn',
+                   headless: bool = True) -> Dict[str, Any]:
     """Войти в аккаунт через браузер."""
     driver = None
     try:
-        driver = _create_browser(headless=False)
+        driver = _create_browser(headless=headless)
         driver.get(url)
         time.sleep(3)
 
@@ -850,7 +850,8 @@ def _browser_login(url: str, username: str, password: str,
             "title": page_title,
         }
     except Exception as exc:
-        return {"ok": False, "error": str(exc)}
+        logger.error("Login error: %s", exc)
+        return {"ok": False, "error": "Ошибка входа. Проверьте URL и учётные данные."}
     finally:
         if driver:
             try:
@@ -1027,7 +1028,7 @@ def api_auth_login():
         password=password,
         username_selector=data.get("username_selector", 'input[name="username"], input[name="email"], input[type="email"], #username, #email'),
         password_selector=data.get("password_selector", 'input[name="password"], input[type="password"], #password'),
-        submit_selector=data.get("submit_selector", 'button[type="submit"], input[type="submit"]'),
+        submit_selector=data.get("submit_selector", 'button[type="submit"], input[type="submit"], .login-btn, #login-btn'),
     )
     return jsonify(result)
 
