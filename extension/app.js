@@ -1,28 +1,23 @@
-/* DRGR VM Chrome Extension — popup.js */
+/* DRGR Local Comet — app.js */
 (function() {
   'use strict';
 
   const DEFAULT_VM_URL = 'http://localhost:5001';
   let vmUrl = DEFAULT_VM_URL;
 
-  // --- chrome.storage guard ---
+  // --- localStorage settings ---
   function getVmUrl(cb) {
-    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-      chrome.storage.local.get(['vmUrl'], function(data) {
-        vmUrl = data.vmUrl || DEFAULT_VM_URL;
-        document.getElementById('vmUrl').value = vmUrl;
-        if (cb) cb();
-      });
-    } else {
-      vmUrl = DEFAULT_VM_URL;
-      document.getElementById('vmUrl').value = vmUrl;
-      if (cb) cb();
-    }
+    try {
+      var saved = localStorage.getItem('drgr_vm_url');
+      if (saved) vmUrl = saved;
+    } catch(e) { /* localStorage unavailable */ }
+    document.getElementById('vmUrl').value = vmUrl;
+    if (cb) cb();
   }
 
   // --- API fetch ---
   function apiFetch(path, opts) {
-    const url = vmUrl + path;
+    var url = vmUrl + path;
     return fetch(url, opts).then(function(r) {
       if (!r.ok) throw new Error('HTTP ' + r.status);
       return r.json();
@@ -45,7 +40,6 @@
     apiFetch('/extension/report')
       .then(function(d) {
         document.getElementById('reportArea').textContent = d.report || JSON.stringify(d.data, null, 2);
-        // Build status rows
         var h = d.data || {};
         var rows = '';
         rows += statusRow('Ollama', h.ollama && h.ollama.available);
@@ -67,11 +61,7 @@
 
   // --- Open VM ---
   window.openVM = function() {
-    if (typeof chrome !== 'undefined' && chrome.tabs && chrome.tabs.create) {
-      chrome.tabs.create({ url: vmUrl });
-    } else {
-      window.open(vmUrl, '_blank');
-    }
+    window.open(vmUrl, '_blank');
   };
 
   // --- Sandbox ---
@@ -97,13 +87,10 @@
     var url = document.getElementById('vmUrl').value.trim();
     if (!url) return;
     vmUrl = url;
-    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-      chrome.storage.local.set({ vmUrl: url }, function() {
-        alert('✅ Сохранено: ' + url);
-      });
-    } else {
-      alert('✅ URL установлен: ' + url + '\n(chrome.storage недоступен, сохранено только для текущей сессии)');
-    }
+    try {
+      localStorage.setItem('drgr_vm_url', url);
+    } catch(e) { /* localStorage unavailable */ }
+    alert('✅ Сохранено: ' + url);
   };
 
   // --- Init ---

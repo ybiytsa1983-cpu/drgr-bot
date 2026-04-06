@@ -8,7 +8,7 @@ DRGR VM Server — полнофункциональный бэкенд.
   • Генерация текста (/generate) — промпт → LLM
   • Настройки (/settings GET/POST → .env)
   • Здоровье (/health, /extension/report)
-  • CORS для chrome-extension://
+  • CORS для localhost фронтенда
   • Проекты (CRUD) + загрузка файлов
   • Интеграция TG сообщений (/chat/tg_messages)
 """
@@ -43,6 +43,8 @@ _ROOT_DIR = _BASE_DIR.parent
 _PROJECTS_DIR = _BASE_DIR / "projects"
 _PROJECTS_DIR.mkdir(exist_ok=True)
 
+_LOCAL_COMET_DIR = _ROOT_DIR / "extension"
+
 _ENV_PATH = _ROOT_DIR / ".env"
 _BOT_SCRIPT = _ROOT_DIR / "bot.py"
 _BOT_LOG = _ROOT_DIR / "bot_output.log"
@@ -62,7 +64,7 @@ logger = logging.getLogger("drgr-vm")
 app = Flask(__name__, static_folder="static", template_folder="static")
 
 # ---------------------------------------------------------------------------
-#  CORS (для chrome-extension:// и localhost фронтенда)
+#  CORS (для localhost фронтенда)
 # ---------------------------------------------------------------------------
 def _add_cors(resp):
     origin = request.headers.get("Origin", "")
@@ -333,6 +335,15 @@ def _health() -> Dict[str, Any]:
 @app.route("/")
 def index():
     return render_template("index.html")
+
+# --- Local Comet (веб-приложение) ---
+@app.route("/local-comet/")
+def local_comet_index():
+    return send_from_directory(str(_LOCAL_COMET_DIR), "index.html")
+
+@app.route("/local-comet/<path:filename>")
+def local_comet_static(filename):
+    return send_from_directory(str(_LOCAL_COMET_DIR), filename)
 
 # --- Проекты ---
 @app.route("/api/projects", methods=["GET"])
