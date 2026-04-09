@@ -150,11 +150,13 @@ function Download-Resource {
 $builtinResources = @(
     # --- Статьи по FER (открытые) ---
     @{
+        # "A Survey of Face Recognition" (2022) — обзор методов FER
         Url       = "https://arxiv.org/pdf/2203.13531v2"
         SubFolder = "papers\fer_2021_2026"
         FileName  = "fer_survey_2022.pdf"
     },
     @{
+        # "Deep Learning for Facial Expression Recognition" (2023) — AffectNet
         Url       = "https://arxiv.org/pdf/2307.04420v1"
         SubFolder = "papers\fer_2021_2026"
         FileName  = "affectnet_deep_learning_2023.pdf"
@@ -174,6 +176,7 @@ $builtinResources = @(
 
     # --- Клинические приложения FER ---
     @{
+        # "Facial Expression Recognition in Clinical Settings" (2024)
         Url       = "https://arxiv.org/pdf/2401.05831v1"
         SubFolder = "papers\clinical_apps"
         FileName  = "fer_clinical_review_2024.pdf"

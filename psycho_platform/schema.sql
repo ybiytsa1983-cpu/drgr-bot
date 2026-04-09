@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS sources (
                                                    --   emotion_recognition, nonverbal,
                                                    --   psychocorrection, clinical, app_based
     notes         TEXT,
-    created_at    TEXT    DEFAULT (datetime('now'))
+    created_at    TEXT    DEFAULT (datetime('now','utc'))
 );
 
 -- ───────────────────────────────────────────────────────────────────────
@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS methods (
     instructions    TEXT,                           -- Пошаговая инструкция для пользователя
     duration_min    INTEGER,                        -- Примерная длительность, мин
     source_ids      TEXT    DEFAULT '[]',           -- JSON: [1, 5, 12]
-    created_at      TEXT    DEFAULT (datetime('now'))
+    created_at      TEXT    DEFAULT (datetime('now','utc'))
 );
 
 -- ───────────────────────────────────────────────────────────────────────
@@ -50,7 +50,7 @@ CREATE TABLE IF NOT EXISTS users (
     age_verified    BOOLEAN DEFAULT 0,               -- Прошёл 21+ проверку
     consent_given   BOOLEAN DEFAULT 0,               -- Дал информированное согласие
     consent_ts      TEXT,                             -- Когда дал согласие
-    created_at      TEXT    DEFAULT (datetime('now'))
+    created_at      TEXT    DEFAULT (datetime('now','utc'))
 );
 
 -- ───────────────────────────────────────────────────────────────────────
@@ -63,7 +63,8 @@ CREATE TABLE IF NOT EXISTS test_sessions (
     ended_at        TEXT,
     video_consent   BOOLEAN DEFAULT 0,               -- Согласие на видеоанализ
     status          TEXT    DEFAULT 'in_progress'
-                            CHECK (status IN ('in_progress','completed','cancelled'))
+                            CHECK (status IN ('in_progress','completed','cancelled')),
+    created_at      TEXT    DEFAULT (datetime('now','utc'))
 );
 
 -- ───────────────────────────────────────────────────────────────────────
@@ -82,7 +83,7 @@ CREATE TABLE IF NOT EXISTS fer_results (
     dominant_emotion TEXT,                           -- joy/sadness/anger/fear/surprise/neutral
     confidence      REAL,                            --  0..1
     raw_metrics     TEXT,                            -- JSON (расширенные метрики)
-    created_at      TEXT    DEFAULT (datetime('now'))
+    created_at      TEXT    DEFAULT (datetime('now','utc'))
 );
 
 -- ───────────────────────────────────────────────────────────────────────
@@ -93,7 +94,7 @@ CREATE TABLE IF NOT EXISTS recommendations (
     session_id      INTEGER NOT NULL REFERENCES test_sessions(id),
     method_id       INTEGER NOT NULL REFERENCES methods(id),
     reason          TEXT,                            -- Почему рекомендовали
-    shown_at        TEXT    DEFAULT (datetime('now')),
+    shown_at        TEXT    DEFAULT (datetime('now','utc')),
     user_feedback   TEXT    CHECK (user_feedback IN (
                         'helpful', 'not_helpful', 'skipped', NULL
                     ))

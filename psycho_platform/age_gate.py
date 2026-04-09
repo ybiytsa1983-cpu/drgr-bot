@@ -107,6 +107,19 @@ class AgeGate:
         # Получаем предсказания (список {label: "20-25", score: 0.43}, ...)
         predictions = self._model(image)
 
+        if not predictions:
+            return AgeEstimationResult(
+                predicted_age=0.0,
+                confidence_margin=self.config.confidence_margin,
+                lower_bound=0.0,
+                upper_bound=0.0,
+                is_allowed=False,
+                denial_reason=(
+                    "Не удалось определить возраст: модель не вернула результат. "
+                    "Попробуйте ещё раз с лучшим освещением."
+                ),
+            )
+
         # Парсим среднее из топ-предсказания (label = "25-30" → 27.5)
         predicted_age = self._parse_age_label(predictions[0]["label"])
 
@@ -154,8 +167,8 @@ class AgeGate:
         try:
             return float(label)
         except ValueError:
-            logger.warning("Cannot parse age label: %s, defaulting to 0", label)
-            return 0.0
+            logger.warning("Cannot parse age label: %s", label)
+            raise ValueError(f"Cannot parse age label: {label!r}")
 
     # ──────────────────────────────────────────────────────────────────
     #  Текст для UI
