@@ -1,4 +1,4 @@
-# start.ps1 — DRGR Bot полный лаунчер
+﻿# start.ps1 -- DRGR Bot полный лаунчер
 # Автоопределение Ollama, проверка портов, установка зависимостей, запуск сервера
 param(
     [int]$Port = 5002,
@@ -11,7 +11,7 @@ $Host.UI.RawUI.WindowTitle = "DRGR VM Server"
 
 Write-Host ""
 Write-Host "============================================" -ForegroundColor Cyan
-Write-Host "  DRGR VM Server — Launcher" -ForegroundColor Cyan
+Write-Host "  DRGR VM Server -- Launcher" -ForegroundColor Cyan
 Write-Host "============================================" -ForegroundColor Cyan
 Write-Host ""
 
@@ -131,7 +131,7 @@ try {
 if (Test-Path ".env") {
     Write-Host "[start] .env файл найден" -ForegroundColor Green
 } else {
-    Write-Host "[start] .env не найден — бот не будет автозапущен" -ForegroundColor Yellow
+    Write-Host "[start] .env не найден -- бот не будет автозапущен" -ForegroundColor Yellow
     Write-Host "[start] Создайте .env с BOT_TOKEN через веб-интерфейс (Настройки)" -ForegroundColor Yellow
 }
 
@@ -143,7 +143,7 @@ Write-Host "============================================" -ForegroundColor Green
 Write-Host ""
 Write-Host "  Веб-интерфейс: http://localhost:$Port" -ForegroundColor Cyan
 Write-Host "  Чат с AI, генератор статей, управление ботом" -ForegroundColor Cyan
-Write-Host "  Ctrl+C — остановка" -ForegroundColor DarkGray
+Write-Host "  Ctrl+C -- остановка" -ForegroundColor DarkGray
 Write-Host ""
 
 # Открыть браузер

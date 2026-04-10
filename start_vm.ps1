@@ -1,4 +1,4 @@
-# DRGR VM - Скрипт запуска (быстрый)
+﻿# DRGR VM - Скрипт запуска (быстрый)
 # Для полного лаунчера с Ollama: .\start.ps1
 Write-Host "🚀 Запуск DRGR VM..." -ForegroundColor Cyan
 
@@ -17,6 +17,6 @@ pip install -r requirements.txt --quiet 2>$null
 # Запуск VM сервера
 Write-Host "✅ Запуск VM сервера на http://localhost:5002" -ForegroundColor Green
 Write-Host "   Веб-интерфейс: http://localhost:5002" -ForegroundColor Cyan
-Write-Host "   Ctrl+C — остановка" -ForegroundColor Gray
+Write-Host "   Ctrl+C -- остановка" -ForegroundColor Gray
 
 python vm/server.py
