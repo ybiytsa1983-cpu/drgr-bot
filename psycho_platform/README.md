@@ -20,12 +20,18 @@
 
 ```
 psycho_platform/
-├── __init__.py         # Инициализация модуля
-├── schema.sql          # Схема БД (SQLite / PostgreSQL)
-├── fer_config.py       # Конфигурация FER-pipeline и age-estimation
-├── age_gate.py         # Модуль проверки возраста 21+
-├── consent.py          # Информированное согласие и приватность
-└── README.md           # Этот файл
+├── __init__.py                  # Инициализация модуля
+├── schema.sql                   # Схема БД (SQLite / PostgreSQL)
+├── fer_config.py                # Конфигурация FER-pipeline и age-estimation
+├── age_gate.py                  # Модуль проверки возраста 21+
+├── camera.py                    # Управление камерой (OpenCV)
+├── consent.py                   # Информированное согласие и приватность
+├── knowledge_base.py            # База знаний (SQLite — источники + методики)
+├── seed_dataset.py              # Начальные данные (18 источников, 10 методик)
+├── pupil_analyzer.py            # 🔍 Анализ зрачков (дилатация, анизокория)
+├── eye_age_estimator.py         # 👁️ Оценка возраста по периорбитальным признакам
+├── comprehensive_assessment.py  # 📊 Совокупная оценка по всем параметрам
+└── README.md                    # Этот файл
 ```
 
 ## База данных
@@ -39,6 +45,9 @@ psycho_platform/
 | `users` | Пользователи (минимум данных, UUID, без ФИО) |
 | `test_sessions` | Сессии тестирования |
 | `fer_results` | Результаты FER-анализа (агрегированные метрики, НЕ видео) |
+| `pupil_results` | Результаты анализа зрачков (дилатация, анизокория) |
+| `eye_age_results` | Результаты оценки возраста по глазам (5 параметров) |
+| `comprehensive_results` | Совокупные оценки (стресс, возраст, рекомендации) |
 | `recommendations` | Выданные рекомендации |
 
 ## Архив для обучения ВМ
@@ -105,6 +114,114 @@ Browser (WebRTC) → 5-10 fps кадров → Backend (Python + PyTorch)
 2. Модель age estimation → оценка + доверительный интервал
 3. Если `нижняя_граница ≥ 21` → доступ
 4. Иначе → отказ с сообщением
+
+## 🔍 Анализ зрачков (Pupil Analyzer)
+
+Модуль `pupil_analyzer.py` определяет состояние пациента по зрачкам:
+
+### Что измеряет
+
+| Параметр | Описание |
+|----------|----------|
+| **pupil/iris ratio** | Отношение зрачка к радужке (0.2–0.8) |
+| **Дилатация** | high (>0.65), moderate (>0.5), normal, constriction (<0.25) |
+| **Анизокория** | Разница зрачков L/R > 0.15 → предупреждение |
+| **Inferred state** | stress_or_arousal, cognitive_load, calm, relaxation_or_fatigue |
+
+### Pipeline
+
+```
+Кадр (BGR) → Haar cascade (глаза) → GaussianBlur → Threshold → findContours
+              → pupil diameter / iris diameter → ratio → dilation level → state
+```
+
+### Интерпретация
+
+| Уровень дилатации | Состояние | Описание |
+|-------------------|-----------|----------|
+| **high** (>0.65) | Стресс / возбуждение | Активация симпатической НС |
+| **moderate** (>0.5) | Когнитивная нагрузка | Решение задач, концентрация |
+| **normal** (0.25–0.5) | Спокойствие | Нормальное состояние |
+| **constriction** (<0.25) | Расслабление / усталость | Парасимпатическая активация |
+
+### API
+
+```
+GET  /api/pupil/status     — статус модуля
+POST /api/pupil/analyze    — анализ ({"source":"camera"} или {"image":"<base64>"})
+POST /api/pupil/reset      — сброс истории сглаживания
+```
+
+## 👁️ Оценка возраста по глазам (Eye Age Estimator)
+
+Модуль `eye_age_estimator.py` оценивает возраст по 5 периорбитальным признакам:
+
+| Параметр | Вес | Метод |
+|----------|-----|-------|
+| **Морщины** (crow's feet) | 30% | Canny edge density |
+| **Мешки под глазами** | 20% | Средняя яркость под глазом |
+| **Цвет склеры** | 15% | HSV yellowness |
+| **Чёткость радужки** | 20% | Laplacian variance |
+| **Птоз века** | 15% | Eye aspect ratio |
+
+**Диапазон:** score 0 → 15 лет, score 1 → 80 лет, ±5 лет margin.
+
+### API
+
+```
+GET  /api/eye-age/status     — статус модуля
+POST /api/eye-age/estimate   — оценка ({"source":"camera"} или {"image":"<base64>"})
+```
+
+## 📊 Совокупная оценка (Comprehensive Assessment)
+
+Модуль `comprehensive_assessment.py` объединяет **все** параметры в единый отчёт:
+
+### Компоненты стресса
+
+| Источник | Вес | Что измеряет |
+|----------|-----|-------------|
+| **FER** | 40% | stress_score от модели эмоций |
+| **Зрачки** | 30% | dilation → stress mapping |
+| **Baseline** | 30% | arousal × (1 − normalized_valence) |
+
+### Комбинированный возраст
+
+| Источник | Вес | Метод |
+|----------|-----|-------|
+| **Face ViT** | 70% | Нейросеть (nateraw/vit-age-classifier) |
+| **Eye periorbital** | 30% | 5 параметров глаз (морщины, склера, ...) |
+
+### API
+
+```
+GET  /api/assessment/status  — статус + доступные модули
+POST /api/assessment/run     — полная оценка
+```
+
+**Пример запроса:**
+```json
+{
+  "source": "camera",
+  "fer": {
+    "dominant_emotion": "anger",
+    "stress_score": 0.85,
+    "valence": -0.5,
+    "arousal": 0.8
+  }
+}
+```
+
+**Пример ответа:**
+```json
+{
+  "stress": {"level": "high", "overall_score": 0.743},
+  "age": {"estimated": 35.0, "source": "combined"},
+  "detected_states": ["stress"],
+  "recommended_methods": [...],
+  "disclaimer": "Это НЕ медицинская диагностика..."
+}
+```
 
 ## Этика и приватность
 
