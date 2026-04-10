@@ -28,7 +28,7 @@ powershell -ExecutionPolicy Bypass -File start.ps1
 2. Установит зависимости
 3. Обнаружит и запустит Ollama (если установлена)
 4. Проверит свободность порта
-5. Запустит VM сервер на `http://localhost:5002`
+5. Запустит VM сервер на `http://localhost:5000`
 6. Откроет браузер
 
 ### Вариант 2 — BAT файл
@@ -66,7 +66,7 @@ python vm/server.py
 
 ## 🌐 Веб-интерфейс
 
-После запуска откройте: **http://localhost:5002**
+После запуска откройте: **http://localhost:5000**
 
 | Вкладка | Функция |
 |---------|---------|
@@ -115,10 +115,10 @@ ip addr show   # или: ifconfig
 На другом ноутбуке/ПК/телефоне в браузере:
 
 ```
-http://192.168.1.42:5002
+http://192.168.1.42:5000
 ```
 
-> 📌 Замените `192.168.1.42` на реальный IP из шага 2, а `5002` — на ваш порт.
+> 📌 Замените `192.168.1.42` на реальный IP из шага 2, а `5000` — на ваш порт.
 
 ### Смена порта
 
@@ -138,7 +138,7 @@ DRGR_PORT=8080 python vm/server.py
 
 ```bash
 # Установите ngrok: https://ngrok.com/download
-ngrok http 5002
+ngrok http 5000
 ```
 
 Вы получите URL вида `https://xxxx.ngrok-free.app` — его можно открыть с любого устройства.
@@ -147,9 +147,9 @@ ngrok http 5002
 
 1. Зайдите в настройки роутера (обычно `192.168.1.1`)
 2. Найдите «Port Forwarding» / «Проброс портов»
-3. Добавьте правило: внешний порт `5002` → IP ноутбука `192.168.1.42`, порт `5002`
+3. Добавьте правило: внешний порт `5000` → IP ноутбука `192.168.1.42`, порт `5000`
 4. Узнайте внешний IP: https://ifconfig.me
-5. Откройте: `http://ВАШ_ВНЕШНИЙ_IP:5002`
+5. Откройте: `http://ВАШ_ВНЕШНИЙ_IP:5000`
 
 > ⚠️ **Безопасность:** При доступе через Интернет рекомендуется использовать ngrok (HTTPS), а не открытый проброс портов.
 
@@ -159,12 +159,12 @@ ngrok http 5002
 
 **Windows:**
 ```powershell
-netsh advfirewall firewall add rule name="DRGR Server" dir=in action=allow protocol=tcp localport=5002
+netsh advfirewall firewall add rule name="DRGR Server" dir=in action=allow protocol=tcp localport=5000
 ```
 
 **Linux:**
 ```bash
-sudo ufw allow 5002/tcp
+sudo ufw allow 5000/tcp
 ```
 
 ---
@@ -187,7 +187,7 @@ BOT_TOKEN=1234567890:AABBccDDeeFFggHHiiJJkkLLmmNNooPP
 drgr-bot/
 ├── bot.py                 # Telegram-бот (aiogram 3.x)
 ├── vm/
-│   ├── server.py          # VM-сервер (Flask, порт 5002)
+│   ├── server.py          # VM-сервер (Flask, порт 5000)
 │   └── static/
 │       └── index.html     # Веб-интерфейс (7 вкладок)
 ├── extension/
@@ -227,28 +227,28 @@ drgr-bot/
 
 ## ❓ Решение проблем
 
-**Порт 5002 занят (конфликт портов)**
+**Порт 5000 занят (конфликт портов)**
 → Запустите с альтернативным портом:
 ```powershell
 # Windows PowerShell
-$env:DRGR_PORT=5003; python vm/server.py
+$env:DRGR_PORT=5001; python vm/server.py
 
 # Linux / macOS
-DRGR_PORT=5003 python vm/server.py
+DRGR_PORT=5001 python vm/server.py
 ```
-→ Или используйте `start.ps1` -- он автоматически найдёт свободный порт (5003, 5004, ...).
-→ Не забудьте обновить URL в браузере: `http://localhost:5003`
+→ Или используйте `start.ps1` -- он автоматически найдёт свободный порт (5001, 5002, ...).
+→ Не забудьте обновить URL в браузере: `http://localhost:5001`
 
 **"Python не найден"**
 → Установите Python с https://www.python.org/downloads/ (отметьте "Add Python to PATH").
 
 **Бот не отвечает в Telegram**
-→ Проверьте BOT_TOKEN в настройках (http://localhost:5002 → Настройки).
+→ Проверьте BOT_TOKEN в настройках (http://localhost:5000 → Настройки).
 
 **Нет AI (чат/статьи не работают)**
 → Установите Ollama: https://ollama.com → `ollama pull llama3`
 
-**VM-сервер недоступен (http://localhost:5002)**
+**VM-сервер недоступен (http://localhost:5000)**
 → Запустите `start.ps1` или `ЗАПУСТИТЬ_БОТА.bat`.
 
 ---
