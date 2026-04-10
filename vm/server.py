@@ -42,6 +42,36 @@ _ROOT_DIR = _BASE_DIR.parent
 _PROJECTS_DIR = _BASE_DIR / "projects"
 _PROJECTS_DIR.mkdir(exist_ok=True)
 
+# Ensure psycho_platform is importable from vm/server.py
+if str(_ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(_ROOT_DIR))
+
+# ---------------------------------------------------------------------------
+#  Psycho-platform modules (lazy-loaded singletons)
+# ---------------------------------------------------------------------------
+_camera_mgr = None
+_knowledge_base = None
+
+def _get_camera():
+    global _camera_mgr
+    if _camera_mgr is None:
+        try:
+            from psycho_platform.camera import CameraManager
+            _camera_mgr = CameraManager()
+        except Exception as exc:
+            logger.warning("Camera module not available: %s", exc)
+    return _camera_mgr
+
+def _get_kb():
+    global _knowledge_base
+    if _knowledge_base is None:
+        try:
+            from psycho_platform.knowledge_base import KnowledgeBase
+            _knowledge_base = KnowledgeBase()
+        except Exception as exc:
+            logger.warning("Knowledge base not available: %s", exc)
+    return _knowledge_base
+
 _ENV_PATH = _ROOT_DIR / ".env"
 _BOT_SCRIPT = _ROOT_DIR / "bot.py"
 _BOT_LOG = _ROOT_DIR / "bot_output.log"
@@ -172,7 +202,12 @@ def _bot_get_status() -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 #  Ollama / LM Studio — обнаружение и вызов
 # ---------------------------------------------------------------------------
-_OLLAMA_PROBE_PORTS = (11434, 11435, 11436, 11437)
+# Предпочтительный порт Ollama (из .env OLLAMA_PORT или 11435 по умолчанию)
+_OLLAMA_PREFERRED_PORT = int(os.environ.get("OLLAMA_PORT", "11435"))
+_OLLAMA_PROBE_PORTS = (
+    _OLLAMA_PREFERRED_PORT,
+    *(p for p in (11434, 11435, 11436, 11437) if p != _OLLAMA_PREFERRED_PORT),
+)
 _LMSTUDIO_PROBE_PORTS = (1234, 1235)
 
 def _probe_service(host: str, port: int, path: str = "/", timeout: float = 2.0) -> bool:
@@ -601,6 +636,198 @@ def chat_tg_messages_post():
         if len(_tg_messages) > 500:
             _tg_messages[:] = _tg_messages[-500:]
     return jsonify({"ok": True, "id": msg["id"]})
+
+# ---------------------------------------------------------------------------
+#  Ollama status endpoint
+# ---------------------------------------------------------------------------
+@app.route("/api/ollama/status", methods=["GET"])
+def ollama_status():
+    """Статус подключения к Ollama (порт 11435 приоритетный)."""
+    base = _find_ollama()
+    models_data = _llm_models()
+    return jsonify({
+        "available": bool(base),
+        "url": base,
+        "preferred_port": _OLLAMA_PREFERRED_PORT,
+        "probed_ports": list(_OLLAMA_PROBE_PORTS),
+        "models": models_data.get("ollama", []),
+    })
+
+# ---------------------------------------------------------------------------
+#  Camera API
+# ---------------------------------------------------------------------------
+@app.route("/api/camera/status", methods=["GET"])
+def camera_status():
+    """Статус камеры."""
+    cam = _get_camera()
+    if cam is None:
+        return jsonify({"available": False, "error": "Camera module not loaded"})
+    return jsonify(cam.get_status())
+
+@app.route("/api/camera/capture", methods=["POST"])
+def camera_capture():
+    """Захватить кадр с камеры (base64 JPEG)."""
+    cam = _get_camera()
+    if cam is None:
+        return jsonify({"error": "Camera module not loaded"}), 500
+    frame_b64 = cam.capture_frame_b64()
+    if frame_b64 is None:
+        return jsonify({"error": "Failed to capture frame"}), 500
+    return jsonify({"image": frame_b64, "format": "jpeg"})
+
+@app.route("/api/camera/config", methods=["GET"])
+def camera_config_get():
+    """Получить текущую конфигурацию камеры."""
+    cam = _get_camera()
+    if cam is None:
+        return jsonify({"error": "Camera module not loaded"}), 500
+    cfg = cam.config
+    return jsonify({
+        "index": cfg.index,
+        "width": cfg.width,
+        "height": cfg.height,
+        "fps": cfg.fps,
+    })
+
+@app.route("/api/camera/config", methods=["POST"])
+def camera_config_set():
+    """Обновить конфигурацию камеры."""
+    cam = _get_camera()
+    if cam is None:
+        return jsonify({"error": "Camera module not loaded"}), 500
+    data = request.json or {}
+    cfg = cam.update_config(
+        index=data.get("index"),
+        width=data.get("width"),
+        height=data.get("height"),
+        fps=data.get("fps"),
+    )
+    return jsonify({
+        "ok": True,
+        "index": cfg.index,
+        "width": cfg.width,
+        "height": cfg.height,
+        "fps": cfg.fps,
+    })
+
+# ---------------------------------------------------------------------------
+#  Knowledge Base API
+# ---------------------------------------------------------------------------
+@app.route("/api/kb/stats", methods=["GET"])
+def kb_stats():
+    """Статистика базы знаний."""
+    kb = _get_kb()
+    if kb is None:
+        return jsonify({"error": "Knowledge base not loaded"}), 500
+    return jsonify(kb.get_stats())
+
+@app.route("/api/kb/sources", methods=["GET"])
+def kb_sources():
+    """Список источников (фильтр: ?type=article&tags=emotion_recognition)."""
+    kb = _get_kb()
+    if kb is None:
+        return jsonify({"error": "Knowledge base not loaded"}), 500
+    type_filter = request.args.get("type")
+    tags_param = request.args.get("tags")
+    tags = tags_param.split(",") if tags_param else None
+    limit = min(int(request.args.get("limit", "100")), 500)
+    return jsonify(kb.get_sources(type=type_filter, tags=tags, limit=limit))
+
+@app.route("/api/kb/sources", methods=["POST"])
+def kb_add_source():
+    """Добавить источник."""
+    kb = _get_kb()
+    if kb is None:
+        return jsonify({"error": "Knowledge base not loaded"}), 500
+    data = request.json or {}
+    required = ("type", "authors", "title")
+    for field in required:
+        if not data.get(field):
+            return jsonify({"error": f"Missing required field: {field}"}), 400
+    try:
+        source_id = kb.add_source(
+            type=data["type"],
+            authors=data["authors"],
+            title=data["title"],
+            year=data.get("year"),
+            url=data.get("url"),
+            doi=data.get("doi"),
+            tags=data.get("tags"),
+            notes=data.get("notes"),
+        )
+        return jsonify({"ok": True, "id": source_id})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 400
+
+@app.route("/api/kb/methods", methods=["GET"])
+def kb_methods():
+    """Список методик (фильтр: ?state=stress&level=high&applicable=1)."""
+    kb = _get_kb()
+    if kb is None:
+        return jsonify({"error": "Knowledge base not loaded"}), 500
+    level = request.args.get("level")
+    state = request.args.get("state")
+    applicable = request.args.get("applicable") == "1"
+    limit = min(int(request.args.get("limit", "100")), 500)
+    return jsonify(kb.get_methods(
+        evidence_level=level,
+        target_state=state,
+        applicable_only=applicable,
+        limit=limit,
+    ))
+
+@app.route("/api/kb/methods", methods=["POST"])
+def kb_add_method():
+    """Добавить методику."""
+    kb = _get_kb()
+    if kb is None:
+        return jsonify({"error": "Knowledge base not loaded"}), 500
+    data = request.json or {}
+    if not data.get("title"):
+        return jsonify({"error": "Missing required field: title"}), 400
+    try:
+        method_id = kb.add_method(
+            title=data["title"],
+            description=data.get("description"),
+            evidence_level=data.get("evidence_level", "medium"),
+            applicable_in_app=bool(data.get("applicable_in_app", False)),
+            target_states=data.get("target_states"),
+            instructions=data.get("instructions"),
+            duration_min=data.get("duration_min"),
+            source_ids=data.get("source_ids"),
+        )
+        return jsonify({"ok": True, "id": method_id})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 400
+
+@app.route("/api/kb/recommend", methods=["GET"])
+def kb_recommend():
+    """Рекомендации методик по состоянию: ?state=stress&limit=5."""
+    kb = _get_kb()
+    if kb is None:
+        return jsonify({"error": "Knowledge base not loaded"}), 500
+    state = request.args.get("state", "stress")
+    limit = min(int(request.args.get("limit", "5")), 20)
+    return jsonify(kb.recommend_methods(state=state, limit=limit))
+
+@app.route("/api/kb/seed", methods=["POST"])
+def kb_seed():
+    """Заполнить базу знаний начальными данными."""
+    try:
+        from psycho_platform.seed_dataset import seed_all
+        result = seed_all()
+        return jsonify({"ok": True, **result})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+@app.route("/api/kb/principles", methods=["GET"])
+def kb_principles():
+    """Принципы работы модулей ВМ (из seed_dataset)."""
+    try:
+        from psycho_platform.seed_dataset import VM_MODULE_PRINCIPLES
+        return jsonify(VM_MODULE_PRINCIPLES)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
 
 # ---------------------------------------------------------------------------
 #  Автозапуск бота при старте сервера (если BOT_TOKEN задан)
