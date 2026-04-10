@@ -340,7 +340,9 @@ class ComprehensiveAssessment:
             weights["fer_stress"] = cfg.fer_stress_weight
 
             # Arousal/Valence → baseline stress
-            # High arousal + negative valence → stress
+            # Formula: arousal × (1 - normalized_valence)
+            # valence is in [-1,+1]; (valence+1)/2 normalizes to [0,1]
+            # High arousal + negative valence → high baseline stress
             baseline = max(0.0, fer.arousal * (1.0 - (fer.valence + 1.0) / 2.0))
             components["baseline"] = min(1.0, baseline)
             weights["baseline"] = cfg.baseline_stress_weight

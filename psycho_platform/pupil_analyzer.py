@@ -309,7 +309,8 @@ class PupilAnalyzer:
         ratio = pupil_diameter_px / iris_diameter_px if iris_diameter_px > 0 else 0.0
         ratio = max(0.0, min(1.0, ratio))  # clamp
 
-        # Confidence на основе circularity контура
+        # Confidence based on circularity: 4π·area / perimeter²
+        # Perfect circle → 1.0; irregular shape → <1.0
         perimeter = cv2.arcLength(largest, True)
         circularity = (4 * math.pi * area) / (perimeter * perimeter) if perimeter > 0 else 0
         confidence = min(1.0, circularity)

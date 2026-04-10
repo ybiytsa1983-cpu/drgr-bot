@@ -14,6 +14,7 @@ DRGR VM Server — полнофункциональный бэкенд.
 """
 from __future__ import annotations
 
+import base64 as b64mod
 import html as _html
 import json
 import logging
@@ -906,8 +907,6 @@ def pupil_analyze():
     data = request.json or {}
     source = data.get("source", "")
 
-    import base64 as b64mod
-
     if source == "camera":
         cam = _get_camera()
         if cam is None:
@@ -974,8 +973,6 @@ def eye_age_estimate():
 
     data = request.json or {}
     source = data.get("source", "")
-
-    import base64 as b64mod
 
     if source == "camera":
         cam = _get_camera()
@@ -1047,8 +1044,6 @@ def assessment_run():
     # Получить кадр (если нужен для pupil/eye_age)
     frame = None
     source = data.get("source", "")
-
-    import base64 as b64mod
 
     if source == "camera":
         cam = _get_camera()
