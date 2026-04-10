@@ -227,9 +227,17 @@ drgr-bot/
 
 ## ❓ Решение проблем
 
-**Порт 5002 занят**
-→ Запустите: `$env:DRGR_PORT=5003; python vm/server.py`
-→ Или используйте `start.ps1` — он автоматически найдёт свободный порт.
+**Порт 5002 занят (конфликт портов)**
+→ Запустите с альтернативным портом:
+```powershell
+# Windows PowerShell
+$env:DRGR_PORT=5003; python vm/server.py
+
+# Linux / macOS
+DRGR_PORT=5003 python vm/server.py
+```
+→ Или используйте `start.ps1` -- он автоматически найдёт свободный порт (5003, 5004, ...).
+→ Не забудьте обновить URL в браузере: `http://localhost:5003`
 
 **"Python не найден"**
 → Установите Python с https://www.python.org/downloads/ (отметьте "Add Python to PATH").
