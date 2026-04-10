@@ -107,9 +107,10 @@ class CameraManager:
                 "configured_resolution": f"{self.config.width}x{self.config.height}",
             }
         except Exception as exc:
+            logger.error("Camera status check error: %s", exc)
             return {
                 "available": False,
-                "error": str(exc),
+                "error": "Camera check failed",
                 "index": self.config.index,
                 "resolution": f"{self.config.width}x{self.config.height}",
             }
@@ -173,9 +174,10 @@ class CameraManager:
         if not ok or frame is None:
             return None
 
-        cv2 = self._cv2
-        encode_params = [cv2.IMWRITE_JPEG_QUALITY, self.config.jpeg_quality]
-        ret, buf = cv2.imencode(".jpg", frame, encode_params)
+        if self._cv2 is None:
+            return None
+        encode_params = [self._cv2.IMWRITE_JPEG_QUALITY, self.config.jpeg_quality]
+        ret, buf = self._cv2.imencode(".jpg", frame, encode_params)
         if not ret:
             return None
         return base64.b64encode(buf).decode("ascii")

@@ -104,8 +104,11 @@ class KnowledgeBase:
                 params.append(type)
             if tags:
                 for tag in tags:
-                    query += " AND tags LIKE ?"
-                    params.append(f"%{tag}%")
+                    # Sanitize: only allow alphanumeric, underscore, hyphen
+                    safe_tag = "".join(c for c in tag if c.isalnum() or c in ("_", "-"))
+                    if safe_tag:
+                        query += " AND tags LIKE ?"
+                        params.append(f"%{safe_tag}%")
             query += " ORDER BY year DESC, id DESC LIMIT ?"
             params.append(limit)
             rows = conn.execute(query, params).fetchall()
@@ -176,8 +179,11 @@ class KnowledgeBase:
                 query += " AND evidence_level = ?"
                 params.append(evidence_level)
             if target_state:
-                query += " AND target_states LIKE ?"
-                params.append(f"%{target_state}%")
+                # Sanitize: only allow alphanumeric, underscore, hyphen
+                safe_state = "".join(c for c in target_state if c.isalnum() or c in ("_", "-"))
+                if safe_state:
+                    query += " AND target_states LIKE ?"
+                    params.append(f"%{safe_state}%")
             if applicable_only:
                 query += " AND applicable_in_app = 1"
             query += " ORDER BY id DESC LIMIT ?"

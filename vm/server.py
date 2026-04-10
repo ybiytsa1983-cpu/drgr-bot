@@ -203,7 +203,11 @@ def _bot_get_status() -> Dict[str, Any]:
 #  Ollama / LM Studio — обнаружение и вызов
 # ---------------------------------------------------------------------------
 # Предпочтительный порт Ollama (из .env OLLAMA_PORT или 11435 по умолчанию)
-_OLLAMA_PREFERRED_PORT = int(os.environ.get("OLLAMA_PORT", "11435"))
+try:
+    _OLLAMA_PREFERRED_PORT = int(os.environ.get("OLLAMA_PORT", "11435"))
+except (ValueError, TypeError):
+    logger.warning("Invalid OLLAMA_PORT value, using default 11435")
+    _OLLAMA_PREFERRED_PORT = 11435
 _OLLAMA_PROBE_PORTS = (
     _OLLAMA_PREFERRED_PORT,
     *(p for p in (11434, 11435, 11436, 11437) if p != _OLLAMA_PREFERRED_PORT),
@@ -756,8 +760,9 @@ def kb_add_source():
             notes=data.get("notes"),
         )
         return jsonify({"ok": True, "id": source_id})
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 400
+    except Exception:
+        logger.exception("Failed to add source")
+        return jsonify({"error": "Failed to add source"}), 400
 
 @app.route("/api/kb/methods", methods=["GET"])
 def kb_methods():
@@ -797,8 +802,9 @@ def kb_add_method():
             source_ids=data.get("source_ids"),
         )
         return jsonify({"ok": True, "id": method_id})
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 400
+    except Exception:
+        logger.exception("Failed to add method")
+        return jsonify({"error": "Failed to add method"}), 400
 
 @app.route("/api/kb/recommend", methods=["GET"])
 def kb_recommend():
@@ -817,8 +823,9 @@ def kb_seed():
         from psycho_platform.seed_dataset import seed_all
         result = seed_all()
         return jsonify({"ok": True, **result})
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+    except Exception:
+        logger.exception("Failed to seed knowledge base")
+        return jsonify({"error": "Failed to seed knowledge base"}), 500
 
 @app.route("/api/kb/principles", methods=["GET"])
 def kb_principles():
@@ -826,8 +833,9 @@ def kb_principles():
     try:
         from psycho_platform.seed_dataset import VM_MODULE_PRINCIPLES
         return jsonify(VM_MODULE_PRINCIPLES)
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+    except Exception:
+        logger.exception("Failed to load VM module principles")
+        return jsonify({"error": "Failed to load VM module principles"}), 500
 
 # ---------------------------------------------------------------------------
 #  Автозапуск бота при старте сервера (если BOT_TOKEN задан)
