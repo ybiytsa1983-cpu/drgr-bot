@@ -1,7 +1,7 @@
 # start.ps1 — DRGR Bot полный лаунчер
 # Автоопределение Ollama, проверка портов, установка зависимостей, запуск сервера
 param(
-    [int]$Port = 5000,
+    [int]$Port = 5002,
     [switch]$NoBrowser,
     [switch]$NoOllama
 )
