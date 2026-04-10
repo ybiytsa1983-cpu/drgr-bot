@@ -228,7 +228,7 @@ drgr-bot/
 ## ❓ Решение проблем
 
 **Порт 5002 занят**
-→ Запустите: `$env:DRGR_PORT=5002; python vm/server.py`
+→ Запустите: `$env:DRGR_PORT=5003; python vm/server.py`
 → Или используйте `start.ps1` — он автоматически найдёт свободный порт.
 
 **"Python не найден"**
