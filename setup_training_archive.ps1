@@ -12,7 +12,7 @@
       4. Поддерживает добавление своих ссылок через -ExtraUrls или CSV-файл -UrlFile.
 
     ВАЖНО: крупные датасеты (AffectNet, RAF-DB, EmoSet и др.) требуют
-    академической/некоммерческой лицензии. Скрипт НЕ зашивает их напрямую —
+    академической/некоммерческой лицензии. Скрипт НЕ зашивает их напрямую --
     добавляйте ссылки после получения доступа.
 
 .PARAMETER RootDir
@@ -50,7 +50,7 @@ function Write-Fail  { param([string]$msg) Write-Host "  ✖ $msg" -ForegroundCo
 #  1. СОЗДАНИЕ СТРУКТУРЫ КАТАЛОГОВ
 # ═══════════════════════════════════════════════════════════════════════════
 Write-Host "`n╔══════════════════════════════════════════════════╗" -ForegroundColor Magenta
-Write-Host "║  DRGR — Настройка архива для обучения ВМ         ║" -ForegroundColor Magenta
+Write-Host "║  DRGR -- Настройка архива для обучения ВМ         ║" -ForegroundColor Magenta
 Write-Host "╚══════════════════════════════════════════════════╝`n" -ForegroundColor Magenta
 
 $dirs = @(
@@ -86,7 +86,7 @@ foreach ($d in $dirs) {
         New-Item -ItemType Directory -Path $full -Force | Out-Null
         Write-Ok $d
     } else {
-        Write-Warn "$d — уже существует"
+        Write-Warn "$d -- уже существует"
     }
 }
 
@@ -135,7 +135,7 @@ function Download-Resource {
         Log-Download -Url $Url -Dest $destPath -Status "ok"
     }
     catch {
-        Write-Fail "Не удалось скачать $Url — $_"
+        Write-Fail "Не удалось скачать $Url -- $_"
         Log-Download -Url $Url -Dest $destPath -Status "error: $_"
     }
 }
@@ -150,19 +150,19 @@ function Download-Resource {
 $builtinResources = @(
     # --- Статьи по FER (открытые) ---
     @{
-        # "A Survey of Face Recognition" (2022) — обзор методов FER
+        # "A Survey of Face Recognition" (2022) -- обзор методов FER
         Url       = "https://arxiv.org/pdf/2203.13531v2"
         SubFolder = "papers\fer_2021_2026"
         FileName  = "fer_survey_2022.pdf"
     },
     @{
-        # "Deep Learning for Facial Expression Recognition" (2023) — AffectNet
+        # "Deep Learning for Facial Expression Recognition" (2023) -- AffectNet
         Url       = "https://arxiv.org/pdf/2307.04420v1"
         SubFolder = "papers\fer_2021_2026"
         FileName  = "affectnet_deep_learning_2023.pdf"
     },
 
-    # --- Классика невербики (описание, не полные книги — соблюдаем авторское право) ---
+    # --- Классика невербики (описание, не полные книги -- соблюдаем авторское право) ---
     @{
         Url       = "https://en.wikipedia.org/wiki/The_Expression_of_the_Emotions_in_Man_and_Animals"
         SubFolder = "papers\classic_nonverbal"
@@ -224,21 +224,21 @@ $readmePath = Join-Path $RootDir "README.txt"
 if (-not (Test-Path $readmePath)) {
 @"
 ╔══════════════════════════════════════════════════════════════╗
-║              VM TRAINING ARCHIVE — DRGR Platform             ║
+║              VM TRAINING ARCHIVE -- DRGR Platform             ║
 ╠══════════════════════════════════════════════════════════════╣
 ║                                                              ║
-║  datasets\         — Датасеты (FER, age, nonverbal, custom)  ║
-║  papers\           — Научные статьи и обзоры                 ║
-║  methods_puzenko\  — Материалы Пузенко В.Ю.                  ║
-║  site_backup\      — Бэкап сайта (HTML / API дампы)          ║
-║  models\           — Предобученные модели                    ║
-║  logs\             — Журнал скачиваний                       ║
+║  datasets\         -- Датасеты (FER, age, nonverbal, custom)  ║
+║  papers\           -- Научные статьи и обзоры                 ║
+║  methods_puzenko\  -- Материалы Пузенко В.Ю.                  ║
+║  site_backup\      -- Бэкап сайта (HTML / API дампы)          ║
+║  models\           -- Предобученные модели                    ║
+║  logs\             -- Журнал скачиваний                       ║
 ║                                                              ║
 ║  Добавляйте датасеты после получения лицензий.               ║
 ║  Крупные FER-датасеты (AffectNet, RAF-DB, EmoSet)            ║
 ║  требуют академической лицензии.                             ║
 ║                                                              ║
-║  Повторный запуск скрипта — безопасен (пропускает            ║
+║  Повторный запуск скрипта -- безопасен (пропускает            ║
 ║  существующие файлы и папки).                                ║
 ╚══════════════════════════════════════════════════════════════╝
 "@ | Out-File -Encoding utf8 $readmePath
