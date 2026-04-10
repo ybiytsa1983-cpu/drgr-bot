@@ -51,6 +51,9 @@ if str(_ROOT_DIR) not in sys.path:
 # ---------------------------------------------------------------------------
 _camera_mgr = None
 _knowledge_base = None
+_pupil_analyzer = None
+_eye_age_estimator = None
+_comprehensive_engine = None
 
 def _get_camera():
     global _camera_mgr
@@ -71,6 +74,36 @@ def _get_kb():
         except Exception as exc:
             logger.warning("Knowledge base not available: %s", exc)
     return _knowledge_base
+
+def _get_pupil_analyzer():
+    global _pupil_analyzer
+    if _pupil_analyzer is None:
+        try:
+            from psycho_platform.pupil_analyzer import PupilAnalyzer
+            _pupil_analyzer = PupilAnalyzer()
+        except Exception as exc:
+            logger.warning("Pupil analyzer not available: %s", exc)
+    return _pupil_analyzer
+
+def _get_eye_age_estimator():
+    global _eye_age_estimator
+    if _eye_age_estimator is None:
+        try:
+            from psycho_platform.eye_age_estimator import EyeAgeEstimator
+            _eye_age_estimator = EyeAgeEstimator()
+        except Exception as exc:
+            logger.warning("Eye age estimator not available: %s", exc)
+    return _eye_age_estimator
+
+def _get_comprehensive_engine():
+    global _comprehensive_engine
+    if _comprehensive_engine is None:
+        try:
+            from psycho_platform.comprehensive_assessment import ComprehensiveAssessment
+            _comprehensive_engine = ComprehensiveAssessment()
+        except Exception as exc:
+            logger.warning("Comprehensive assessment not available: %s", exc)
+    return _comprehensive_engine
 
 _ENV_PATH = _ROOT_DIR / ".env"
 _BOT_SCRIPT = _ROOT_DIR / "bot.py"
@@ -836,6 +869,281 @@ def kb_principles():
     except Exception:
         logger.exception("Failed to load VM module principles")
         return jsonify({"error": "Failed to load VM module principles"}), 500
+
+# ---------------------------------------------------------------------------
+#  Pupil Analysis API
+# ---------------------------------------------------------------------------
+@app.route("/api/pupil/status", methods=["GET"])
+def pupil_status():
+    """Статус модуля анализа зрачков."""
+    analyzer = _get_pupil_analyzer()
+    if analyzer is None:
+        return jsonify({"available": False, "error": "Pupil analyzer not loaded"})
+    return jsonify({
+        "available": True,
+        "config": {
+            "eye_detector": analyzer.config.eye_detector,
+            "baseline_ratio": analyzer.config.baseline_ratio,
+            "dilation_high_threshold": analyzer.config.dilation_high_threshold,
+            "anisocoria_threshold": analyzer.config.anisocoria_threshold,
+            "smoothing_window": analyzer.config.smoothing_window,
+        },
+    })
+
+@app.route("/api/pupil/analyze", methods=["POST"])
+def pupil_analyze():
+    """
+    Анализ зрачков из изображения (base64 или камера).
+
+    Body JSON:
+      {"source": "camera"} — захват с камеры
+      {"image": "<base64>"} — из base64 изображения
+    """
+    analyzer = _get_pupil_analyzer()
+    if analyzer is None:
+        return jsonify({"error": "Pupil analyzer not loaded"}), 500
+
+    data = request.json or {}
+    source = data.get("source", "")
+
+    import base64 as b64mod
+
+    if source == "camera":
+        cam = _get_camera()
+        if cam is None:
+            return jsonify({"error": "Camera not available"}), 500
+        ok, frame = cam.capture_frame()
+        if not ok or frame is None:
+            return jsonify({"error": "Failed to capture frame"}), 500
+        result = analyzer.analyze_frame(frame)
+    elif data.get("image"):
+        try:
+            img_bytes = b64mod.b64decode(data["image"])
+        except Exception:
+            return jsonify({"error": "Invalid base64 image"}), 400
+        result = analyzer.analyze_image_bytes(img_bytes)
+    else:
+        return jsonify({"error": "Provide 'source':'camera' or 'image':'<base64>'"}), 400
+
+    from psycho_platform.pupil_analyzer import PupilAnalyzer
+    return jsonify(PupilAnalyzer.result_to_dict(result))
+
+@app.route("/api/pupil/reset", methods=["POST"])
+def pupil_reset():
+    """Сброс истории сглаживания зрачков (для новой сессии)."""
+    analyzer = _get_pupil_analyzer()
+    if analyzer is None:
+        return jsonify({"error": "Pupil analyzer not loaded"}), 500
+    analyzer.reset()
+    return jsonify({"ok": True, "message": "Pupil history reset"})
+
+# ---------------------------------------------------------------------------
+#  Eye-Based Age Estimation API
+# ---------------------------------------------------------------------------
+@app.route("/api/eye-age/status", methods=["GET"])
+def eye_age_status():
+    """Статус модуля оценки возраста по глазам."""
+    estimator = _get_eye_age_estimator()
+    if estimator is None:
+        return jsonify({"available": False, "error": "Eye age estimator not loaded"})
+    return jsonify({
+        "available": True,
+        "config": {
+            "wrinkle_weight": estimator.config.wrinkle_weight,
+            "bags_weight": estimator.config.bags_weight,
+            "sclera_weight": estimator.config.sclera_weight,
+            "iris_weight": estimator.config.iris_weight,
+            "ptosis_weight": estimator.config.ptosis_weight,
+            "age_range": f"{estimator.config.age_min}-{estimator.config.age_max}",
+            "confidence_margin": estimator.config.confidence_margin,
+        },
+    })
+
+@app.route("/api/eye-age/estimate", methods=["POST"])
+def eye_age_estimate():
+    """
+    Оценка возраста по глазам из изображения.
+
+    Body JSON:
+      {"source": "camera"} — захват с камеры
+      {"image": "<base64>"} — из base64 изображения
+    """
+    estimator = _get_eye_age_estimator()
+    if estimator is None:
+        return jsonify({"error": "Eye age estimator not loaded"}), 500
+
+    data = request.json or {}
+    source = data.get("source", "")
+
+    import base64 as b64mod
+
+    if source == "camera":
+        cam = _get_camera()
+        if cam is None:
+            return jsonify({"error": "Camera not available"}), 500
+        ok, frame = cam.capture_frame()
+        if not ok or frame is None:
+            return jsonify({"error": "Failed to capture frame"}), 500
+        result = estimator.estimate_from_frame(frame)
+    elif data.get("image"):
+        try:
+            img_bytes = b64mod.b64decode(data["image"])
+        except Exception:
+            return jsonify({"error": "Invalid base64 image"}), 400
+        result = estimator.estimate_from_bytes(img_bytes)
+    else:
+        return jsonify({"error": "Provide 'source':'camera' or 'image':'<base64>'"}), 400
+
+    from psycho_platform.eye_age_estimator import EyeAgeEstimator
+    return jsonify(EyeAgeEstimator.result_to_dict(result))
+
+# ---------------------------------------------------------------------------
+#  Comprehensive Assessment API
+# ---------------------------------------------------------------------------
+@app.route("/api/assessment/status", methods=["GET"])
+def assessment_status():
+    """Статус совокупной оценки."""
+    engine = _get_comprehensive_engine()
+    if engine is None:
+        return jsonify({"available": False, "error": "Assessment engine not loaded"})
+    return jsonify({
+        "available": True,
+        "modules": {
+            "fer": True,
+            "pupil": _get_pupil_analyzer() is not None,
+            "eye_age": _get_eye_age_estimator() is not None,
+            "camera": _get_camera() is not None,
+            "knowledge_base": _get_kb() is not None,
+        },
+        "config": {
+            "fer_stress_weight": engine.config.fer_stress_weight,
+            "pupil_stress_weight": engine.config.pupil_stress_weight,
+            "baseline_stress_weight": engine.config.baseline_stress_weight,
+            "overall_stress_high": engine.config.overall_stress_high,
+            "overall_stress_moderate": engine.config.overall_stress_moderate,
+        },
+    })
+
+@app.route("/api/assessment/run", methods=["POST"])
+def assessment_run():
+    """
+    Запустить совокупную оценку.
+
+    Body JSON (все поля опциональны):
+      {
+        "source": "camera" | null,
+        "image": "<base64>" | null,
+        "fer": {"dominant_emotion": "anger", "stress_score": 0.8, ...},
+        "skip_pupil": false,
+        "skip_eye_age": false
+      }
+    """
+    engine = _get_comprehensive_engine()
+    if engine is None:
+        return jsonify({"error": "Assessment engine not loaded"}), 500
+
+    data = request.json or {}
+
+    # Получить кадр (если нужен для pupil/eye_age)
+    frame = None
+    source = data.get("source", "")
+
+    import base64 as b64mod
+
+    if source == "camera":
+        cam = _get_camera()
+        if cam is not None:
+            ok, frame = cam.capture_frame()
+            if not ok:
+                frame = None
+    elif data.get("image"):
+        try:
+            import numpy as np
+            cv2_mod = None
+            try:
+                import cv2
+                cv2_mod = cv2
+            except ImportError:
+                pass
+            if cv2_mod is not None:
+                img_bytes = b64mod.b64decode(data["image"])
+                arr = np.frombuffer(img_bytes, dtype=np.uint8)
+                frame = cv2_mod.imdecode(arr, cv2_mod.IMREAD_COLOR)
+        except Exception:
+            pass
+
+    # --- Собираем данные от каждого модуля ---
+    from psycho_platform.comprehensive_assessment import (
+        FERInput, PupilInput, EyeAgeInput, FaceAgeInput,
+        ComprehensiveAssessment,
+    )
+
+    # FER input (из запроса)
+    fer_data = data.get("fer")
+    fer_input = None
+    if fer_data:
+        fer_input = FERInput(
+            dominant_emotion=fer_data.get("dominant_emotion", "neutral"),
+            emotion_scores=fer_data.get("emotion_scores", {}),
+            valence=fer_data.get("valence", 0.0),
+            arousal=fer_data.get("arousal", 0.0),
+            stress_score=fer_data.get("stress_score", 0.0),
+            confidence=fer_data.get("confidence", 0.0),
+        )
+
+    # Pupil input (из кадра)
+    pupil_input = None
+    if not data.get("skip_pupil", False) and frame is not None:
+        analyzer = _get_pupil_analyzer()
+        if analyzer is not None:
+            pupil_result = analyzer.analyze_frame(frame)
+            pupil_input = PupilInput(
+                avg_pupil_iris_ratio=pupil_result.avg_pupil_iris_ratio,
+                dilation_level=pupil_result.dilation_level,
+                inferred_state=pupil_result.inferred_state,
+                anisocoria_detected=pupil_result.anisocoria_detected,
+                anisocoria_diff=pupil_result.anisocoria_diff,
+                state_confidence=pupil_result.state_confidence,
+                warnings=pupil_result.warnings,
+            )
+
+    # Eye age input (из кадра)
+    eye_age_input = None
+    if not data.get("skip_eye_age", False) and frame is not None:
+        estimator = _get_eye_age_estimator()
+        if estimator is not None:
+            eye_result = estimator.estimate_from_frame(frame)
+            eye_age_input = EyeAgeInput(
+                estimated_age=eye_result.estimated_age,
+                composite_score=eye_result.composite_score,
+                wrinkle_score=eye_result.wrinkle_score,
+                bags_score=eye_result.bags_score,
+                sclera_score=eye_result.sclera_score,
+                iris_score=eye_result.iris_score,
+                ptosis_score=eye_result.ptosis_score,
+                confidence=eye_result.confidence,
+                warnings=eye_result.warnings,
+            )
+
+    # Face age input (из запроса, опционально)
+    face_age_data = data.get("face_age")
+    face_age_input = None
+    if face_age_data:
+        face_age_input = FaceAgeInput(
+            predicted_age=face_age_data.get("predicted_age", 0.0),
+            confidence_margin=face_age_data.get("confidence_margin", 3.0),
+            is_allowed=face_age_data.get("is_allowed", True),
+        )
+
+    # Запуск совокупной оценки
+    result = engine.assess(
+        fer=fer_input,
+        pupil=pupil_input,
+        eye_age=eye_age_input,
+        face_age=face_age_input,
+    )
+
+    return jsonify(ComprehensiveAssessment.result_to_dict(result))
 
 # ---------------------------------------------------------------------------
 #  Автозапуск бота при старте сервера (если BOT_TOKEN задан)

@@ -139,6 +139,59 @@ SEED_SOURCES: List[Dict[str, Any]] = [
         "tags": ["age_estimation", "survey", "deep_learning"],
         "notes": "Обзор методов оценки возраста по лицу.",
     },
+    # --- Зрачки / Pupillometry ---
+    {
+        "type": "article",
+        "year": 2018,
+        "authors": "Mathôt S.",
+        "title": "Pupillometry: Psychology, Physiology, and Function",
+        "doi": "10.3758/s13428-018-1075-y",
+        "tags": ["pupillometry", "cognitive_load", "emotion_recognition"],
+        "notes": "Обзор пупиллометрии: зрачок как индикатор когнитивной нагрузки и эмоций.",
+    },
+    {
+        "type": "article",
+        "year": 2020,
+        "authors": "Kret M.E., Sjak-Shie E.E.",
+        "title": "Preprocessing pupil size data: Guidelines and code",
+        "doi": "10.3758/s13428-020-01400-z",
+        "tags": ["pupillometry", "preprocessing", "methodology"],
+        "notes": "Руководство по предобработке данных зрачков.",
+    },
+    {
+        "type": "article",
+        "year": 2022,
+        "authors": "Pedrotti M., et al.",
+        "title": "Pupil Dilation as an Index of Sympathetic Nervous System Activity",
+        "tags": ["pupillometry", "stress", "autonomic"],
+        "notes": "Расширение зрачка как индекс активности симпатической НС.",
+    },
+    # --- Возраст по глазам / Periorbital aging ---
+    {
+        "type": "article",
+        "year": 2011,
+        "authors": "Peshek D., et al.",
+        "title": "Preliminary evidence that the limbal ring influences facial attractiveness",
+        "doi": "10.1177/1474704911410903",
+        "tags": ["eye_age", "limbal_ring", "perception"],
+        "notes": "Лимбальное кольцо как маркер молодости — темнеет/исчезает с возрастом.",
+    },
+    {
+        "type": "article",
+        "year": 2019,
+        "authors": "Kang D., et al.",
+        "title": "Periorbital Aging: A Comprehensive Review",
+        "tags": ["eye_age", "periorbital", "clinical"],
+        "notes": "Обзор периорбитального старения: морщины, мешки, птоз, склера.",
+    },
+    {
+        "type": "article",
+        "year": 2023,
+        "authors": "Li J., et al.",
+        "title": "Sclera Color and Age: Analysis Using Deep Learning",
+        "tags": ["eye_age", "sclera", "deep_learning"],
+        "notes": "Цвет склеры как маркер возраста: от белой к желтоватой.",
+    },
 ]
 
 
@@ -298,6 +351,45 @@ SEED_METHODS: List[Dict[str, Any]] = [
         ),
         "duration_min": 20,
     },
+    # --- Специфичные для зрачкового анализа ---
+    {
+        "title": "Фокусировка на дыхании (Pupil Calming)",
+        "description": (
+            "Техника для снижения дилатации зрачков через осознанное дыхание. "
+            "Активация парасимпатической НС → сужение зрачков → расслабление."
+        ),
+        "evidence_level": "medium",
+        "applicable_in_app": True,
+        "target_states": ["stress", "arousal", "cognitive_overload"],
+        "instructions": (
+            "1. Закройте глаза (или смотрите на одну точку).\n"
+            "2. Медленный вдох 4 сек через нос.\n"
+            "3. Задержка 2 сек.\n"
+            "4. Медленный выдох 6 сек через рот.\n"
+            "5. Повторите 8-10 циклов.\n"
+            "6. Обратите внимание на расслабление глаз."
+        ),
+        "duration_min": 5,
+    },
+    {
+        "title": "Пальминг (Palming) для глаз",
+        "description": (
+            "Прикрыть глаза тёплыми ладонями для снятия напряжения. "
+            "Метод Бейтса — снижает зрительную и когнитивную нагрузку."
+        ),
+        "evidence_level": "low",
+        "applicable_in_app": True,
+        "target_states": ["cognitive_overload", "fatigue", "tension"],
+        "instructions": (
+            "1. Потрите ладони друг о друга до ощущения тепла.\n"
+            "2. Положите тёплые ладони на закрытые глаза (не давите).\n"
+            "3. Полная темнота — расслабьте глаза.\n"
+            "4. Дышите медленно и глубоко.\n"
+            "5. 3-5 минут.\n"
+            "6. Медленно уберите ладони, откройте глаза."
+        ),
+        "duration_min": 5,
+    },
 ]
 
 
@@ -394,6 +486,48 @@ VM_MODULE_PRINCIPLES: List[Dict[str, str]] = [
             "4. Чат через /api/chat с выбранной моделью.\n"
             "5. Если Ollama недоступна — фоллбэк на LM Studio.\n"
             "6. Используется для: генерации статей, чата, анализа кода."
+        ),
+    },
+    {
+        "module": "pupil_analyzer",
+        "title": "Модуль анализа зрачков",
+        "principle": (
+            "1. Детекция глаз Haar cascade / MediaPipe.\n"
+            "2. Сегментация зрачка: GaussianBlur → threshold → findContours.\n"
+            "3. Измерение pupil/iris ratio (0.2-0.8 нормальный диапазон).\n"
+            "4. Определение дилатации: high (>0.65), moderate (>0.5), "
+            "normal (0.25-0.5), constriction (<0.25).\n"
+            "5. Маппинг: high_dilation → stress/arousal; "
+            "constriction → relaxation/fatigue.\n"
+            "6. Анизокория (разница зрачков >0.15) → предупреждение.\n"
+            "7. Временное сглаживание по 5 кадрам."
+        ),
+    },
+    {
+        "module": "eye_age_estimator",
+        "title": "Модуль оценки возраста по глазам",
+        "principle": (
+            "1. Извлечение периорбитальных ROI (расширенная зона вокруг глаз).\n"
+            "2. 5 параметров: wrinkles (Canny edges, 30%), bags (яркость, 20%), "
+            "sclera (HSV yellowness, 15%), iris (Laplacian sharpness, 20%), "
+            "ptosis (aspect ratio, 15%).\n"
+            "3. Каждый score 0.0 (молодой) → 1.0 (старый).\n"
+            "4. Взвешенная сумма → composite_score → estimated_age.\n"
+            "5. Маппинг: score 0→15 лет, score 1→80 лет, ±5 лет margin.\n"
+            "6. Дополняет ViT age classifier для более точной оценки."
+        ),
+    },
+    {
+        "module": "comprehensive_assessment",
+        "title": "Совокупная оценка состояния",
+        "principle": (
+            "1. Объединяет данные: FER (40%), зрачки (30%), baseline (30%).\n"
+            "2. Возраст: комбинация face ViT (вес 0.7) + eye periorbital (вес 0.3).\n"
+            "3. Стресс: weighted average FER stress + pupil dilation + arousal/valence.\n"
+            "4. Детекция состояний: emotion→state mapping + pupil→state mapping.\n"
+            "5. Рекомендации: detected_states → KB.recommend_methods().\n"
+            "6. Итог: единый JSON-отчёт с возрастом, эмоцией, стрессом, "
+            "зрачками, рекомендациями и disclaimers."
         ),
     },
 ]

@@ -116,3 +116,8 @@ class AgeEstimationConfig:
 # ═══════════════════════════════════════════════════════════════════════════
 DEFAULT_FER_CONFIG = FERConfig()
 DEFAULT_AGE_CONFIG = AgeEstimationConfig()
+
+# Re-export для удобства (config классы из отдельных модулей)
+# PupilAnalysisConfig → psycho_platform.pupil_analyzer
+# EyeAgeConfig → psycho_platform.eye_age_estimator
+# ComprehensiveConfig → psycho_platform.comprehensive_assessment
