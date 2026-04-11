@@ -418,6 +418,11 @@ def _health() -> Dict[str, Any]:
 def index():
     return render_template("index.html")
 
+@app.route("/psycho")
+def psycho_page():
+    """Standalone psychocorrection page."""
+    return send_from_directory(str(_BASE_DIR / "static"), "psycho.html")
+
 @app.route("/health", methods=["GET"])
 def health():
     return jsonify(_health())

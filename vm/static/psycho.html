@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Психокоррекция -- Платформа</title>
+<style>
+:root{--bg:#0d1117;--card:#161b22;--border:#30363d;--accent:#58a6ff;--accent2:#e94560;--green:#3fb950;--yellow:#d29922;--text:#e6edf3;--text2:#8b949e}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+
+/* Header */
+.header{background:var(--card);border-bottom:1px solid var(--border);padding:16px 24px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}
+.header h1{font-size:1.4rem;color:#fff}
+.header h1 span{color:var(--accent)}
+.header-links{display:flex;gap:16px;font-size:.9rem}
+.badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:.75rem;font-weight:600}
+.badge-green{background:#238636;color:#fff}
+.badge-yellow{background:#9e6a03;color:#fff}
+
+/* Container */
+.container{max-width:1100px;margin:0 auto;padding:24px 16px}
+
+/* Install Banner */
+.install-banner{background:linear-gradient(135deg,#161b22 0%,#1a2332 100%);border:1px solid var(--accent);border-radius:12px;padding:24px;margin-bottom:24px;position:relative;overflow:hidden}
+.install-banner::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,var(--accent),var(--accent2))}
+.install-banner h2{color:var(--accent);font-size:1.2rem;margin-bottom:12px}
+.install-banner p{color:var(--text2);font-size:.9rem;margin-bottom:8px}
+
+/* Command box */
+.cmd-box{background:#0d1117;border:1px solid var(--border);border-radius:8px;padding:12px 16px;font-family:'Cascadia Code','Fira Code',monospace;font-size:.85rem;color:var(--green);position:relative;margin:12px 0;overflow-x:auto;white-space:nowrap}
+.cmd-box .label{display:block;color:var(--text2);font-size:.75rem;margin-bottom:4px;font-family:'Segoe UI',sans-serif}
+.cmd-copy{position:absolute;top:8px;right:8px;background:var(--card);border:1px solid var(--border);color:var(--text2);padding:4px 10px;border-radius:6px;cursor:pointer;font-size:.75rem}
+.cmd-copy:hover{background:var(--border);color:#fff}
+
+/* Grid */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px;margin-bottom:24px}
+
+/* Card */
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px;transition:border-color .2s}
+.card:hover{border-color:var(--accent)}
+.card h3{font-size:1rem;margin-bottom:8px;display:flex;align-items:center;gap:8px}
+.card p{font-size:.85rem;color:var(--text2);line-height:1.5}
+.card .icon{font-size:1.3rem}
+
+/* Status grid */
+.status-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;margin-bottom:16px}
+.status-tile{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px;text-align:center;font-size:.85rem}
+.status-tile .dot{width:10px;height:10px;border-radius:50%;display:inline-block;margin-right:4px;vertical-align:middle}
+.dot-green{background:var(--green)}.dot-red{background:#f85149}.dot-yellow{background:var(--yellow)}
+
+/* Action buttons */
+.btn{display:inline-block;padding:8px 16px;border-radius:6px;border:none;cursor:pointer;font-size:.85rem;font-weight:500;transition:opacity .2s}
+.btn:hover{opacity:.85}
+.btn-primary{background:var(--accent);color:#fff}
+.btn-danger{background:var(--accent2);color:#fff}
+.btn-outline{background:transparent;border:1px solid var(--border);color:var(--text)}
+
+/* Result areas */
+.result-area{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;font-size:.85rem;max-height:300px;overflow-y:auto;white-space:pre-wrap;color:var(--text2);display:none;margin-top:8px}
+.result-area.active{display:block}
+
+/* Section */
+.section{margin-bottom:24px}
+.section h2{font-size:1.1rem;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px}
+
+/* Footer */
+.footer{text-align:center;padding:24px;color:var(--text2);font-size:.8rem;border-top:1px solid var(--border);margin-top:32px}
+
+/* Responsive */
+@media(max-width:600px){.grid{grid-template-columns:1fr}.status-grid{grid-template-columns:repeat(2,1fr)}.header{padding:12px 16px}.container{padding:16px 12px}}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>🧠 <span>Психокоррекция</span></h1>
+  <div class="header-links">
+    <span class="badge badge-green" id="serverBadge">Сервер активен</span>
+    <a href="/">VM Панель</a>
+    <a href="https://github.com/ybiytsa1983-cpu/drgr-bot" target="_blank">GitHub</a>
+  </div>
+</div>
+
+<div class="container">
+
+  <!-- ===== INSTALL BANNER ===== -->
+  <div class="install-banner">
+    <h2>📥 Команда для установки и запуска</h2>
+    <p>Откройте <strong>PowerShell</strong> на Windows и вставьте эту команду:</p>
+    <div class="cmd-box">
+      <span class="label">PowerShell (одна строка)</span>
+      <button class="cmd-copy" onclick="copyCmd(this)">Копировать</button>
+      <code id="installCmd">[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; irm https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/start_vm.ps1 | iex</code>
+    </div>
+    <p>Или через <strong>Git</strong>:</p>
+    <div class="cmd-box">
+      <span class="label">Git + Python</span>
+      <button class="cmd-copy" onclick="copyCmd(this)">Копировать</button>
+      <code>git clone https://github.com/ybiytsa1983-cpu/drgr-bot.git &amp;&amp; cd drgr-bot &amp;&amp; pip install -r requirements.txt &amp;&amp; python vm/server.py</code>
+    </div>
+    <p style="margin-top:8px">После запуска откройте: <strong><a href="http://localhost:5005/psycho" id="localLink">http://localhost:5005/psycho</a></strong></p>
+  </div>
+
+  <!-- ===== MODULE STATUS ===== -->
+  <div class="section">
+    <h2>📊 Статус модулей</h2>
+    <div class="status-grid" id="statusGrid">
+      <div class="status-tile" id="st-ollama"><span class="dot dot-red"></span>Ollama</div>
+      <div class="status-tile" id="st-camera"><span class="dot dot-red"></span>Камера</div>
+      <div class="status-tile" id="st-pupil"><span class="dot dot-red"></span>Зрачки</div>
+      <div class="status-tile" id="st-eyeage"><span class="dot dot-red"></span>Возраст глаз</div>
+      <div class="status-tile" id="st-assessment"><span class="dot dot-red"></span>Оценка</div>
+      <div class="status-tile" id="st-kb"><span class="dot dot-red"></span>База знаний</div>
+    </div>
+    <button class="btn btn-outline" onclick="refreshStatus()">Обновить статус</button>
+    <button class="btn btn-primary" onclick="seedKB()" style="margin-left:8px">Заполнить базу знаний</button>
+  </div>
+
+  <!-- ===== CAPABILITIES ===== -->
+  <div class="section">
+    <h2>🔬 Возможности платформы</h2>
+    <div class="grid">
+      <div class="card">
+        <h3><span class="icon">🧠</span> FER-анализ</h3>
+        <p>Анализ лицевой экспрессии: распознавание эмоций, валентность, возбуждение, уровень стресса. Использует нейросетевую модель для определения 7 базовых эмоций по Экману.</p>
+      </div>
+      <div class="card">
+        <h3><span class="icon">👁️</span> Анализ зрачков</h3>
+        <p>Пупиллометрия: дилатация зрачков, анизокория, когнитивная нагрузка. Каскад Хаара + сегментация контуров. Скользящее среднее по 5 кадрам.</p>
+      </div>
+      <div class="card">
+        <h3><span class="icon">👀</span> Возраст по глазам</h3>
+        <p>5 параметров: морщины (30%), мешки (20%), склера (15%), радужка (20%), птоз (15%). Диапазон оценки: 15-80 лет.</p>
+      </div>
+      <div class="card">
+        <h3><span class="icon">📊</span> Совокупная оценка</h3>
+        <p>Стресс-балл: FER (40%) + зрачки (30%) + baseline (30%). Итоговый JSON-отчёт с рекомендациями из базы знаний.</p>
+      </div>
+      <div class="card">
+        <h3><span class="icon">📚</span> База знаний</h3>
+        <p>18 научных источников, 10 методик психокоррекции: дыхание, PMR, заземление, когнитивная переоценка, журнал эмоций, рисование эмоций.</p>
+      </div>
+      <div class="card">
+        <h3><span class="icon">🔒</span> Этика и согласие</h3>
+        <p>Проверка возраста 21+, информированное согласие на видеоанализ, отказ от ответственности. Без диагнозов -- только рекомендации.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== ASSESSMENT ===== -->
+  <div class="section">
+    <h2>🔬 Совокупная оценка</h2>
+    <div class="card">
+      <p style="margin-bottom:12px">Запуск комплексного анализа: FER-эмоции, зрачки, базовый уровень стресса.</p>
+      <button class="btn btn-danger" onclick="runAssessment('camera')">📷 Анализ с камеры</button>
+      <button class="btn btn-primary" onclick="runAssessment('demo')" style="margin-left:8px">🧪 Демо-анализ</button>
+      <div class="result-area" id="assessmentResult"></div>
+    </div>
+  </div>
+
+  <!-- ===== PUPIL ANALYSIS ===== -->
+  <div class="section">
+    <h2>👁️ Анализ зрачков</h2>
+    <div class="card">
+      <p style="margin-bottom:12px">Пупиллометрия: дилатация, анизокория, когнитивная нагрузка.</p>
+      <button class="btn btn-primary" onclick="runPupil()">📷 Анализ с камеры</button>
+      <button class="btn btn-outline" onclick="resetPupil()" style="margin-left:8px">Сброс истории</button>
+      <div class="result-area" id="pupilResult"></div>
+    </div>
+  </div>
+
+  <!-- ===== EYE AGE ===== -->
+  <div class="section">
+    <h2>👀 Оценка возраста по глазам</h2>
+    <div class="card">
+      <p style="margin-bottom:12px">Периорбитальный анализ: морщины, мешки, склера, радужка, птоз.</p>
+      <button class="btn btn-primary" onclick="runEyeAge()">📷 Оценка с камеры</button>
+      <div class="result-area" id="eyeAgeResult"></div>
+    </div>
+  </div>
+
+  <!-- ===== KNOWLEDGE BASE ===== -->
+  <div class="section">
+    <h2>📚 База знаний</h2>
+    <div class="card">
+      <div id="kbStats" style="margin-bottom:12px;color:var(--text2);font-size:.85rem">Загрузка...</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-outline" onclick="kbAction('stats')">Статистика</button>
+        <button class="btn btn-outline" onclick="kbAction('principles')">Принципы ВМ</button>
+        <button class="btn btn-outline" onclick="kbAction('methods')">Методики</button>
+        <button class="btn btn-outline" onclick="kbAction('recommend')">Рекомендации</button>
+        <button class="btn btn-outline" onclick="kbAction('sources')">Источники</button>
+      </div>
+      <div class="result-area" id="kbResult"></div>
+    </div>
+  </div>
+
+</div>
+
+<div class="footer">
+  Психокоррекция v2.0 -- Платформа психоэмоциональной оценки и коррекции<br>
+  ⚠️ Не является медицинским прибором. Только рекомендации, не диагнозы.
+</div>
+
+<script>
+function api(url, opts) {
+  return fetch(url, opts).then(r => {
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  });
+}
+
+function copyCmd(btn) {
+  const code = btn.parentElement.querySelector('code');
+  navigator.clipboard.writeText(code.textContent).then(() => {
+    btn.textContent = 'Скопировано!';
+    setTimeout(() => btn.textContent = 'Копировать', 2000);
+  });
+}
+
+function showResult(id, data) {
+  const el = document.getElementById(id);
+  el.textContent = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+  el.classList.add('active');
+}
+
+// --- Status ---
+function setDot(id, ok) {
+  const dot = document.querySelector('#' + id + ' .dot');
+  if (dot) dot.className = 'dot ' + (ok ? 'dot-green' : 'dot-red');
+}
+
+function refreshStatus() {
+  api('/api/ollama/status').then(d => setDot('st-ollama', d.available)).catch(() => setDot('st-ollama', false));
+  api('/api/camera/status').then(d => setDot('st-camera', d.available)).catch(() => setDot('st-camera', false));
+  api('/api/pupil/status').then(d => setDot('st-pupil', d.available)).catch(() => setDot('st-pupil', false));
+  api('/api/eye-age/status').then(d => setDot('st-eyeage', d.available)).catch(() => setDot('st-eyeage', false));
+  api('/api/assessment/status').then(d => setDot('st-assessment', d.available)).catch(() => setDot('st-assessment', false));
+  api('/api/kb/stats').then(d => {
+    setDot('st-kb', true);
+    document.getElementById('kbStats').textContent =
+      'Источников: ' + (d.sources || 0) + ', Методик: ' + (d.methods || 0) + ', Модулей: ' + (d.principles || 0);
+  }).catch(() => setDot('st-kb', false));
+}
+
+function seedKB() {
+  api('/api/kb/seed', {method:'POST'}).then(d => {
+    alert('База знаний заполнена: ' + (d.sources_added || 0) + ' источников, ' + (d.methods_added || 0) + ' методик');
+    refreshStatus();
+  }).catch(e => alert('Ошибка: ' + e.message));
+}
+
+// --- Assessment ---
+function runAssessment(mode) {
+  const el = document.getElementById('assessmentResult');
+  el.textContent = 'Анализ...';
+  el.classList.add('active');
+  api('/api/assessment/run', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({source: mode})})
+    .then(d => showResult('assessmentResult', d))
+    .catch(e => showResult('assessmentResult', 'Ошибка: ' + e.message));
+}
+
+// --- Pupil ---
+function runPupil() {
+  const el = document.getElementById('pupilResult');
+  el.textContent = 'Анализ...';
+  el.classList.add('active');
+  api('/api/pupil/analyze', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({source:'camera'})})
+    .then(d => showResult('pupilResult', d))
+    .catch(e => showResult('pupilResult', 'Ошибка: ' + e.message));
+}
+function resetPupil() {
+  api('/api/pupil/reset', {method:'POST'}).then(() => {
+    const el = document.getElementById('pupilResult');
+    el.textContent = 'История сброшена';
+    el.classList.add('active');
+  }).catch(e => alert('Ошибка: ' + e.message));
+}
+
+// --- Eye Age ---
+function runEyeAge() {
+  const el = document.getElementById('eyeAgeResult');
+  el.textContent = 'Оценка...';
+  el.classList.add('active');
+  api('/api/eye-age/estimate', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({source:'camera'})})
+    .then(d => showResult('eyeAgeResult', d))
+    .catch(e => showResult('eyeAgeResult', 'Ошибка: ' + e.message));
+}
+
+// --- Knowledge Base ---
+function kbAction(action) {
+  let url = '/api/kb/' + action;
+  if (action === 'recommend') url += '?state=stress';
+  api(url).then(d => showResult('kbResult', d)).catch(e => showResult('kbResult', 'Ошибка: ' + e.message));
+}
+
+// Auto-refresh on load
+refreshStatus();
+</script>
+</body>
+</html>
