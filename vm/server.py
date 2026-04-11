@@ -687,7 +687,7 @@ if __name__ == "__main__":
         sock.bind(("0.0.0.0", _port))
         sock.close()
     except OSError:
-        logger.error("Порт %d уже занят! Попробуйте: DRGR_PORT=5006 python vm/server.py", _port)
+        logger.error("Порт %d уже занят! Попробуйте: DRGR_PORT=%d python vm/server.py", _port, _port + 1)
         # Попробовать следующий порт
         for alt in range(_port + 1, _port + 10):
             try:
