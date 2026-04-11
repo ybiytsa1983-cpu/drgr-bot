@@ -72,6 +72,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
     <button class="nav-btn" onclick="showTab('generate')">✍️ Генератор текста</button>
     <button class="nav-btn" onclick="showTab('editor')">📄 Редактор</button>
     <button class="nav-btn" onclick="showTab('bot')">🤖 Telegram бот</button>
+    <button class="nav-btn" onclick="showTab('psycho')">🧠 Психокоррекция</button>
     <button class="nav-btn" onclick="showTab('settings')">⚙️ Настройки</button>
   </div>
 
@@ -98,6 +99,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
   <button class="tab-item" data-tab="generate">Текст</button>
   <button class="tab-item" data-tab="editor">Редактор</button>
   <button class="tab-item" data-tab="bot">Бот</button>
+  <button class="tab-item" data-tab="psycho">Психокоррекция</button>
   <button class="tab-item" data-tab="settings">Настройки</button>
 </div>
 
@@ -212,6 +214,82 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
   </div>
 </div>
 
+<!-- ===== Psycho-Correction Panel ===== -->
+<div id="panel-psycho" class="panel">
+
+  <!-- Module Status -->
+  <div class="vm-card">
+    <h4>🧠 Психокоррекция -- Статус модулей</h4>
+    <div class="ai-grid" id="psychoGrid">
+      <div class="ai-tile" id="psy-ollama"><span class="dot dot-red"></span>Ollama</div>
+      <div class="ai-tile" id="psy-camera"><span class="dot dot-red"></span>Камера</div>
+      <div class="ai-tile" id="psy-pupil"><span class="dot dot-red"></span>Зрачки</div>
+      <div class="ai-tile" id="psy-eyeage"><span class="dot dot-red"></span>Возраст глаз</div>
+      <div class="ai-tile" id="psy-assessment"><span class="dot dot-red"></span>Оценка</div>
+      <div class="ai-tile" id="psy-kb"><span class="dot dot-red"></span>База знаний</div>
+    </div>
+    <div style="margin-top:8px">
+      <button class="btn-primary2" onclick="psychoRefreshStatus()">🔄 Обновить статус</button>
+    </div>
+  </div>
+
+  <!-- Knowledge Base -->
+  <div class="vm-card">
+    <h4>📚 База знаний (Пизек, психокоррекция)</h4>
+    <div id="kbStats" style="font-size:.85rem;color:#aaa;margin-bottom:8px">Загрузка...</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn-primary2" onclick="psychoKBStats()">📊 Статистика</button>
+      <button class="btn-primary2" onclick="psychoKBSeed()">🌱 Заполнить базу</button>
+      <button class="btn-primary2" onclick="psychoKBPrinciples()">📖 Принципы ВМ</button>
+      <button class="btn-primary2" onclick="psychoKBMethods()">📋 Методики</button>
+      <button class="btn-primary2" onclick="psychoKBRecommend()">💡 Рекомендации</button>
+    </div>
+    <div id="kbResult" style="background:#111;border-radius:8px;padding:12px;margin-top:8px;font-size:.85rem;max-height:300px;overflow-y:auto;white-space:pre-wrap;color:#ccc;display:none"></div>
+  </div>
+
+  <!-- Comprehensive Assessment -->
+  <div class="vm-card">
+    <h4>🔬 Совокупная оценка</h4>
+    <p style="font-size:.85rem;color:#aaa;margin-bottom:8px">Запуск анализа: FER (40%), зрачки (30%), базовый уровень (30%)</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+      <button class="btn-accent" onclick="psychoRunAssessment('camera')">📷 Анализ с камеры</button>
+      <button class="btn-primary2" onclick="psychoRunAssessment('demo')">🧪 Демо-анализ</button>
+    </div>
+    <div id="assessmentResult" style="background:#111;border-radius:8px;padding:12px;font-size:.85rem;max-height:400px;overflow-y:auto;white-space:pre-wrap;color:#ccc;display:none"></div>
+  </div>
+
+  <!-- Pupil Analysis -->
+  <div class="vm-card">
+    <h4>👁️ Анализ зрачков</h4>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+      <button class="btn-primary2" onclick="psychoPupilAnalyze('camera')">📷 Анализ с камеры</button>
+      <button class="btn-primary2" onclick="psychoPupilReset()">🔄 Сброс истории</button>
+    </div>
+    <div id="pupilResult" style="background:#111;border-radius:8px;padding:12px;font-size:.85rem;max-height:300px;overflow-y:auto;white-space:pre-wrap;color:#ccc;display:none"></div>
+  </div>
+
+  <!-- Eye Age Estimation -->
+  <div class="vm-card">
+    <h4>👀 Оценка возраста по глазам</h4>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+      <button class="btn-primary2" onclick="psychoEyeAge('camera')">📷 Оценка с камеры</button>
+    </div>
+    <div id="eyeAgeResult" style="background:#111;border-radius:8px;padding:12px;font-size:.85rem;max-height:300px;overflow-y:auto;white-space:pre-wrap;color:#ccc;display:none"></div>
+  </div>
+
+  <!-- Sources -->
+  <div class="vm-card">
+    <h4>📄 Научные источники</h4>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+      <button class="btn-primary2" onclick="psychoKBSources()">📄 Все источники</button>
+      <button class="btn-primary2" onclick="psychoKBSources('article')">📝 Статьи</button>
+      <button class="btn-primary2" onclick="psychoKBSources('book')">📕 Книги</button>
+    </div>
+    <div id="sourcesResult" style="background:#111;border-radius:8px;padding:12px;font-size:.85rem;max-height:300px;overflow-y:auto;white-space:pre-wrap;color:#ccc;display:none"></div>
+  </div>
+
+</div>
+
 <!-- ===== Settings Panel ===== -->
 <div id="panel-settings" class="panel">
   <div class="vm-card">
@@ -266,7 +344,7 @@ function changeEditorLang() {
 }
 
 // ---------- Tab navigation ----------
-const allTabs = ['vm','chat','research','generate','editor','bot','settings'];
+const allTabs = ['vm','chat','research','generate','editor','bot','psycho','settings'];
 function showTab(name) {
   allTabs.forEach(t => {
     const p = document.getElementById('panel-'+t);
@@ -283,6 +361,7 @@ function showTab(name) {
   if (name === 'bot') botRefresh();
   if (name === 'settings') loadSettings();
   if (name === 'chat') loadModelsDropdown();
+  if (name === 'psycho') psychoRefreshStatus();
 }
 document.querySelectorAll('.tab-item').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
 
@@ -573,6 +652,172 @@ function runGenerate() {
   }).finally(() => {
     btn.disabled = false; btn.textContent = '✍️ Генерировать';
   });
+}
+
+// ---------- Psycho-Correction Platform ----------
+function psychoRefreshStatus() {
+  // Ollama
+  api('/api/ollama/status').then(d => {
+    document.querySelector('#psy-ollama .dot').className = 'dot ' + (d.available ? 'dot-green' : 'dot-red');
+  }).catch(() => {});
+  // Camera
+  api('/api/camera/status').then(d => {
+    document.querySelector('#psy-camera .dot').className = 'dot ' + (d.available ? 'dot-green' : 'dot-red');
+  }).catch(() => {});
+  // Pupil
+  api('/api/pupil/status').then(d => {
+    document.querySelector('#psy-pupil .dot').className = 'dot ' + (d.available ? 'dot-green' : 'dot-red');
+  }).catch(() => {});
+  // Eye Age
+  api('/api/eye-age/status').then(d => {
+    document.querySelector('#psy-eyeage .dot').className = 'dot ' + (d.available ? 'dot-green' : 'dot-red');
+  }).catch(() => {});
+  // Assessment
+  api('/api/assessment/status').then(d => {
+    document.querySelector('#psy-assessment .dot').className = 'dot ' + (d.available ? 'dot-green' : 'dot-red');
+  }).catch(() => {});
+  // KB
+  api('/api/kb/stats').then(d => {
+    document.querySelector('#psy-kb .dot').className = 'dot dot-green';
+    document.getElementById('kbStats').textContent =
+      'Источников: ' + (d.sources_count || 0) + ' | Методик: ' + (d.methods_count || 0);
+  }).catch(() => {
+    document.querySelector('#psy-kb .dot').className = 'dot dot-red';
+    document.getElementById('kbStats').textContent = 'База знаний недоступна';
+  });
+}
+
+function psychoShowResult(elemId, data) {
+  const el = document.getElementById(elemId);
+  el.style.display = 'block';
+  if (typeof data === 'string') {
+    el.textContent = data;
+  } else {
+    el.textContent = JSON.stringify(data, null, 2);
+  }
+}
+
+function psychoKBStats() {
+  api('/api/kb/stats').then(d => psychoShowResult('kbResult', d))
+    .catch(e => psychoShowResult('kbResult', 'Ошибка: ' + e.message));
+}
+
+function psychoKBSeed() {
+  if (!confirm('Заполнить базу знаний начальными данными?')) return;
+  api('/api/kb/seed', {method:'POST'})
+    .then(d => {
+      psychoShowResult('kbResult', d);
+      psychoRefreshStatus();
+    })
+    .catch(e => psychoShowResult('kbResult', 'Ошибка: ' + e.message));
+}
+
+function psychoKBPrinciples() {
+  api('/api/kb/principles')
+    .then(d => psychoShowResult('kbResult', d))
+    .catch(e => psychoShowResult('kbResult', 'Ошибка: ' + e.message));
+}
+
+function psychoKBMethods() {
+  api('/api/kb/methods')
+    .then(d => psychoShowResult('kbResult', d))
+    .catch(e => psychoShowResult('kbResult', 'Ошибка: ' + e.message));
+}
+
+function psychoKBRecommend() {
+  const state = prompt('Состояние для рекомендаций:', 'stress');
+  if (!state) return;
+  api('/api/kb/recommend?state=' + encodeURIComponent(state) + '&limit=5')
+    .then(d => psychoShowResult('kbResult', d))
+    .catch(e => psychoShowResult('kbResult', 'Ошибка: ' + e.message));
+}
+
+function psychoKBSources(type) {
+  let url = '/api/kb/sources?limit=50';
+  if (type) url += '&type=' + encodeURIComponent(type);
+  api(url)
+    .then(d => psychoShowResult('sourcesResult', d))
+    .catch(e => psychoShowResult('sourcesResult', 'Ошибка: ' + e.message));
+}
+
+function psychoRunAssessment(source) {
+  const body = {};
+  if (source === 'camera') {
+    body.source = 'camera';
+  } else {
+    // Demo data
+    body.fer = {
+      dominant_emotion: 'anger',
+      emotion_scores: {anger: 0.6, fear: 0.2, sadness: 0.1, neutral: 0.1},
+      valence: -0.5,
+      arousal: 0.7,
+      stress_score: 0.75,
+      confidence: 0.85
+    };
+  }
+  psychoShowResult('assessmentResult', 'Анализ...');
+  api('/api/assessment/run', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(body)
+  }).then(d => {
+    let text = '=== Совокупная оценка ===\n';
+    text += 'Уровень стресса: ' + (d.overall_stress_level || d.stress_level || '?') + '\n';
+    text += 'Стресс-индекс: ' + (d.overall_stress_score != null ? d.overall_stress_score.toFixed(2) : '?') + '\n';
+    if (d.recommendations && d.recommendations.length) {
+      text += '\nРекомендации:\n';
+      d.recommendations.forEach((r, i) => { text += (i+1) + '. ' + (r.title || r) + '\n'; });
+    }
+    text += '\n--- Полные данные ---\n' + JSON.stringify(d, null, 2);
+    psychoShowResult('assessmentResult', text);
+  }).catch(e => psychoShowResult('assessmentResult', 'Ошибка: ' + e.message));
+}
+
+function psychoPupilAnalyze(source) {
+  const body = source === 'camera' ? {source:'camera'} : {};
+  psychoShowResult('pupilResult', 'Анализ зрачков...');
+  api('/api/pupil/analyze', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(body)
+  }).then(d => {
+    let text = '=== Анализ зрачков ===\n';
+    text += 'Среднее соотношение зрачок/радужка: ' + (d.avg_pupil_iris_ratio != null ? d.avg_pupil_iris_ratio.toFixed(3) : '?') + '\n';
+    text += 'Уровень расширения: ' + (d.dilation_level || '?') + '\n';
+    text += 'Состояние: ' + (d.inferred_state || '?') + '\n';
+    text += 'Анизокория: ' + (d.anisocoria_detected ? 'Да' : 'Нет') + '\n';
+    if (d.warnings && d.warnings.length) {
+      text += 'Предупреждения: ' + d.warnings.join(', ') + '\n';
+    }
+    text += '\n--- Полные данные ---\n' + JSON.stringify(d, null, 2);
+    psychoShowResult('pupilResult', text);
+  }).catch(e => psychoShowResult('pupilResult', 'Ошибка: ' + e.message));
+}
+
+function psychoPupilReset() {
+  api('/api/pupil/reset', {method:'POST'})
+    .then(d => psychoShowResult('pupilResult', d.message || 'Сброс выполнен'))
+    .catch(e => psychoShowResult('pupilResult', 'Ошибка: ' + e.message));
+}
+
+function psychoEyeAge(source) {
+  const body = source === 'camera' ? {source:'camera'} : {};
+  psychoShowResult('eyeAgeResult', 'Оценка возраста...');
+  api('/api/eye-age/estimate', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(body)
+  }).then(d => {
+    let text = '=== Оценка возраста по глазам ===\n';
+    text += 'Возраст: ' + (d.estimated_age != null ? Math.round(d.estimated_age) + ' лет' : '?') + '\n';
+    text += 'Уверенность: ' + (d.confidence != null ? (d.confidence * 100).toFixed(0) + '%' : '?') + '\n';
+    text += 'Составной балл: ' + (d.composite_score != null ? d.composite_score.toFixed(2) : '?') + '\n';
+    if (d.warnings && d.warnings.length) {
+      text += 'Предупреждения: ' + d.warnings.join(', ') + '\n';
+    }
+    text += '\n--- Полные данные ---\n' + JSON.stringify(d, null, 2);
+    psychoShowResult('eyeAgeResult', text);
+  }).catch(e => psychoShowResult('eyeAgeResult', 'Ошибка: ' + e.message));
 }
 
 // ---------- Init ----------
