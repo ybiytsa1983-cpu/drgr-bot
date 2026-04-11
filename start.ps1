@@ -155,4 +155,5 @@ if (-not $NoBrowser) {
 }
 
 # Запуск сервера
+$env:DRGR_PORT = $Port
 & $pythonCmd vm/server.py
