@@ -18,11 +18,10 @@
 
 ### Вариант 1 -- Быстрая установка (Windows, PowerShell)
 
-Откройте PowerShell и выполните:
+Откройте PowerShell и вставьте **одну команду**:
 
 ```powershell
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-irm https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/start_vm.ps1 | iex
+[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; irm https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/start_vm.ps1 | iex
 ```
 
 Скрипт автоматически:
