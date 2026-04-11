@@ -4,7 +4,7 @@
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-$Port = 5002
+$Port = 5005
 $RepoUrl = "https://github.com/ybiytsa1983-cpu/drgr-bot.git"
 
 Write-Host ""

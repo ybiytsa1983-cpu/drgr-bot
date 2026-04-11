@@ -84,7 +84,7 @@ pip install -r requirements.txt
 python vm/server.py
 ```
 
-После запуска откройте: **http://localhost:5002**
+После запуска откройте: **http://localhost:5005**
 
 ---
 
@@ -107,7 +107,7 @@ python vm/server.py
 drgr-bot/
 ├── bot.py                 # Telegram-бот (aiogram 3.x)
 ├── vm/
-│   ├── server.py          # Сервер (Flask, порт 5002)
+│   ├── server.py          # Сервер (Flask, порт 5005)
 │   └── static/
 │       └── index.html     # Веб-интерфейс психокоррекции
 ├── psycho_platform/       # 🧠 Модуль психодиагностики
@@ -142,14 +142,14 @@ drgr-bot/
 
 ## ❓ Решение проблем
 
-**Порт 5002 занят**
+**Порт 5005 занят**
 → Запустите с другим портом:
 ```powershell
 # Windows PowerShell
-$env:DRGR_PORT=5003; python vm/server.py
+$env:DRGR_PORT=5006; python vm/server.py
 
 # Linux / macOS
-DRGR_PORT=5003 python vm/server.py
+DRGR_PORT=5006 python vm/server.py
 ```
 
 **"Python не найден"**
