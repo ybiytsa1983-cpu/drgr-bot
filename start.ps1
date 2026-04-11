@@ -1,4 +1,4 @@
-﻿# start.ps1 -- DRGR Bot полный лаунчер
+﻿# start.ps1 -- Психокоррекция -- полный лаунчер
 # Автоопределение Ollama, проверка портов, установка зависимостей, запуск сервера
 param(
     [int]$Port = 5002,
@@ -7,11 +7,11 @@ param(
 )
 
 $ErrorActionPreference = "Continue"
-$Host.UI.RawUI.WindowTitle = "DRGR VM Server"
+$Host.UI.RawUI.WindowTitle = "Психокоррекция"
 
 Write-Host ""
 Write-Host "============================================" -ForegroundColor Cyan
-Write-Host "  DRGR VM Server -- Launcher" -ForegroundColor Cyan
+Write-Host "  Психокоррекция -- Launcher" -ForegroundColor Cyan
 Write-Host "============================================" -ForegroundColor Cyan
 Write-Host ""
 

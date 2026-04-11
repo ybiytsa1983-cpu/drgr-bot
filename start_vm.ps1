@@ -1,6 +1,6 @@
-﻿# DRGR VM - Скрипт запуска (быстрый)
+﻿# Психокоррекция -- Скрипт запуска (быстрый)
 # Для полного лаунчера с Ollama: .\start.ps1
-Write-Host "🚀 Запуск DRGR VM..." -ForegroundColor Cyan
+Write-Host "🚀 Запуск Психокоррекция..." -ForegroundColor Cyan
 
 # cd в папку скрипта
 Set-Location (Split-Path -Parent $MyInvocation.MyCommand.Path)
