@@ -119,9 +119,14 @@ def _add_cors(resp):
 
 app.after_request(_add_cors)
 
-@app.route("/", defaults={"path": ""}, methods=["OPTIONS"])
-@app.route("/<path:path>", methods=["OPTIONS"])
-def cors_preflight(path):
+@app.before_request
+def _handle_options():
+    """Return 204 for any OPTIONS preflight so undefined paths get 404 (not 405)."""
+    if request.method == "OPTIONS":
+        return "", 204
+
+@app.route("/favicon.ico")
+def favicon():
     return "", 204
 
 # ---------------------------------------------------------------------------
