@@ -1158,7 +1158,7 @@ def _autostart_bot():
 if __name__ == "__main__":
     import socket
 
-    _port = int(os.environ.get("DRGR_PORT", 5000))
+    _port = int(os.environ.get("DRGR_PORT", 5002))
 
     # Проверка порта
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -1166,7 +1166,7 @@ if __name__ == "__main__":
         sock.bind(("0.0.0.0", _port))
         sock.close()
     except OSError:
-        logger.error("Порт %d уже занят! Попробуйте: DRGR_PORT=5001 python vm/server.py", _port)
+        logger.error("Порт %d уже занят! Попробуйте: DRGR_PORT=5003 python vm/server.py", _port)
         # Попробовать следующий порт
         for alt in range(_port + 1, _port + 10):
             try:

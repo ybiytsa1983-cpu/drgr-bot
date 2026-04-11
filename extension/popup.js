@@ -2,7 +2,7 @@
 (function() {
   'use strict';
 
-  const DEFAULT_VM_URL = 'http://localhost:5000';
+  const DEFAULT_VM_URL = 'http://localhost:5002';
   let vmUrl = DEFAULT_VM_URL;
 
   // --- chrome.storage guard ---
