@@ -27,38 +27,38 @@ label{font-size:.8rem;color:#aaa;display:block;margin-bottom:4px}
 </head>
 <body>
 <div class="tabs">
-  <div class="tab active" data-tab="status">Status</div>
+  <div class="tab active" data-tab="status">Статус</div>
   <div class="tab" data-tab="sandbox">Sandbox</div>
-  <div class="tab" data-tab="settings">Settings</div>
+  <div class="tab" data-tab="settings">Настройки</div>
 </div>
 
 <!-- Status -->
 <div id="panel-status" class="panel active">
-  <h3>DRGR VM Status</h3>
+  <h3>🖥️ DRGR VM Статус</h3>
   <div id="statusRows"></div>
   <div style="margin-top:10px;display:flex;gap:8px">
-    <button id="btnRefresh" onclick="refreshStatus()">Refresh</button>
-    <button id="btnOpenVM" onclick="openVM()">Open VM</button>
+    <button id="btnRefresh" onclick="refreshStatus()">🔄 Обновить</button>
+    <button id="btnOpenVM" onclick="openVM()">🌐 Открыть VM</button>
   </div>
-  <div id="reportArea">Press Refresh</div>
+  <div id="reportArea">Нажмите «Обновить»</div>
 </div>
 
 <!-- Sandbox -->
 <div id="panel-sandbox" class="panel">
-  <h3>Sandbox</h3>
-  <textarea id="sandboxCode" placeholder="Enter a prompt for AI..."></textarea>
+  <h3>🧪 Sandbox</h3>
+  <textarea id="sandboxCode" placeholder="Введите запрос для AI..."></textarea>
   <div style="margin-top:8px;display:flex;gap:8px">
-    <button onclick="runSandbox()">Run</button>
+    <button onclick="runSandbox()">▶ Выполнить</button>
   </div>
   <div id="sandboxResult" style="margin-top:8px;font-size:.8rem;color:#aaa"></div>
 </div>
 
 <!-- Settings -->
 <div id="panel-settings" class="panel">
-  <h3>Settings</h3>
-  <label>VM URL:</label>
-  <input type="text" id="vmUrl" value="http://localhost:5005">
-  <button id="btnSaveCfg" onclick="saveCfg()">Save</button>
+  <h3>⚙️ Настройки</h3>
+  <label>URL виртуальной машины:</label>
+  <input type="text" id="vmUrl" value="http://localhost:5000">
+  <button id="btnSaveCfg" onclick="saveCfg()">💾 Сохранить</button>
 </div>
 
 <script src="popup.js"></script>

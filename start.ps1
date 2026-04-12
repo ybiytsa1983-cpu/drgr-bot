@@ -1,17 +1,17 @@
-﻿# start.ps1 -- Психокоррекция -- полный лаунчер
+# start.ps1 — DRGR Bot полный лаунчер
 # Автоопределение Ollama, проверка портов, установка зависимостей, запуск сервера
 param(
-    [int]$Port = 5005,
+    [int]$Port = 5000,
     [switch]$NoBrowser,
     [switch]$NoOllama
 )
 
 $ErrorActionPreference = "Continue"
-$Host.UI.RawUI.WindowTitle = "Психокоррекция"
+$Host.UI.RawUI.WindowTitle = "DRGR VM Server"
 
 Write-Host ""
 Write-Host "============================================" -ForegroundColor Cyan
-Write-Host "  Психокоррекция -- Launcher" -ForegroundColor Cyan
+Write-Host "  DRGR VM Server — Launcher" -ForegroundColor Cyan
 Write-Host "============================================" -ForegroundColor Cyan
 Write-Host ""
 
@@ -131,7 +131,7 @@ try {
 if (Test-Path ".env") {
     Write-Host "[start] .env файл найден" -ForegroundColor Green
 } else {
-    Write-Host "[start] .env не найден -- бот не будет автозапущен" -ForegroundColor Yellow
+    Write-Host "[start] .env не найден — бот не будет автозапущен" -ForegroundColor Yellow
     Write-Host "[start] Создайте .env с BOT_TOKEN через веб-интерфейс (Настройки)" -ForegroundColor Yellow
 }
 
@@ -141,9 +141,9 @@ Write-Host "============================================" -ForegroundColor Green
 Write-Host "  Запуск VM сервера на http://localhost:$Port" -ForegroundColor Green
 Write-Host "============================================" -ForegroundColor Green
 Write-Host ""
-Write-Host "  Психокоррекция: http://localhost:$Port" -ForegroundColor Cyan
-Write-Host "  Отдельная страница: http://localhost:$Port/psycho" -ForegroundColor Cyan
-Write-Host "  Ctrl+C -- остановка" -ForegroundColor DarkGray
+Write-Host "  Веб-интерфейс: http://localhost:$Port" -ForegroundColor Cyan
+Write-Host "  Чат с AI, генератор статей, управление ботом" -ForegroundColor Cyan
+Write-Host "  Ctrl+C — остановка" -ForegroundColor DarkGray
 Write-Host ""
 
 # Открыть браузер
@@ -155,5 +155,4 @@ if (-not $NoBrowser) {
 }
 
 # Запуск сервера
-$env:DRGR_PORT = $Port
 & $pythonCmd vm/server.py

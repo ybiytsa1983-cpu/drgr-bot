@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "DRGR VM Connector",
   "version": "1.0.0",
-  "description": "Chrome extension for DRGR VM -- status, sandbox, settings",
+  "description": "Chrome extension for DRGR VM -- статус, sandbox, настройки",
   "permissions": ["storage", "tabs"],
   "action": {
     "default_popup": "popup.html",

@@ -1,25 +1,19 @@
 """
-DRGR VM + Психокоррекция -- объединённый сервер.
+DRGR VM Server -- полнофункциональный бэкенд.
 
 Функции:
   • Управление ТГ-ботом (start / stop / status) как subprocess
   • Генератор статей (/research) -- DDG + scrape + Ollama / LM Studio LLM
   • Чат с AI (/chat) -- Ollama / LM Studio
-  • Генерация текста (/generate) -- промпт -> LLM
-  • Настройки (/settings GET/POST -> .env)
+  • Генерация текста (/generate) -- промпт → LLM
+  • Настройки (/settings GET/POST → .env)
   • Здоровье (/health, /extension/report)
   • CORS для chrome-extension://
   • Проекты (CRUD) + загрузка файлов
   • Интеграция TG сообщений (/chat/tg_messages)
-  • FER-анализ (анализ лицевой экспрессии)
-  • Анализ зрачков (дилатация, анизокория)
-  • Оценка возраста по глазам
-  • Совокупная оценка стресса
-  • База знаний (источники, методики, рекомендации)
 """
 from __future__ import annotations
 
-import base64 as b64mod
 import html as _html
 import json
 import logging
@@ -52,10 +46,6 @@ _ENV_PATH = _ROOT_DIR / ".env"
 _BOT_SCRIPT = _ROOT_DIR / "bot.py"
 _BOT_LOG = _ROOT_DIR / "bot_output.log"
 
-# Ensure psycho_platform is importable from vm/server.py
-if str(_ROOT_DIR) not in sys.path:
-    sys.path.insert(0, str(_ROOT_DIR))
-
 # ---------------------------------------------------------------------------
 #  Логирование
 # ---------------------------------------------------------------------------
@@ -66,71 +56,12 @@ logging.basicConfig(
 logger = logging.getLogger("drgr-vm")
 
 # ---------------------------------------------------------------------------
-#  Psycho-platform modules (lazy-loaded singletons)
-# ---------------------------------------------------------------------------
-_camera_mgr = None
-_knowledge_base = None
-_pupil_analyzer = None
-_eye_age_estimator = None
-_comprehensive_engine = None
-
-def _get_camera():
-    global _camera_mgr
-    if _camera_mgr is None:
-        try:
-            from psycho_platform.camera import CameraManager
-            _camera_mgr = CameraManager()
-        except Exception as exc:
-            logger.warning("Camera module not available: %s", exc)
-    return _camera_mgr
-
-def _get_kb():
-    global _knowledge_base
-    if _knowledge_base is None:
-        try:
-            from psycho_platform.knowledge_base import KnowledgeBase
-            _knowledge_base = KnowledgeBase()
-        except Exception as exc:
-            logger.warning("Knowledge base not available: %s", exc)
-    return _knowledge_base
-
-def _get_pupil_analyzer():
-    global _pupil_analyzer
-    if _pupil_analyzer is None:
-        try:
-            from psycho_platform.pupil_analyzer import PupilAnalyzer
-            _pupil_analyzer = PupilAnalyzer()
-        except Exception as exc:
-            logger.warning("Pupil analyzer not available: %s", exc)
-    return _pupil_analyzer
-
-def _get_eye_age_estimator():
-    global _eye_age_estimator
-    if _eye_age_estimator is None:
-        try:
-            from psycho_platform.eye_age_estimator import EyeAgeEstimator
-            _eye_age_estimator = EyeAgeEstimator()
-        except Exception as exc:
-            logger.warning("Eye age estimator not available: %s", exc)
-    return _eye_age_estimator
-
-def _get_comprehensive_engine():
-    global _comprehensive_engine
-    if _comprehensive_engine is None:
-        try:
-            from psycho_platform.comprehensive_assessment import ComprehensiveAssessment
-            _comprehensive_engine = ComprehensiveAssessment()
-        except Exception as exc:
-            logger.warning("Comprehensive assessment not available: %s", exc)
-    return _comprehensive_engine
-
-# ---------------------------------------------------------------------------
 #  Flask
 # ---------------------------------------------------------------------------
 app = Flask(__name__, static_folder="static", template_folder="static")
 
 # ---------------------------------------------------------------------------
-#  CORS (для localhost фронтенда)
+#  CORS (для chrome-extension:// и localhost фронтенда)
 # ---------------------------------------------------------------------------
 def _add_cors(resp):
     origin = request.headers.get("Origin", "")
@@ -144,88 +75,10 @@ def _add_cors(resp):
 
 app.after_request(_add_cors)
 
-@app.before_request
-def _handle_options():
-    """Return 204 for any OPTIONS preflight so undefined paths get 404 (not 405)."""
-    if request.method == "OPTIONS":
-        return "", 204
-
-@app.route("/favicon.ico")
-def favicon():
+@app.route("/", defaults={"path": ""}, methods=["OPTIONS"])
+@app.route("/<path:path>", methods=["OPTIONS"])
+def cors_preflight(path):
     return "", 204
-
-# ---------------------------------------------------------------------------
-#  Error handlers -- чтобы 404 и 500 не вызывали необработанные исключения
-# ---------------------------------------------------------------------------
-@app.errorhandler(404)
-def _not_found(e):
-    if request.accept_mimetypes.accept_json and \
-       not request.accept_mimetypes.accept_html:
-        return jsonify({"error": "Not Found", "path": request.path}), 404
-    return (
-        f"<h1>404 Not Found</h1><p>{request.path}</p>",
-        404,
-    )
-
-@app.errorhandler(500)
-def _internal_error(e):
-    logger.exception("Internal server error on %s", request.path)
-    return jsonify({"error": "Internal Server Error"}), 500
-
-# ---------------------------------------------------------------------------
-#  Ollama / LM Studio -- обнаружение
-# ---------------------------------------------------------------------------
-# Предпочтительный порт Ollama (из .env OLLAMA_PORT или 11435 по умолчанию)
-try:
-    _OLLAMA_PREFERRED_PORT = int(os.environ.get("OLLAMA_PORT", "11435"))
-except (ValueError, TypeError):
-    logger.warning("Invalid OLLAMA_PORT value, using default 11435")
-    _OLLAMA_PREFERRED_PORT = 11435
-_OLLAMA_PROBE_PORTS = (
-    _OLLAMA_PREFERRED_PORT,
-    *(p for p in (11434, 11435, 11436, 11437) if p != _OLLAMA_PREFERRED_PORT),
-)
-_LMSTUDIO_PROBE_PORTS = (1234, 1235)
-
-def _probe_service(host: str, port: int, path: str = "/", timeout: float = 2.0) -> bool:
-    try:
-        r = requests.get(f"http://{host}:{port}{path}", timeout=timeout)
-        return r.status_code < 500
-    except Exception:
-        return False
-
-def _find_ollama() -> Optional[str]:
-    for p in _OLLAMA_PROBE_PORTS:
-        if _probe_service("127.0.0.1", p, "/api/tags"):
-            return f"http://127.0.0.1:{p}"
-    return None
-
-def _find_lmstudio() -> Optional[str]:
-    for p in _LMSTUDIO_PROBE_PORTS:
-        if _probe_service("127.0.0.1", p, "/v1/models"):
-            return f"http://127.0.0.1:{p}"
-    return None
-
-def _llm_models() -> Dict[str, List[str]]:
-    """Получить список доступных моделей из Ollama и LM Studio."""
-    result: Dict[str, List[str]] = {"ollama": [], "lmstudio": []}
-    base = _find_ollama()
-    if base:
-        try:
-            r = requests.get(f"{base}/api/tags", timeout=3)
-            for m in r.json().get("models", []):
-                result["ollama"].append(m.get("name", "unknown"))
-        except Exception:
-            pass
-    base = _find_lmstudio()
-    if base:
-        try:
-            r = requests.get(f"{base}/v1/models", timeout=3)
-            for m in r.json().get("data", []):
-                result["lmstudio"].append(m.get("id", "unknown"))
-        except Exception:
-            pass
-    return result
 
 # ---------------------------------------------------------------------------
 #  .env чтение / запись
@@ -317,8 +170,51 @@ def _bot_get_status() -> Dict[str, Any]:
         return {"running": False, "pid": None}
 
 # ---------------------------------------------------------------------------
-#  LLM чат (Ollama / LM Studio)
+#  Ollama / LM Studio -- обнаружение и вызов
 # ---------------------------------------------------------------------------
+_OLLAMA_PROBE_PORTS = (11434, 11435, 11436, 11437)
+_LMSTUDIO_PROBE_PORTS = (1234, 1235)
+
+def _probe_service(host: str, port: int, path: str = "/", timeout: float = 2.0) -> bool:
+    try:
+        r = requests.get(f"http://{host}:{port}{path}", timeout=timeout)
+        return r.status_code < 500
+    except Exception:
+        return False
+
+def _find_ollama() -> Optional[str]:
+    for p in _OLLAMA_PROBE_PORTS:
+        if _probe_service("127.0.0.1", p, "/api/tags"):
+            return f"http://127.0.0.1:{p}"
+    return None
+
+def _find_lmstudio() -> Optional[str]:
+    for p in _LMSTUDIO_PROBE_PORTS:
+        if _probe_service("127.0.0.1", p, "/v1/models"):
+            return f"http://127.0.0.1:{p}"
+    return None
+
+def _llm_models() -> Dict[str, List[str]]:
+    """Получить список доступных моделей из Ollama и LM Studio."""
+    result: Dict[str, List[str]] = {"ollama": [], "lmstudio": []}
+    base = _find_ollama()
+    if base:
+        try:
+            r = requests.get(f"{base}/api/tags", timeout=3)
+            for m in r.json().get("models", []):
+                result["ollama"].append(m.get("name", "unknown"))
+        except Exception:
+            pass
+    base = _find_lmstudio()
+    if base:
+        try:
+            r = requests.get(f"{base}/v1/models", timeout=3)
+            for m in r.json().get("data", []):
+                result["lmstudio"].append(m.get("id", "unknown"))
+        except Exception:
+            pass
+    return result
+
 def _llm_chat(messages: List[Dict], model: Optional[str] = None) -> str:
     """Отправить запрос к локальному LLM (Ollama или LM Studio)."""
     base = _find_ollama()
@@ -354,7 +250,7 @@ def _llm_chat(messages: List[Dict], model: Optional[str] = None) -> str:
         except Exception as exc:
             logger.warning("LMStudio chat error: %s", exc)
 
-    return "Нет доступного LLM (Ollama / LM Studio). Запустите один из них."
+    return "❌ Нет доступного LLM (Ollama / LM Studio). Запустите один из них."
 
 # ---------------------------------------------------------------------------
 #  Генератор статей (/research)
@@ -397,7 +293,7 @@ def _research_build_article(query: str, sources: List[Dict], scraped: Dict[str, 
     context = "\n---\n".join(context_parts)
 
     prompt = (
-        f"Напиши подробную аналитическую статью на тему: \xab{query}\xbb.\n"
+        f"Напиши подробную аналитическую статью на тему: «{query}».\n"
         f"Используй следующие источники:\n{context}\n\n"
         "Требования:\n"
         "- Используй HTML с Bootstrap 5 классами.\n"
@@ -436,33 +332,7 @@ def _health() -> Dict[str, Any]:
 def index():
     return render_template("index.html")
 
-@app.route("/psycho")
-def psycho_page():
-    """Standalone psychocorrection page."""
-    return send_from_directory(str(_BASE_DIR / "static"), "psycho.html")
-
-@app.route("/health", methods=["GET"])
-def health():
-    return jsonify(_health())
-
-@app.route("/extension/report", methods=["GET"])
-def extension_report():
-    h = _health()
-    lines = [
-        "=== DRGR VM Health Report ===",
-        f"Ollama: {'✅ ' + (h['ollama']['url'] or '') if h['ollama']['available'] else '❌ Недоступен'}",
-        f"  Модели: {', '.join(h['ollama']['models']) or 'нет'}",
-        f"LM Studio: {'✅ ' + (h['lmstudio']['url'] or '') if h['lmstudio']['available'] else '❌ Недоступен'}",
-        f"  Модели: {', '.join(h['lmstudio']['models']) or 'нет'}",
-        f"TG Bot: {'✅ PID=' + str(h['bot']['pid']) if h['bot']['running'] else '❌ Остановлен'}",
-        f".env: {'✅' if h['env_exists'] else '❌ Нет файла'}",
-        f"bot.py: {'✅' if h['bot_script_exists'] else '❌ Нет файла'}",
-    ]
-    return jsonify({"report": "\n".join(lines), "data": h})
-
-# ---------------------------------------------------------------------------
-#  Проекты (CRUD)
-# ---------------------------------------------------------------------------
+# --- Проекты ---
 @app.route("/api/projects", methods=["GET"])
 def get_projects():
     projects = []
@@ -482,6 +352,7 @@ def save_project():
     content = data.get("content", "")
     if not filename:
         return jsonify({"error": "Missing filename"}), 400
+    # Sanitize filename: strip path components, reject traversal
     filename = os.path.basename(filename)
     filename = re.sub(r"[^\w.\-]", "_", filename)
     if not filename or ".." in filename:
@@ -509,9 +380,7 @@ def upload_file():
     f.save(str(target))
     return jsonify({"success": True, "filename": safe_name})
 
-# ---------------------------------------------------------------------------
-#  Бот
-# ---------------------------------------------------------------------------
+# --- Бот ---
 @app.route("/bot/start", methods=["POST"])
 def bot_start():
     ok, msg = _bot_start()
@@ -534,12 +403,11 @@ def bot_log():
         return jsonify({"lines": lines[-100:]})
     return jsonify({"lines": []})
 
-# ---------------------------------------------------------------------------
-#  Настройки (.env)
-# ---------------------------------------------------------------------------
+# --- Настройки ---
 @app.route("/settings", methods=["GET"])
 def settings_get():
     data = _env_read()
+    # Маскируем токены при выдаче
     masked = {}
     for k, v in data.items():
         if "TOKEN" in k.upper() or "KEY" in k.upper() or "SECRET" in k.upper():
@@ -557,15 +425,14 @@ def settings_post():
         if not k:
             continue
         v = str(v).strip()
+        # Не перезаписываем токен маской
         if v == "****" and k in existing:
             continue
         existing[k] = v
     _env_save(existing)
     return jsonify({"ok": True})
 
-# ---------------------------------------------------------------------------
-#  Чат с AI
-# ---------------------------------------------------------------------------
+# --- Чат с AI ---
 @app.route("/chat", methods=["POST"])
 def chat():
     data = request.json or {}
@@ -581,18 +448,20 @@ def chat():
     reply = _llm_chat(messages, model=model)
     return jsonify({"reply": reply})
 
-# ---------------------------------------------------------------------------
-#  Генератор статей
-# ---------------------------------------------------------------------------
+# --- Генератор статей ---
 @app.route("/research", methods=["POST"])
 def research():
     data = request.json or {}
     query = data.get("query", "").strip()
     if not query:
         return jsonify({"error": "Пустой запрос"}), 400
+
+    # 1. Поиск DDG
     ddg_results = _research_ddg_search(query)
     if not ddg_results:
         return jsonify({"error": "Ничего не найдено в DDG"}), 404
+
+    # 2. Параллельный скрейпинг (до 5 URL)
     urls = [r.get("href", "") for r in ddg_results[:5] if r.get("href")]
     scraped: Dict[str, str] = {}
     with ThreadPoolExecutor(max_workers=5) as pool:
@@ -603,23 +472,42 @@ def research():
                 scraped[url] = fut.result()
             except Exception:
                 scraped[url] = ""
+
+    # 3. Генерация статьи через LLM
     article_html = _research_build_article(query, ddg_results, scraped)
+
     return jsonify({
         "query": query,
         "sources": [{"title": r.get("title", ""), "url": r.get("href", "")} for r in ddg_results[:5]],
         "article": article_html,
     })
 
-# ---------------------------------------------------------------------------
-#  Модели
-# ---------------------------------------------------------------------------
+# --- Health ---
+@app.route("/health", methods=["GET"])
+def health():
+    return jsonify(_health())
+
+@app.route("/extension/report", methods=["GET"])
+def extension_report():
+    h = _health()
+    lines = [
+        "=== DRGR VM Health Report ===",
+        f"Ollama: {'✅ ' + (h['ollama']['url'] or '') if h['ollama']['available'] else '❌ Недоступен'}",
+        f"  Модели: {', '.join(h['ollama']['models']) or 'нет'}",
+        f"LM Studio: {'✅ ' + (h['lmstudio']['url'] or '') if h['lmstudio']['available'] else '❌ Недоступен'}",
+        f"  Модели: {', '.join(h['lmstudio']['models']) or 'нет'}",
+        f"TG Bot: {'✅ PID=' + str(h['bot']['pid']) if h['bot']['running'] else '❌ Остановлен'}",
+        f".env: {'✅' if h['env_exists'] else '❌ Нет файла'}",
+        f"bot.py: {'✅' if h['bot_script_exists'] else '❌ Нет файла'}",
+    ]
+    return jsonify({"report": "\n".join(lines), "data": h})
+
+# --- Модели ---
 @app.route("/models", methods=["GET"])
 def models():
     return jsonify(_llm_models())
 
-# ---------------------------------------------------------------------------
-#  Goose AI (через LLM)
-# ---------------------------------------------------------------------------
+# --- Goose AI (через LLM) ---
 @app.route("/api/goose", methods=["POST"])
 def goose_integration():
     data = request.json or {}
@@ -632,11 +520,10 @@ def goose_integration():
     ])
     return jsonify({"result": reply})
 
-# ---------------------------------------------------------------------------
-#  Генерация текста (универсальный промпт -> LLM)
-# ---------------------------------------------------------------------------
+# --- Генерация текста (универсальный промпт → LLM) ---
 @app.route("/generate", methods=["POST"])
 def generate_text():
+    """Генерация текста по произвольному промпту через LLM."""
     data = request.json or {}
     prompt = data.get("prompt", "").strip()
     system = data.get("system", "Ты -- полезный AI-ассистент. Отвечай подробно.")
@@ -649,9 +536,7 @@ def generate_text():
     ], model=model)
     return jsonify({"result": reply})
 
-# ---------------------------------------------------------------------------
-#  3D генерация (через LLM -- генерация Three.js кода)
-# ---------------------------------------------------------------------------
+# --- 3D генерация (через LLM -- генерация Three.js кода) ---
 @app.route("/api/generate-3d", methods=["POST"])
 def generate_3d():
     data = request.json or {}
@@ -667,9 +552,7 @@ def generate_3d():
     ])
     return jsonify({"result": reply})
 
-# ---------------------------------------------------------------------------
-#  Видео генерация (скрипт через LLM)
-# ---------------------------------------------------------------------------
+# --- Видео генерация (скрипт через LLM) ---
 @app.route("/api/generate-video", methods=["POST"])
 def generate_video():
     data = request.json or {}
@@ -683,15 +566,14 @@ def generate_video():
     ])
     return jsonify({"result": reply})
 
-# ---------------------------------------------------------------------------
-#  TG сообщения (polling для веб-интерфейса)
-# ---------------------------------------------------------------------------
+# --- TG сообщения (polling для веб-интерфейса) ---
 _tg_messages: List[Dict] = []
 _tg_msg_lock = threading.Lock()
 _tg_msg_counter = 0
 
 @app.route("/chat/tg_messages", methods=["GET"])
 def chat_tg_messages():
+    """Получить TG сообщения (для отображения в веб-чате)."""
     after = request.args.get("after", "0")
     try:
         after_id = int(after)
@@ -703,6 +585,7 @@ def chat_tg_messages():
 
 @app.route("/chat/tg_messages", methods=["POST"])
 def chat_tg_messages_post():
+    """Добавить TG сообщение (вызывается ботом или webhook)."""
     global _tg_msg_counter
     data = request.json or {}
     with _tg_msg_lock:
@@ -714,474 +597,10 @@ def chat_tg_messages_post():
             "date": datetime.now().isoformat(),
         }
         _tg_messages.append(msg)
+        # Держим не более 500 сообщений
         if len(_tg_messages) > 500:
             _tg_messages[:] = _tg_messages[-500:]
     return jsonify({"ok": True, "id": msg["id"]})
-
-# ---------------------------------------------------------------------------
-#  Ollama status endpoint
-# ---------------------------------------------------------------------------
-@app.route("/api/ollama/status", methods=["GET"])
-def ollama_status():
-    """Статус подключения к Ollama (порт 11435 приоритетный)."""
-    base = _find_ollama()
-    models_data = _llm_models()
-    return jsonify({
-        "available": bool(base),
-        "url": base,
-        "preferred_port": _OLLAMA_PREFERRED_PORT,
-        "probed_ports": list(_OLLAMA_PROBE_PORTS),
-        "models": models_data.get("ollama", []),
-    })
-
-# ---------------------------------------------------------------------------
-#  Camera API
-# ---------------------------------------------------------------------------
-@app.route("/api/camera/status", methods=["GET"])
-def camera_status():
-    """Статус камеры."""
-    cam = _get_camera()
-    if cam is None:
-        return jsonify({"available": False, "error": "Camera module not loaded"})
-    return jsonify(cam.get_status())
-
-@app.route("/api/camera/capture", methods=["POST"])
-def camera_capture():
-    """Захватить кадр с камеры (base64 JPEG)."""
-    cam = _get_camera()
-    if cam is None:
-        return jsonify({"error": "Camera module not loaded"}), 500
-    frame_b64 = cam.capture_frame_b64()
-    if frame_b64 is None:
-        return jsonify({"error": "Failed to capture frame"}), 500
-    return jsonify({"image": frame_b64, "format": "jpeg"})
-
-@app.route("/api/camera/config", methods=["GET"])
-def camera_config_get():
-    """Получить текущую конфигурацию камеры."""
-    cam = _get_camera()
-    if cam is None:
-        return jsonify({"error": "Camera module not loaded"}), 500
-    cfg = cam.config
-    return jsonify({
-        "index": cfg.index,
-        "width": cfg.width,
-        "height": cfg.height,
-        "fps": cfg.fps,
-    })
-
-@app.route("/api/camera/config", methods=["POST"])
-def camera_config_set():
-    """Обновить конфигурацию камеры."""
-    cam = _get_camera()
-    if cam is None:
-        return jsonify({"error": "Camera module not loaded"}), 500
-    data = request.json or {}
-    cfg = cam.update_config(
-        index=data.get("index"),
-        width=data.get("width"),
-        height=data.get("height"),
-        fps=data.get("fps"),
-    )
-    return jsonify({
-        "ok": True,
-        "index": cfg.index,
-        "width": cfg.width,
-        "height": cfg.height,
-        "fps": cfg.fps,
-    })
-
-# ---------------------------------------------------------------------------
-#  Knowledge Base API
-# ---------------------------------------------------------------------------
-@app.route("/api/kb/stats", methods=["GET"])
-def kb_stats():
-    """Статистика базы знаний."""
-    kb = _get_kb()
-    if kb is None:
-        return jsonify({"error": "Knowledge base not loaded"}), 500
-    return jsonify(kb.get_stats())
-
-@app.route("/api/kb/sources", methods=["GET"])
-def kb_sources():
-    """Список источников (фильтр: ?type=article&tags=emotion_recognition)."""
-    kb = _get_kb()
-    if kb is None:
-        return jsonify({"error": "Knowledge base not loaded"}), 500
-    type_filter = request.args.get("type")
-    tags_param = request.args.get("tags")
-    tags = tags_param.split(",") if tags_param else None
-    limit = min(int(request.args.get("limit", "100")), 500)
-    return jsonify(kb.get_sources(type=type_filter, tags=tags, limit=limit))
-
-@app.route("/api/kb/sources", methods=["POST"])
-def kb_add_source():
-    """Добавить источник."""
-    kb = _get_kb()
-    if kb is None:
-        return jsonify({"error": "Knowledge base not loaded"}), 500
-    data = request.json or {}
-    required = ("type", "authors", "title")
-    for field in required:
-        if not data.get(field):
-            return jsonify({"error": f"Missing required field: {field}"}), 400
-    try:
-        source_id = kb.add_source(
-            type=data["type"],
-            authors=data["authors"],
-            title=data["title"],
-            year=data.get("year"),
-            url=data.get("url"),
-            doi=data.get("doi"),
-            tags=data.get("tags"),
-            notes=data.get("notes"),
-        )
-        return jsonify({"ok": True, "id": source_id})
-    except Exception:
-        logger.exception("Failed to add source")
-        return jsonify({"error": "Failed to add source"}), 400
-
-@app.route("/api/kb/methods", methods=["GET"])
-def kb_methods():
-    """Список методик (фильтр: ?state=stress&level=high&applicable=1)."""
-    kb = _get_kb()
-    if kb is None:
-        return jsonify({"error": "Knowledge base not loaded"}), 500
-    level = request.args.get("level")
-    state = request.args.get("state")
-    applicable = request.args.get("applicable") == "1"
-    limit = min(int(request.args.get("limit", "100")), 500)
-    return jsonify(kb.get_methods(
-        evidence_level=level,
-        target_state=state,
-        applicable_only=applicable,
-        limit=limit,
-    ))
-
-@app.route("/api/kb/methods", methods=["POST"])
-def kb_add_method():
-    """Добавить методику."""
-    kb = _get_kb()
-    if kb is None:
-        return jsonify({"error": "Knowledge base not loaded"}), 500
-    data = request.json or {}
-    if not data.get("title"):
-        return jsonify({"error": "Missing required field: title"}), 400
-    try:
-        method_id = kb.add_method(
-            title=data["title"],
-            description=data.get("description"),
-            evidence_level=data.get("evidence_level", "medium"),
-            applicable_in_app=bool(data.get("applicable_in_app", False)),
-            target_states=data.get("target_states"),
-            instructions=data.get("instructions"),
-            duration_min=data.get("duration_min"),
-            source_ids=data.get("source_ids"),
-        )
-        return jsonify({"ok": True, "id": method_id})
-    except Exception:
-        logger.exception("Failed to add method")
-        return jsonify({"error": "Failed to add method"}), 400
-
-@app.route("/api/kb/recommend", methods=["GET"])
-def kb_recommend():
-    """Рекомендации методик по состоянию: ?state=stress&limit=5."""
-    kb = _get_kb()
-    if kb is None:
-        return jsonify({"error": "Knowledge base not loaded"}), 500
-    state = request.args.get("state", "stress")
-    limit = min(int(request.args.get("limit", "5")), 20)
-    return jsonify(kb.recommend_methods(state=state, limit=limit))
-
-@app.route("/api/kb/seed", methods=["POST"])
-def kb_seed():
-    """Заполнить базу знаний начальными данными."""
-    try:
-        from psycho_platform.seed_dataset import seed_all
-        result = seed_all()
-        return jsonify({"ok": True, **result})
-    except Exception:
-        logger.exception("Failed to seed knowledge base")
-        return jsonify({"error": "Failed to seed knowledge base"}), 500
-
-@app.route("/api/kb/principles", methods=["GET"])
-def kb_principles():
-    """Принципы работы модулей ВМ (из seed_dataset)."""
-    try:
-        from psycho_platform.seed_dataset import VM_MODULE_PRINCIPLES
-        return jsonify(VM_MODULE_PRINCIPLES)
-    except Exception:
-        logger.exception("Failed to load VM module principles")
-        return jsonify({"error": "Failed to load VM module principles"}), 500
-
-# ---------------------------------------------------------------------------
-#  Pupil Analysis API
-# ---------------------------------------------------------------------------
-@app.route("/api/pupil/status", methods=["GET"])
-def pupil_status():
-    """Статус модуля анализа зрачков."""
-    analyzer = _get_pupil_analyzer()
-    if analyzer is None:
-        return jsonify({"available": False, "error": "Pupil analyzer not loaded"})
-    return jsonify({
-        "available": True,
-        "config": {
-            "eye_detector": analyzer.config.eye_detector,
-            "baseline_ratio": analyzer.config.baseline_ratio,
-            "dilation_high_threshold": analyzer.config.dilation_high_threshold,
-            "anisocoria_threshold": analyzer.config.anisocoria_threshold,
-            "smoothing_window": analyzer.config.smoothing_window,
-        },
-    })
-
-@app.route("/api/pupil/analyze", methods=["POST"])
-def pupil_analyze():
-    """
-    Анализ зрачков из изображения (base64 или камера).
-
-    Body JSON:
-      {"source": "camera"} -- захват с камеры
-      {"image": "<base64>"} -- из base64 изображения
-    """
-    analyzer = _get_pupil_analyzer()
-    if analyzer is None:
-        return jsonify({"error": "Pupil analyzer not loaded"}), 500
-
-    data = request.json or {}
-    source = data.get("source", "")
-
-    if source == "camera":
-        cam = _get_camera()
-        if cam is None:
-            return jsonify({"error": "Camera not available"}), 500
-        ok, frame = cam.capture_frame()
-        if not ok or frame is None:
-            return jsonify({"error": "Failed to capture frame"}), 500
-        result = analyzer.analyze_frame(frame)
-    elif data.get("image"):
-        try:
-            img_bytes = b64mod.b64decode(data["image"])
-        except Exception:
-            return jsonify({"error": "Invalid base64 image"}), 400
-        result = analyzer.analyze_image_bytes(img_bytes)
-    else:
-        return jsonify({"error": "Provide 'source':'camera' or 'image':'<base64>'"}), 400
-
-    from psycho_platform.pupil_analyzer import PupilAnalyzer
-    return jsonify(PupilAnalyzer.result_to_dict(result))
-
-@app.route("/api/pupil/reset", methods=["POST"])
-def pupil_reset():
-    """Сброс истории сглаживания зрачков (для новой сессии)."""
-    analyzer = _get_pupil_analyzer()
-    if analyzer is None:
-        return jsonify({"error": "Pupil analyzer not loaded"}), 500
-    analyzer.reset()
-    return jsonify({"ok": True, "message": "Pupil history reset"})
-
-# ---------------------------------------------------------------------------
-#  Eye-Based Age Estimation API
-# ---------------------------------------------------------------------------
-@app.route("/api/eye-age/status", methods=["GET"])
-def eye_age_status():
-    """Статус модуля оценки возраста по глазам."""
-    estimator = _get_eye_age_estimator()
-    if estimator is None:
-        return jsonify({"available": False, "error": "Eye age estimator not loaded"})
-    return jsonify({
-        "available": True,
-        "config": {
-            "wrinkle_weight": estimator.config.wrinkle_weight,
-            "bags_weight": estimator.config.bags_weight,
-            "sclera_weight": estimator.config.sclera_weight,
-            "iris_weight": estimator.config.iris_weight,
-            "ptosis_weight": estimator.config.ptosis_weight,
-            "age_range": f"{estimator.config.age_min}-{estimator.config.age_max}",
-            "confidence_margin": estimator.config.confidence_margin,
-        },
-    })
-
-@app.route("/api/eye-age/estimate", methods=["POST"])
-def eye_age_estimate():
-    """
-    Оценка возраста по глазам из изображения.
-
-    Body JSON:
-      {"source": "camera"} -- захват с камеры
-      {"image": "<base64>"} -- из base64 изображения
-    """
-    estimator = _get_eye_age_estimator()
-    if estimator is None:
-        return jsonify({"error": "Eye age estimator not loaded"}), 500
-
-    data = request.json or {}
-    source = data.get("source", "")
-
-    if source == "camera":
-        cam = _get_camera()
-        if cam is None:
-            return jsonify({"error": "Camera not available"}), 500
-        ok, frame = cam.capture_frame()
-        if not ok or frame is None:
-            return jsonify({"error": "Failed to capture frame"}), 500
-        result = estimator.estimate_from_frame(frame)
-    elif data.get("image"):
-        try:
-            img_bytes = b64mod.b64decode(data["image"])
-        except Exception:
-            return jsonify({"error": "Invalid base64 image"}), 400
-        result = estimator.estimate_from_bytes(img_bytes)
-    else:
-        return jsonify({"error": "Provide 'source':'camera' or 'image':'<base64>'"}), 400
-
-    from psycho_platform.eye_age_estimator import EyeAgeEstimator
-    return jsonify(EyeAgeEstimator.result_to_dict(result))
-
-# ---------------------------------------------------------------------------
-#  Comprehensive Assessment API
-# ---------------------------------------------------------------------------
-@app.route("/api/assessment/status", methods=["GET"])
-def assessment_status():
-    """Статус совокупной оценки."""
-    engine = _get_comprehensive_engine()
-    if engine is None:
-        return jsonify({"available": False, "error": "Assessment engine not loaded"})
-    return jsonify({
-        "available": True,
-        "modules": {
-            "fer": True,
-            "pupil": _get_pupil_analyzer() is not None,
-            "eye_age": _get_eye_age_estimator() is not None,
-            "camera": _get_camera() is not None,
-            "knowledge_base": _get_kb() is not None,
-        },
-        "config": {
-            "fer_stress_weight": engine.config.fer_stress_weight,
-            "pupil_stress_weight": engine.config.pupil_stress_weight,
-            "baseline_stress_weight": engine.config.baseline_stress_weight,
-            "overall_stress_high": engine.config.overall_stress_high,
-            "overall_stress_moderate": engine.config.overall_stress_moderate,
-        },
-    })
-
-@app.route("/api/assessment/run", methods=["POST"])
-def assessment_run():
-    """
-    Запустить совокупную оценку.
-
-    Body JSON (все поля опциональны):
-      {
-        "source": "camera" | null,
-        "image": "<base64>" | null,
-        "fer": {"dominant_emotion": "anger", "stress_score": 0.8, ...},
-        "skip_pupil": false,
-        "skip_eye_age": false
-      }
-    """
-    engine = _get_comprehensive_engine()
-    if engine is None:
-        return jsonify({"error": "Assessment engine not loaded"}), 500
-
-    data = request.json or {}
-
-    # Получить кадр (если нужен для pupil/eye_age)
-    frame = None
-    source = data.get("source", "")
-
-    if source == "camera":
-        cam = _get_camera()
-        if cam is not None:
-            ok, frame = cam.capture_frame()
-            if not ok:
-                frame = None
-    elif data.get("image"):
-        try:
-            import numpy as np
-            cv2_mod = None
-            try:
-                import cv2
-                cv2_mod = cv2
-            except ImportError:
-                pass
-            if cv2_mod is not None:
-                img_bytes = b64mod.b64decode(data["image"])
-                arr = np.frombuffer(img_bytes, dtype=np.uint8)
-                frame = cv2_mod.imdecode(arr, cv2_mod.IMREAD_COLOR)
-        except Exception:
-            pass
-
-    # --- Собираем данные от каждого модуля ---
-    from psycho_platform.comprehensive_assessment import (
-        FERInput, PupilInput, EyeAgeInput, FaceAgeInput,
-        ComprehensiveAssessment,
-    )
-
-    # FER input (из запроса)
-    fer_data = data.get("fer")
-    fer_input = None
-    if fer_data:
-        fer_input = FERInput(
-            dominant_emotion=fer_data.get("dominant_emotion", "neutral"),
-            emotion_scores=fer_data.get("emotion_scores", {}),
-            valence=fer_data.get("valence", 0.0),
-            arousal=fer_data.get("arousal", 0.0),
-            stress_score=fer_data.get("stress_score", 0.0),
-            confidence=fer_data.get("confidence", 0.0),
-        )
-
-    # Pupil input (из кадра)
-    pupil_input = None
-    if not data.get("skip_pupil", False) and frame is not None:
-        analyzer = _get_pupil_analyzer()
-        if analyzer is not None:
-            pupil_result = analyzer.analyze_frame(frame)
-            pupil_input = PupilInput(
-                avg_pupil_iris_ratio=pupil_result.avg_pupil_iris_ratio,
-                dilation_level=pupil_result.dilation_level,
-                inferred_state=pupil_result.inferred_state,
-                anisocoria_detected=pupil_result.anisocoria_detected,
-                anisocoria_diff=pupil_result.anisocoria_diff,
-                state_confidence=pupil_result.state_confidence,
-                warnings=pupil_result.warnings,
-            )
-
-    # Eye age input (из кадра)
-    eye_age_input = None
-    if not data.get("skip_eye_age", False) and frame is not None:
-        estimator = _get_eye_age_estimator()
-        if estimator is not None:
-            eye_result = estimator.estimate_from_frame(frame)
-            eye_age_input = EyeAgeInput(
-                estimated_age=eye_result.estimated_age,
-                composite_score=eye_result.composite_score,
-                wrinkle_score=eye_result.wrinkle_score,
-                bags_score=eye_result.bags_score,
-                sclera_score=eye_result.sclera_score,
-                iris_score=eye_result.iris_score,
-                ptosis_score=eye_result.ptosis_score,
-                confidence=eye_result.confidence,
-                warnings=eye_result.warnings,
-            )
-
-    # Face age input (из запроса, опционально)
-    face_age_data = data.get("face_age")
-    face_age_input = None
-    if face_age_data:
-        face_age_input = FaceAgeInput(
-            predicted_age=face_age_data.get("predicted_age", 0.0),
-            confidence_margin=face_age_data.get("confidence_margin", 3.0),
-            is_allowed=face_age_data.get("is_allowed", True),
-        )
-
-    # Запуск совокупной оценки
-    result = engine.assess(
-        fer=fer_input,
-        pupil=pupil_input,
-        eye_age=eye_age_input,
-        face_age=face_age_input,
-    )
-
-    return jsonify(ComprehensiveAssessment.result_to_dict(result))
 
 # ---------------------------------------------------------------------------
 #  Автозапуск бота при старте сервера (если BOT_TOKEN задан)
@@ -1201,7 +620,7 @@ def _autostart_bot():
 if __name__ == "__main__":
     import socket
 
-    _port = int(os.environ.get("DRGR_PORT", 5005))
+    _port = int(os.environ.get("DRGR_PORT", 5000))
 
     # Проверка порта
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -1209,7 +628,7 @@ if __name__ == "__main__":
         sock.bind(("0.0.0.0", _port))
         sock.close()
     except OSError:
-        logger.error("Порт %d уже занят! Попробуйте: DRGR_PORT=%d python vm/server.py", _port, _port + 1)
+        logger.error("Порт %d уже занят! Попробуйте: DRGR_PORT=5002 python vm/server.py", _port)
         # Попробовать следующий порт
         for alt in range(_port + 1, _port + 10):
             try:
@@ -1226,6 +645,5 @@ if __name__ == "__main__":
             sys.exit(1)
 
     threading.Thread(target=_autostart_bot, daemon=True).start()
-    logger.info("Психокоррекция запущена на http://localhost:%d", _port)
-    logger.info("Отдельная страница: http://localhost:%d/psycho", _port)
+    logger.info("DRGR VM Server запущен на http://localhost:%d", _port)
     app.run(host="0.0.0.0", port=_port, debug=False)

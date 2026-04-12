@@ -3,8 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="icon" href="data:,">
-<title>Психокоррекция -- Платформа</title>
+<title>DRGR VM — Панель управления</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
 <style>
 :root{--bg:#1a1a2e;--sidebar:#16213e;--card:#0f3460;--accent:#e94560;--accent2:#0e639c;--text:#eee;--text2:#aaa;}
@@ -20,7 +19,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 /* Main */
 #main{flex:1;display:flex;flex-direction:column;overflow:hidden}
 /* Tabs bar */
-.tab-bar{background:#0d1b2a;padding:6px 12px;display:flex;gap:4px;border-bottom:1px solid #333;flex-wrap:wrap}
+.tab-bar{background:#0d1b2a;padding:6px 12px;display:flex;gap:4px;border-bottom:1px solid #333}
 .tab-item{padding:6px 16px;background:transparent;color:var(--text2);border:none;border-radius:6px 6px 0 0;cursor:pointer;font-size:.85rem}
 .tab-item.active{background:var(--bg);color:#fff}
 /* Panels */
@@ -63,25 +62,24 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 
 <!-- ====== SIDEBAR ====== -->
 <div id="sidebar">
-  <h3>🧠 Психокоррекция</h3>
+  <h3>🔧 DRGR VM</h3>
 
   <div class="nav-section">
     <h5>Панели</h5>
-    <button class="nav-btn active" onclick="showTab('psycho')">🧠 Психокоррекция</button>
-    <button class="nav-btn" onclick="showTab('vm')">VM Статус</button>
-    <button class="nav-btn" onclick="showTab('chat')">Чат с AI</button>
-    <button class="nav-btn" onclick="showTab('research')">Генератор статей</button>
-    <button class="nav-btn" onclick="showTab('generate')">Генератор текста</button>
-    <button class="nav-btn" onclick="showTab('editor')">Редактор</button>
-    <button class="nav-btn" onclick="showTab('bot')">Telegram бот</button>
-    <button class="nav-btn" onclick="showTab('settings')">Настройки</button>
+    <button class="nav-btn active" onclick="showTab('vm')">🖥️ VM Статус</button>
+    <button class="nav-btn" onclick="showTab('chat')">💬 Чат с AI</button>
+    <button class="nav-btn" onclick="showTab('research')">📝 Генератор статей</button>
+    <button class="nav-btn" onclick="showTab('generate')">✍️ Генератор текста</button>
+    <button class="nav-btn" onclick="showTab('editor')">📄 Редактор</button>
+    <button class="nav-btn" onclick="showTab('bot')">🤖 Telegram бот</button>
+    <button class="nav-btn" onclick="showTab('settings')">⚙️ Настройки</button>
   </div>
 
   <div class="nav-section">
     <h5>Быстрые действия</h5>
-    <button class="nav-btn" onclick="runGoose()">Goose AI</button>
-    <button class="nav-btn" onclick="run3DGen()">3D Генератор</button>
-    <button class="nav-btn" onclick="runVideoGen()">Видео</button>
+    <button class="nav-btn" onclick="runGoose()">🦢 Goose AI</button>
+    <button class="nav-btn" onclick="run3DGen()">🎬 3D Генератор</button>
+    <button class="nav-btn" onclick="runVideoGen()">🎥 Видео</button>
   </div>
 
   <div class="nav-section" style="margin-top:auto;padding-bottom:16px">
@@ -94,8 +92,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 
 <!-- Tab bar -->
 <div class="tab-bar">
-  <button class="tab-item active" data-tab="psycho">🧠 Психокоррекция</button>
-  <button class="tab-item" data-tab="vm">VM</button>
+  <button class="tab-item active" data-tab="vm">VM</button>
   <button class="tab-item" data-tab="chat">Чат</button>
   <button class="tab-item" data-tab="research">Статьи</button>
   <button class="tab-item" data-tab="generate">Текст</button>
@@ -105,7 +102,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 </div>
 
 <!-- ===== VM Panel ===== -->
-<div id="panel-vm" class="panel">
+<div id="panel-vm" class="panel active">
   <div class="vm-card">
     <h4>AI Подключения</h4>
     <div class="ai-grid" id="aiGrid">
@@ -122,13 +119,13 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
     <h4>Диагностика</h4>
     <pre id="diagReport" style="font-size:.8rem;color:#aaa;white-space:pre-wrap">Загрузка...</pre>
   </div>
-  <button class="btn-primary2" onclick="refreshVMStatus()" style="align-self:flex-start;margin-top:8px">Обновить</button>
+  <button class="btn-primary2" onclick="refreshVMStatus()" style="align-self:flex-start;margin-top:8px">🔄 Обновить</button>
 </div>
 
 <!-- ===== Chat Panel ===== -->
 <div id="panel-chat" class="panel">
   <div class="vm-card" style="flex:1;display:flex;flex-direction:column">
-    <h4>Чат с AI</h4>
+    <h4>💬 Чат с AI</h4>
     <div style="margin-bottom:8px">
       <label style="font-size:.8rem;color:#aaa">Модель:</label>
       <select id="chatModel" style="padding:4px 8px;background:#222;border:1px solid #444;border-radius:4px;color:#fff;font-size:.85rem">
@@ -146,31 +143,31 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 <!-- ===== Research Panel ===== -->
 <div id="panel-research" class="panel">
   <div class="vm-card">
-    <h4>Генератор статей</h4>
+    <h4>📝 Генератор статей</h4>
     <div style="display:flex;gap:8px;margin-bottom:12px">
       <input type="text" id="researchQuery" placeholder="Тема статьи..." style="flex:1;padding:10px;background:#222;border:1px solid #444;border-radius:8px;color:#fff" onkeydown="if(event.key==='Enter')runResearch()">
       <button class="btn-accent" onclick="runResearch()" id="btnResearch">Генерировать</button>
     </div>
-    <div id="researchResult"><em style="color:#555">Введите тему и нажмите Генерировать</em></div>
+    <div id="researchResult"><em style="color:#555">Введите тему и нажмите «Генерировать»</em></div>
   </div>
 </div>
 
 <!-- ===== Text Generator Panel ===== -->
 <div id="panel-generate" class="panel">
   <div class="vm-card" style="flex:1;display:flex;flex-direction:column">
-    <h4>Генератор текста</h4>
+    <h4>✍️ Генератор текста</h4>
     <p style="color:#aaa;font-size:.85rem;margin-bottom:10px">Генерация текста по произвольному промпту через локальный LLM (Ollama / LM Studio)</p>
     <div style="margin-bottom:8px">
       <label style="font-size:.8rem;color:#aaa">Системный промпт:</label>
-      <input type="text" id="genSystem" value="Ты -- полезный AI-ассистент. Отвечай подробно и по-русски." style="width:100%;padding:8px;background:#222;border:1px solid #444;border-radius:6px;color:#fff;font-size:.85rem;margin-top:4px">
+      <input type="text" id="genSystem" value="Ты — полезный AI-ассистент. Отвечай подробно и по-русски." style="width:100%;padding:8px;background:#222;border:1px solid #444;border-radius:6px;color:#fff;font-size:.85rem;margin-top:4px">
     </div>
     <div style="margin-bottom:8px">
       <label style="font-size:.8rem;color:#aaa">Промпт:</label>
       <textarea id="genPrompt" rows="4" placeholder="Напишите запрос..." style="width:100%;padding:10px;background:#222;border:1px solid #444;border-radius:8px;color:#fff;font-size:.9rem;resize:vertical;margin-top:4px"></textarea>
     </div>
     <div style="display:flex;gap:8px;margin-bottom:12px">
-      <button class="btn-accent" onclick="runGenerate()" id="btnGenerate">Генерировать</button>
-      <button class="btn-primary2" onclick="document.getElementById('genResult').textContent=''">Очистить</button>
+      <button class="btn-accent" onclick="runGenerate()" id="btnGenerate">✍️ Генерировать</button>
+      <button class="btn-primary2" onclick="document.getElementById('genResult').textContent=''">🗑️ Очистить</button>
     </div>
     <div id="genResult" style="background:#111;border-radius:8px;padding:16px;flex:1;overflow-y:auto;white-space:pre-wrap;font-size:.9rem;min-height:200px"><em style="color:#555">Результат появится здесь</em></div>
   </div>
@@ -179,10 +176,10 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 <!-- ===== Editor Panel ===== -->
 <div id="panel-editor" class="panel">
   <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center">
-    <label for="fileUpload" class="btn-primary2" style="cursor:pointer;margin:0">Загрузить</label>
+    <label for="fileUpload" class="btn-primary2" style="cursor:pointer;margin:0">📎 Загрузить</label>
     <input type="file" id="fileUpload" style="display:none" onchange="uploadFile(event)">
-    <button class="btn-primary2" onclick="saveProject()">Сохранить</button>
-    <button class="btn-primary2" onclick="loadProjects()">Проекты</button>
+    <button class="btn-primary2" onclick="saveProject()">💾 Сохранить</button>
+    <button class="btn-primary2" onclick="loadProjects()">📂 Проекты</button>
     <select id="editorLang" style="padding:6px;background:#222;border:1px solid #444;border-radius:4px;color:#fff;font-size:.85rem" onchange="changeEditorLang()">
       <option value="html">HTML</option>
       <option value="javascript">JavaScript</option>
@@ -201,12 +198,12 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 <!-- ===== Bot Panel ===== -->
 <div id="panel-bot" class="panel">
   <div class="vm-card">
-    <h4>Telegram Бот</h4>
+    <h4>🤖 Telegram Бот</h4>
     <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center">
       <span id="botStatusBadge" style="padding:4px 12px;border-radius:12px;font-size:.8rem;background:#f00;color:#fff">Остановлен</span>
-      <button class="btn-primary2" onclick="botStart()">Запустить</button>
-      <button class="btn-accent" onclick="botStop()">Остановить</button>
-      <button class="btn-primary2" onclick="botRefresh()">Статус</button>
+      <button class="btn-primary2" onclick="botStart()">▶ Запустить</button>
+      <button class="btn-accent" onclick="botStop()">⏹ Остановить</button>
+      <button class="btn-primary2" onclick="botRefresh()">🔄 Статус</button>
     </div>
     <h5 style="color:#4ec9b0;font-size:.85rem;margin-bottom:4px">TG Сообщения:</h5>
     <div id="tgMessagesArea" style="background:#111;border-radius:8px;padding:12px;font-size:.85rem;max-height:200px;overflow-y:auto;margin-bottom:12px"><em style="color:#555">Нет сообщений</em></div>
@@ -218,11 +215,11 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 <!-- ===== Settings Panel ===== -->
 <div id="panel-settings" class="panel">
   <div class="vm-card">
-    <h4>Настройки (.env)</h4>
+    <h4>⚙️ Настройки (.env)</h4>
     <div id="settingsForm" class="settings-grid"></div>
     <div style="margin-top:12px;display:flex;gap:8px">
-      <button class="btn-primary2" onclick="loadSettings()">Загрузить</button>
-      <button class="btn-accent" onclick="saveSettings()">Сохранить</button>
+      <button class="btn-primary2" onclick="loadSettings()">🔄 Загрузить</button>
+      <button class="btn-accent" onclick="saveSettings()">💾 Сохранить</button>
     </div>
     <div style="margin-top:12px">
       <h5 style="color:#4ec9b0;font-size:.85rem">Добавить переменную:</h5>
@@ -233,82 +230,6 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
       </div>
     </div>
   </div>
-</div>
-
-<!-- ===== Psycho-Correction Panel ===== -->
-<div id="panel-psycho" class="panel active">
-
-  <!-- Module Status -->
-  <div class="vm-card">
-    <h4>Психокоррекция -- Статус модулей</h4>
-    <div class="ai-grid" id="psychoGrid">
-      <div class="ai-tile" id="psy-ollama"><span class="dot dot-red"></span>Ollama</div>
-      <div class="ai-tile" id="psy-camera"><span class="dot dot-red"></span>Камера</div>
-      <div class="ai-tile" id="psy-pupil"><span class="dot dot-red"></span>Зрачки</div>
-      <div class="ai-tile" id="psy-eyeage"><span class="dot dot-red"></span>Возраст глаз</div>
-      <div class="ai-tile" id="psy-assessment"><span class="dot dot-red"></span>Оценка</div>
-      <div class="ai-tile" id="psy-kb"><span class="dot dot-red"></span>База знаний</div>
-    </div>
-    <div style="margin-top:8px">
-      <button class="btn-primary2" onclick="psychoRefreshStatus()">Обновить статус</button>
-    </div>
-  </div>
-
-  <!-- Knowledge Base -->
-  <div class="vm-card">
-    <h4>База знаний (Пизек, психокоррекция)</h4>
-    <div id="kbStats" style="font-size:.85rem;color:#aaa;margin-bottom:8px">Загрузка...</div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap">
-      <button class="btn-primary2" onclick="psychoKBStats()">Статистика</button>
-      <button class="btn-primary2" onclick="psychoKBSeed()">Заполнить базу</button>
-      <button class="btn-primary2" onclick="psychoKBPrinciples()">Принципы ВМ</button>
-      <button class="btn-primary2" onclick="psychoKBMethods()">Методики</button>
-      <button class="btn-primary2" onclick="psychoKBRecommend()">Рекомендации</button>
-    </div>
-    <div id="kbResult" style="background:#111;border-radius:8px;padding:12px;margin-top:8px;font-size:.85rem;max-height:300px;overflow-y:auto;white-space:pre-wrap;color:#ccc;display:none"></div>
-  </div>
-
-  <!-- Comprehensive Assessment -->
-  <div class="vm-card">
-    <h4>Совокупная оценка</h4>
-    <p style="font-size:.85rem;color:#aaa;margin-bottom:8px">Запуск анализа: FER (40%), зрачки (30%), базовый уровень (30%)</p>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
-      <button class="btn-accent" onclick="psychoRunAssessment('camera')">Анализ с камеры</button>
-      <button class="btn-primary2" onclick="psychoRunAssessment('demo')">Демо-анализ</button>
-    </div>
-    <div id="assessmentResult" style="background:#111;border-radius:8px;padding:12px;font-size:.85rem;max-height:400px;overflow-y:auto;white-space:pre-wrap;color:#ccc;display:none"></div>
-  </div>
-
-  <!-- Pupil Analysis -->
-  <div class="vm-card">
-    <h4>Анализ зрачков</h4>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
-      <button class="btn-primary2" onclick="psychoPupilAnalyze('camera')">Анализ с камеры</button>
-      <button class="btn-primary2" onclick="psychoPupilReset()">Сброс истории</button>
-    </div>
-    <div id="pupilResult" style="background:#111;border-radius:8px;padding:12px;font-size:.85rem;max-height:300px;overflow-y:auto;white-space:pre-wrap;color:#ccc;display:none"></div>
-  </div>
-
-  <!-- Eye Age Estimation -->
-  <div class="vm-card">
-    <h4>Оценка возраста по глазам</h4>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
-      <button class="btn-primary2" onclick="psychoEyeAge('camera')">Оценка с камеры</button>
-    </div>
-    <div id="eyeAgeResult" style="background:#111;border-radius:8px;padding:12px;font-size:.85rem;max-height:300px;overflow-y:auto;white-space:pre-wrap;color:#ccc;display:none"></div>
-  </div>
-
-  <!-- Sources -->
-  <div class="vm-card">
-    <h4>Научные источники</h4>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
-      <button class="btn-primary2" onclick="psychoKBSources()">Все источники</button>
-      <button class="btn-primary2" onclick="psychoKBSources('article')">Статьи</button>
-      <button class="btn-primary2" onclick="psychoKBSources('book')">Книги</button>
-    </div>
-    <div id="sourcesResult" style="background:#111;border-radius:8px;padding:12px;font-size:.85rem;max-height:300px;overflow-y:auto;white-space:pre-wrap;color:#ccc;display:none"></div>
-  </div>
-
 </div>
 
 </div><!-- /main -->
@@ -326,7 +247,7 @@ if (typeof require !== 'undefined') {
       const fallback = document.getElementById('editorFallback');
       if (fallback) fallback.style.display = 'none';
       monacoEditor = monaco.editor.create(container, {
-        value: '<!-- DRGR VM Ready -->\n',
+        value: '<!-- DRGR VM Ready -->\nДобро пожаловать в DRGR VM!\n',
         language: 'html',
         theme: 'vs-dark',
         automaticLayout: true,
@@ -345,20 +266,23 @@ function changeEditorLang() {
 }
 
 // ---------- Tab navigation ----------
-const allTabs = ['vm','chat','research','generate','editor','bot','settings','psycho'];
+const allTabs = ['vm','chat','research','generate','editor','bot','settings'];
 function showTab(name) {
   allTabs.forEach(t => {
     const p = document.getElementById('panel-'+t);
     if (p) p.classList.toggle('active', t === name);
   });
   document.querySelectorAll('.tab-item').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
-  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b => {
+    const match = b.textContent.toLowerCase();
+    // rough match
+    b.classList.remove('active');
+  });
   // Auto-refresh on tab switch
   if (name === 'vm') refreshVMStatus();
   if (name === 'bot') botRefresh();
   if (name === 'settings') loadSettings();
   if (name === 'chat') loadModelsDropdown();
-  if (name === 'psycho') psychoRefreshStatus();
 }
 document.querySelectorAll('.tab-item').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
 
@@ -376,12 +300,16 @@ function api(url, opts) {
 // ---------- VM Status ----------
 function refreshVMStatus() {
   api('/health').then(h => {
+    // Ollama tile
     const olEl = document.querySelector('#vai-ollama .dot');
     if (olEl) olEl.className = 'dot ' + (h.ollama && h.ollama.available ? 'dot-green' : 'dot-red');
+    // LM Studio tile
     const lmEl = document.querySelector('#vai-lmstudio .dot');
     if (lmEl) lmEl.className = 'dot ' + (h.lmstudio && h.lmstudio.available ? 'dot-green' : 'dot-red');
+    // Bot tile
     const botEl = document.querySelector('#vai-bot .dot');
     if (botEl) botEl.className = 'dot ' + (h.bot && h.bot.running ? 'dot-green' : 'dot-red');
+    // Models
     const mList = [];
     if (h.ollama && h.ollama.models) h.ollama.models.forEach(m => mList.push('Ollama: ' + m));
     if (h.lmstudio && h.lmstudio.models) h.lmstudio.models.forEach(m => mList.push('LMStudio: ' + m));
@@ -389,6 +317,7 @@ function refreshVMStatus() {
   }).catch(e => {
     document.getElementById('modelsList').textContent = 'Ошибка: ' + e.message;
   });
+  // Diagnostics report
   api('/extension/report').then(d => {
     document.getElementById('diagReport').textContent = d.report || JSON.stringify(d.data, null, 2);
   }).catch(() => {});
@@ -398,6 +327,7 @@ function refreshVMStatus() {
 function loadModelsDropdown() {
   api('/models').then(m => {
     const sel = document.getElementById('chatModel');
+    // Keep first "Авто" option
     while (sel.options.length > 1) sel.remove(1);
     (m.ollama || []).forEach(n => { const o = new Option('Ollama: '+n, n); sel.add(o); });
     (m.lmstudio || []).forEach(n => { const o = new Option('LMStudio: '+n, n); sel.add(o); });
@@ -437,7 +367,7 @@ function runResearch() {
   const q = document.getElementById('researchQuery').value.trim();
   if (!q) return;
   const btn = document.getElementById('btnResearch');
-  btn.disabled = true; btn.textContent = 'Генерация...';
+  btn.disabled = true; btn.textContent = '⏳ Генерация...';
   document.getElementById('researchResult').innerHTML = '<em>Поиск и генерация статьи...</em>';
   api('/research', {
     method:'POST',
@@ -480,16 +410,17 @@ function botRefresh() {
   api('/bot/status').then(d => {
     const badge = document.getElementById('botStatusBadge');
     if (d.running) {
-      badge.textContent = 'Работает (PID ' + d.pid + ')';
+      badge.textContent = '✅ Работает (PID ' + d.pid + ')';
       badge.style.background = '#0a7d3e';
     } else {
-      badge.textContent = 'Остановлен';
+      badge.textContent = '❌ Остановлен';
       badge.style.background = '#c73650';
     }
   }).catch(() => {});
   api('/bot/log').then(d => {
     document.getElementById('botLogArea').textContent = (d.lines || []).join('\n') || 'Лог пуст';
   }).catch(() => {});
+  // TG messages
   api('/chat/tg_messages?after=0').then(d => {
     const area = document.getElementById('tgMessagesArea');
     if (d && d.length) {
@@ -507,6 +438,7 @@ function uploadFile(event) {
   const reader = new FileReader();
   reader.onload = function(e) {
     setEditorValue(e.target.result);
+    // Auto-detect language
     const ext = file.name.split('.').pop().toLowerCase();
     const langMap = {py:'python',js:'javascript',ts:'typescript',html:'html',css:'css',json:'json'};
     const lang = langMap[ext] || 'html';
@@ -524,7 +456,7 @@ function saveProject() {
     method:'POST',
     headers:{'Content-Type':'application/json'},
     body: JSON.stringify({filename, content})
-  }).then(() => alert('Сохранено!')).catch(e => alert('Ошибка: ' + e.message));
+  }).then(() => alert('✅ Сохранено!')).catch(e => alert('Ошибка: ' + e.message));
 }
 
 function loadProjects() {
@@ -573,7 +505,7 @@ function saveSettings() {
     method:'POST',
     headers:{'Content-Type':'application/json'},
     body: JSON.stringify(data)
-  }).then(() => alert('Настройки сохранены!')).catch(e => alert('Ошибка: ' + e.message));
+  }).then(() => alert('✅ Настройки сохранены!')).catch(e => alert('Ошибка: ' + e.message));
 }
 
 function addEnvVar() {
@@ -628,7 +560,7 @@ function runGenerate() {
   if (!prompt) return;
   const system = document.getElementById('genSystem').value.trim();
   const btn = document.getElementById('btnGenerate');
-  btn.disabled = true; btn.textContent = 'Генерация...';
+  btn.disabled = true; btn.textContent = '⏳ Генерация...';
   document.getElementById('genResult').textContent = 'Генерация текста...';
   api('/generate', {
     method:'POST',
@@ -639,171 +571,12 @@ function runGenerate() {
   }).catch(e => {
     document.getElementById('genResult').textContent = 'Ошибка: ' + e.message;
   }).finally(() => {
-    btn.disabled = false; btn.textContent = 'Генерировать';
+    btn.disabled = false; btn.textContent = '✍️ Генерировать';
   });
-}
-
-// ---------- Psycho-Correction Platform ----------
-function psychoRefreshStatus() {
-  api('/api/ollama/status').then(d => {
-    document.querySelector('#psy-ollama .dot').className = 'dot ' + (d.available ? 'dot-green' : 'dot-red');
-  }).catch(() => {});
-  api('/api/camera/status').then(d => {
-    document.querySelector('#psy-camera .dot').className = 'dot ' + (d.available ? 'dot-green' : 'dot-red');
-  }).catch(() => {});
-  api('/api/pupil/status').then(d => {
-    document.querySelector('#psy-pupil .dot').className = 'dot ' + (d.available ? 'dot-green' : 'dot-red');
-  }).catch(() => {});
-  api('/api/eye-age/status').then(d => {
-    document.querySelector('#psy-eyeage .dot').className = 'dot ' + (d.available ? 'dot-green' : 'dot-red');
-  }).catch(() => {});
-  api('/api/assessment/status').then(d => {
-    document.querySelector('#psy-assessment .dot').className = 'dot ' + (d.available ? 'dot-green' : 'dot-red');
-  }).catch(() => {});
-  api('/api/kb/stats').then(d => {
-    document.querySelector('#psy-kb .dot').className = 'dot dot-green';
-    document.getElementById('kbStats').textContent =
-      'Источников: ' + (d.sources_count || 0) + ' | Методик: ' + (d.methods_count || 0);
-  }).catch(() => {
-    document.querySelector('#psy-kb .dot').className = 'dot dot-red';
-    document.getElementById('kbStats').textContent = 'База знаний недоступна';
-  });
-}
-
-function psychoShowResult(elemId, data) {
-  const el = document.getElementById(elemId);
-  el.style.display = 'block';
-  if (typeof data === 'string') {
-    el.textContent = data;
-  } else {
-    el.textContent = JSON.stringify(data, null, 2);
-  }
-}
-
-function psychoKBStats() {
-  api('/api/kb/stats').then(d => psychoShowResult('kbResult', d))
-    .catch(e => psychoShowResult('kbResult', 'Ошибка: ' + e.message));
-}
-
-function psychoKBSeed() {
-  if (!confirm('Заполнить базу знаний начальными данными?')) return;
-  api('/api/kb/seed', {method:'POST'})
-    .then(d => {
-      psychoShowResult('kbResult', d);
-      psychoRefreshStatus();
-    })
-    .catch(e => psychoShowResult('kbResult', 'Ошибка: ' + e.message));
-}
-
-function psychoKBPrinciples() {
-  api('/api/kb/principles')
-    .then(d => psychoShowResult('kbResult', d))
-    .catch(e => psychoShowResult('kbResult', 'Ошибка: ' + e.message));
-}
-
-function psychoKBMethods() {
-  api('/api/kb/methods')
-    .then(d => psychoShowResult('kbResult', d))
-    .catch(e => psychoShowResult('kbResult', 'Ошибка: ' + e.message));
-}
-
-function psychoKBRecommend() {
-  const state = prompt('Состояние для рекомендаций:', 'stress');
-  if (!state) return;
-  api('/api/kb/recommend?state=' + encodeURIComponent(state) + '&limit=5')
-    .then(d => psychoShowResult('kbResult', d))
-    .catch(e => psychoShowResult('kbResult', 'Ошибка: ' + e.message));
-}
-
-function psychoKBSources(type) {
-  let url = '/api/kb/sources?limit=50';
-  if (type) url += '&type=' + encodeURIComponent(type);
-  api(url)
-    .then(d => psychoShowResult('sourcesResult', d))
-    .catch(e => psychoShowResult('sourcesResult', 'Ошибка: ' + e.message));
-}
-
-function psychoRunAssessment(source) {
-  const body = {};
-  if (source === 'camera') {
-    body.source = 'camera';
-  } else {
-    body.fer = {
-      dominant_emotion: 'anger',
-      emotion_scores: {anger: 0.6, fear: 0.2, sadness: 0.1, neutral: 0.1},
-      valence: -0.5,
-      arousal: 0.7,
-      stress_score: 0.75,
-      confidence: 0.85
-    };
-  }
-  psychoShowResult('assessmentResult', 'Анализ...');
-  api('/api/assessment/run', {
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body: JSON.stringify(body)
-  }).then(d => {
-    let text = '=== Совокупная оценка ===\n';
-    text += 'Уровень стресса: ' + (d.overall_stress_level || d.stress_level || '?') + '\n';
-    text += 'Стресс-индекс: ' + (d.overall_stress_score != null ? d.overall_stress_score.toFixed(2) : '?') + '\n';
-    if (d.recommendations && d.recommendations.length) {
-      text += '\nРекомендации:\n';
-      d.recommendations.forEach((r, i) => { text += (i+1) + '. ' + (r.title || r) + '\n'; });
-    }
-    text += '\n--- Полные данные ---\n' + JSON.stringify(d, null, 2);
-    psychoShowResult('assessmentResult', text);
-  }).catch(e => psychoShowResult('assessmentResult', 'Ошибка: ' + e.message));
-}
-
-function psychoPupilAnalyze(source) {
-  const body = source === 'camera' ? {source:'camera'} : {};
-  psychoShowResult('pupilResult', 'Анализ зрачков...');
-  api('/api/pupil/analyze', {
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body: JSON.stringify(body)
-  }).then(d => {
-    let text = '=== Анализ зрачков ===\n';
-    text += 'Среднее соотношение зрачок/радужка: ' + (d.avg_pupil_iris_ratio != null ? d.avg_pupil_iris_ratio.toFixed(3) : '?') + '\n';
-    text += 'Уровень расширения: ' + (d.dilation_level || '?') + '\n';
-    text += 'Состояние: ' + (d.inferred_state || '?') + '\n';
-    text += 'Анизокория: ' + (d.anisocoria_detected ? 'Да' : 'Нет') + '\n';
-    if (d.warnings && d.warnings.length) {
-      text += 'Предупреждения: ' + d.warnings.join(', ') + '\n';
-    }
-    text += '\n--- Полные данные ---\n' + JSON.stringify(d, null, 2);
-    psychoShowResult('pupilResult', text);
-  }).catch(e => psychoShowResult('pupilResult', 'Ошибка: ' + e.message));
-}
-
-function psychoPupilReset() {
-  api('/api/pupil/reset', {method:'POST'})
-    .then(d => psychoShowResult('pupilResult', d.message || 'Сброс выполнен'))
-    .catch(e => psychoShowResult('pupilResult', 'Ошибка: ' + e.message));
-}
-
-function psychoEyeAge(source) {
-  const body = source === 'camera' ? {source:'camera'} : {};
-  psychoShowResult('eyeAgeResult', 'Оценка возраста...');
-  api('/api/eye-age/estimate', {
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body: JSON.stringify(body)
-  }).then(d => {
-    let text = '=== Оценка возраста по глазам ===\n';
-    text += 'Возраст: ' + (d.estimated_age != null ? Math.round(d.estimated_age) + ' лет' : '?') + '\n';
-    text += 'Уверенность: ' + (d.confidence != null ? (d.confidence * 100).toFixed(0) + '%' : '?') + '\n';
-    text += 'Составной балл: ' + (d.composite_score != null ? d.composite_score.toFixed(2) : '?') + '\n';
-    if (d.warnings && d.warnings.length) {
-      text += 'Предупреждения: ' + d.warnings.join(', ') + '\n';
-    }
-    text += '\n--- Полные данные ---\n' + JSON.stringify(d, null, 2);
-    psychoShowResult('eyeAgeResult', text);
-  }).catch(e => psychoShowResult('eyeAgeResult', 'Ошибка: ' + e.message));
 }
 
 // ---------- Init ----------
-psychoRefreshStatus();
+refreshVMStatus();
 </script>
 </body>
 </html>

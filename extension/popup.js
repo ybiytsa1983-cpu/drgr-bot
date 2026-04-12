@@ -1,8 +1,8 @@
-/* DRGR VM Chrome Extension -- popup.js */
+/* DRGR VM Chrome Extension — popup.js */
 (function() {
   'use strict';
 
-  const DEFAULT_VM_URL = 'http://localhost:5005';
+  const DEFAULT_VM_URL = 'http://localhost:5000';
   let vmUrl = DEFAULT_VM_URL;
 
   // --- chrome.storage guard ---
@@ -22,7 +22,7 @@
 
   // --- API fetch ---
   function apiFetch(path, opts) {
-    var url = vmUrl + path;
+    const url = vmUrl + path;
     return fetch(url, opts).then(function(r) {
       if (!r.ok) throw new Error('HTTP ' + r.status);
       return r.json();
@@ -56,13 +56,13 @@
         document.getElementById('statusRows').innerHTML = rows;
       })
       .catch(function(e) {
-        document.getElementById('reportArea').textContent = 'Error: ' + e.message;
-        document.getElementById('statusRows').innerHTML = '<div style="color:red">Cannot connect to VM</div>';
+        document.getElementById('reportArea').textContent = 'Ошибка: ' + e.message;
+        document.getElementById('statusRows').innerHTML = '<div style="color:red">Не удалось подключиться к VM</div>';
       });
   };
 
   function statusRow(name, ok) {
-    return '<div class="status-row"><span><span class="dot ' + (ok ? 'dot-green' : 'dot-red') + '"></span>' + name + '</span><span>' + (ok ? 'OK' : 'OFF') + '</span></div>';
+    return '<div class="status-row"><span><span class="dot ' + (ok ? 'dot-green' : 'dot-red') + '"></span>' + name + '</span><span>' + (ok ? '✅' : '❌') + '</span></div>';
   }
 
   // --- Open VM ---
@@ -78,17 +78,17 @@
   window.runSandbox = function() {
     var code = document.getElementById('sandboxCode').value.trim();
     if (!code) return;
-    document.getElementById('sandboxResult').textContent = 'Running...';
+    document.getElementById('sandboxResult').textContent = '⏳ Выполняю...';
     apiFetch('/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: code })
     })
       .then(function(d) {
-        document.getElementById('sandboxResult').textContent = d.reply || d.error || 'No response';
+        document.getElementById('sandboxResult').textContent = d.reply || d.error || 'Нет ответа';
       })
       .catch(function(e) {
-        document.getElementById('sandboxResult').textContent = 'Error: ' + e.message;
+        document.getElementById('sandboxResult').textContent = 'Ошибка: ' + e.message;
       });
   };
 
@@ -99,10 +99,10 @@
     vmUrl = url;
     if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
       chrome.storage.local.set({ vmUrl: url }, function() {
-        alert('Saved: ' + url);
+        alert('✅ Сохранено: ' + url);
       });
     } else {
-      alert('URL set: ' + url + '\n(chrome.storage unavailable, saved for this session only)');
+      alert('✅ URL установлен: ' + url + '\n(chrome.storage недоступен, сохранено только для текущей сессии)');
     }
   };
 
