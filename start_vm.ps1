@@ -54,12 +54,19 @@ Write-Host "Установка зависимостей..." -ForegroundColor Yel
 pip install --upgrade typing-extensions pydantic aiohttp aiofiles --quiet 2>$null
 pip install -r requirements.txt --quiet 2>$null
 
-# -- Ярлык на рабочем столе --
+# -- Ярлыки на рабочем столе --
 $ShortcutPath = "$HOME\Desktop\Психокоррекция.bat"
 if (-not (Test-Path $ShortcutPath)) {
     $BatContent = "@echo off`r`ncd /d `"$ProjectDir`"`r`npowershell -ExecutionPolicy Bypass -File start_vm.ps1`r`npause"
     [System.IO.File]::WriteAllText($ShortcutPath, $BatContent, [System.Text.Encoding]::GetEncoding(1251))
     Write-Host "Ярлык создан: $ShortcutPath" -ForegroundColor Green
+}
+# Backward-compatible shortcut for Code VM users
+$CodeVmShortcut = "$HOME\Desktop\Code VM.bat"
+if (-not (Test-Path $CodeVmShortcut)) {
+    $BatContent2 = "@echo off`r`ncd /d `"$ProjectDir`"`r`npowershell -ExecutionPolicy Bypass -File start_vm.ps1`r`npause"
+    [System.IO.File]::WriteAllText($CodeVmShortcut, $BatContent2, [System.Text.Encoding]::GetEncoding(1251))
+    Write-Host "Ярлык создан: $CodeVmShortcut" -ForegroundColor Green
 }
 
 # -- Запуск сервера --
