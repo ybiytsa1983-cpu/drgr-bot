@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" href="data:,">
-<title>DRGR VM -- Панель управления</title>
+<title>Психокоррекция -- Платформа</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
 <style>
 :root{--bg:#1a1a2e;--sidebar:#16213e;--card:#0f3460;--accent:#e94560;--accent2:#0e639c;--text:#eee;--text2:#aaa;}
@@ -63,18 +63,18 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 
 <!-- ====== SIDEBAR ====== -->
 <div id="sidebar">
-  <h3>DRGR VM</h3>
+  <h3>🧠 Психокоррекция</h3>
 
   <div class="nav-section">
     <h5>Панели</h5>
-    <button class="nav-btn active" onclick="showTab('vm')">VM Статус</button>
+    <button class="nav-btn active" onclick="showTab('psycho')">🧠 Психокоррекция</button>
+    <button class="nav-btn" onclick="showTab('vm')">VM Статус</button>
     <button class="nav-btn" onclick="showTab('chat')">Чат с AI</button>
     <button class="nav-btn" onclick="showTab('research')">Генератор статей</button>
     <button class="nav-btn" onclick="showTab('generate')">Генератор текста</button>
     <button class="nav-btn" onclick="showTab('editor')">Редактор</button>
     <button class="nav-btn" onclick="showTab('bot')">Telegram бот</button>
     <button class="nav-btn" onclick="showTab('settings')">Настройки</button>
-    <button class="nav-btn" onclick="showTab('psycho')">Психокоррекция</button>
   </div>
 
   <div class="nav-section">
@@ -94,18 +94,18 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 
 <!-- Tab bar -->
 <div class="tab-bar">
-  <button class="tab-item active" data-tab="vm">VM</button>
+  <button class="tab-item active" data-tab="psycho">🧠 Психокоррекция</button>
+  <button class="tab-item" data-tab="vm">VM</button>
   <button class="tab-item" data-tab="chat">Чат</button>
   <button class="tab-item" data-tab="research">Статьи</button>
   <button class="tab-item" data-tab="generate">Текст</button>
   <button class="tab-item" data-tab="editor">Редактор</button>
   <button class="tab-item" data-tab="bot">Бот</button>
   <button class="tab-item" data-tab="settings">Настройки</button>
-  <button class="tab-item" data-tab="psycho">Психокоррекция</button>
 </div>
 
 <!-- ===== VM Panel ===== -->
-<div id="panel-vm" class="panel active">
+<div id="panel-vm" class="panel">
   <div class="vm-card">
     <h4>AI Подключения</h4>
     <div class="ai-grid" id="aiGrid">
@@ -236,7 +236,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 </div>
 
 <!-- ===== Psycho-Correction Panel ===== -->
-<div id="panel-psycho" class="panel">
+<div id="panel-psycho" class="panel active">
 
   <!-- Module Status -->
   <div class="vm-card">
@@ -803,7 +803,7 @@ function psychoEyeAge(source) {
 }
 
 // ---------- Init ----------
-refreshVMStatus();
+psychoRefreshStatus();
 </script>
 </body>
 </html>

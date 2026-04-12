@@ -141,8 +141,8 @@ Write-Host "============================================" -ForegroundColor Green
 Write-Host "  Запуск VM сервера на http://localhost:$Port" -ForegroundColor Green
 Write-Host "============================================" -ForegroundColor Green
 Write-Host ""
-Write-Host "  Веб-интерфейс: http://localhost:$Port" -ForegroundColor Cyan
-Write-Host "  Чат с AI, генератор статей, управление ботом" -ForegroundColor Cyan
+Write-Host "  Психокоррекция: http://localhost:$Port" -ForegroundColor Cyan
+Write-Host "  Отдельная страница: http://localhost:$Port/psycho" -ForegroundColor Cyan
 Write-Host "  Ctrl+C -- остановка" -ForegroundColor DarkGray
 Write-Host ""
 

@@ -65,7 +65,8 @@ if (-not (Test-Path $ShortcutPath)) {
 # -- Запуск сервера --
 $env:DRGR_PORT = $Port
 Write-Host ""
-Write-Host "Сервер: http://localhost:$Port" -ForegroundColor Green
+Write-Host "Психокоррекция: http://localhost:$Port" -ForegroundColor Green
+Write-Host "Отдельная страница: http://localhost:$Port/psycho" -ForegroundColor Green
 Write-Host "Ctrl+C -- остановка" -ForegroundColor Gray
 Write-Host ""
 

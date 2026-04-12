@@ -1208,5 +1208,6 @@ if __name__ == "__main__":
             sys.exit(1)
 
     threading.Thread(target=_autostart_bot, daemon=True).start()
-    logger.info("DRGR VM Server запущен на http://localhost:%d", _port)
+    logger.info("Психокоррекция запущена на http://localhost:%d", _port)
+    logger.info("Отдельная страница: http://localhost:%d/psycho", _port)
     app.run(host="0.0.0.0", port=_port, debug=False)
