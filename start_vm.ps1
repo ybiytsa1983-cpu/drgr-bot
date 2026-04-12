@@ -67,4 +67,4 @@ Write-Host "DRGR Code VM: http://localhost:$Port" -ForegroundColor Green
 Write-Host "Ctrl+C -- остановка" -ForegroundColor Gray
 Write-Host ""
 
-python vm/server.py
+python "$ProjectDir\vm\server.py"
