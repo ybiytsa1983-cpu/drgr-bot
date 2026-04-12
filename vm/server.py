@@ -155,6 +155,24 @@ def favicon():
     return "", 204
 
 # ---------------------------------------------------------------------------
+#  Error handlers -- чтобы 404 и 500 не вызывали необработанные исключения
+# ---------------------------------------------------------------------------
+@app.errorhandler(404)
+def _not_found(e):
+    if request.accept_mimetypes.accept_json and \
+       not request.accept_mimetypes.accept_html:
+        return jsonify({"error": "Not Found", "path": request.path}), 404
+    return (
+        f"<h1>404 Not Found</h1><p>{request.path}</p>",
+        404,
+    )
+
+@app.errorhandler(500)
+def _internal_error(e):
+    logger.exception("Internal server error on %s", request.path)
+    return jsonify({"error": "Internal Server Error"}), 500
+
+# ---------------------------------------------------------------------------
 #  Ollama / LM Studio -- обнаружение
 # ---------------------------------------------------------------------------
 # Предпочтительный порт Ollama (из .env OLLAMA_PORT или 11435 по умолчанию)
