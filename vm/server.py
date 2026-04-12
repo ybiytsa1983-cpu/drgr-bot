@@ -940,8 +940,8 @@ def pupil_analyze():
     Анализ зрачков из изображения (base64 или камера).
 
     Body JSON:
-      {"source": "camera"} — захват с камеры
-      {"image": "<base64>"} — из base64 изображения
+      {"source": "camera"} -- захват с камеры
+      {"image": "<base64>"} -- из base64 изображения
     """
     analyzer = _get_pupil_analyzer()
     if analyzer is None:
@@ -1007,8 +1007,8 @@ def eye_age_estimate():
     Оценка возраста по глазам из изображения.
 
     Body JSON:
-      {"source": "camera"} — захват с камеры
-      {"image": "<base64>"} — из base64 изображения
+      {"source": "camera"} -- захват с камеры
+      {"image": "<base64>"} -- из base64 изображения
     """
     estimator = _get_eye_age_estimator()
     if estimator is None:
