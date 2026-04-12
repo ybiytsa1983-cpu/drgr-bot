@@ -76,4 +76,12 @@ Write-Host "DRGR Code VM: http://localhost:$Port" -ForegroundColor Green
 Write-Host "Ctrl+C -- остановка" -ForegroundColor Gray
 Write-Host ""
 
+# Открываем браузер через 2 секунды, пока сервер стартует
+$vmUrl = "http://localhost:$Port"
+Start-Job -ScriptBlock {
+    param($u)
+    Start-Sleep 2
+    Start-Process $u
+} -ArgumentList $vmUrl | Out-Null
+
 python "$ProjectDir\vm\server.py"
