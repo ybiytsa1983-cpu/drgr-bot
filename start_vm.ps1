@@ -57,7 +57,7 @@ pip install -r requirements.txt --quiet 2>$null
 # -- Ярлык Code VM на рабочем столе (всегда обновляем путь) --
 $CodeVmShortcut = "$HOME\Desktop\Code VM.bat"
 $BatContent = "@echo off`r`nchcp 65001 > nul`r`ncd /d `"$ProjectDir`"`r`nif not exist `"$ProjectDir\vm\server.py`" (`r`n    echo [ОШИБКА] Папка проекта не найдена: $ProjectDir`r`n    echo Переустановите: irm https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/start_vm.ps1 ^| iex`r`n    pause`r`n    exit /b 1`r`n)`r`npowershell -ExecutionPolicy Bypass -File `"$ProjectDir\start_vm.ps1`"`r`nif errorlevel 1 (`r`n    echo.`r`n    echo [ОШИБКА] Скрипт завершился с ошибкой. Проверьте вывод выше.`r`n)`r`npause"
-[System.IO.File]::WriteAllText($CodeVmShortcut, $BatContent, [System.Text.Encoding]::GetEncoding(1251))
+[System.IO.File]::WriteAllText($CodeVmShortcut, $BatContent, [System.Text.UTF8Encoding]::new($false))
 Write-Host "Ярлык обновлён: $CodeVmShortcut" -ForegroundColor Green
 
 # -- Запуск сервера --
