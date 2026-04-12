@@ -57,7 +57,7 @@ pip install -r requirements.txt --quiet 2>$null
 # -- Ярлык Code VM на рабочем столе --
 $CodeVmShortcut = "$HOME\Desktop\Code VM.bat"
 if (-not (Test-Path $CodeVmShortcut)) {
-    $BatContent = "@echo off`r`ncd /d `"$ProjectDir`"`r`npowershell -ExecutionPolicy Bypass -File start_vm.ps1`r`npause"
+    $BatContent = "@echo off`r`ncd /d `"$ProjectDir`"`r`npowershell -ExecutionPolicy Bypass -File `"$ProjectDir\start_vm.ps1`"`r`npause"
     [System.IO.File]::WriteAllText($CodeVmShortcut, $BatContent, [System.Text.Encoding]::GetEncoding(1251))
     Write-Host "Ярлык создан: $CodeVmShortcut" -ForegroundColor Green
 }
