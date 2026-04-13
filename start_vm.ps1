@@ -86,6 +86,13 @@ if ($LASTEXITCODE -ne 0) {
     }
 }
 
+# -- Удаляем старый ярлык DRGR.bat если он есть (содержал буквальный путь "...") --
+$OldBatShortcut = "$HOME\Desktop\DRGR.bat"
+if (Test-Path $OldBatShortcut) {
+    Remove-Item $OldBatShortcut -Force -ErrorAction SilentlyContinue
+    Write-Host "Старый ярлык DRGR.bat удалён." -ForegroundColor Gray
+}
+
 # -- Ярлык Code VM на рабочем столе (всегда обновляем путь) --
 $CodeVmShortcut = "$HOME\Desktop\Code VM.lnk"
 try {
