@@ -86,11 +86,14 @@ if ($LASTEXITCODE -ne 0) {
     }
 }
 
-# -- Удаляем старый ярлык DRGR.bat если он есть (содержал буквальный путь "...") --
-$OldBatShortcut = "$HOME\Desktop\DRGR.bat"
-if (Test-Path $OldBatShortcut) {
-    Remove-Item $OldBatShortcut -Force -ErrorAction SilentlyContinue
-    Write-Host "Старый ярлык DRGR.bat удалён." -ForegroundColor Gray
+# -- Создаём/обновляем DRGR.bat на рабочем столе (всегда скачивает свежий start_vm.ps1) --
+$BatPath = "$HOME\Desktop\DRGR.bat"
+$BatContent = "@echo off`r`npowershell.exe -ExecutionPolicy Bypass -NoProfile -Command `"[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; irm https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/start_vm.ps1 | iex`""
+try {
+    Set-Content -Path $BatPath -Value $BatContent -Encoding ASCII
+    Write-Host "Ярлык DRGR.bat обновлён: $BatPath" -ForegroundColor Green
+} catch {
+    Write-Host "Предупреждение: не удалось создать DRGR.bat: $_" -ForegroundColor Yellow
 }
 
 # -- Ярлык Code VM на рабочем столе (всегда обновляем путь) --
