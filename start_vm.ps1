@@ -92,7 +92,7 @@ try {
     $WshShell = New-Object -ComObject WScript.Shell
     $Shortcut = $WshShell.CreateShortcut($CodeVmShortcut)
     $Shortcut.TargetPath = "powershell.exe"
-    $Shortcut.Arguments = "-ExecutionPolicy Bypass -NoProfile -File `"$ProjectDir\start_vm.ps1`""
+    $Shortcut.Arguments = "-ExecutionPolicy Bypass -NoProfile -WindowStyle Normal -File `"$ProjectDir\start_vm.ps1`""
     $Shortcut.WorkingDirectory = $ProjectDir
     $Shortcut.WindowStyle = 1
     $Shortcut.Description = "DRGR Code VM"
