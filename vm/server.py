@@ -1,11 +1,11 @@
 """
-DRGR VM Server — полнофункциональный бэкенд.
+DRGR VM Server -- полнофункциональный бэкенд.
 
 Функции:
   • Управление ТГ-ботом (start / stop / status) как subprocess
-  • Генератор статей (/research) — DDG + scrape + Ollama / LM Studio LLM
-  • Чат с AI (/chat) — Ollama / LM Studio
-  • Генерация текста (/generate) — промпт → LLM
+  • Генератор статей (/research) -- DDG + scrape + Ollama / LM Studio LLM
+  • Чат с AI (/chat) -- Ollama / LM Studio
+  • Генерация текста (/generate) -- промпт → LLM
   • Настройки (/settings GET/POST → .env)
   • Здоровье (/health, /extension/report)
   • CORS для chrome-extension://
@@ -170,7 +170,7 @@ def _bot_get_status() -> Dict[str, Any]:
         return {"running": False, "pid": None}
 
 # ---------------------------------------------------------------------------
-#  Ollama / LM Studio — обнаружение и вызов
+#  Ollama / LM Studio -- обнаружение и вызов
 # ---------------------------------------------------------------------------
 _OLLAMA_PROBE_PORTS = (11434, 11435, 11436, 11437)
 _LMSTUDIO_PROBE_PORTS = (1234, 1235)
@@ -299,11 +299,11 @@ def _research_build_article(query: str, sources: List[Dict], scraped: Dict[str, 
         "- Используй HTML с Bootstrap 5 классами.\n"
         "- Добавь оглавление (TOC) со ссылками.\n"
         "- Добавь таблицу данных если уместно.\n"
-        "- В конце — список источников с кликабельными ссылками.\n"
+        "- В конце -- список источников с кликабельными ссылками.\n"
         "- Пиши на русском языке.\n"
     )
     messages = [
-        {"role": "system", "content": "Ты — аналитик-исследователь. Пишешь качественные HTML-статьи."},
+        {"role": "system", "content": "Ты -- аналитик-исследователь. Пишешь качественные HTML-статьи."},
         {"role": "user", "content": prompt},
     ]
     return _llm_chat(messages)
@@ -441,7 +441,7 @@ def chat():
     if not user_msg:
         return jsonify({"error": "Empty message"}), 400
     history = data.get("history", [])
-    messages = [{"role": "system", "content": "Ты — умный ассистент DRGR. Отвечай полезно и кратко."}]
+    messages = [{"role": "system", "content": "Ты -- умный ассистент DRGR. Отвечай полезно и кратко."}]
     for h in history[-10:]:
         messages.append({"role": h.get("role", "user"), "content": h.get("content", "")})
     messages.append({"role": "user", "content": user_msg})
@@ -515,7 +515,7 @@ def goose_integration():
     if not query:
         return jsonify({"error": "Пустой запрос"}), 400
     reply = _llm_chat([
-        {"role": "system", "content": "Ты — эксперт по коду. Анализируй и помогай."},
+        {"role": "system", "content": "Ты -- эксперт по коду. Анализируй и помогай."},
         {"role": "user", "content": query},
     ])
     return jsonify({"result": reply})
@@ -526,7 +526,7 @@ def generate_text():
     """Генерация текста по произвольному промпту через LLM."""
     data = request.json or {}
     prompt = data.get("prompt", "").strip()
-    system = data.get("system", "Ты — полезный AI-ассистент. Отвечай подробно.")
+    system = data.get("system", "Ты -- полезный AI-ассистент. Отвечай подробно.")
     model = data.get("model")
     if not prompt:
         return jsonify({"error": "Пустой промпт"}), 400
@@ -536,15 +536,15 @@ def generate_text():
     ], model=model)
     return jsonify({"result": reply})
 
-# --- 3D генерация (через LLM — генерация Three.js кода) ---
+# --- 3D генерация (через LLM -- генерация Three.js кода) ---
 @app.route("/api/generate-3d", methods=["POST"])
 def generate_3d():
     data = request.json or {}
     prompt = data.get("prompt", "3D куб")
     reply = _llm_chat([
         {"role": "system", "content": (
-            "Ты — 3D-разработчик. Генерируй готовый HTML+Three.js код для 3D-сцены. "
-            "Код должен быть полностью рабочим — один HTML файл с CDN для Three.js. "
+            "Ты -- 3D-разработчик. Генерируй готовый HTML+Three.js код для 3D-сцены. "
+            "Код должен быть полностью рабочим -- один HTML файл с CDN для Three.js. "
             "Включи OrbitControls для вращения. Подключай Three.js через CDN: "
             "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"
         )},
@@ -559,7 +559,7 @@ def generate_video():
     prompt = data.get("prompt", "анимация")
     reply = _llm_chat([
         {"role": "system", "content": (
-            "Ты — эксперт по видео. Создай Python-скрипт для генерации видео/анимации "
+            "Ты -- эксперт по видео. Создай Python-скрипт для генерации видео/анимации "
             "с помощью moviepy или PIL. Скрипт должен быть полностью рабочим."
         )},
         {"role": "user", "content": f"Создай видео/анимацию: {prompt}"},
