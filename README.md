@@ -1,17 +1,29 @@
-# drgr-bot
+# 🤖 DRGR VM — AI-powered Browser Extension
 
-Telegram-бот с веб-интерфейсом и VM-сервером для управления AI-моделями.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-blue)](https://python.org)
+[![Ollama](https://img.shields.io/badge/Ollama-compatible-green)](https://ollama.ai)
+[![Stars](https://img.shields.io/github/stars/ybiytsa1983-cpu/drgr-bot?style=social)](https://github.com/ybiytsa1983-cpu/drgr-bot/stargazers)
 
-## Возможности
+> **DRGR VM** — локальная AI-среда разработчика прямо в браузере. Monaco-редактор + live-превью + чат с локальными LLM (Ollama / LM Studio) + генерация 3D / изображений / статей + автономный браузер-агент.
 
-- **💬 Чат с AI** — общение через Ollama / LM Studio (локальные LLM)
-- **📝 Генератор статей** — DDG поиск + скрейпинг + LLM → HTML-статья с источниками
-- **✍️ Генератор текста** — произвольные промпты → LLM
-- **🤖 Telegram бот** — управление из веб-интерфейса (запуск/остановка/лог)
-- **🎬 3D / Видео** — генерация Three.js и moviepy кода через LLM
-- **📄 Редактор** — Monaco Editor с подсветкой синтаксиса
-- **🔌 Chrome расширение** — быстрый доступ к статусу VM
-- **⚙️ Настройки** — редактирование .env через веб-интерфейс
+---
+
+## ✨ Возможности
+
+| Модуль | Описание |
+|--------|----------|
+| 💬 **ИИ Чат** | Ollama / LM Studio / GLM / Remote VM |
+| 📝 **Monaco Редактор** | HTML/CSS/JS с live-preview в Визоре |
+| 🔍 **Поиск + Статья** | DDG + Wikipedia + Reddit → HTML-статья |
+| 🧊 **GLTF Генератор** | 3D-фигуры (Three.js) → .gltf файл |
+| 🎨 **Арт / SD** | Stable Diffusion + ComfyUI локально |
+| 📱 **Android** | Kotlin/Flutter код + APK + Appetize.io |
+| 🦆 **Goose Агент** | Автономный code-агент (block/goose) |
+| 🌐 **3D Генерация** | TripoSR / Hunyuan3D-2 / NVIDIA 3D |
+| ☁️ **Colab VM** | Удалённые модели через ngrok |
+| 🎬 **Видеоредактор** | EDL-сценарии для монтажа через LLM |
+| 🤖 **Telegram бот** | Управление VM из Telegram |
 
 ---
 
@@ -37,107 +49,73 @@ powershell -ExecutionPolicy Bypass -File start.ps1
 ЗАПУСТИТЬ_БОТА.bat
 ```
 
-### Вариант 3 — Ручной запуск
+### Вариант 3 — Установка одной командой
 
-```bash
-pip install -r requirements.txt
-python vm/server.py
+```powershell
+irm "https://raw.githubusercontent.com/ybiytsa1983-cpu/drgr-bot/main/run.ps1" | iex
 ```
 
 ---
 
-## 📦 Первая установка
-
-### Шаг 1 — Зависимости
-
-| Программа | Ссылка |
-|-----------|--------|
-| **Python 3.10+** | https://www.python.org/downloads/ |
-| **Git** | https://git-scm.com/download/win |
-| **Ollama** (для AI) | https://ollama.com |
-
-> ⚠️ При установке Python отметьте **"Add Python to PATH"**.
-
-### Шаг 2 — Скачайте и запустите
-
-Скачайте **[УСТАНОВИТЬ.bat](https://github.com/ybiytsa1983-cpu/drgr-bot/raw/main/УСТАНОВИТЬ.bat)** → двойной клик.
-
----
-
-## 🌐 Веб-интерфейс
-
-После запуска откройте: **http://localhost:5000**
-
-| Вкладка | Функция |
-|---------|---------|
-| 🖥️ VM Статус | Состояние Ollama, LM Studio, бота |
-| 💬 Чат | Общение с AI (выбор модели) |
-| 📝 Статьи | Генератор статей (DDG + LLM) |
-| ✍️ Текст | Генератор текста по промпту |
-| 📄 Редактор | Monaco Editor (HTML/JS/Python) |
-| 🤖 Бот | Управление TG ботом + лог + сообщения |
-| ⚙️ Настройки | Редактор .env файла |
-
----
-
-## 🔑 Файл .env
-
-Создайте через веб-интерфейс (Настройки) или вручную:
-
-```
-BOT_TOKEN=1234567890:AABBccDDeeFFggHHiiJJkkLLmmNNooPP
-```
-
-Получить токен: Telegram → **@BotFather** → `/newbot`.
-
----
-
-## 📁 Структура проекта
+## 📦 Структура
 
 ```
 drgr-bot/
-├── bot.py                 # Telegram-бот (aiogram 3.x)
-├── vm/
-│   ├── server.py          # VM-сервер (Flask, порт 5000)
-│   └── static/
-│       └── index.html     # Веб-интерфейс (7 вкладок)
-├── extension/
-│   ├── manifest.json      # Chrome расширение (Manifest V3)
-│   ├── popup.html
-│   └── popup.js
-├── start.ps1              # Полный лаунчер (Ollama, порты, зависимости)
-├── start_vm.ps1           # Быстрый запуск VM
-├── requirements.txt       # Зависимости Python
-├── .env                   # Токены (не в репозитории!)
-├── УСТАНОВИТЬ.bat         # Первичная установка
-├── ЗАПУСТИТЬ_БОТА.bat     # Запуск сервера + бота
-└── ОБНОВИТЬ.bat           # Обновление
+├── vm/                  # Flask сервер (основной бэкенд)
+├── extension/           # Chrome/Edge расширение
+├── local-comet-patch/   # Патч для локального Comet
+├── bot.py               # Telegram бот
+├── start.ps1            # Запуск (Windows)
+├── start_vm.ps1         # Запуск только VM
+├── update.ps1           # Обновление
+└── requirements.txt
 ```
 
 ---
 
-## 🔄 Обновление
+## 🔧 Требования
 
-```
-ОБНОВИТЬ.bat
-```
+- Windows 10/11 (PowerShell 5+)
+- Python 3.10+
+- [Ollama](https://ollama.ai) (рекомендуется) или LM Studio
+- Chrome / Edge браузер
 
 ---
 
-## ❓ Решение проблем
+## 🐛 Известные проблемы (в работе)
 
-**Порт 5000 занят**
-→ Запустите: `$env:DRGR_PORT=5002; python vm/server.py`
-→ Или используйте `start.ps1` — он автоматически найдёт свободный порт.
+- [ ] Чат-зал — `about:blank#blocked` (CSP конфликт)
+- [ ] GLTF 3D-превью не рендерится (WebGL инициализация)
+- [ ] localStorage недоступен в Визоре (sandbox)
+- [ ] Async/Canvas тесты зависают в диагностике
 
-**"Python не найден"**
-→ Установите Python с https://www.python.org/downloads/ (отметьте "Add Python to PATH").
+---
 
-**Бот не отвечает в Telegram**
-→ Проверьте BOT_TOKEN в настройках (http://localhost:5000 → Настройки).
+## 💖 Поддержать проект
 
-**Нет AI (чат/статьи не работают)**
-→ Установите Ollama: https://ollama.com → `ollama pull llama3`
+Проект разрабатывается одним человеком в свободное время.
 
-**VM-сервер недоступен (http://localhost:5000)**
-→ Запустите `start.ps1` или `ЗАПУСТИТЬ_БОТА.bat`.
+- ⭐ **Поставь звезду** — помогает другим найти проект
+- ☕ **Boosty** — https://boosty.to/drgr (подписка от 100 ₽/мес)
+- 💳 **Донат** — реквизиты по запросу в Telegram
+- 🤝 **Pull Request** — любой фикс приветствуется
+
+### Что даёт поддержка:
+| Уровень | Цена | Что получаешь |
+|---------|------|---------------|
+| ☕ Кофе | 100 ₽/мес | Имя в README |
+| 🥈 Supporter | 300 ₽/мес | Приоритет в issues |
+| 🥇 Pro | 700 ₽/мес | Ранний доступ к фичам + закрытый чат |
+| 💎 Sponsor | 2000 ₽/мес | Кастомная фича по запросу |
+
+---
+
+## 📄 Лицензия
+
+MIT — используй свободно, форкай, улучшай. Ссылка на оригинал приветствуется.
+
+---
+
+<p align="center">
+  Сделано с ❤️ в Санкт-Петербурге
+</p>
